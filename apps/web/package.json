@@ -15,12 +15,17 @@
     "test:coverage": "vitest run --coverage",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
+    "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio"
   },
   "dependencies": {
     "@ciareader/shared-types": "workspace:*",
+    "@node-rs/argon2": "^2.0.2",
     "drizzle-orm": "^0.35.3",
-    "postgres": "^3.4.4"
+    "jose": "^5.9.4",
+    "nodemailer": "^6.9.15",
+    "postgres": "^3.4.4",
+    "zod": "^3.23.8"
   },
   "devDependencies": {
     "@sveltejs/adapter-node": "^5.2.6",
@@ -28,6 +33,7 @@
     "@sveltejs/vite-plugin-svelte": "^4.0.0",
     "@testing-library/svelte": "^5.2.4",
     "@types/node": "^22.7.5",
+    "@types/nodemailer": "^6.4.16",
     "@vitest/coverage-v8": "^2.1.3",
     "drizzle-kit": "^0.26.2",
     "eslint": "^9.12.0",

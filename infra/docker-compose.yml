@@ -29,6 +29,17 @@ services:
       timeout: 3s
       retries: 10
 
+  mailpit:
+    image: axllent/mailpit:latest
+    ports:
+      - "1025:1025" # SMTP
+      - "8025:8025" # Web UI
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "1025"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
   nlp:
     build:
       context: ..
@@ -58,6 +69,8 @@ services:
         condition: service_healthy
       nlp:
         condition: service_healthy
+      mailpit:
+        condition: service_healthy
     volumes:
       - ../apps/web/src:/srv/app/apps/web/src
       - ../apps/web/static:/srv/app/apps/web/static
@@ -71,8 +84,19 @@ services:
       NLP_SERVICE_URL: http://nlp:8000
       DATABASE_URL: postgres://ciareader:ciareader@postgres:5432/ciareader
       REDIS_URL: redis://redis:6379
+      AUTH_SECRET: dev-only-secret-replace-in-prod-0000000000000000000000000000000
+      APP_BASE_URL: http://localhost:5173
+      SMTP_HOST: mailpit
+      SMTP_PORT: "1025"
+      SMTP_FROM: no-reply@ciareader.local
     ports:
       - "5173:5173"
+    command:
+      - sh
+      - -c
+      - |
+        pnpm --filter @ciareader/web exec drizzle-kit push --verbose &&
+        pnpm --filter @ciareader/web dev
 
 volumes:
   postgres-data:
