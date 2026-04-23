@@ -1,4 +1,4 @@
-.PHONY: dev dev-down install install-nlp lint typecheck test smoke clean
+.PHONY: dev dev-down install install-nlp lint typecheck test test-coverage smoke clean
 
 dev:
 	docker compose -f infra/docker-compose.yml up --build
@@ -22,6 +22,10 @@ typecheck:
 
 test:
 	pnpm -r --parallel test
+	cd services/nlp && .venv/bin/pytest
+
+test-coverage:
+	pnpm -r --parallel test:coverage
 	cd services/nlp && .venv/bin/pytest
 
 smoke:

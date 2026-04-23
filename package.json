@@ -13,6 +13,8 @@
     "dev:web": "pnpm --filter @ciareader/web dev",
     "lint": "pnpm -r --parallel lint",
     "typecheck": "pnpm -r --parallel typecheck",
+    "test": "pnpm -r --parallel test",
+    "test:coverage": "pnpm -r --parallel test:coverage",
     "format": "prettier --write \"**/*.{ts,svelte,json,md,yml,yaml}\"",
     "format:check": "prettier --check \"**/*.{ts,svelte,json,md,yml,yaml}\""
   },

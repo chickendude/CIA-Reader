@@ -7,7 +7,7 @@ on:
 
 jobs:
   web:
-    name: web (lint + typecheck)
+    name: web (lint + typecheck + test + coverage)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -22,9 +22,17 @@ jobs:
       - run: pnpm --filter @ciareader/web exec svelte-kit sync
       - run: pnpm lint
       - run: pnpm typecheck
+      - run: pnpm --filter @ciareader/web run test:coverage
+      - name: Upload web coverage artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-coverage
+          path: apps/web/coverage
+          if-no-files-found: ignore
 
   nlp:
-    name: nlp (ruff + pytest)
+    name: nlp (ruff + pytest + coverage)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -34,7 +42,18 @@ jobs:
           cache: pip
       - run: pip install -U pip && pip install -e 'services/nlp[dev]'
       - run: ruff check services/nlp
-      - run: pytest services/nlp
+      - name: Run pytest with coverage (fail-under enforced in pyproject.toml)
+        working-directory: services/nlp
+        env:
+          PYTHONPATH: ${{ github.workspace }}/packages/shared-types/python
+        run: pytest
+      - name: Upload nlp coverage artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nlp-coverage
+          path: services/nlp/.coverage
+          if-no-files-found: ignore
 
   registry-parity:
     name: language registry parity (TS vs Python)

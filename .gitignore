@@ -16,6 +16,12 @@ __pycache__/
 .ruff_cache/
 *.egg-info/
 
+# coverage
+coverage/
+.coverage
+coverage.lcov
+*.coverage.*
+
 # env / secrets
 .env
 .env.local
