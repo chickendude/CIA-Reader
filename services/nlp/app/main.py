@@ -32,9 +32,10 @@ async def health() -> HealthResponse:
 @app.post("/process", response_model=ProcessResponse)
 async def process(req: ProcessRequest) -> ProcessResponse:
     if not is_supported_language(req.language):
+        supported = list(SUPPORTED_LANGUAGE_CODES)
         raise HTTPException(
             status_code=400,
-            detail=f"Unsupported language '{req.language}'. Supported: {list(SUPPORTED_LANGUAGE_CODES)}",
+            detail=f"Unsupported language '{req.language}'. Supported: {supported}",
         )
 
     descriptor = LANGUAGES[req.language]  # type: ignore[index]
