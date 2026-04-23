@@ -1,0 +1,30 @@
+# deps
+node_modules/
+.pnpm-store/
+
+# builds
+.svelte-kit/
+build/
+dist/
+.vite/
+
+# python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+
+# env / secrets
+.env
+.env.local
+.env.*.local
+
+# logs / os
+*.log
+.DS_Store
+
+# ide
+.vscode/
+.idea/

@@ -1,0 +1,79 @@
+name: ciareader
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ciareader
+      POSTGRES_PASSWORD: ciareader
+      POSTGRES_DB: ciareader
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ciareader -d ciareader"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  nlp:
+    build:
+      context: ..
+      dockerfile: services/nlp/Dockerfile
+    volumes:
+      - ../services/nlp/app:/srv/nlp/app
+      - ../services/nlp/tests:/srv/nlp/tests
+      - ../packages/shared-types/python:/opt/shared-types
+    ports:
+      - "8000:8000"
+    environment:
+      PYTHONPATH: /opt/shared-types:/srv/nlp
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health').read()\""]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  web:
+    build:
+      context: ..
+      dockerfile: apps/web/Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      nlp:
+        condition: service_healthy
+    volumes:
+      - ../apps/web/src:/srv/app/apps/web/src
+      - ../apps/web/static:/srv/app/apps/web/static
+      - ../apps/web/svelte.config.js:/srv/app/apps/web/svelte.config.js
+      - ../apps/web/vite.config.ts:/srv/app/apps/web/vite.config.ts
+      - ../apps/web/tsconfig.json:/srv/app/apps/web/tsconfig.json
+      - ../apps/web/drizzle.config.ts:/srv/app/apps/web/drizzle.config.ts
+      - ../apps/web/drizzle:/srv/app/apps/web/drizzle
+      - ../packages/shared-types/src:/srv/app/packages/shared-types/src
+    environment:
+      NLP_SERVICE_URL: http://nlp:8000
+      DATABASE_URL: postgres://ciareader:ciareader@postgres:5432/ciareader
+      REDIS_URL: redis://redis:6379
+    ports:
+      - "5173:5173"
+
+volumes:
+  postgres-data:
+  redis-data:

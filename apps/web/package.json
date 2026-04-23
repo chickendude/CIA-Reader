@@ -1,0 +1,36 @@
+{
+  "name": "@ciareader/web",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite dev --host 0.0.0.0 --port 5173",
+    "build": "vite build",
+    "preview": "vite preview --host 0.0.0.0 --port 5173",
+    "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
+    "typecheck": "pnpm run check",
+    "lint": "eslint .",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate",
+    "db:studio": "drizzle-kit studio"
+  },
+  "dependencies": {
+    "@ciareader/shared-types": "workspace:*",
+    "drizzle-orm": "^0.35.3",
+    "postgres": "^3.4.4"
+  },
+  "devDependencies": {
+    "@sveltejs/adapter-node": "^5.2.6",
+    "@sveltejs/kit": "^2.7.2",
+    "@sveltejs/vite-plugin-svelte": "^4.0.0",
+    "@types/node": "^22.7.5",
+    "drizzle-kit": "^0.26.2",
+    "eslint": "^9.12.0",
+    "eslint-plugin-svelte": "^2.44.1",
+    "svelte": "^5.1.3",
+    "svelte-check": "^4.0.5",
+    "typescript": "^5.5.4",
+    "typescript-eslint": "^8.8.1",
+    "vite": "^5.4.9"
+  }
+}
