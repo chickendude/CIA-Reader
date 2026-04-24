@@ -6,13 +6,20 @@ feature parsing, POS-aware ``is_word`` / ``is_oov``, token indexing
 across sentences — without a ~600MB model download. The trade-off is
 we're testing our adapter, not Stanza itself; Stanza's own accuracy is
 covered by the golden-file suite (T-2.8).
+
+The shared output-shaping logic was extracted into
+:mod:`app.pipelines.stanza_ud` in T-2.3 so Marathi could reuse it; the
+feature-parsing tests target ``parse_feats`` at its new public home but
+the HindiPipeline behavior tests stay here to pin down the
+language-specific contract.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from app.pipelines.hindi import HindiPipeline, _parse_feats
+from app.pipelines.hindi import HindiPipeline
+from app.pipelines.stanza_ud import parse_feats
 
 
 @dataclass
@@ -50,23 +57,23 @@ def _pipe(doc: FakeDoc) -> tuple[HindiPipeline, FakeStanza]:
     return HindiPipeline(nlp=fake), fake
 
 
-# --- _parse_feats --------------------------------------------------------
+# --- parse_feats --------------------------------------------------------
 
 
 def test_parse_feats_none_returns_empty():
-    assert _parse_feats(None) == {}
+    assert parse_feats(None) == {}
 
 
 def test_parse_feats_empty_string_returns_empty():
-    assert _parse_feats("") == {}
+    assert parse_feats("") == {}
 
 
 def test_parse_feats_single_pair():
-    assert _parse_feats("Number=Sing") == {"Number": "Sing"}
+    assert parse_feats("Number=Sing") == {"Number": "Sing"}
 
 
 def test_parse_feats_multiple_pairs():
-    out = _parse_feats("Tense=Pres|Number=Sing|Person=3|Gender=Fem|Aspect=Hab")
+    out = parse_feats("Tense=Pres|Number=Sing|Person=3|Gender=Fem|Aspect=Hab")
     assert out == {
         "Tense": "Pres",
         "Number": "Sing",
@@ -79,7 +86,7 @@ def test_parse_feats_multiple_pairs():
 def test_parse_feats_skips_malformed_pairs():
     # Defensive: a stray token or missing "=" from a Stanza model update
     # shouldn't surface as a 500 on /process.
-    out = _parse_feats("Tense=Pres|bogus|Number=Sing|=orphan")
+    out = parse_feats("Tense=Pres|bogus|Number=Sing|=orphan")
     assert out == {"Tense": "Pres", "Number": "Sing"}
 
 

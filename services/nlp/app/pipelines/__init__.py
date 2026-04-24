@@ -23,6 +23,7 @@ from app.languages import LANGUAGES, is_supported_language
 
 from .base import Pipeline, PipelineResult
 from .hindi import build_hindi_pipeline
+from .marathi import build_marathi_pipeline
 from .stub import StubPipeline
 
 # Cache of instantiated pipelines keyed by pipeline_id. Building a Stanza
@@ -37,7 +38,7 @@ _PIPELINE_CACHE: dict[str, Pipeline] = {}
 # loading cost for languages the running process never touches.
 _PIPELINE_FACTORIES: dict[str, Callable[[], Pipeline]] = {
     "stanza-hi": build_hindi_pipeline,
-    "stanza-mr": StubPipeline,
+    "stanza-mr": build_marathi_pipeline,
     "custom-or": StubPipeline,
 }
 

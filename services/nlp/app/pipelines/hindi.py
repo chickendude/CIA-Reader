@@ -1,8 +1,11 @@
 """Hindi pipeline backed by Stanza's ``hi`` UD model.
 
 Stanza handles tokenization, POS tagging, lemmatization, and UD-style
-morphology features. We wrap its output in our common :class:`Token`
-shape so the HTTP layer doesn't branch per language.
+morphology features. All of the output-shaping logic (feature parsing,
+OOV heuristics, idx sequencing) lives in
+:class:`app.pipelines.stanza_ud.StanzaUDPipeline` so this module is a
+thin wrapper that sets the canonical ``pipeline_id`` and provides a
+factory that constructs the real Stanza model at startup.
 
 Top-K caveat (see T-2.2 in the plan): Stanza's lemmatizer exposes a
 single best lemma per word. Real top-K lemma candidates with softmax-
@@ -22,100 +25,13 @@ happens in M3 and will refine ``is_oov`` at that point.
 
 from __future__ import annotations
 
-from typing import Any, Protocol
-
-from app.schemas import LemmaCandidate, Token
-
-from .base import Pipeline, PipelineResult
+from .stanza_ud import StanzaUDPipeline
 
 
-class _StanzaLike(Protocol):
-    """The subset of Stanza's ``Pipeline`` callable we depend on.
-
-    Using a structural type lets tests inject a lightweight fake without
-    importing stanza (and without having to install torch in CI). The
-    production code path lazy-imports stanza in :func:`build_hindi_pipeline`.
-    """
-
-    def __call__(self, text: str) -> Any: ...  # noqa: D401,E704
-
-
-# UD UPOS tags where "lemma equals surface" does NOT imply OOV. A proper
-# noun's lemma is its surface by design; punctuation / symbols / digits
-# legitimately don't have dictionary lemmas; ``X`` is Stanza's other-
-# language marker and is effectively a code-switch signal.
-_NON_OOV_UPOS: frozenset[str] = frozenset({"PUNCT", "SYM", "NUM", "PROPN", "X"})
-
-# UD UPOS tags that aren't lexical words. The Token schema exposes
-# ``is_word`` so the reader can skip these when counting known-words.
-_NON_WORD_UPOS: frozenset[str] = frozenset({"PUNCT", "SYM"})
-
-
-def _parse_feats(feats: str | None) -> dict[str, str]:
-    """Turn Stanza's ``"Tense=Pres|Number=Sing"`` into a plain dict.
-
-    Stanza uses ``None`` (or an empty string) when a word has no features.
-    Malformed pairs are skipped rather than raising — morphology drift
-    between Stanza model versions shouldn't 500 a /process call.
-    """
-    if not feats:
-        return {}
-    out: dict[str, str] = {}
-    for pair in feats.split("|"):
-        if "=" not in pair:
-            continue
-        key, _, value = pair.partition("=")
-        key = key.strip()
-        value = value.strip()
-        if key:
-            out[key] = value
-    return out
-
-
-class HindiPipeline(Pipeline):
+class HindiPipeline(StanzaUDPipeline):
     """Stanza-backed Hindi tokenizer + lemmatizer + morphology."""
 
     pipeline_id = "stanza-hi"
-
-    def __init__(self, nlp: _StanzaLike) -> None:
-        # The stanza model is injected (built by :func:`build_hindi_pipeline`
-        # in production; a fake in tests) so this class has no direct import
-        # dependency on stanza — keeps the module importable in CI without
-        # stanza + torch installed.
-        self._nlp = nlp
-
-    def process(self, text: str) -> PipelineResult:
-        doc = self._nlp(text)
-        tokens: list[Token] = []
-        idx = 0
-        for sentence in doc.sentences:
-            for word in sentence.words:
-                surface = word.text
-                lemma = word.lemma or surface
-                upos = (word.upos or "X").upper()
-                features = _parse_feats(word.feats)
-                is_word = upos not in _NON_WORD_UPOS
-                is_oov = lemma == surface and upos not in _NON_OOV_UPOS
-                tokens.append(
-                    Token(
-                        idx=idx,
-                        surface=surface,
-                        is_word=is_word,
-                        candidates=[
-                            LemmaCandidate(
-                                lemma=lemma,
-                                pos=upos,
-                                score=1.0,
-                                features=features,
-                            ),
-                        ],
-                        is_ambiguous=False,
-                        is_oov=is_oov,
-                        romanization=None,
-                    )
-                )
-                idx += 1
-        return PipelineResult(pipeline_id=self.pipeline_id, tokens=tokens)
 
 
 def build_hindi_pipeline() -> HindiPipeline:  # pragma: no cover
