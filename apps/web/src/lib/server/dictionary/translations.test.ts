@@ -9,7 +9,11 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-type Call = { kind: 'select' | 'insert'; payload?: unknown };
+type Call =
+  | { kind: 'select' }
+  | { kind: 'insert'; payload?: unknown }
+  | { kind: 'update'; set?: unknown }
+  | { kind: 'delete' };
 const calls: Call[] = [];
 
 /**
@@ -64,16 +68,41 @@ function makeInsertChain() {
   return chain;
 }
 
+function makeUpdateChain() {
+  const entry: Call = { kind: 'update' };
+  calls.push(entry);
+  const chain: Record<string, unknown> = {};
+  chain.set = vi.fn((v: unknown) => {
+    entry.set = v;
+    return chain;
+  });
+  chain.where = vi.fn(() => chain);
+  chain.returning = vi.fn(() => nextStaged());
+  return chain;
+}
+
+function makeDeleteChain() {
+  calls.push({ kind: 'delete' });
+  const chain: Record<string, unknown> = {};
+  chain.where = vi.fn(() => chain);
+  chain.then = (resolve: (v: unknown) => unknown) => resolve(undefined);
+  return chain;
+}
+
 const selectFn = vi.fn(() => {
   calls.push({ kind: 'select' });
   return makeSelectChain();
 });
 const insertFn = vi.fn(() => makeInsertChain());
+const updateFn = vi.fn(() => makeUpdateChain());
+const deleteFn = vi.fn(() => makeDeleteChain());
 
 vi.mock('../db/index.js', () => ({
   db: {
     select: () => selectFn(),
     insert: () => insertFn(),
+    update: () => updateFn(),
+    delete: () => deleteFn(),
   },
   schema: {
     lemmas: { id: 'lemmas.id' },
@@ -89,9 +118,11 @@ vi.mock('../db/index.js', () => ({
 const {
   MAX_BODY_LEN,
   MAX_PER_USER_PER_WINDOW,
+  deleteUserTranslation,
   submitUserTranslation,
   TranslationRateLimitError,
   TranslationValidationError,
+  updateUserTranslation,
 } = await import('./translations.js');
 
 beforeEach(() => {
@@ -99,6 +130,8 @@ beforeEach(() => {
   staged.length = 0;
   selectFn.mockClear();
   insertFn.mockClear();
+  updateFn.mockClear();
+  deleteFn.mockClear();
 });
 
 afterEach(() => {
@@ -294,5 +327,145 @@ describe('submitUserTranslation — rate limiting', () => {
       expect(e.retryAfterSeconds).toBeGreaterThan(0);
       expect(e.limit).toBe(MAX_PER_USER_PER_WINDOW);
     }
+  });
+});
+
+describe('updateUserTranslation (T-3.5)', () => {
+  const ownRow = {
+    id: 'tr-1',
+    lemmaId: 'lemma-1',
+    source: 'user',
+    submittedBy: 'user-1',
+    parentTranslationId: null,
+    body: 'old body',
+    targetLanguage: 'en',
+    sourceAttribution: null,
+    sourceId: null,
+    hidden: false,
+    createdAt: new Date('2026-04-24'),
+    updatedAt: new Date('2026-04-24'),
+  };
+
+  it('updates the body for the author', async () => {
+    stageSelect([ownRow]);
+    stageSelect([{ ...ownRow, body: 'new body' }]); // update ... returning
+    const updated = await updateUserTranslation('user-1', 'tr-1', {
+      body: '  new   body  ',
+    });
+    expect(updated.body).toBe('new body');
+    const updateCall = calls.find((c) => c.kind === 'update');
+    expect(updateCall?.set).toMatchObject({ body: 'new body' });
+  });
+
+  it('rejects an empty body without touching the DB', async () => {
+    await expect(
+      updateUserTranslation('user-1', 'tr-1', { body: '   ' }),
+    ).rejects.toBeInstanceOf(TranslationValidationError);
+    expect(selectFn).not.toHaveBeenCalled();
+    expect(updateFn).not.toHaveBeenCalled();
+  });
+
+  it('rejects a body over MAX_BODY_LEN characters', async () => {
+    await expect(
+      updateUserTranslation('user-1', 'tr-1', { body: 'x'.repeat(MAX_BODY_LEN + 1) }),
+    ).rejects.toBeInstanceOf(TranslationValidationError);
+  });
+
+  it('returns 404 when the translation does not exist', async () => {
+    stageSelect([]);
+    try {
+      await updateUserTranslation('user-1', 'tr-missing', { body: 'x' });
+      throw new Error('should have thrown');
+    } catch (err) {
+      expect(err).toBeInstanceOf(TranslationValidationError);
+      expect((err as InstanceType<typeof TranslationValidationError>).status).toBe(404);
+    }
+    expect(updateFn).not.toHaveBeenCalled();
+  });
+
+  it('returns 403 when the caller is not the author', async () => {
+    stageSelect([{ ...ownRow, submittedBy: 'someone-else' }]);
+    try {
+      await updateUserTranslation('user-1', 'tr-1', { body: 'x' });
+      throw new Error('should have thrown');
+    } catch (err) {
+      expect(err).toBeInstanceOf(TranslationValidationError);
+      expect((err as InstanceType<typeof TranslationValidationError>).status).toBe(403);
+    }
+    expect(updateFn).not.toHaveBeenCalled();
+  });
+
+  it('returns 403 when the target row is an official translation', async () => {
+    stageSelect([{ ...ownRow, source: 'official_dictionary', submittedBy: null }]);
+    await expect(
+      updateUserTranslation('user-1', 'tr-1', { body: 'x' }),
+    ).rejects.toBeInstanceOf(TranslationValidationError);
+    expect(updateFn).not.toHaveBeenCalled();
+  });
+
+  it('sets updatedAt to the provided clock', async () => {
+    stageSelect([ownRow]);
+    stageSelect([{ ...ownRow, body: 'x' }]);
+    const t = new Date('2026-05-01T00:00:00Z');
+    await updateUserTranslation('user-1', 'tr-1', { body: 'x' }, t);
+    const updateCall = calls.find((c) => c.kind === 'update');
+    expect((updateCall?.set as { updatedAt: Date }).updatedAt).toBe(t);
+  });
+});
+
+describe('deleteUserTranslation (T-3.5)', () => {
+  const ownRow = {
+    id: 'tr-1',
+    lemmaId: 'lemma-1',
+    source: 'user',
+    submittedBy: 'user-1',
+    parentTranslationId: null,
+    body: 'gloss',
+    targetLanguage: 'en',
+    sourceAttribution: null,
+    sourceId: null,
+    hidden: false,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  };
+
+  it('deletes the row for the author', async () => {
+    stageSelect([ownRow]);
+    await expect(
+      deleteUserTranslation('user-1', 'tr-1'),
+    ).resolves.toBeUndefined();
+    expect(deleteFn).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns 404 when the translation does not exist', async () => {
+    stageSelect([]);
+    try {
+      await deleteUserTranslation('user-1', 'tr-missing');
+      throw new Error('should have thrown');
+    } catch (err) {
+      expect(err).toBeInstanceOf(TranslationValidationError);
+      expect((err as InstanceType<typeof TranslationValidationError>).status).toBe(404);
+    }
+    expect(deleteFn).not.toHaveBeenCalled();
+  });
+
+  it('returns 403 when the caller is not the author', async () => {
+    stageSelect([{ ...ownRow, submittedBy: 'someone-else' }]);
+    try {
+      await deleteUserTranslation('user-1', 'tr-1');
+      throw new Error('should have thrown');
+    } catch (err) {
+      expect(err).toBeInstanceOf(TranslationValidationError);
+      expect((err as InstanceType<typeof TranslationValidationError>).status).toBe(403);
+    }
+    expect(deleteFn).not.toHaveBeenCalled();
+  });
+
+  it('returns 403 when the target row is an official translation', async () => {
+    stageSelect([{ ...ownRow, source: 'curator', submittedBy: 'curator-1' }]);
+    await expect(
+      deleteUserTranslation('user-1', 'tr-1'),
+    ).rejects.toBeInstanceOf(TranslationValidationError);
+    expect(deleteFn).not.toHaveBeenCalled();
   });
 });
