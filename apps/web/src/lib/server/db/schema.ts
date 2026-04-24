@@ -380,6 +380,12 @@ export const lemmaEditChangeType = pgEnum('lemma_edit_change_type', [
   'translation_unhide',
   'form_insert',
   'form_delete',
+  // T-3.7: merge and split write to the history of *both* lemmas so the
+  // timeline is complete from either side. `change` carries a full
+  // snapshot of the loser (for merge) or of the translations/forms that
+  // moved (for split), so a revert has enough information to reconstruct.
+  'lemma_merge',
+  'lemma_split',
 ]);
 
 export const lemmaEditHistory = pgTable(
@@ -402,15 +408,42 @@ export const lemmaEditHistory = pgTable(
 );
 
 /**
- * JSON shape written into `lemma_edit_history.change`. We keep this as a
- * single type so the revert logic in T-3.7 has one discriminated union
- * to switch on rather than a grab-bag of optional fields.
+ * JSON shape written into `lemma_edit_history.change`. Kept as an open
+ * record so merge/split (T-3.7) can store richer payloads without a
+ * schema migration — the revert logic in the UI discriminates on
+ * `change_type` and knows which fields to expect per type.
+ *
+ * Common fields:
+ *   - `before` / `after`: lemma or translation snapshots for diff view.
+ *   - `translationId` / `formId`: set when the edit targets a specific
+ *     child row.
+ *
+ * Merge-specific (`change_type = 'lemma_merge'`):
+ *   - `direction`: 'winner' | 'loser' (audit is written under both).
+ *   - On the winner row: `mergedFrom` (loser snapshot),
+ *     `translationsMoved`, `formsMoved` (full snapshots).
+ *   - On the loser row: `translationIds`, `formIds` (ids only, for
+ *     backlinks).
+ *
+ * Split-specific (`change_type = 'lemma_split'`):
+ *   - `direction`: 'source' | 'created'.
+ *   - On the source row: `splitInto` (snapshot of the newly created
+ *     lemma), plus the moved `translationIds` / `formIds`.
+ *   - On the created row: `splitFrom` (snapshot of the source lemma).
  */
 export type LemmaEditChangePayload = {
   before?: Record<string, unknown> | null;
   after?: Record<string, unknown> | null;
   translationId?: string;
   formId?: string;
+  translationIds?: string[];
+  formIds?: string[];
+  translationsMoved?: Array<Record<string, unknown>>;
+  formsMoved?: Array<Record<string, unknown>>;
+  mergedFrom?: Record<string, unknown>;
+  splitInto?: Record<string, unknown>;
+  splitFrom?: Record<string, unknown>;
+  direction?: 'winner' | 'loser' | 'source' | 'created';
 };
 
 export type User = InferSelectModel<typeof users>;

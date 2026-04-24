@@ -1,0 +1,220 @@
+// @vitest-environment node
+/**
+ * Tests for /moderation/dictionary/:id SSR loader and form actions (T-3.7).
+ *
+ * The loader + every action delegates to the curator service; these tests
+ * mock that layer and assert the web-form plumbing (shape of the loader
+ * output, form validation, discriminated action results) — not the
+ * service semantics, which are covered in curator.test.ts.
+ */
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+const getLemmaEditorView = vi.fn();
+const updateLemma = vi.fn();
+const setLemmaLock = vi.fn();
+const updateTranslation = vi.fn();
+const setTranslationHidden = vi.fn();
+const mergeLemmas = vi.fn();
+const splitLemma = vi.fn();
+
+vi.mock('$lib/server/dictionary/curator.js', async () => {
+  const actual = await vi.importActual<
+    typeof import('$lib/server/dictionary/curator.js')
+  >('$lib/server/dictionary/curator.js');
+  return {
+    ...actual,
+    getLemmaEditorView: (...a: unknown[]) => getLemmaEditorView(...a),
+    updateLemma: (...a: unknown[]) => updateLemma(...a),
+    setLemmaLock: (...a: unknown[]) => setLemmaLock(...a),
+    updateTranslation: (...a: unknown[]) => updateTranslation(...a),
+    setTranslationHidden: (...a: unknown[]) => setTranslationHidden(...a),
+    mergeLemmas: (...a: unknown[]) => mergeLemmas(...a),
+    splitLemma: (...a: unknown[]) => splitLemma(...a),
+  };
+});
+
+type Mod = typeof import('./+page.server.js');
+
+const LEMMA_ID = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+const OTHER_ID = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
+const USER = { id: 'u1', role: 'curator' as const };
+
+async function callLoad(id = LEMMA_ID, user: typeof USER | null = USER) {
+  const { load } = (await import('./+page.server.js')) as Mod;
+  const event = {
+    params: { id },
+    locals: { user },
+  } as Parameters<Mod['load']>[0];
+  try {
+    return await load(event);
+  } catch (e) {
+    return e as { status: number };
+  }
+}
+
+async function callAction(
+  name: keyof Mod['actions'],
+  fields: Record<string, string>,
+  id = LEMMA_ID,
+) {
+  const { actions } = (await import('./+page.server.js')) as Mod;
+  const fd = new FormData();
+  for (const [k, v] of Object.entries(fields)) fd.set(k, v);
+  const event = {
+    params: { id },
+    locals: { user: USER },
+    request: new Request('http://x', { method: 'POST', body: fd }),
+  } as unknown as Parameters<Mod['actions'][typeof name]>[0];
+  return actions[name]!(event);
+}
+
+beforeEach(() => {
+  getLemmaEditorView.mockReset();
+  updateLemma.mockReset();
+  setLemmaLock.mockReset();
+  updateTranslation.mockReset();
+  setTranslationHidden.mockReset();
+  mergeLemmas.mockReset();
+  splitLemma.mockReset();
+});
+
+afterEach(() => {
+  vi.resetModules();
+});
+
+describe('moderation lemma editor loader', () => {
+  it('returns the editor view on success', async () => {
+    const view = {
+      lemma: { id: LEMMA_ID, headword: 'बोलना' },
+      translations: [],
+      forms: [],
+      history: [],
+    };
+    getLemmaEditorView.mockResolvedValueOnce(view);
+    const data = (await callLoad()) as { lemma: { id: string } };
+    expect(data.lemma.id).toBe(LEMMA_ID);
+    expect(getLemmaEditorView).toHaveBeenCalledWith(USER, LEMMA_ID);
+  });
+
+  it('rejects a malformed lemma id with 400', async () => {
+    const res = (await callLoad('not-a-uuid')) as { status: number };
+    expect(res.status).toBe(400);
+    expect(getLemmaEditorView).not.toHaveBeenCalled();
+  });
+
+  it('maps CuratorValidationError(404) to a 404', async () => {
+    const { CuratorValidationError } = await import(
+      '$lib/server/dictionary/curator.js'
+    );
+    getLemmaEditorView.mockRejectedValueOnce(
+      new CuratorValidationError('gone', 404),
+    );
+    const res = (await callLoad()) as { status: number };
+    expect(res.status).toBe(404);
+  });
+});
+
+describe('moderation lemma editor actions', () => {
+  it('updateLemma happy path returns section=lemma, ok=true', async () => {
+    updateLemma.mockResolvedValueOnce({ id: LEMMA_ID });
+    const res = await callAction('updateLemma', {
+      headword: 'बोलना',
+      pos: 'verb',
+      glossDefault: 'to speak',
+      frequencyRank: '123',
+      sourceAttribution: '',
+      reason: 'fix typo',
+    });
+    expect(res).toEqual({ ok: true, section: 'lemma' });
+    expect(updateLemma).toHaveBeenCalledWith(
+      USER,
+      LEMMA_ID,
+      expect.objectContaining({ headword: 'बोलना', frequencyRank: 123 }),
+      'fix typo',
+    );
+  });
+
+  it('updateLemma fail on short reason', async () => {
+    const res = await callAction('updateLemma', {
+      headword: 'x',
+      pos: 'v',
+      glossDefault: '',
+      frequencyRank: '',
+      sourceAttribution: '',
+      reason: 'no',
+    });
+    // SvelteKit's fail() wraps the body in { status, data }; our helper returns
+    // the ActionFailure, so inspect `.data` for the section/message shape.
+    expect((res as { status: number }).status).toBe(400);
+    expect((res as { data: { ok: boolean } }).data.ok).toBe(false);
+    expect(updateLemma).not.toHaveBeenCalled();
+  });
+
+  it('merge forwards winnerId from params and loserId from form', async () => {
+    mergeLemmas.mockResolvedValueOnce({ translationsMoved: 0, formsMoved: 0 });
+    const res = await callAction('merge', {
+      loserId: OTHER_ID,
+      reason: 'duplicate',
+    });
+    expect(res).toEqual({ ok: true, section: 'merge' });
+    expect(mergeLemmas).toHaveBeenCalledWith(
+      USER,
+      { winnerId: LEMMA_ID, loserId: OTHER_ID },
+      'duplicate',
+    );
+  });
+
+  it('merge returns 400 when loserId is not a UUID', async () => {
+    const res = await callAction('merge', {
+      loserId: 'nope',
+      reason: 'duplicate',
+    });
+    expect((res as { status: number }).status).toBe(400);
+    expect(mergeLemmas).not.toHaveBeenCalled();
+  });
+
+  it('split parses translationIds as comma-separated UUIDs', async () => {
+    splitLemma.mockResolvedValueOnce({
+      created: { id: 'new-id' },
+    });
+    const tid1 = 'cccccccc-cccc-cccc-cccc-cccccccccccc';
+    const tid2 = 'dddddddd-dddd-dddd-dddd-dddddddddddd';
+    const res = await callAction('split', {
+      newHeadword: 'सोना',
+      newPos: 'noun',
+      newGloss: 'gold',
+      translationIds: `${tid1}, ${tid2}`,
+      reason: 'disambiguate',
+    });
+    expect((res as { ok: boolean }).ok).toBe(true);
+    expect(splitLemma).toHaveBeenCalledWith(
+      USER,
+      expect.objectContaining({
+        translationIds: [tid1, tid2],
+        newLemma: expect.objectContaining({ headword: 'सोना', pos: 'noun' }),
+      }),
+      'disambiguate',
+    );
+  });
+
+  it('setTranslationHidden forwards the translation id and boolean', async () => {
+    setTranslationHidden.mockResolvedValueOnce({});
+    const tid = 'cccccccc-cccc-cccc-cccc-cccccccccccc';
+    const res = await callAction('setTranslationHidden', {
+      translationId: tid,
+      hidden: 'true',
+      reason: 'spam submission',
+    });
+    expect((res as { ok: boolean; section: string; translationId: string })).toEqual({
+      ok: true,
+      section: 'translation',
+      translationId: tid,
+    });
+    expect(setTranslationHidden).toHaveBeenCalledWith(
+      USER,
+      tid,
+      true,
+      'spam submission',
+    );
+  });
+});
