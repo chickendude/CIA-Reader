@@ -1,0 +1,22 @@
+{
+  "__description__": "Seed Odia lemma table — T-2.3a scaffolding. Each entry: 'headword': {'pos': '...', 'gloss': '...'}. Large-scale import from Odia WordNet + OdiaNLP resources lands in T-3.1; this hand-curated set is only enough to exercise the morphology rules and end-to-end pipeline in CI. Headwords are NFC-normalized Odia script (ISO 15924 'Orya').",
+  "entries": {
+    "ଜାଣ": { "pos": "VERB", "gloss": "to know" },
+    "ପଢ଼": { "pos": "VERB", "gloss": "to read" },
+    "ଦେଖ": { "pos": "VERB", "gloss": "to see" },
+    "କର": { "pos": "VERB", "gloss": "to do" },
+    "ଯା": { "pos": "VERB", "gloss": "to go" },
+    "ଖା": { "pos": "VERB", "gloss": "to eat" },
+    "ବହି": { "pos": "NOUN", "gloss": "book" },
+    "ଘର": { "pos": "NOUN", "gloss": "house" },
+    "ପିଲା": { "pos": "NOUN", "gloss": "child" },
+    "ଦୁନିଆ": { "pos": "NOUN", "gloss": "world" },
+    "ଦିନ": { "pos": "NOUN", "gloss": "day" },
+    "ଭଲ": { "pos": "ADJ", "gloss": "good" },
+    "ବଡ଼": { "pos": "ADJ", "gloss": "big" },
+    "ନମସ୍କାର": { "pos": "INTJ", "gloss": "hello" },
+    "ମୁଁ": { "pos": "PRON", "gloss": "I" },
+    "ତୁମେ": { "pos": "PRON", "gloss": "you" },
+    "ସେ": { "pos": "PRON", "gloss": "he/she" }
+  }
+}
