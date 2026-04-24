@@ -26,10 +26,10 @@ describe('root +page.server.ts load', () => {
     const data = await load({ locals: {} } as Parameters<typeof load>[0]);
     expect(data.nlpStatus).toBe('ok');
     expect(data.nlpLanguages).toEqual(['hi', 'mr', 'or']);
-    expect(data.languages.map((l) => l.code).sort()).toEqual(['hi', 'mr', 'or']);
-    const hi = data.languages.find((l) => l.code === 'hi');
+    expect(data.languages.map((l: { code: string }) => l.code).sort()).toEqual(['hi', 'mr', 'or']);
+    const hi = data.languages.find((l: { code: string }) => l.code === 'hi');
     expect(hi?.script).toBe('Deva');
-    const or = data.languages.find((l) => l.code === 'or');
+    const or = data.languages.find((l: { code: string }) => l.code === 'or');
     expect(or?.script).toBe('Orya');
     expect(data.user).toBeNull();
   });

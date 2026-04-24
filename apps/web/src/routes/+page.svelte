@@ -42,6 +42,7 @@
       <p>
         Signed in as <strong>{data.user.displayName ?? data.user.email}</strong>
         <span class="muted">({data.user.role})</span>
+        — <a href="/profile">Profile</a>
       </p>
     {:else}
       <p class="muted">Not signed in. Use <code>/api/v1/auth/register</code> or <code>/api/v1/auth/login</code>.</p>

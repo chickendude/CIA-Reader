@@ -33,6 +33,7 @@ describe('session cookie helpers', () => {
     const expires = new Date('2099-01-01');
     setSessionCookie(cookies, 'my-token', expires, false);
     const setCall = (cookies.set as unknown as ReturnType<typeof vi.fn>).mock.calls[0];
+    if (!setCall) throw new Error('cookies.set was not invoked');
     const [name, value, opts] = setCall;
     expect(name).toBe(SESSION_COOKIE);
     expect(value).toBe('my-token');
@@ -48,7 +49,8 @@ describe('session cookie helpers', () => {
   it('setSessionCookie passes through the secure flag', () => {
     const cookies = makeCookies();
     setSessionCookie(cookies, 'tok', new Date('2099-01-01'), true);
-    const [, , opts] = (cookies.set as unknown as ReturnType<typeof vi.fn>).mock.calls[0];
+    const call = (cookies.set as unknown as ReturnType<typeof vi.fn>).mock.calls[0]!;
+    const [, , opts] = call;
     expect(opts.secure).toBe(true);
   });
 
