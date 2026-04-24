@@ -27,6 +27,29 @@ import { and, eq } from 'drizzle-orm';
 import { db, schema } from '../db/index.js';
 import type { Lemma, Translation, User } from '../db/schema.js';
 
+/**
+ * Viewer-relative provenance category (T-3.8). The reader pop-up renders
+ * one badge per translation — the badge reads off `provenance.kind`,
+ * NOT off `source`, because "personal" requires knowing who the viewer
+ * is (a user's own `source='user'` row shows a different badge than the
+ * same row displayed to a different viewer).
+ *
+ *  - `personal`   — the viewer themselves authored this row (or forked
+ *                   an official via T-3.5). Badge: "yours".
+ *  - `curator`    — `source='curator'`. A curator has explicitly signed
+ *                   off on this row. Badge: "curator".
+ *  - `imported`   — `source='official_dictionary'`. Carries the upstream
+ *                   attribution (e.g. "Hindi WordNet"). Badge: the
+ *                   attribution text.
+ *  - `community`  — anyone else's `source='user'` submission. Badge:
+ *                   "community".
+ */
+export type TranslationProvenance =
+  | { kind: 'personal'; attribution: null }
+  | { kind: 'curator'; attribution: string | null }
+  | { kind: 'imported'; attribution: string | null }
+  | { kind: 'community'; attribution: null };
+
 export type PublicTranslation = {
   id: string;
   source: Translation['source'];
@@ -35,6 +58,7 @@ export type PublicTranslation = {
   body: string;
   targetLanguage: string;
   sourceAttribution: string | null;
+  provenance: TranslationProvenance;
   hidden: boolean;
   createdAt: Date;
   updatedAt: Date;
@@ -71,7 +95,26 @@ function toPublicLemma(row: Lemma): PublicLemma {
   };
 }
 
-function toPublicTranslation(row: Translation): PublicTranslation {
+export function deriveProvenance(
+  row: Translation,
+  viewer: { id: string } | null,
+): TranslationProvenance {
+  if (viewer && row.source === 'user' && row.submittedBy === viewer.id) {
+    return { kind: 'personal', attribution: null };
+  }
+  if (row.source === 'curator') {
+    return { kind: 'curator', attribution: row.sourceAttribution };
+  }
+  if (row.source === 'official_dictionary') {
+    return { kind: 'imported', attribution: row.sourceAttribution };
+  }
+  return { kind: 'community', attribution: null };
+}
+
+function toPublicTranslation(
+  row: Translation,
+  viewer: { id: string } | null,
+): PublicTranslation {
   return {
     id: row.id,
     source: row.source,
@@ -80,6 +123,7 @@ function toPublicTranslation(row: Translation): PublicTranslation {
     body: row.body,
     targetLanguage: row.targetLanguage,
     sourceAttribution: row.sourceAttribution,
+    provenance: deriveProvenance(row, viewer),
     hidden: row.hidden,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
@@ -128,9 +172,9 @@ export function bucketTranslations(
   community.sort(byCreatedAtDesc);
 
   return {
-    personal: personal.map(toPublicTranslation),
-    official: official.map(toPublicTranslation),
-    community: community.map(toPublicTranslation),
+    personal: personal.map((r) => toPublicTranslation(r, viewer)),
+    official: official.map((r) => toPublicTranslation(r, viewer)),
+    community: community.map((r) => toPublicTranslation(r, viewer)),
   };
 }
 

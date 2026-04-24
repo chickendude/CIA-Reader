@@ -28,6 +28,7 @@ import {
   updateLemma,
   updateTranslation,
 } from '$lib/server/dictionary/curator.js';
+import { deriveProvenance } from '$lib/server/dictionary/lookups.js';
 import { MissingReasonError } from '$lib/server/dictionary/audit.js';
 import { ForbiddenError } from '$lib/server/dictionary/permissions.js';
 import type { Actions, PageServerLoad } from './$types';
@@ -71,7 +72,17 @@ export const load: PageServerLoad = async ({ params, locals }) => {
       { id: locals.user.id, role: locals.user.role },
       params.id,
     );
-    return { ...view };
+    // Attach the same provenance discriminator the public translation
+    // endpoint exposes (T-3.8) so the editor renders the same badge as
+    // the reader pop-up will.
+    const editorViewer = { id: locals.user.id };
+    return {
+      ...view,
+      translations: view.translations.map((t) => ({
+        ...t,
+        provenance: deriveProvenance(t, editorViewer),
+      })),
+    };
   } catch (e) {
     const mapped = mapError(e);
     throw error(mapped.status as 400 | 403 | 404, mapped.message);
