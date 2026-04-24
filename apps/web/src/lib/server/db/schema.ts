@@ -331,6 +331,88 @@ export const dictionaryImports = pgTable(
   }),
 );
 
+/**
+ * Per-language curator grants (T-3.4).
+ *
+ * A user with `role='curator'` has edit rights on a language only when a
+ * row exists here. A user with `role='admin'` is treated as a curator on
+ * every language without needing rows — admin is a superset. Keeping the
+ * grants explicit (rather than baking language lists into `users`) means
+ * add/remove is a single row write and carries its own audit columns
+ * (`granted_by`, `granted_at`).
+ */
+export const curatorLanguages = pgTable(
+  'curator_languages',
+  {
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    language: language('language').notNull(),
+    grantedBy: uuid('granted_by').references(() => users.id, { onDelete: 'set null' }),
+    grantedAt: timestamp('granted_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.userId, t.language] }),
+    userIdx: index('curator_languages_user_idx').on(t.userId),
+  }),
+);
+
+/**
+ * Audit log for dictionary edits (T-3.4).
+ *
+ * One row per curator action that mutates a lemma, its translations, or
+ * its forms. `change` carries a `{ before, after }` diff so the
+ * dictionary editor (T-3.7) can render "what did this curator change?"
+ * and a revert control without needing a separate history table per
+ * edit kind.
+ *
+ * `reason` is required — curators have to type something before an edit
+ * commits. This is deliberately a soft "why" field, not a machine-
+ * readable code, because the audit trail is for humans first.
+ */
+export const lemmaEditChangeType = pgEnum('lemma_edit_change_type', [
+  'lemma_update',
+  'lemma_unlock',
+  'lemma_lock',
+  'translation_insert',
+  'translation_update',
+  'translation_hide',
+  'translation_unhide',
+  'form_insert',
+  'form_delete',
+]);
+
+export const lemmaEditHistory = pgTable(
+  'lemma_edit_history',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    lemmaId: uuid('lemma_id')
+      .notNull()
+      .references(() => lemmas.id, { onDelete: 'cascade' }),
+    editorId: uuid('editor_id').references(() => users.id, { onDelete: 'set null' }),
+    changeType: lemmaEditChangeType('change_type').notNull(),
+    change: jsonb('change').$type<LemmaEditChangePayload>().notNull(),
+    reason: text('reason').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    lemmaIdx: index('lemma_edit_history_lemma_idx').on(t.lemmaId, t.createdAt),
+    editorIdx: index('lemma_edit_history_editor_idx').on(t.editorId),
+  }),
+);
+
+/**
+ * JSON shape written into `lemma_edit_history.change`. We keep this as a
+ * single type so the revert logic in T-3.7 has one discriminated union
+ * to switch on rather than a grab-bag of optional fields.
+ */
+export type LemmaEditChangePayload = {
+  before?: Record<string, unknown> | null;
+  after?: Record<string, unknown> | null;
+  translationId?: string;
+  formId?: string;
+};
+
 export type User = InferSelectModel<typeof users>;
 export type Session = InferSelectModel<typeof sessions>;
 export type RefreshToken = InferSelectModel<typeof refreshTokens>;
@@ -340,3 +422,5 @@ export type Lemma = InferSelectModel<typeof lemmas>;
 export type LemmaForm = InferSelectModel<typeof lemmaForms>;
 export type Translation = InferSelectModel<typeof translations>;
 export type DictionaryImport = InferSelectModel<typeof dictionaryImports>;
+export type CuratorLanguage = InferSelectModel<typeof curatorLanguages>;
+export type LemmaEditHistoryEntry = InferSelectModel<typeof lemmaEditHistory>;
