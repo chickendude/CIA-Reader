@@ -1,6 +1,11 @@
 <script lang="ts">
   import '$lib/styles/tokens.css';
-  let { children } = $props();
+  import AppShell from '$lib/components/shell/AppShell.svelte';
+  import type { LayoutData } from './$types';
+
+  let { data, children }: { data: LayoutData; children: import('svelte').Snippet } = $props();
 </script>
 
-{@render children()}
+<AppShell user={data.user}>
+  {@render children()}
+</AppShell>

@@ -3,7 +3,7 @@
   let { data }: { data: PageData } = $props();
 </script>
 
-<main>
+<div class="page">
   <h1>CIA Reader</h1>
   <p class="sub">Comparative Indo-Aryan — a LingQ-style reader for Hindi, Marathi, and Odia.</p>
 
@@ -55,10 +55,10 @@
       <a href="/api/v1/smoke">GET /api/v1/smoke</a> — end-to-end web → NLP round-trip.
     </p>
   </section>
-</main>
+</div>
 
 <style>
-  main {
+  .page {
     max-width: 48rem;
     margin: 0 auto;
     padding: 2rem 1.25rem;

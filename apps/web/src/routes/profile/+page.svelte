@@ -22,7 +22,7 @@
   <title>Profile — CIA Reader</title>
 </svelte:head>
 
-<main>
+<div class="page">
   <h1>Profile</h1>
 
   <section>
@@ -112,10 +112,10 @@
       </form>
     {/each}
   </section>
-</main>
+</div>
 
 <style>
-  main {
+  .page {
     max-width: 48rem;
     margin: 0 auto;
     padding: 2rem 1.25rem;
