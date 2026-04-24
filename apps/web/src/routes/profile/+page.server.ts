@@ -6,6 +6,7 @@ import {
   upsertUserLanguage,
   withDefaultsForAllLanguages,
 } from '$lib/server/profile.js';
+import { THEME_COOKIE, THEME_COOKIE_MAX_AGE } from '$lib/theme/index.js';
 import {
   LANGUAGES,
   SUPPORTED_LANGUAGE_CODES,
@@ -61,7 +62,7 @@ type LanguageActionResult =
   | { ok: false; section: 'language'; code: string | null; message: string };
 
 export const actions: Actions = {
-  updateProfile: async ({ request, locals }) => {
+  updateProfile: async ({ cookies, request, locals, url }) => {
     if (!locals.user) {
       return fail(401, {
         ok: false,
@@ -79,6 +80,17 @@ export const actions: Actions = {
       } satisfies ProfileActionResult);
     }
     await updateUserProfile(locals.user.id, parsed.data);
+    // Also write the non-HttpOnly theme cookie so the pre-paint script in
+    // app.html can honor this preference on the very next request — before
+    // SSR has a chance to inject the resolved theme into the HTML. Survives
+    // a logout because the users table isn't consulted for anon visitors.
+    cookies.set(THEME_COOKIE, parsed.data.themePreference, {
+      path: '/',
+      httpOnly: false,
+      sameSite: 'lax',
+      secure: url.protocol === 'https:',
+      maxAge: THEME_COOKIE_MAX_AGE,
+    });
     return { ok: true, section: 'profile' } satisfies ProfileActionResult;
   },
 

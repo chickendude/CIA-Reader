@@ -70,14 +70,14 @@
   h2 {
     font-size: 1.1rem;
     margin: 1.75rem 0 0.5rem;
-    color: var(--muted);
+    color: var(--color-fg-muted);
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.04em;
   }
   .sub {
     margin: 0 0 1.5rem;
-    color: var(--muted);
+    color: var(--color-fg-muted);
   }
   ul {
     list-style: none;
@@ -87,24 +87,24 @@
   .status li,
   .langs li {
     padding: 0.5rem 0;
-    border-bottom: 1px solid var(--border);
+    border-bottom: 1px solid var(--color-border);
   }
   .ok {
-    color: #059669;
+    color: var(--color-success);
     font-weight: 600;
   }
   .down {
-    color: #dc2626;
+    color: var(--color-danger);
     font-weight: 600;
   }
   .muted {
-    color: var(--muted);
+    color: var(--color-fg-muted);
   }
   .native {
     font-size: 1.15rem;
     margin-right: 0.5rem;
   }
   a {
-    color: var(--accent);
+    color: var(--color-accent);
   }
 </style>

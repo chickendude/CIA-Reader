@@ -126,7 +126,7 @@
   h2 {
     font-size: 1.1rem;
     margin: 1.75rem 0 0.5rem;
-    color: var(--muted);
+    color: var(--color-fg-muted);
     text-transform: uppercase;
     letter-spacing: 0.04em;
   }
@@ -135,7 +135,7 @@
     margin: 0;
   }
   section {
-    border-top: 1px solid var(--border);
+    border-top: 1px solid var(--color-border);
     padding-top: 1rem;
   }
   form {
@@ -145,7 +145,7 @@
     max-width: 32rem;
   }
   .lang-form {
-    border: 1px solid var(--border);
+    border: 1px solid var(--color-border);
     border-radius: 8px;
     padding: 1rem;
     margin: 0.75rem 0;
@@ -170,13 +170,13 @@
     padding: 0.35rem 0;
   }
   fieldset {
-    border: 1px solid var(--border);
+    border: 1px solid var(--color-border);
     border-radius: 6px;
     padding: 0.5rem 0.75rem;
   }
   legend {
     padding: 0 0.4rem;
-    color: var(--muted);
+    color: var(--color-fg-muted);
     font-size: 0.85rem;
     text-transform: uppercase;
     letter-spacing: 0.04em;
@@ -185,29 +185,29 @@
   input[type='email'],
   select {
     padding: 0.55rem 0.75rem;
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    background: var(--bg);
-    color: var(--fg);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: var(--color-bg);
+    color: var(--color-fg);
     font: inherit;
-    min-height: 44px;
+    min-height: var(--touch-target);
   }
   input[readonly] {
-    color: var(--muted);
+    color: var(--color-fg-muted);
   }
   button {
     align-self: flex-start;
     padding: 0.6rem 1rem;
-    background: var(--accent);
-    color: white;
+    background: var(--color-accent);
+    color: var(--color-accent-fg);
     border: none;
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     cursor: pointer;
     font: inherit;
-    min-height: 44px;
+    min-height: var(--touch-target);
   }
   .muted {
-    color: var(--muted);
+    color: var(--color-fg-muted);
   }
   .small {
     font-size: 0.8rem;
@@ -220,11 +220,11 @@
     text-transform: capitalize;
   }
   .ok {
-    color: #059669;
+    color: var(--color-success);
     margin: 0;
   }
   .err {
-    color: #dc2626;
+    color: var(--color-danger);
     margin: 0;
   }
 </style>

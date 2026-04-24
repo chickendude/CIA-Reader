@@ -45,6 +45,8 @@ function formEvent(fields: Record<string, string>, locals: Record<string, unknow
       body: body.toString(),
     }),
     locals,
+    cookies: { set: vi.fn() },
+    url: new URL('http://x/profile'),
   } as unknown as ActionEvent;
 }
 
@@ -124,6 +126,22 @@ describe('profile +page.server.ts', () => {
         displayName: null,
         themePreference: 'system',
       });
+    });
+
+    it('writes the cia_theme cookie mirroring the saved preference', async () => {
+      updateUserProfile.mockResolvedValue({ id: 'u1' });
+      const actions = await loadActions();
+      const evt = formEvent(
+        { displayName: 'Alex', themePreference: 'dark' },
+        { user: { id: 'u1' } },
+      );
+      await actions.updateProfile(evt);
+      const cookies = (evt as unknown as { cookies: { set: ReturnType<typeof vi.fn> } }).cookies;
+      expect(cookies.set).toHaveBeenCalledWith(
+        'cia_theme',
+        'dark',
+        expect.objectContaining({ path: '/', httpOnly: false, sameSite: 'lax' }),
+      );
     });
 
     it('returns 400 when themePreference is invalid', async () => {
