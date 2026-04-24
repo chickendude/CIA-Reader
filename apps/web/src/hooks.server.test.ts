@@ -1,11 +1,12 @@
 // @vitest-environment node
 import { describe, expect, it, vi } from 'vitest';
 
+const resolveUserMock = vi.fn(async (): Promise<unknown> => null);
 vi.mock('$lib/server/auth/require-user.js', () => ({
-  resolveUser: vi.fn(async () => null),
+  resolveUser: (...a: unknown[]) => resolveUserMock(...(a as [])),
 }));
 
-const { resolveServerTheme } = await import('./hooks.server.js');
+const { resolveServerTheme, handle } = await import('./hooks.server.js');
 
 type Event = Parameters<typeof resolveServerTheme>[0];
 
@@ -56,5 +57,42 @@ describe('resolveServerTheme', () => {
 
   it("defaults to 'light' when no source has an opinion", () => {
     expect(resolveServerTheme(makeEvent({}))).toBe('light');
+  });
+});
+
+describe('handle — onboarding redirect', () => {
+  function makeHandleEvent(pathname: string) {
+    return {
+      locals: {},
+      cookies: { get: () => undefined },
+      request: { headers: new Headers() },
+      url: new URL(`http://x${pathname}`),
+    } as unknown as Parameters<typeof handle>[0]['event'];
+  }
+
+  it('bounces a signed-in, never-onboarded user from / to /onboarding', async () => {
+    resolveUserMock.mockResolvedValueOnce({ id: 'u1', onboardedAt: null });
+    const event = makeHandleEvent('/');
+    await expect(
+      handle({ event, resolve: vi.fn(async () => new Response()) as never }),
+    ).rejects.toMatchObject({ status: 303, location: '/onboarding' });
+  });
+
+  it('does not bounce when the user is already onboarded', async () => {
+    resolveUserMock.mockResolvedValueOnce({ id: 'u1', onboardedAt: new Date() });
+    const resolve = vi.fn(async () => new Response('ok'));
+    const event = makeHandleEvent('/');
+    const res = await handle({ event, resolve: resolve as never });
+    expect(res).toBeInstanceOf(Response);
+    expect(resolve).toHaveBeenCalledOnce();
+  });
+
+  it('does not bounce on /onboarding itself (no infinite loop)', async () => {
+    resolveUserMock.mockResolvedValueOnce({ id: 'u1', onboardedAt: null });
+    const resolve = vi.fn(async () => new Response('onboarding page'));
+    const event = makeHandleEvent('/onboarding');
+    const res = await handle({ event, resolve: resolve as never });
+    expect(res).toBeInstanceOf(Response);
+    expect(resolve).toHaveBeenCalledOnce();
   });
 });

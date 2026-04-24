@@ -1,5 +1,6 @@
-import type { Handle } from '@sveltejs/kit';
+import { redirect, type Handle } from '@sveltejs/kit';
 import { resolveUser } from '$lib/server/auth/require-user.js';
+import { shouldRedirectToOnboarding } from '$lib/server/onboarding.js';
 import { THEME_COOKIE, isThemePreference, resolveTheme } from '$lib/theme/index.js';
 
 /**
@@ -31,6 +32,9 @@ export function resolveServerTheme(event: Parameters<Handle>[0]['event']): 'ligh
 
 export const handle: Handle = async ({ event, resolve }) => {
   event.locals.user = await resolveUser(event);
+  if (shouldRedirectToOnboarding(event.locals.user, event.url.pathname)) {
+    throw redirect(303, '/onboarding');
+  }
   const theme = resolveServerTheme(event);
   return resolve(event, {
     transformPageChunk: ({ html }) => html.replace('%cia.theme%', theme),
