@@ -1,13 +1,28 @@
-"""Make the shared language registry importable in tests.
+"""Shared test fixtures.
 
-In Docker we mount packages/shared-types/python at /opt/shared-types and add
-it to PYTHONPATH. In local `pytest` runs, do the same from the repo layout.
+Two concerns:
+
+1. Make the shared language registry importable. In Docker we mount
+   ``packages/shared-types/python`` at ``/opt/shared-types`` and add it
+   to ``PYTHONPATH``. In local ``pytest`` runs we do the same from the
+   repo layout.
+
+2. Stub out the real Hindi Stanza factory. Production ``stanza-hi``
+   lazy-imports Stanza and loads a ~600MB UD model. CI doesn't install
+   stanza at all (it lives in the ``models`` optional-dependencies
+   group, not the default dev deps), so any test that ends up calling
+   :func:`app.pipelines.get_pipeline("hi")` needs a substitute factory.
+   The autouse fixture below swaps ``stanza-hi`` for one that builds a
+   :class:`HindiPipeline` wrapped around a tiny whitespace fake.
+   Dedicated Hindi-pipeline tests build richer fakes inline rather than
+   extending this one.
 """
 
 from __future__ import annotations
 
 import os
 import sys
+from dataclasses import dataclass, field
 from pathlib import Path
 
 _HERE = Path(__file__).resolve()
@@ -19,3 +34,64 @@ if str(_SHARED_PY) not in sys.path:
     sys.path.insert(0, str(_SHARED_PY))
 
 os.environ.setdefault("PYTHONPATH", str(_SHARED_PY))
+
+# The two imports below depend on shared-types already being on
+# sys.path, so they must happen after the block above runs.
+import pytest  # noqa: E402
+
+from app import pipelines  # noqa: E402
+from app.pipelines.hindi import HindiPipeline  # noqa: E402
+
+
+@dataclass
+class _FakeWord:
+    text: str
+    lemma: str | None = None
+    upos: str = "NOUN"
+    feats: str | None = None
+
+    def __post_init__(self) -> None:
+        # Surface-as-lemma matches Stanza's "no dictionary match" behavior,
+        # which the HindiPipeline uses as its OOV heuristic. Reasonable
+        # default for a whitespace-only fallback fake.
+        if self.lemma is None:
+            self.lemma = self.text
+
+
+@dataclass
+class _FakeSentence:
+    words: list[_FakeWord] = field(default_factory=list)
+
+
+@dataclass
+class _FakeDoc:
+    sentences: list[_FakeSentence] = field(default_factory=list)
+
+
+class _WhitespaceFakeStanza:
+    """Whitespace-split, one sentence, NOUN UPOS, lemma = surface."""
+
+    def __call__(self, text: str) -> _FakeDoc:
+        surfaces = text.split()
+        words = [_FakeWord(text=s) for s in surfaces]
+        return _FakeDoc(sentences=[_FakeSentence(words=words)] if words else [])
+
+
+@pytest.fixture(autouse=True)
+def _fake_hindi_factory():
+    """Replace the real Hindi factory with a whitespace-fake for the test."""
+    original = pipelines._PIPELINE_FACTORIES.get("stanza-hi")
+
+    def _factory() -> HindiPipeline:
+        return HindiPipeline(nlp=_WhitespaceFakeStanza())
+
+    pipelines._PIPELINE_FACTORIES["stanza-hi"] = _factory
+    pipelines.reset_pipeline_cache()
+    try:
+        yield
+    finally:
+        if original is None:
+            pipelines._PIPELINE_FACTORIES.pop("stanza-hi", None)
+        else:
+            pipelines._PIPELINE_FACTORIES["stanza-hi"] = original
+        pipelines.reset_pipeline_cache()

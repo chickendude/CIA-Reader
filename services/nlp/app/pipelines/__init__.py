@@ -17,9 +17,12 @@ without touching the dispatch layer.
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from app.languages import LANGUAGES, is_supported_language
 
 from .base import Pipeline, PipelineResult
+from .hindi import build_hindi_pipeline
 from .stub import StubPipeline
 
 # Cache of instantiated pipelines keyed by pipeline_id. Building a Stanza
@@ -27,12 +30,13 @@ from .stub import StubPipeline
 # process. This dict is populated lazily by :func:`get_pipeline`.
 _PIPELINE_CACHE: dict[str, Pipeline] = {}
 
-# Factory registry keyed by pipeline_id. Each entry returns a fresh
-# pipeline instance. Keeping factories (not instances) here means we don't
-# pay the model-loading cost for languages the running process never
-# touches.
-_PIPELINE_FACTORIES: dict[str, type[Pipeline]] = {
-    "stanza-hi": StubPipeline,
+# Factory registry keyed by pipeline_id. Each entry is a zero-arg callable
+# that returns a fresh pipeline instance — a class (calls default ctor) or
+# a factory function (for pipelines that need real-model construction).
+# Keeping factories (not instances) here means we don't pay the model-
+# loading cost for languages the running process never touches.
+_PIPELINE_FACTORIES: dict[str, Callable[[], Pipeline]] = {
+    "stanza-hi": build_hindi_pipeline,
     "stanza-mr": StubPipeline,
     "custom-or": StubPipeline,
 }

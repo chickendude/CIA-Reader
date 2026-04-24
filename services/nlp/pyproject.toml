@@ -17,6 +17,13 @@ dev = [
   "ruff>=0.6.9",
   "mypy>=1.11.2",
 ]
+# Heavyweight runtime-only ML deps. The Docker image for the NLP service
+# installs `[dev,models]`; CI and local test runs only need `[dev]` because
+# :mod:`app.pipelines.hindi` lazy-imports stanza and the tests inject a
+# fake stanza object instead of loading the real model.
+models = [
+  "stanza>=1.8.0",
+]
 
 [build-system]
 requires = ["setuptools>=68"]
