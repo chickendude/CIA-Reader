@@ -48,6 +48,9 @@ def build_hindi_pipeline() -> HindiPipeline:  # pragma: no cover
     """
     import stanza
 
+    from app.languages import LANGUAGES
+
+    desc = LANGUAGES["hi"]
     nlp = stanza.Pipeline(
         lang="hi",
         processors="tokenize,pos,lemma",
@@ -55,7 +58,11 @@ def build_hindi_pipeline() -> HindiPipeline:  # pragma: no cover
         download_method=None,
         verbose=False,
     )
-    return HindiPipeline(nlp=nlp)
+    return HindiPipeline(
+        nlp=nlp,
+        script=desc.script,
+        roman_scheme=desc.default_romanization,
+    )
 
 
 __all__ = ["HindiPipeline", "build_hindi_pipeline"]
