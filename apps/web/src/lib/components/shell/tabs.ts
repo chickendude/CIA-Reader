@@ -26,9 +26,9 @@ export const TABS: readonly Tab[] = [
     label: 'Library',
     href: '/library',
     auth: 'any',
-    // /texts/[id] is reached by clicking a card, so the Library tab
-    // should stay highlighted while reading.
-    match: ['/library', '/texts'],
+    // /reader/[textId] is reached by clicking a library card, so the
+    // Library tab should stay highlighted while reading.
+    match: ['/library', '/reader'],
   },
   {
     id: 'upload',

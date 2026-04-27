@@ -118,7 +118,7 @@ export const actions: Actions = {
                 body: parsed.data.body,
               },
             );
-      throw redirect(303, `/texts/${created.text.id}`);
+      throw redirect(303, `/reader/${created.text.id}`);
     } catch (err) {
       if (err instanceof TextValidationError) {
         return fail(err.status, {
@@ -193,7 +193,7 @@ export const actions: Actions = {
         { id: locals.user.id },
         { language, title, epubBytes },
       );
-      throw redirect(303, `/texts/${created.text.id}`);
+      throw redirect(303, `/reader/${created.text.id}`);
     } catch (err) {
       if (err instanceof TextValidationError) {
         return fail(err.status, {

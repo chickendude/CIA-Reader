@@ -92,7 +92,7 @@
     <ul class="cards">
       {#each data.page.cards as card (card.id)}
         <li>
-          <a class="card" href={`/texts/${card.id}`}>
+          <a class="card" href={`/reader/${card.id}`}>
             <div class="card-title">{card.title}</div>
             <div class="card-meta">
               <span class="badge">{card.language}</span>
