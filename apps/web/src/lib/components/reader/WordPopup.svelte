@@ -21,7 +21,7 @@
   accessibility pass can wire focus management without restructuring.
 -->
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, untrack } from 'svelte';
   import type { ServerToken } from './types.js';
 
   type Provenance =
@@ -57,7 +57,7 @@
     anchorRect,
     isOwner,
     onClose,
-    onMarkStatus,
+    onStatusChange,
   }: {
     token: ServerToken;
     /** DOMRect of the clicked token's bounding box, used to anchor
@@ -65,14 +65,26 @@
     anchorRect: { top: number; left: number; bottom: number; right: number };
     isOwner: boolean;
     onClose: () => void;
-    /** T-5.5 wires this to PATCH /api/v1/known-lemmas; T-5.4 just
-     *  emits the intent. */
-    onMarkStatus?: (status: 'learning' | 'known' | 'ignored') => void;
+    /** Called after a successful PATCH so the parent can update its
+     *  in-memory token list (rerunning the loader would lose scroll
+     *  position). */
+    onStatusChange?: (
+      lemmaId: string,
+      status: 'unknown' | 'learning' | 'known' | 'ignored',
+    ) => void;
   } = $props();
 
   let payload = $state<LemmaPayload | null>(null);
   let loadError = $state<string | null>(null);
   let showAlternates = $state(false);
+  // Optimistic mirror of the token's status — flips immediately when
+  // the user picks Learning / Known / Ignored, then reverts if the
+  // server write fails. Initialised once via untrack so Svelte 5
+  // doesn't flag the prop read.
+  let optimisticStatus = $state<'unknown' | 'learning' | 'known' | 'ignored'>(
+    untrack(() => token.status),
+  );
+  let writeError = $state<string | null>(null);
 
   // Position state — set after mount once we know our own size.
   let popupEl: HTMLElement | null = $state(null);
@@ -142,6 +154,33 @@
     const entries = Object.entries(features);
     if (entries.length === 0) return '';
     return entries.map(([k, v]) => `${k}: ${v}`).join(' · ');
+  }
+
+  async function markStatus(
+    status: 'unknown' | 'learning' | 'known' | 'ignored',
+  ) {
+    if (!token.lemmaId) return;
+    const lemmaId = token.lemmaId;
+    const previous = optimisticStatus;
+    // Optimistic flip — the user sees the change before the wire
+    // settles.
+    optimisticStatus = status;
+    writeError = null;
+    try {
+      const res = await fetch(`/api/v1/me/known-lemmas/${lemmaId}`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ status }),
+      });
+      if (!res.ok) {
+        throw new Error(`PATCH failed: ${res.status}`);
+      }
+      onStatusChange?.(lemmaId, status);
+    } catch (e) {
+      // Revert on failure so the user knows something went wrong.
+      optimisticStatus = previous;
+      writeError = (e as Error).message;
+    }
   }
 </script>
 
@@ -214,26 +253,29 @@
     <div class="status-row" role="group" aria-label="Mark status">
       <button
         type="button"
-        class:active={token.status === 'learning'}
-        onclick={() => onMarkStatus?.('learning')}
+        class:active={optimisticStatus === 'learning'}
+        onclick={() => markStatus('learning')}
       >
         Learning
       </button>
       <button
         type="button"
-        class:active={token.status === 'known'}
-        onclick={() => onMarkStatus?.('known')}
+        class:active={optimisticStatus === 'known'}
+        onclick={() => markStatus('known')}
       >
         Known
       </button>
       <button
         type="button"
-        class:active={token.status === 'ignored'}
-        onclick={() => onMarkStatus?.('ignored')}
+        class:active={optimisticStatus === 'ignored'}
+        onclick={() => markStatus('ignored')}
       >
         Ignored
       </button>
     </div>
+    {#if writeError}
+      <p class="err small">Could not save: {writeError}</p>
+    {/if}
   {/if}
 
   {#if token.isAmbiguous}

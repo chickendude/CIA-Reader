@@ -152,6 +152,13 @@
     activeToken = null;
     activeRect = null;
   }
+
+  let statusOverrides = $state(new Map<string, ServerToken['status']>());
+  function onStatusChange(lemmaId: string, status: ServerToken['status']) {
+    const next = new Map(statusOverrides);
+    next.set(lemmaId, status);
+    statusOverrides = next;
+  }
 </script>
 
 <div class="reader-scroll" data-mode="paged-scroll">
@@ -202,6 +209,7 @@
     anchorRect={activeRect}
     {isOwner}
     onClose={closePopup}
+    {onStatusChange}
   />
 {/if}
 
