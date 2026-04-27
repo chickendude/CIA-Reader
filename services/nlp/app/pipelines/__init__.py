@@ -68,7 +68,14 @@ def get_pipeline(language_code: str) -> Pipeline:
     pipeline_id = LANGUAGES[language_code].pipeline_id
     if pipeline_id not in _PIPELINE_CACHE:
         if _use_stub_pipelines():
-            _PIPELINE_CACHE[pipeline_id] = StubPipeline()
+            # Per-language stub instance so the pipeline knows what
+            # script + romanization scheme to use when generating
+            # the optional roman layer (T-2.5).
+            descriptor = LANGUAGES[language_code]
+            _PIPELINE_CACHE[pipeline_id] = StubPipeline(
+                script=descriptor.script,
+                roman_scheme=descriptor.default_romanization,
+            )
         else:
             factory = _PIPELINE_FACTORIES.get(pipeline_id, StubPipeline)
             _PIPELINE_CACHE[pipeline_id] = factory()

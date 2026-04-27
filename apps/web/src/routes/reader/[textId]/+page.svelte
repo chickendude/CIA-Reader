@@ -15,6 +15,19 @@
   let liveStatus = $state(untrack(() => data.text.status));
   let liveError = $state<string | null>(null);
 
+  // Romanization is a pure render flag — the token rows already carry
+  // romanizations (T-2.5), the toggle just decides whether to render
+  // <ruby> spans. Keeping it as local client state means the toggle
+  // doesn't reload the page (no scroll-to-top, no chapter re-fetch).
+  // Initial value still comes from the URL so a deep link with
+  // `?roman=1` opens with romanization on.
+  let showRomanization = $state(untrack(() => data.showRomanization));
+  // Re-sync if the loader hands us a new initial value (e.g. user
+  // navigated to a different text that has its own URL state).
+  $effect(() => {
+    showRomanization = data.showRomanization;
+  });
+
   function shouldPoll(s: typeof data.text.status): boolean {
     return s === 'pending' || s === 'processing';
   }
@@ -32,20 +45,23 @@
     const params = new URLSearchParams();
     params.set('mode', mode);
     if (data.anchor.chapterIdx) params.set('chapter', String(data.anchor.chapterIdx));
-    if (data.showRomanization) params.set('roman', '1');
+    if (showRomanization) params.set('roman', '1');
     void goto(`/reader/${data.text.id}?${params.toString()}`, {
       keepFocus: true,
     });
   }
 
   function toggleRomanization() {
-    const params = new URLSearchParams();
-    params.set('mode', data.mode);
-    if (data.anchor.chapterIdx) params.set('chapter', String(data.anchor.chapterIdx));
-    if (!data.showRomanization) params.set('roman', '1');
-    void goto(`/reader/${data.text.id}?${params.toString()}`, {
-      keepFocus: true,
-    });
+    showRomanization = !showRomanization;
+    // Mirror the new state into the URL so a refresh / share keeps
+    // the toggle on, but `replaceState: true` + `noScroll: true`
+    // means the address bar updates in place — no rerun of the
+    // loader, no chapter refetch, no scroll jump.
+    if (typeof window === 'undefined') return;
+    const url = new URL(window.location.href);
+    if (showRomanization) url.searchParams.set('roman', '1');
+    else url.searchParams.delete('roman');
+    window.history.replaceState(window.history.state, '', url.toString());
   }
 
   // T-5.6 progress writer. Only owners get one — anonymous viewers
@@ -179,9 +195,9 @@
       <button
         type="button"
         class="roman-toggle"
-        class:active={data.showRomanization}
+        class:active={showRomanization}
         onclick={toggleRomanization}
-        aria-pressed={data.showRomanization}
+        aria-pressed={showRomanization}
       >
         Show romanization
       </button>
@@ -197,21 +213,21 @@
       chapters={data.chapters}
       chapterIdx={data.anchor.chapterIdx}
       textId={data.text.id}
-      showRomanization={data.showRomanization}
+      {showRomanization}
       isOwner={data.isOwner}
     />
   {:else if data.mode === 'paged_scroll'}
     <ReaderScroll
       chapters={data.chapters}
       chapterIdx={data.anchor.chapterIdx}
-      showRomanization={data.showRomanization}
+      {showRomanization}
       isOwner={data.isOwner}
     />
   {:else}
     <ReaderContinuous
       chapters={data.chapters}
       initialChapterIdx={data.anchor.chapterIdx}
-      showRomanization={data.showRomanization}
+      {showRomanization}
       isOwner={data.isOwner}
     />
   {/if}

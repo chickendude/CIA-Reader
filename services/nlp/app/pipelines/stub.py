@@ -7,6 +7,10 @@ layout: word tokens get one top-K candidate (lemma = surface, OOV
 non-word tokens whose surface is the literal text. The reader renders
 non-word tokens as plain text, so spaces + paragraph breaks survive.
 
+Word tokens carry an ISO-15919 romanization computed via
+:mod:`app.romanize`, so the reader's "Show romanization" toggle has
+something to display even before real Stanza models are wired up.
+
 Kept separate from :mod:`app.main` so that T-2.2 / T-2.3 / T-2.3a can
 plug real Stanza / IndicNLP models in by swapping the registry entry in
 :mod:`app.pipelines.__init__` — no changes to the HTTP layer.
@@ -16,6 +20,7 @@ from __future__ import annotations
 
 import unicodedata
 
+from app.romanize import UnsupportedScriptError, to_roman
 from app.schemas import LemmaCandidate, Token
 
 from .base import Pipeline, PipelineResult
@@ -36,10 +41,24 @@ class StubPipeline(Pipeline):
     """Whitespace-split, surface-as-lemma, everything OOV.
 
     Preserves the original whitespace + punctuation as non-word tokens
-    so the reader can render the original layout faithfully.
+    so the reader can render the original layout faithfully. When
+    the registry hands us a script + scheme (the per-language stubs
+    in :mod:`app.pipelines` do), every word token also carries a
+    romanization via :func:`app.romanize.to_roman`. A bare
+    ``StubPipeline()`` (no args) skips romanization, matching the
+    original test fixtures.
     """
 
     pipeline_id = "stub"
+
+    def __init__(
+        self,
+        *,
+        script: str | None = None,
+        roman_scheme: str | None = None,
+    ) -> None:
+        self._script = script
+        self._roman_scheme = roman_scheme
 
     def process(self, text: str) -> PipelineResult:
         if not text:
@@ -66,8 +85,21 @@ class StubPipeline(Pipeline):
         tokens.append(self._make_token(idx, text[run_start:], run_is_word))
         return PipelineResult(pipeline_id=self.pipeline_id, tokens=tokens)
 
-    @staticmethod
-    def _make_token(idx: int, surface: str, is_word: bool) -> Token:
+    def _romanize(self, surface: str) -> str | None:
+        if not self._script or not self._roman_scheme:
+            return None
+        try:
+            return to_roman(
+                surface,
+                from_script=self._script,
+                to_scheme=self._roman_scheme,
+            )
+        except UnsupportedScriptError:
+            # The registry passed a script we don't yet have a
+            # romanizer entry for. Better to skip than to 500.
+            return None
+
+    def _make_token(self, idx: int, surface: str, is_word: bool) -> Token:
         if is_word:
             return Token(
                 idx=idx,
@@ -78,7 +110,7 @@ class StubPipeline(Pipeline):
                 ],
                 is_ambiguous=False,
                 is_oov=True,
-                romanization=None,
+                romanization=self._romanize(surface),
             )
         return Token(
             idx=idx,
