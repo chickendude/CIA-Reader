@@ -7,6 +7,11 @@ dependencies = [
   "fastapi>=0.115.0",
   "uvicorn[standard]>=0.30.6",
   "pydantic>=2.9.0",
+  # Pure-Python, small dep — used both in tests and in production for
+  # precomputing reader romanizations (T-2.5) and converting user input
+  # from the script-aware editor (T-6.2a). Kept as a base dep rather
+  # than under [models] so CI exercises it directly.
+  "indic-transliteration>=2.3.68",
 ]
 
 [project.optional-dependencies]
