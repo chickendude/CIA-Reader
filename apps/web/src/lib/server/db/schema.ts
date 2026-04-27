@@ -444,6 +444,13 @@ export type LemmaEditChangePayload = {
   splitInto?: Record<string, unknown>;
   splitFrom?: Record<string, unknown>;
   direction?: 'winner' | 'loser' | 'source' | 'created';
+  // T-3.9 bulk-tool discriminators. The history viewer uses these to
+  // group "ran one CSV" / "promoted N rows" / "rebranded an attribution"
+  // into a single visible action even though each touched row writes
+  // its own audit entry.
+  bulkImportRow?: number;
+  bulkPromote?: boolean;
+  bulkAttribution?: boolean;
 };
 
 export type User = InferSelectModel<typeof users>;
