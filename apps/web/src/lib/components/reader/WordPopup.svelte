@@ -21,7 +21,7 @@
   accessibility pass can wire focus management without restructuring.
 -->
 <script lang="ts">
-  import { onMount, untrack } from 'svelte';
+  import { untrack } from 'svelte';
   import type { ServerToken } from './types.js';
 
   type Provenance =
@@ -77,56 +77,80 @@
   let payload = $state<LemmaPayload | null>(null);
   let loadError = $state<string | null>(null);
   let showAlternates = $state(false);
-  // Optimistic mirror of the token's status — flips immediately when
-  // the user picks Learning / Known / Ignored, then reverts if the
-  // server write fails. Initialised once via untrack so Svelte 5
-  // doesn't flag the prop read.
   let optimisticStatus = $state<'unknown' | 'learning' | 'known' | 'ignored'>(
     untrack(() => token.status),
   );
   let writeError = $state<string | null>(null);
-
-  // Position state — set after mount once we know our own size.
   let popupEl: HTMLElement | null = $state(null);
-  let style = $state('');
 
-  onMount(async () => {
-    if (token.lemmaId) {
+  // Compute an initial positioned style synchronously so the popup
+  // appears at the click site on the very first paint — without it,
+  // the popup briefly renders inline before onMount's reposition
+  // call moves it to fixed coordinates.
+  function computeStyle(rect: typeof anchorRect, measured?: HTMLElement | null): string {
+    const POPUP_W = measured?.offsetWidth || 320;
+    const POPUP_H = measured?.offsetHeight || 240;
+    const MARGIN = 8;
+    const vw = typeof window !== 'undefined' ? window.innerWidth : 1024;
+    const vh = typeof window !== 'undefined' ? window.innerHeight : 768;
+    let top = rect.bottom + MARGIN;
+    let left = rect.left;
+    if (top + POPUP_H + MARGIN > vh) {
+      top = Math.max(MARGIN, rect.top - POPUP_H - MARGIN);
+    }
+    if (left + POPUP_W + MARGIN > vw) {
+      left = Math.max(MARGIN, vw - POPUP_W - MARGIN);
+    }
+    if (left < MARGIN) left = MARGIN;
+    return `position: fixed; top: ${top}px; left: ${left}px; width: ${POPUP_W}px;`;
+  }
+
+  // Position is a `$derived` of the anchor + measured popup, so it
+  // recalculates whenever the token changes (parent passes a new
+  // anchorRect) or the popup grows after content loads. The
+  // `payload`/`loadError` deps make sure measurement re-runs after
+  // the fetch resolves.
+  const style = $derived.by(() => {
+    void payload;
+    void loadError;
+    return computeStyle(anchorRect, popupEl);
+  });
+
+  // Re-fetch translations whenever the token prop changes. `$effect`
+  // runs the body each time `token` (and thus `token.id` / `lemmaId`)
+  // changes — which happens when the parent rebinds the popup to a
+  // different word — so navigating word-to-word loads the new
+  // entry instead of leaving the old one stuck.
+  $effect(() => {
+    const t = token;
+    optimisticStatus = t.status;
+    if (!t.lemmaId) {
+      payload = null;
+      loadError = null;
+      return;
+    }
+    let cancelled = false;
+    payload = null;
+    loadError = null;
+    void (async () => {
       try {
-        const res = await fetch(
-          `/api/v1/lemmas/${token.lemmaId}/translations`,
-        );
+        const res = await fetch(`/api/v1/lemmas/${t.lemmaId}/translations`);
+        if (cancelled) return;
         if (res.ok) {
           payload = (await res.json()) as LemmaPayload;
         } else {
           loadError = `Could not load translations (${res.status})`;
         }
       } catch (e) {
-        loadError = `Network error: ${(e as Error).message}`;
+        if (!cancelled) {
+          loadError = `Network error: ${(e as Error).message}`;
+        }
       }
-    }
-    repositionToFitViewport();
+    })();
+    return () => {
+      cancelled = true;
+    };
   });
-
-  function repositionToFitViewport() {
-    if (!popupEl) return;
-    const POPUP_W = popupEl.offsetWidth || 320;
-    const POPUP_H = popupEl.offsetHeight || 240;
-    const MARGIN = 8;
-    const vw = window.innerWidth;
-    const vh = window.innerHeight;
-    let top = anchorRect.bottom + MARGIN;
-    let left = anchorRect.left;
-    if (top + POPUP_H + MARGIN > vh) {
-      // Not enough room below — flip above the anchor.
-      top = Math.max(MARGIN, anchorRect.top - POPUP_H - MARGIN);
-    }
-    if (left + POPUP_W + MARGIN > vw) {
-      left = Math.max(MARGIN, vw - POPUP_W - MARGIN);
-    }
-    if (left < MARGIN) left = MARGIN;
-    style = `position: fixed; top: ${top}px; left: ${left}px; width: ${POPUP_W}px;`;
-  }
 
   function handleKeydown(e: KeyboardEvent) {
     if (e.key === 'Escape') {
@@ -169,6 +193,68 @@
     const entries = Object.entries(features);
     if (entries.length === 0) return '';
     return entries.map(([k, v]) => `${k}: ${v}`).join(' · ');
+  }
+
+  // ---- Add-translation flow ---------------------------------------
+  // Lets the reader stash their own definition for any token whose
+  // lemma is in the dictionary. Backed by POST /api/v1/translations
+  // (T-3.2). The new row lands in the `personal` bucket on the next
+  // render so the user sees it pinned to the top of the popup.
+  let showAddForm = $state(false);
+  let newTranslationBody = $state('');
+  let savingTranslation = $state(false);
+  let addError = $state<string | null>(null);
+
+  async function submitNewTranslation() {
+    if (!token.lemmaId) return;
+    const trimmed = newTranslationBody.trim();
+    if (trimmed.length === 0) {
+      addError = 'Translation cannot be empty.';
+      return;
+    }
+    savingTranslation = true;
+    addError = null;
+    try {
+      const res = await fetch('/api/v1/translations', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          lemmaId: token.lemmaId,
+          body: trimmed,
+          targetLanguage: 'en',
+        }),
+      });
+      if (!res.ok) {
+        const text = await res.text().catch(() => '');
+        throw new Error(text || `POST failed: ${res.status}`);
+      }
+      const created = (await res.json()) as {
+        translation: {
+          id: string;
+          body: string;
+          targetLanguage: string;
+          sourceAttribution: string | null;
+          provenance: Provenance;
+        };
+      };
+      // Optimistically prepend the new row to the personal bucket
+      // so the user sees it without re-fetching.
+      if (payload) {
+        payload = {
+          ...payload,
+          translations: {
+            ...payload.translations,
+            personal: [created.translation, ...payload.translations.personal],
+          },
+        };
+      }
+      newTranslationBody = '';
+      showAddForm = false;
+    } catch (e) {
+      addError = (e as Error).message;
+    } finally {
+      savingTranslation = false;
+    }
   }
 
   async function markStatus(
@@ -262,6 +348,56 @@
         <li class="muted">No translations yet.</li>
       {/if}
     </ul>
+
+    {#if isOwner}
+      {#if showAddForm}
+        <form
+          class="add-form"
+          onsubmit={(e) => {
+            e.preventDefault();
+            void submitNewTranslation();
+          }}
+        >
+          <textarea
+            bind:value={newTranslationBody}
+            placeholder="Your translation in English"
+            rows="2"
+            maxlength="500"
+            disabled={savingTranslation}
+          ></textarea>
+          {#if addError}
+            <p class="err small">{addError}</p>
+          {/if}
+          <div class="add-row">
+            <button type="submit" disabled={savingTranslation}>
+              {savingTranslation ? 'Saving…' : 'Save'}
+            </button>
+            <button
+              type="button"
+              class="ghost"
+              disabled={savingTranslation}
+              onclick={() => {
+                showAddForm = false;
+                newTranslationBody = '';
+                addError = null;
+              }}
+            >
+              Cancel
+            </button>
+          </div>
+        </form>
+      {:else}
+        <button
+          type="button"
+          class="add-toggle"
+          onclick={() => {
+            showAddForm = true;
+          }}
+        >
+          + Add my translation
+        </button>
+      {/if}
+    {/if}
   {/if}
 
   {#if isOwner && token.lemmaId}
@@ -443,5 +579,64 @@
     font-size: 0.8rem;
     color: var(--color-fg-muted);
     cursor: pointer;
+  }
+  .add-toggle {
+    margin-top: 0.5rem;
+    background: transparent;
+    border: 1px dashed var(--color-border);
+    border-radius: 6px;
+    padding: 0.4rem 0.7rem;
+    font: inherit;
+    font-size: 0.8rem;
+    color: var(--color-accent);
+    cursor: pointer;
+    width: 100%;
+    text-align: left;
+  }
+  .add-toggle:hover {
+    border-color: var(--color-accent);
+    background: color-mix(in srgb, var(--color-accent) 6%, transparent);
+  }
+  .add-form {
+    margin-top: 0.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+  }
+  .add-form textarea {
+    width: 100%;
+    padding: 0.5rem 0.6rem;
+    font: inherit;
+    font-size: 0.9rem;
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+    background: var(--color-bg);
+    color: var(--color-fg);
+    resize: vertical;
+  }
+  .add-row {
+    display: flex;
+    gap: 0.4rem;
+  }
+  .add-row button {
+    flex: 1;
+    padding: 0.4rem 0.6rem;
+    font: inherit;
+    font-size: 0.85rem;
+    background: var(--color-accent);
+    color: var(--color-accent-fg, #fff);
+    border: 0;
+    border-radius: 6px;
+    cursor: pointer;
+    min-height: 36px;
+  }
+  .add-row button.ghost {
+    background: transparent;
+    color: var(--color-fg);
+    border: 1px solid var(--color-border);
+  }
+  .add-row button[disabled] {
+    opacity: 0.5;
+    cursor: not-allowed;
   }
 </style>

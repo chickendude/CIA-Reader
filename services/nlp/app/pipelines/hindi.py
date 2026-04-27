@@ -21,6 +21,11 @@ UD POS isn't punctuation / symbol / number / proper-noun, we treat it
 as OOV. That matches the plan's "Stanza returns surface + no dictionary
 match" definition closely enough for MVP — real dictionary attachment
 happens in M3 and will refine ``is_oov`` at that point.
+
+Lemma overrides for finite copulas (``है`` → ``होना`` and friends)
+land via the ``form_lemma_overrides`` table (T-2.7) — the dispatcher
+consults that map BEFORE accepting Stanza's top candidate, so this
+module stays focused on the raw UD output.
 """
 
 from __future__ import annotations
@@ -48,6 +53,9 @@ def build_hindi_pipeline() -> HindiPipeline:  # pragma: no cover
     """
     import stanza
 
+    from app.languages import LANGUAGES
+
+    desc = LANGUAGES["hi"]
     nlp = stanza.Pipeline(
         lang="hi",
         processors="tokenize,pos,lemma",
@@ -55,7 +63,11 @@ def build_hindi_pipeline() -> HindiPipeline:  # pragma: no cover
         download_method=None,
         verbose=False,
     )
-    return HindiPipeline(nlp=nlp)
+    return HindiPipeline(
+        nlp=nlp,
+        script=desc.script,
+        roman_scheme=desc.default_romanization,
+    )
 
 
 __all__ = ["HindiPipeline", "build_hindi_pipeline"]

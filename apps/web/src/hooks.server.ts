@@ -2,6 +2,15 @@ import { redirect, type Handle } from '@sveltejs/kit';
 import { resolveUser } from '$lib/server/auth/require-user.js';
 import { shouldRedirectToOnboarding } from '$lib/server/onboarding.js';
 import { THEME_COOKIE, isThemePreference, resolveTheme } from '$lib/theme/index.js';
+import { setJobDispatcher } from '$lib/server/texts/jobs.js';
+import { inProcessDispatcher } from '$lib/server/texts/in-process-dispatcher.js';
+
+// Register the in-process NLP dispatcher at module load. Until
+// services/nlp's arq worker is deployed (T-13.x), the SvelteKit
+// process does the NLP work itself — fire-and-forget per upload —
+// and writes tokens back via the same JobDispatcher seam the arq
+// worker will plug into later.
+setJobDispatcher(inProcessDispatcher);
 
 /**
  * Server-side theme resolution. Mirror of the pre-paint script in app.html so

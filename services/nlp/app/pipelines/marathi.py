@@ -75,8 +75,10 @@ class MarathiPipeline(StanzaUDPipeline):
         nlp: StanzaLike,
         *,
         fallback_tokenizer: MarathiTokenizer,
+        script: str | None = None,
+        roman_scheme: str | None = None,
     ) -> None:
-        super().__init__(nlp=nlp)
+        super().__init__(nlp=nlp, script=script, roman_scheme=roman_scheme)
         self._fallback_tokenizer = fallback_tokenizer
 
     def process(self, text: str) -> PipelineResult:
@@ -111,6 +113,9 @@ def build_marathi_pipeline() -> MarathiPipeline:  # pragma: no cover
     """
     import stanza
 
+    from app.languages import LANGUAGES
+
+    desc = LANGUAGES["mr"]
     nlp = stanza.Pipeline(
         lang="mr",
         processors="tokenize,pos,lemma",
@@ -121,6 +126,8 @@ def build_marathi_pipeline() -> MarathiPipeline:  # pragma: no cover
     return MarathiPipeline(
         nlp=nlp,
         fallback_tokenizer=_indicnlp_marathi_tokenize,
+        script=desc.script,
+        roman_scheme=desc.default_romanization,
     )
 
 

@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from typing import Any, Protocol
 
+from app.romanize import UnsupportedScriptError, to_roman
 from app.schemas import LemmaCandidate, Token
 
 from .base import Pipeline, PipelineResult
@@ -66,25 +67,60 @@ def parse_feats(feats: str | None) -> dict[str, str]:
 
 
 class StanzaUDPipeline(Pipeline):
-    """Base class that turns a Stanza doc into our :class:`Token` list."""
+    """Base class that turns a Stanza doc into our :class:`Token` list.
 
-    # Subclasses set their own canonical pipeline_id, used to echo back
-    # which implementation produced the parse.
+    Two outputs the reader cares about that the raw Stanza word stream
+    doesn't carry:
+
+    * **Whitespace + paragraph tokens.** Stanza emits one Word per
+      lexical token; nothing for the spaces between them. The reader
+      needs `is_word=False` tokens for inter-word whitespace so the
+      original layout (and paragraph breaks) renders. We use Stanza's
+      `start_char` / `end_char` offsets to walk the gaps in the
+      original input.
+    * **Romanization.** When the registry hands us a `script` +
+      `roman_scheme` (the per-language factory does this from the
+      shared language descriptor), every word token gets the optional
+      ISO-15919 / IAST / etc. layer the reader's "Show romanization"
+      toggle wants.
+    """
+
     pipeline_id: str
 
-    def __init__(self, nlp: StanzaLike) -> None:
+    def __init__(
+        self,
+        nlp: StanzaLike,
+        *,
+        script: str | None = None,
+        roman_scheme: str | None = None,
+    ) -> None:
         self._nlp = nlp
+        self._script = script
+        self._roman_scheme = roman_scheme
 
     def process(self, text: str) -> PipelineResult:
         doc = self._nlp(text)
-        tokens = list(self._tokens_from_doc(doc))
+        tokens = list(self._tokens_from_doc(doc, text))
         return PipelineResult(pipeline_id=self.pipeline_id, tokens=tokens)
 
-    def _tokens_from_doc(self, doc: Any) -> list[Token]:
+    def _tokens_from_doc(self, doc: Any, text: str) -> list[Token]:
+        # Real Stanza Words always carry `start_char` / `end_char`;
+        # synthetic Word fixtures in unit tests don't. Detect once
+        # up-front so test fixtures still produce identical output
+        # without manually adding offsets to every fake Word.
+        has_offsets = self._doc_has_offsets(doc)
         tokens: list[Token] = []
         idx = 0
+        cursor = 0
         for sentence in doc.sentences:
             for word in sentence.words:
+                start = getattr(word, "start_char", None)
+                end = getattr(word, "end_char", None)
+                if has_offsets and start is not None and start > cursor:
+                    gap = text[cursor:start]
+                    if gap:
+                        tokens.append(self._make_gap_token(idx, gap))
+                        idx += 1
                 surface = word.text
                 lemma = word.lemma or surface
                 upos = (word.upos or "X").upper()
@@ -106,11 +142,54 @@ class StanzaUDPipeline(Pipeline):
                         ],
                         is_ambiguous=False,
                         is_oov=is_oov,
-                        romanization=None,
+                        romanization=self._romanize(surface) if is_word else None,
                     )
                 )
                 idx += 1
+                if has_offsets and end is not None:
+                    cursor = end
+        # Trailing whitespace after the last word — only when we
+        # tracked offsets, otherwise the entire input would be
+        # emitted as a fake "gap" after the words.
+        if has_offsets and cursor < len(text):
+            tail = text[cursor:]
+            if tail:
+                tokens.append(self._make_gap_token(idx, tail))
         return tokens
+
+    @staticmethod
+    def _doc_has_offsets(doc: Any) -> bool:
+        for sentence in getattr(doc, "sentences", ()):
+            for word in getattr(sentence, "words", ()):
+                start = getattr(word, "start_char", None)
+                end = getattr(word, "end_char", None)
+                return start is not None and end is not None
+        return False
+
+    def _make_gap_token(self, idx: int, surface: str) -> Token:
+        """Inter-word run of whitespace / punctuation Stanza didn't
+        emit a Word for. Renders as plain text in the reader."""
+        return Token(
+            idx=idx,
+            surface=surface,
+            is_word=False,
+            candidates=[],
+            is_ambiguous=False,
+            is_oov=False,
+            romanization=None,
+        )
+
+    def _romanize(self, surface: str) -> str | None:
+        if not self._script or not self._roman_scheme:
+            return None
+        try:
+            return to_roman(
+                surface,
+                from_script=self._script,
+                to_scheme=self._roman_scheme,
+            )
+        except UnsupportedScriptError:
+            return None
 
 
 __all__ = [

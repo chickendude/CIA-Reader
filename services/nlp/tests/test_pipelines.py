@@ -51,13 +51,43 @@ def test_get_pipeline_rejects_unsupported_language():
         get_pipeline("ja")
 
 
-def test_stub_pipeline_whitespace_tokenizes_and_marks_oov():
+def test_stub_pipeline_emits_alternating_word_and_whitespace_tokens():
+    """The reader's per-token renderer wants the original whitespace
+    preserved as its own non-word token (so spaces and paragraph
+    breaks survive). The stub used to drop whitespace via
+    ``str.split``; now it walks runs and emits alternating word /
+    non-word tokens."""
     out = StubPipeline().process("नमस्ते दुनिया")
     assert isinstance(out, PipelineResult)
-    assert [t.surface for t in out.tokens] == ["नमस्ते", "दुनिया"]
-    assert all(t.is_oov for t in out.tokens), "stub must mark every token OOV"
-    assert all(len(t.candidates) == 1 for t in out.tokens)
-    assert isinstance(out.tokens[0].candidates[0], LemmaCandidate)
+    surfaces = [t.surface for t in out.tokens]
+    assert surfaces == ["नमस्ते", " ", "दुनिया"]
+    word_tokens = [t for t in out.tokens if t.is_word]
+    space_tokens = [t for t in out.tokens if not t.is_word]
+    assert len(word_tokens) == 2
+    assert len(space_tokens) == 1
+    assert all(t.is_oov for t in word_tokens), "stub must mark every word OOV"
+    assert all(len(t.candidates) == 1 for t in word_tokens)
+    assert space_tokens[0].candidates == []
+    assert isinstance(word_tokens[0].candidates[0], LemmaCandidate)
+
+
+def test_stub_pipeline_emits_romanization_when_script_known():
+    """When the registry hands the stub a script + scheme (the
+    per-language stubs in ``app.pipelines`` do, since the registry
+    knows Hindi → Deva → ISO 15919), every word token carries a
+    romanization. Bare ``StubPipeline()`` (used in unit tests) keeps
+    romanization None."""
+    bare = StubPipeline().process("नमस्ते")
+    assert bare.tokens[0].romanization is None
+
+    with_script = StubPipeline(script="Deva", roman_scheme="iso15919")
+    out = with_script.process("नमस्ते दुनिया")
+    word_tokens = [t for t in out.tokens if t.is_word]
+    assert word_tokens[0].romanization is not None
+    assert word_tokens[1].romanization is not None
+    # Spaces never get a romanization.
+    space_tokens = [t for t in out.tokens if not t.is_word]
+    assert space_tokens[0].romanization is None
 
 
 def test_stub_pipeline_returns_valid_token_shape():

@@ -724,9 +724,74 @@ export const userTextProgress = pgTable(
   }),
 );
 
+/**
+ * Form → lemma override map (T-2.7).
+ *
+ * The NLP worker's lemmatizer guesses a lemma per token. When the
+ * guess is wrong (e.g. Stanza's Hindi UD model lemmatizes ``है`` to
+ * itself instead of ``होना``), we override it from this table:
+ * the dispatcher pre-loads every override for the language at
+ * processing time and prefers the table's pick over Stanza's
+ * candidate.
+ *
+ * Two sources of rows:
+ *
+ * 1. Curator seed — high-impact treebank quirks the team hand-fixes
+ *    once and ships in a migration / seed script.
+ * 2. Crowdsourced (T-6.7) — the aggregation worker promotes
+ *    `token_corrections` to this table when ≥K distinct users have
+ *    made the same correction on a matching `(surface, context)`.
+ *
+ * `context_signature` is a sha1-16 hash of `(prev_pos, cur_pos,
+ * next_pos)` matching the worker's helper in
+ * services/nlp/app/worker/overrides.py — so the override is
+ * applied only when the surface appears in a similar POS context,
+ * preventing a homograph fix from over-applying. The empty-string
+ * value `''` is a wildcard match that ignores context — used for
+ * curator seeds where the surface is unambiguous regardless of
+ * context (the copula seeds are this case).
+ *
+ * Each row tracks `vote_count` (how many user corrections aggregated
+ * into it) + `promoted_at` / `promoted_by` for the audit trail.
+ */
+export const formLemmaOverrides = pgTable(
+  'form_lemma_overrides',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    language: language('language').notNull(),
+    surfaceNfc: text('surface_nfc').notNull(),
+    contextSignature: text('context_signature').notNull().default(''),
+    chosenLemmaId: uuid('chosen_lemma_id')
+      .notNull()
+      .references(() => lemmas.id, { onDelete: 'cascade' }),
+    voteCount: integer('vote_count').notNull().default(1),
+    promotedAt: timestamp('promoted_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    promotedBy: uuid('promoted_by').references(() => users.id, {
+      onDelete: 'set null',
+    }),
+    note: text('note'),
+  },
+  (t) => ({
+    uniqOnTriple: unique('form_lemma_overrides_lang_surface_ctx_uq').on(
+      t.language,
+      t.surfaceNfc,
+      t.contextSignature,
+    ),
+    // Hot lookup: the worker / dispatcher hits this for every word
+    // in every chapter of every text being processed.
+    lookupIdx: index('form_lemma_overrides_lookup_idx').on(
+      t.language,
+      t.surfaceNfc,
+    ),
+  }),
+);
+
 export type Text = InferSelectModel<typeof texts>;
 export type TextChapter = InferSelectModel<typeof textChapters>;
 export type NlpJob = InferSelectModel<typeof nlpJobs>;
 export type TextToken = InferSelectModel<typeof textTokens>;
 export type UserKnownLemma = InferSelectModel<typeof userKnownLemmas>;
 export type UserTextProgress = InferSelectModel<typeof userTextProgress>;
+export type FormLemmaOverride = InferSelectModel<typeof formLemmaOverrides>;

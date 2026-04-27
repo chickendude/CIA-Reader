@@ -17,6 +17,7 @@ without touching the dispatch layer.
 
 from __future__ import annotations
 
+import os
 from collections.abc import Callable
 
 from app.languages import LANGUAGES, is_supported_language
@@ -26,6 +27,17 @@ from .hindi import build_hindi_pipeline
 from .marathi import build_marathi_pipeline
 from .odia import build_odia_pipeline
 from .stub import StubPipeline
+
+
+def _use_stub_pipelines() -> bool:
+    """Dev / CI escape hatch: route every pipeline_id to StubPipeline
+    when ``NLP_USE_STUB=1``. Useful in environments without the
+    Stanza UD models installed (a 250 MB download per language).
+
+    Production sets this to 0 (the default) so the real factories
+    kick in.
+    """
+    return os.environ.get("NLP_USE_STUB", "").lower() in {"1", "true", "yes"}
 
 # Cache of instantiated pipelines keyed by pipeline_id. Building a Stanza
 # model is expensive; we want exactly one instance per pipeline_id per
@@ -55,8 +67,18 @@ def get_pipeline(language_code: str) -> Pipeline:
         raise KeyError(f"Unsupported language: {language_code!r}")
     pipeline_id = LANGUAGES[language_code].pipeline_id
     if pipeline_id not in _PIPELINE_CACHE:
-        factory = _PIPELINE_FACTORIES.get(pipeline_id, StubPipeline)
-        _PIPELINE_CACHE[pipeline_id] = factory()
+        if _use_stub_pipelines():
+            # Per-language stub instance so the pipeline knows what
+            # script + romanization scheme to use when generating
+            # the optional roman layer (T-2.5).
+            descriptor = LANGUAGES[language_code]
+            _PIPELINE_CACHE[pipeline_id] = StubPipeline(
+                script=descriptor.script,
+                roman_scheme=descriptor.default_romanization,
+            )
+        else:
+            factory = _PIPELINE_FACTORIES.get(pipeline_id, StubPipeline)
+            _PIPELINE_CACHE[pipeline_id] = factory()
     return _PIPELINE_CACHE[pipeline_id]
 
 
