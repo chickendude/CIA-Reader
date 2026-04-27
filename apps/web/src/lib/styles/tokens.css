@@ -1,0 +1,191 @@
+/*
+ * Design tokens — single source of truth for color, typography, spacing, and
+ * motion. Every component reads these via var(...); nothing should hard-code a
+ * color or a pixel value that could instead be a token. Themes are selected by
+ * the `data-theme` attribute on <html>, resolved by `src/lib/theme/index.ts`.
+ *
+ * Palette notes:
+ *  - Light surface scale climbs 0→3 (page → card → pop-up → overlay).
+ *  - Dark surface scale does the same but against the far-dark base.
+ *  - Accent is the link / primary-action hue. Reader highlight hues live in
+ *    their own family so we can later let users pick a highlight flavor
+ *    without churning the whole brand palette.
+ */
+
+:root,
+[data-theme='light'] {
+  /* Surfaces */
+  --color-bg: #ffffff;
+  --color-surface-1: #f9fafb;
+  --color-surface-2: #f3f4f6;
+  --color-surface-3: #e5e7eb;
+  --color-overlay: rgba(17, 17, 17, 0.45);
+
+  /* Foreground */
+  --color-fg: #111111;
+  --color-fg-muted: #4b5563;
+  --color-fg-subtle: #6b7280;
+
+  /* Lines + borders */
+  --color-border: #e5e7eb;
+  --color-border-strong: #d1d5db;
+
+  /* Accent */
+  --color-accent: #2563eb;
+  --color-accent-fg: #ffffff;
+  --color-accent-hover: #1d4ed8;
+
+  /* Semantic */
+  --color-success: #059669;
+  --color-danger: #dc2626;
+  --color-warning: #d97706;
+
+  /* Reader highlight hues (LingQ-style). Kept as their own family so we can
+   * expose a style picker in reader settings without touching the brand accent. */
+  --color-highlight-unknown: #fef3c7;
+  --color-highlight-unknown-fg: #78350f;
+  --color-highlight-learning: #dbeafe;
+  --color-highlight-learning-fg: #1e3a8a;
+  --color-highlight-known: transparent;
+
+  /* Code */
+  --color-code-bg: #f3f4f6;
+  --color-code-fg: #111111;
+}
+
+[data-theme='dark'] {
+  --color-bg: #0b0b0d;
+  --color-surface-1: #17171a;
+  --color-surface-2: #1f1f23;
+  --color-surface-3: #2a2a30;
+  --color-overlay: rgba(0, 0, 0, 0.65);
+
+  --color-fg: #f5f5f7;
+  --color-fg-muted: #9ca3af;
+  --color-fg-subtle: #6b7280;
+
+  --color-border: #27272a;
+  --color-border-strong: #3f3f46;
+
+  --color-accent: #60a5fa;
+  --color-accent-fg: #0b0b0d;
+  --color-accent-hover: #93c5fd;
+
+  --color-success: #34d399;
+  --color-danger: #f87171;
+  --color-warning: #fbbf24;
+
+  --color-highlight-unknown: #3b2f12;
+  --color-highlight-unknown-fg: #fde68a;
+  --color-highlight-learning: #17243f;
+  --color-highlight-learning-fg: #bfdbfe;
+  --color-highlight-known: transparent;
+
+  --color-code-bg: #18181b;
+  --color-code-fg: #f5f5f7;
+}
+
+/* Typography, spacing, radii, shadows, motion — theme-invariant.
+ * Reader font family is intentionally not here: it's per-language, chosen
+ * from the language registry in T-0.6 and stored in user_languages. */
+:root {
+  --font-ui:
+    system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --font-mono:
+    'SF Mono', ui-monospace, 'Cascadia Code', Menlo, Consolas, 'Liberation Mono', monospace;
+
+  --font-size-xs: 0.75rem;
+  --font-size-sm: 0.875rem;
+  --font-size-md: 1rem;
+  --font-size-lg: 1.125rem;
+  --font-size-xl: 1.25rem;
+  --font-size-2xl: 1.5rem;
+  --font-size-3xl: 2rem;
+
+  --line-height-tight: 1.25;
+  --line-height-normal: 1.5;
+  --line-height-relaxed: 1.7;
+
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.25rem;
+  --space-6: 1.5rem;
+  --space-8: 2rem;
+  --space-10: 2.5rem;
+  --space-12: 3rem;
+
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+  --radius-pill: 999px;
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.06);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
+  --shadow-lg: 0 12px 24px rgba(0, 0, 0, 0.12);
+
+  /* Minimum tappable target per the mobile-first requirement. */
+  --touch-target: 44px;
+
+  --duration-fast: 120ms;
+  --duration-normal: 200ms;
+  --easing-standard: cubic-bezier(0.2, 0, 0, 1);
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--color-bg);
+  color: var(--color-fg);
+  font-family: var(--font-ui);
+  font-size: var(--font-size-md);
+  line-height: var(--line-height-normal);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  min-height: 100vh;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+a {
+  color: var(--color-accent);
+}
+a:hover {
+  color: var(--color-accent-hover);
+}
+
+code {
+  background: var(--color-code-bg);
+  color: var(--color-code-fg);
+  padding: 0.1em 0.35em;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+/* Honor users who've opted out of motion — we'll add more specific overrides
+ * on animated components as they land. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
