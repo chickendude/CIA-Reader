@@ -599,6 +599,103 @@ export const nlpJobs = pgTable(
   }),
 );
 
+/**
+ * Per-token output from the NLP worker (T-2.6 / T-5.2).
+ *
+ * One row per surface token in a chapter, in reading order. The
+ * reader joins this against `user_known_lemmas` to colour known /
+ * learning / unknown words. Tokens without a `lemma_id` are
+ * punctuation, whitespace, or unresolved OOV — they render as plain
+ * text without the pop-up.
+ *
+ * `lemma_candidates` stores the top-K candidate list the pipeline
+ * returned (T-2.2's contract); `is_ambiguous` is set when 2nd-place
+ * is within the confidence threshold of the top. M6's
+ * disambiguation UX reads both.
+ */
+export const textTokens = pgTable(
+  'text_tokens',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    chapterId: uuid('chapter_id')
+      .notNull()
+      .references(() => textChapters.id, { onDelete: 'cascade' }),
+    idx: integer('idx').notNull(),
+    surface: text('surface').notNull(),
+    lemmaId: uuid('lemma_id').references(() => lemmas.id, {
+      onDelete: 'set null',
+    }),
+    lemmaCandidates: jsonb('lemma_candidates')
+      .$type<
+        Array<{
+          lemmaId: string | null;
+          features: Record<string, string>;
+          score: number;
+        }>
+      >()
+      .notNull()
+      .default([]),
+    features: jsonb('features')
+      .$type<Record<string, string>>()
+      .notNull()
+      .default({}),
+    isAmbiguous: boolean('is_ambiguous').notNull().default(false),
+    isOov: boolean('is_oov').notNull().default(false),
+    isWord: boolean('is_word').notNull().default(true),
+    sentenceIdx: integer('sentence_idx').notNull().default(0),
+    romanization: text('romanization'),
+  },
+  (t) => ({
+    chapterIdx: unique('text_tokens_chapter_idx_uq').on(t.chapterId, t.idx),
+    chapterScan: index('text_tokens_chapter_scan_idx').on(t.chapterId, t.idx),
+    lemmaIdx: index('text_tokens_lemma_idx').on(t.lemmaId),
+  }),
+);
+
+/**
+ * Per-user known-words ledger (T-5.2).
+ *
+ * Status:
+ *  - 'unknown'  — never marked. The default for any lemma the user
+ *                 hasn't touched. Stored explicitly only when we want
+ *                 a row (e.g. for an audit / "I deliberately don't
+ *                 know this"); usually represented by absence.
+ *  - 'learning' — actively encountering, want to study. Highlight
+ *                 prominently in the reader.
+ *  - 'known'    — confidently knows. Don't highlight. Counts toward
+ *                 the user's known-words stat per language.
+ *  - 'ignored'  — proper nouns / borrowings the user doesn't want to
+ *                 study. Don't highlight, don't count.
+ */
+export const knownLemmaStatus = pgEnum('known_lemma_status', [
+  'unknown',
+  'learning',
+  'known',
+  'ignored',
+]);
+
+export const userKnownLemmas = pgTable(
+  'user_known_lemmas',
+  {
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    lemmaId: uuid('lemma_id')
+      .notNull()
+      .references(() => lemmas.id, { onDelete: 'cascade' }),
+    status: knownLemmaStatus('status').notNull().default('learning'),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.userId, t.lemmaId] }),
+    userIdx: index('user_known_lemmas_user_idx').on(t.userId, t.status),
+  }),
+);
+
 export type Text = InferSelectModel<typeof texts>;
 export type TextChapter = InferSelectModel<typeof textChapters>;
 export type NlpJob = InferSelectModel<typeof nlpJobs>;
+export type TextToken = InferSelectModel<typeof textTokens>;
+export type UserKnownLemma = InferSelectModel<typeof userKnownLemmas>;

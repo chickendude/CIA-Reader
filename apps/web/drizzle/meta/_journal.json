@@ -57,6 +57,13 @@
       "when": 1777301379511,
       "tag": "0007_silly_avengers",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1777302897641,
+      "tag": "0008_eminent_pete_wisdom",
+      "breakpoints": true
     }
   ]
 }

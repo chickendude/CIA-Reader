@@ -21,6 +21,7 @@
 import { error } from '@sveltejs/kit';
 
 import { getReadableText } from '$lib/server/texts/upload.js';
+import { loadChapterTokens } from '$lib/server/texts/tokens.js';
 import type { PageServerLoad } from './$types';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -70,6 +71,20 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
   // the only source.
   const mode = readMode(url, 'continuous');
 
+  // Pre-fetch NLP tokens for every chapter that has them. Chapters
+  // without tokens fall back to client-side whitespace tokenization
+  // in the components — no NLP, no colouring, but still readable.
+  // We load all chapters here rather than just the active one
+  // because `continuous` mode renders every chapter; `page` and
+  // `paged_scroll` ignore the inactive ones, so the cost is wasted
+  // on those modes — we'll narrow it once the per-mode loader split
+  // (T-5.1a) lands.
+  const viewerId = locals.user?.id ?? null;
+  const tokenMap: Record<string, Awaited<ReturnType<typeof loadChapterTokens>>> = {};
+  for (const c of result.chapters) {
+    tokenMap[c.id] = await loadChapterTokens(c.id, viewerId);
+  }
+
   return {
     text: {
       id: result.text.id,
@@ -87,6 +102,10 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
       title: c.title,
       body: c.body,
       tokenCount: c.tokenCount,
+      // Server-rendered tokens (or null if the worker hasn't run for
+      // this chapter yet — the components fall back to a
+      // whitespace tokenizer in that case).
+      tokens: tokenMap[c.id] ?? null,
     })),
     anchor: {
       chapterIdx,
