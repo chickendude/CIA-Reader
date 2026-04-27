@@ -34,7 +34,36 @@
       keepFocus: true,
     });
   }
+
+  // T-5.7: ←/→ flip pages. We listen on the window so the user
+  // doesn't have to first click the reader to focus it. Skip
+  // when typing in a form / textarea / contenteditable element so
+  // we don't hijack legitimate input.
+  function isTypingInsideElement(target: EventTarget | null): boolean {
+    if (!(target instanceof HTMLElement)) return false;
+    const tag = target.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true;
+    if (target.isContentEditable) return true;
+    return false;
+  }
+
+  function onKeydown(e: KeyboardEvent) {
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    if (isTypingInsideElement(e.target)) return;
+    // Don't fight the popup — when it's mounted, it owns the
+    // keyboard. The popup itself stops Esc / k / l / i propagation.
+    if (document.querySelector('[data-testid="word-popup"]')) return;
+    if (e.key === 'ArrowLeft' && hasPrev) {
+      e.preventDefault();
+      go(chapterIdx - 1);
+    } else if (e.key === 'ArrowRight' && hasNext) {
+      e.preventDefault();
+      go(chapterIdx + 1);
+    }
+  }
 </script>
+
+<svelte:window onkeydown={onKeydown} />
 
 <div class="reader-page" data-mode="page">
   <header class="page-header">

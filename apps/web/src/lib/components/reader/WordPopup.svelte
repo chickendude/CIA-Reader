@@ -132,6 +132,21 @@
     if (e.key === 'Escape') {
       e.preventDefault();
       onClose();
+      return;
+    }
+    if (!isOwner || !token.lemmaId) return;
+    // T-5.7: power-user shortcuts. Only fire when modifier-free so we
+    // don't fight the browser's own shortcuts (Cmd-K, Ctrl-L, etc.).
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    if (e.key === 'k' || e.key === 'K') {
+      e.preventDefault();
+      void markStatus('known');
+    } else if (e.key === 'l' || e.key === 'L') {
+      e.preventDefault();
+      void markStatus('learning');
+    } else if (e.key === 'i' || e.key === 'I') {
+      e.preventDefault();
+      void markStatus('ignored');
     }
   }
 
