@@ -68,6 +68,12 @@ vi.mock('../db/index.js', () => ({
       textId: 'text_chapters.text_id',
       idx: 'text_chapters.idx',
     },
+    nlpJobs: {
+      id: 'nlp_jobs.id',
+      textId: 'nlp_jobs.text_id',
+      status: 'nlp_jobs.status',
+      createdAt: 'nlp_jobs.created_at',
+    },
   },
 }));
 
@@ -157,6 +163,31 @@ function chapterRow(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function jobRow(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 'job-1',
+    textId: 'text-1',
+    status: 'pending',
+    error: null,
+    startedAt: null,
+    finishedAt: null,
+    createdAt: new Date(),
+    ...overrides,
+  };
+}
+
+/** Convenience: stage all three returning() rows for a happy-path
+ * create-text call (text + chapters + nlp_jobs). */
+function stageHappyPath(opts: {
+  text?: ReturnType<typeof textRow>;
+  chapters?: ReturnType<typeof chapterRow>[];
+  job?: ReturnType<typeof jobRow>;
+} = {}) {
+  stage([opts.text ?? textRow()]);
+  stage(opts.chapters ?? [chapterRow()]);
+  stage([opts.job ?? jobRow()]);
+}
+
 beforeEach(() => {
   calls.length = 0;
   staged.length = 0;
@@ -173,9 +204,8 @@ afterEach(() => {
 // -----------------------------------------------------------------------
 
 describe('createPastedText', () => {
-  it('inserts a text + first chapter and returns both', async () => {
-    stage([textRow()]);
-    stage([chapterRow()]);
+  it('inserts a text + first chapter + nlp_jobs row, returns text/chapters', async () => {
+    stageHappyPath();
 
     const result = await createPastedText(OWNER, {
       language: 'hi',
@@ -188,7 +218,8 @@ describe('createPastedText', () => {
     const insertCalls = calls.filter(
       (c): c is Extract<Call, { kind: 'insert' }> => c.kind === 'insert',
     );
-    expect(insertCalls).toHaveLength(2);
+    // T-4.4: text + chapters + nlp_jobs.
+    expect(insertCalls).toHaveLength(3);
     expect(insertCalls[0]!.values).toMatchObject({
       ownerId: OWNER.id,
       language: 'hi',
@@ -205,12 +236,18 @@ describe('createPastedText', () => {
       idx: 0,
       title: null,
     });
+    // nlp_jobs insert (T-4.4).
+    expect(insertCalls[2]!.values).toMatchObject({
+      textId: 'text-1',
+      status: 'pending',
+    });
   });
 
   it('NFC-normalises body and flattens CRLF', async () => {
     stage([textRow()]);
     const captured = chapterRow({ body: '' });
     stage([captured]);
+    stage([jobRow()]);
 
     // Decomposed form + Windows line endings.
     const body = 'line one\r\nline two\rline three'.normalize('NFD');
@@ -287,8 +324,10 @@ describe('createPastedText', () => {
 
 describe('createTxtText', () => {
   it('inserts a single chapter for a short body', async () => {
-    stage([textRow({ sourceType: 'txt' })]);
-    stage([chapterRow({ idx: 0 })]);
+    stageHappyPath({
+      text: textRow({ sourceType: 'txt' }),
+      chapters: [chapterRow({ idx: 0 })],
+    });
 
     const result = await createTxtText(OWNER, {
       language: 'hi',
@@ -313,6 +352,7 @@ describe('createTxtText', () => {
       chapterRow({ id: 'c1', idx: 1 }),
       chapterRow({ id: 'c2', idx: 2 }),
     ]);
+    stage([jobRow()]);
 
     const body = ['# One', 'first chapter.', '---', '# Two', 'second.', '---', 'third.'].join(
       '\n',
@@ -351,8 +391,10 @@ describe('createTxtText', () => {
   });
 
   it('accepts a body the paste path would reject (between paste-cap and txt-cap)', async () => {
-    stage([textRow({ sourceType: 'txt' })]);
-    stage([chapterRow({ idx: 0 })]);
+    stageHappyPath({
+      text: textRow({ sourceType: 'txt' }),
+      chapters: [chapterRow({ idx: 0 })],
+    });
     // Build a body just over the paste cap but well under the .txt cap.
     const oversized = 'a'.repeat(MAX_PASTE_BYTES + 100);
     await createTxtText(OWNER, {
@@ -375,6 +417,7 @@ describe('createEpubText', () => {
       chapterRow({ id: 'c0', idx: 0, body: 'one body.' }),
       chapterRow({ id: 'c1', idx: 1, body: 'two body.' }),
     ]);
+    stage([jobRow()]);
 
     const epubBytes = await buildFixtureEpub([
       {

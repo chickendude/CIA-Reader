@@ -556,5 +556,49 @@ export type Translation = InferSelectModel<typeof translations>;
 export type DictionaryImport = InferSelectModel<typeof dictionaryImports>;
 export type CuratorLanguage = InferSelectModel<typeof curatorLanguages>;
 export type LemmaEditHistoryEntry = InferSelectModel<typeof lemmaEditHistory>;
+/**
+ * NLP job bookkeeping (T-4.4).
+ *
+ * One row per "process this text" job. Inserted by the upload service
+ * right after the `texts` row + chapters land; the NLP worker (T-2.6)
+ * consumes from a Redis queue and writes back to this table when it
+ * picks the job up, finishes successfully, or hits an error.
+ *
+ * Why a separate table from `texts.status`:
+ *  - A text can be re-processed (T-6.8 admin re-run) without dropping
+ *    the original audit trail; a new `nlp_jobs` row records the
+ *    second run while the previous one stays in history.
+ *  - Errors are captured per-job, not per-text — useful when the
+ *    second attempt succeeds.
+ *  - The web UI's status badge reads from `texts.status`; this table
+ *    drives admin/monitoring views.
+ */
+export const nlpJobStatus = pgEnum('nlp_job_status', [
+  'pending',
+  'processing',
+  'completed',
+  'failed',
+]);
+
+export const nlpJobs = pgTable(
+  'nlp_jobs',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    textId: uuid('text_id')
+      .notNull()
+      .references(() => texts.id, { onDelete: 'cascade' }),
+    status: nlpJobStatus('status').notNull().default('pending'),
+    error: text('error'),
+    startedAt: timestamp('started_at', { withTimezone: true }),
+    finishedAt: timestamp('finished_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    textIdx: index('nlp_jobs_text_idx').on(t.textId, t.createdAt),
+    statusIdx: index('nlp_jobs_status_idx').on(t.status),
+  }),
+);
+
 export type Text = InferSelectModel<typeof texts>;
 export type TextChapter = InferSelectModel<typeof textChapters>;
+export type NlpJob = InferSelectModel<typeof nlpJobs>;

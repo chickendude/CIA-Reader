@@ -34,6 +34,7 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
       language: result.text.language,
       sourceType: result.text.sourceType,
       status: result.text.status,
+      statusError: result.text.statusError,
       visibility: result.text.visibility,
       createdAt: result.text.createdAt,
     },
