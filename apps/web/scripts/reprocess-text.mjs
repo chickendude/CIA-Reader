@@ -87,6 +87,21 @@ async function main() {
     byHeadword.get(c.lemma) ??
     null;
 
+  // T-2.7 form_lemma_overrides — wildcard rows pre-loaded.
+  const overrideRows = await fetchAll(
+    "SELECT surface_nfc, chosen_lemma_id FROM form_lemma_overrides WHERE language = $1 AND context_signature = ''",
+    text.language,
+  );
+  const overridesBySurface = new Map();
+  for (const r of overrideRows) {
+    if (!overridesBySurface.has(r.surface_nfc)) {
+      overridesBySurface.set(r.surface_nfc, r.chosen_lemma_id);
+    }
+  }
+  console.log(
+    `[reprocess] form_lemma_overrides loaded: ${overridesBySurface.size} surfaces`,
+  );
+
   const SCRIPT_FOR = { hi: 'Deva', mr: 'Deva', or: 'Orya' };
 
   // Find-or-auto-create. Mirrors ensureLemma() in
@@ -130,6 +145,9 @@ async function main() {
 
   async function pickLemmaId(t, language) {
     if (!t.is_word) return null;
+    // T-2.7 overrides win over Stanza.
+    const override = overridesBySurface.get(t.surface);
+    if (override) return override;
     for (const c of t.candidates ?? []) {
       const strict = byHeadwordPos.get(`${c.lemma} ${c.pos}`);
       if (strict) return strict;

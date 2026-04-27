@@ -84,6 +84,12 @@ vi.mock('../db/index.js', () => ({
     },
     nlpJobs: { id: 'nlp_jobs.id', textId: 'nlp_jobs.text_id', status: 'nlp_jobs.status' },
     lemmas: { id: 'lemmas.id', headword: 'lemmas.headword', pos: 'lemmas.pos', language: 'lemmas.language' },
+    formLemmaOverrides: {
+      surfaceNfc: 'form_lemma_overrides.surface_nfc',
+      chosenLemmaId: 'form_lemma_overrides.chosen_lemma_id',
+      contextSignature: 'form_lemma_overrides.context_signature',
+      language: 'form_lemma_overrides.language',
+    },
   },
 }));
 
@@ -125,6 +131,8 @@ describe('processTextNow', () => {
     stage([
       { id: 'lemma-bolnaa', headword: 'बोलना', pos: 'verb' },
     ]);
+    // form_lemma_overrides preload (T-2.7) — empty for this test.
+    stage([]);
 
     nlpProcess.mockResolvedValueOnce({
       language: 'hi',
@@ -189,6 +197,7 @@ describe('processTextNow', () => {
     stage([{ id: 'text-1', language: 'hi' }]);
     stage([{ id: 'chap-1', body: 'unfamiliar word' }]);
     stage([]); // lemma index — no rows
+    stage([]); // form_lemma_overrides — no rows
     // ensureLemma's onConflictDoNothing(...).returning() chain
     // pulls one staged row.
     stage([{ id: 'lemma-new', headword: 'नमस्ते', pos: 'INTJ' }]);
@@ -239,10 +248,62 @@ describe('processTextNow', () => {
     expect(tokenInsert[0]!.isOov).toBe(false);
   });
 
+  it('honors a form_lemma_overrides row over the Stanza candidate (T-2.7)', async () => {
+    stage([{ id: 'text-1', language: 'hi' }]);
+    stage([{ id: 'chap-1', body: 'वह है।' }]);
+    // lemma index: होना already exists in the dictionary.
+    stage([{ id: 'lemma-hona', headword: 'होना', pos: 'VERB' }]);
+    // form_lemma_overrides: surface 'है' → lemma-hona, wildcard ctx.
+    stage([
+      {
+        surfaceNfc: 'है',
+        chosenLemmaId: 'lemma-hona',
+        contextSignature: '',
+      },
+    ]);
+
+    nlpProcess.mockResolvedValueOnce({
+      language: 'hi',
+      pipeline_id: 'stanza-hi',
+      tokens: [
+        {
+          idx: 0,
+          surface: 'है',
+          is_word: true,
+          is_ambiguous: false,
+          is_oov: false,
+          romanization: 'hai',
+          // Stanza's wrong guess: lemmatizes finite copula to itself.
+          candidates: [
+            { lemma: 'है', pos: 'AUX', score: 1.0, features: {} },
+          ],
+        },
+      ],
+    });
+
+    await processTextNow('text-1');
+
+    const inserts = calls.filter(
+      (c): c is Extract<Call, { kind: 'insert' }> => c.kind === 'insert',
+    );
+    // No lemma auto-create — the override winning skips ensureLemma.
+    // Only insert is the text_tokens batch.
+    expect(inserts).toHaveLength(1);
+    const tokenInsert = inserts[0]!.values as Array<{
+      lemmaId: string | null;
+      surface: string;
+    }>;
+    // The token's lemma_id is the override target, not Stanza's
+    // self-lemmatization.
+    expect(tokenInsert[0]!.lemmaId).toBe('lemma-hona');
+    expect(tokenInsert[0]!.surface).toBe('है');
+  });
+
   it('marks the text failed when the NLP service throws', async () => {
     stage([{ id: 'text-1', language: 'hi' }]);
     stage([{ id: 'chap-1', body: 'oops' }]);
     stage([]); // empty lemma map
+    stage([]); // empty form_lemma_overrides
     nlpProcess.mockRejectedValueOnce(new Error('NLP service 500'));
 
     await expect(processTextNow('text-1')).rejects.toThrow(/NLP service 500/);

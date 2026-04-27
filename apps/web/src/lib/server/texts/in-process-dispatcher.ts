@@ -42,6 +42,14 @@ type LemmaIndex = {
   byHeadwordPos: Map<string, string>;
   /** `headword` → id (first row wins). Loose fallback. */
   byHeadword: Map<string, string>;
+  /**
+   * `surface_nfc` → chosen lemma id, applied BEFORE Stanza's
+   * candidate is consulted (T-2.7). Curator seeds + crowdsourced
+   * promotions land here. Wildcard-context (`context_signature=''`)
+   * entries match any context; signature-keyed entries land later
+   * once T-6.7's aggregation worker is wired.
+   */
+  overridesBySurface: Map<string, string>;
 };
 
 /**
@@ -69,7 +77,30 @@ async function loadLemmaIndex(
     byHeadwordPos.set(`${r.headword} ${r.pos}`, r.id);
     if (!byHeadword.has(r.headword)) byHeadword.set(r.headword, r.id);
   }
-  return { byHeadwordPos, byHeadword };
+  // T-2.7 overrides — pre-load every wildcard-context row for the
+  // language. Signature-keyed rows (T-6.7's aggregation output)
+  // would be loaded via a per-token lookup; for the MVP we only
+  // ship wildcard seeds, so a single-query preload is fine.
+  const overrideRows = (await db
+    .select({
+      surfaceNfc: schema.formLemmaOverrides.surfaceNfc,
+      chosenLemmaId: schema.formLemmaOverrides.chosenLemmaId,
+      contextSignature: schema.formLemmaOverrides.contextSignature,
+    })
+    .from(schema.formLemmaOverrides)
+    .where(eq(schema.formLemmaOverrides.language, language))) as Array<{
+    surfaceNfc: string;
+    chosenLemmaId: string;
+    contextSignature: string;
+  }>;
+  const overridesBySurface = new Map<string, string>();
+  for (const r of overrideRows) {
+    if (r.contextSignature !== '') continue; // wildcard only for now
+    if (!overridesBySurface.has(r.surfaceNfc)) {
+      overridesBySurface.set(r.surfaceNfc, r.chosenLemmaId);
+    }
+  }
+  return { byHeadwordPos, byHeadword, overridesBySurface };
 }
 
 // Each MVP language has a single canonical script today (multi-script
@@ -170,6 +201,14 @@ async function pickLemmaId(
   index: LemmaIndex,
 ): Promise<string | null> {
   if (!token.is_word) return null;
+  // T-2.7: form_lemma_overrides wins over Stanza. Curator seeds for
+  // treebank quirks (Hindi finite copulas → होना and friends) +
+  // T-6.7's crowdsourced promotions land here. The lookup is keyed
+  // on surface_nfc; the dispatcher today only loads wildcard-context
+  // entries — context-specific rows come online when the M6
+  // disambiguation UI ships.
+  const override = index.overridesBySurface.get(token.surface);
+  if (override) return override;
   // Strict-POS lookup first across every candidate. Real Stanza
   // output usually hits this path.
   for (const c of token.candidates) {

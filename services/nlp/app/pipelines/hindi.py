@@ -21,6 +21,11 @@ UD POS isn't punctuation / symbol / number / proper-noun, we treat it
 as OOV. That matches the plan's "Stanza returns surface + no dictionary
 match" definition closely enough for MVP — real dictionary attachment
 happens in M3 and will refine ``is_oov`` at that point.
+
+Lemma overrides for finite copulas (``है`` → ``होना`` and friends)
+land via the ``form_lemma_overrides`` table (T-2.7) — the dispatcher
+consults that map BEFORE accepting Stanza's top candidate, so this
+module stays focused on the raw UD output.
 """
 
 from __future__ import annotations
