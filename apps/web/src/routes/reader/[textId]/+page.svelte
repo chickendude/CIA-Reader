@@ -5,6 +5,7 @@
   import ReaderContinuous from '$lib/components/reader/ReaderContinuous.svelte';
   import ReaderPage from '$lib/components/reader/ReaderPage.svelte';
   import ReaderScroll from '$lib/components/reader/ReaderScroll.svelte';
+  import { ProgressWriter } from '$lib/components/reader/progress-client.js';
   import type { PageData } from './$types';
 
   let { data }: { data: PageData } = $props();
@@ -47,29 +48,87 @@
     });
   }
 
+  // T-5.6 progress writer. Only owners get one — anonymous viewers
+  // of an official text don't have a row to write against.
+  let progressWriter: ProgressWriter | null = null;
+  let beforeUnloadHandler: (() => void) | null = null;
+
   onMount(() => {
     liveStatus = data.text.status;
-    if (!data.isOwner) return;
-    if (!shouldPoll(liveStatus)) return;
-    const interval = window.setInterval(async () => {
-      try {
-        const res = await fetch(`/api/v1/texts/${data.text.id}/status`);
-        if (!res.ok) return;
-        const payload = (await res.json()) as {
-          status: typeof data.text.status;
-          statusError: string | null;
-        };
-        liveStatus = payload.status;
-        liveError = payload.statusError;
-        if (!shouldPoll(payload.status)) {
-          window.clearInterval(interval);
-          await invalidateAll();
+
+    // Status polling — owners only.
+    let cleanupPoll: (() => void) | null = null;
+    if (data.isOwner && shouldPoll(liveStatus)) {
+      const interval = window.setInterval(async () => {
+        try {
+          const res = await fetch(`/api/v1/texts/${data.text.id}/status`);
+          if (!res.ok) return;
+          const payload = (await res.json()) as {
+            status: typeof data.text.status;
+            statusError: string | null;
+          };
+          liveStatus = payload.status;
+          liveError = payload.statusError;
+          if (!shouldPoll(payload.status)) {
+            window.clearInterval(interval);
+            await invalidateAll();
+          }
+        } catch {
+          // Quiet retry on the next tick.
         }
-      } catch {
-        // Quiet retry on the next tick.
-      }
-    }, 2500);
-    return () => window.clearInterval(interval);
+      }, 2500);
+      cleanupPoll = () => window.clearInterval(interval);
+    }
+
+    // Progress writer — owners only.
+    if (data.isOwner) {
+      progressWriter = new ProgressWriter(data.text.id);
+      // Schedule an initial write so reopening immediately at the
+      // current chapter persists even without scrolling.
+      const totalChapters = data.chapters.length;
+      const pctRead =
+        totalChapters > 0
+          ? Math.round(((data.anchor.chapterIdx + 1) / totalChapters) * 100)
+          : 0;
+      progressWriter.schedule({
+        chapterIdx: data.anchor.chapterIdx,
+        tokenIdx: data.anchor.tokenIdx,
+        pctRead,
+      });
+      // Flush on tab close so the user resumes near where they were
+      // even if their last action was scrolling and they didn't trip
+      // the debounce timer.
+      beforeUnloadHandler = () => {
+        void progressWriter?.flush();
+      };
+      window.addEventListener('beforeunload', beforeUnloadHandler);
+    }
+
+    return () => {
+      cleanupPoll?.();
+      if (beforeUnloadHandler)
+        window.removeEventListener('beforeunload', beforeUnloadHandler);
+      void progressWriter?.flush();
+    };
+  });
+
+  // Watch URL anchor changes and write them to the progress writer.
+  // The mode-toggle / chapter-nav buttons all funnel through goto(),
+  // which re-runs the loader and hands us a new `data.anchor` —
+  // sending here keeps a fresh row even if the user navigates by
+  // URL without scrolling.
+  $effect(() => {
+    if (!progressWriter) return;
+    const totalChapters = data.chapters.length;
+    const pctRead =
+      totalChapters > 0
+        ? Math.round(((data.anchor.chapterIdx + 1) / totalChapters) * 100)
+        : 0;
+    progressWriter.schedule({
+      chapterIdx: data.anchor.chapterIdx,
+      tokenIdx: data.anchor.tokenIdx,
+      pctRead,
+    });
   });
 </script>
 

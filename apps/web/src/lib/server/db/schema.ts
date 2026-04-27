@@ -694,8 +694,39 @@ export const userKnownLemmas = pgTable(
   }),
 );
 
+/**
+ * Per-user reading progress (T-5.6).
+ *
+ * One row per (user, text). The reader writes this debounced as the
+ * user scrolls / paginates so the library card can show "Page 4 of
+ * 12 — 30% read" and the next reader visit can resume at the
+ * anchor. Composite PK matches the natural identity.
+ */
+export const userTextProgress = pgTable(
+  'user_text_progress',
+  {
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    textId: uuid('text_id')
+      .notNull()
+      .references(() => texts.id, { onDelete: 'cascade' }),
+    lastChapterIdx: integer('last_chapter_idx').notNull().default(0),
+    lastTokenIdx: integer('last_token_idx').notNull().default(0),
+    pctRead: real('pct_read').notNull().default(0),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.userId, t.textId] }),
+    userIdx: index('user_text_progress_user_idx').on(t.userId, t.updatedAt),
+  }),
+);
+
 export type Text = InferSelectModel<typeof texts>;
 export type TextChapter = InferSelectModel<typeof textChapters>;
 export type NlpJob = InferSelectModel<typeof nlpJobs>;
 export type TextToken = InferSelectModel<typeof textTokens>;
 export type UserKnownLemma = InferSelectModel<typeof userKnownLemmas>;
+export type UserTextProgress = InferSelectModel<typeof userTextProgress>;

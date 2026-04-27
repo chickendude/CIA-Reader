@@ -28,6 +28,17 @@ vi.mock('$lib/server/texts/tokens.js', async () => {
   };
 });
 
+const getTextProgress = vi.fn();
+vi.mock('$lib/server/texts/progress.js', async () => {
+  const actual = await vi.importActual<typeof import('$lib/server/texts/progress.js')>(
+    '$lib/server/texts/progress.js',
+  );
+  return {
+    ...actual,
+    getTextProgress: (...a: unknown[]) => getTextProgress(...a),
+  };
+});
+
 type LoadFn = (typeof import('./+page.server.js'))['load'];
 
 const VALID_ID = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
@@ -77,10 +88,13 @@ function ownedTextWithChapters(n: number) {
 beforeEach(() => {
   getReadableText.mockReset();
   loadChapterTokens.mockReset();
+  getTextProgress.mockReset();
   // The token loader is called once per chapter; default to "no
   // tokens written yet" so the loader falls back to client-side
   // tokenization in tests that don't care.
   loadChapterTokens.mockResolvedValue(null);
+  // No saved progress unless a test stages it.
+  getTextProgress.mockResolvedValue(null);
 });
 
 afterEach(() => {
@@ -177,6 +191,39 @@ describe('/reader/[textId] loader', () => {
       showRomanization: boolean;
     };
     expect(data.showRomanization).toBe(false);
+  });
+
+  it('resumes from saved progress when the URL has no anchor (T-5.6)', async () => {
+    getReadableText.mockResolvedValueOnce(ownedTextWithChapters(5));
+    getTextProgress.mockResolvedValueOnce({
+      userId: USER.id,
+      textId: VALID_ID,
+      lastChapterIdx: 3,
+      lastTokenIdx: 42,
+      pctRead: 60,
+      updatedAt: new Date(),
+    });
+    const data = (await callLoad(`http://x/reader/${VALID_ID}`)) as {
+      anchor: { chapterIdx: number; tokenIdx: number };
+    };
+    expect(data.anchor.chapterIdx).toBe(3);
+    expect(data.anchor.tokenIdx).toBe(42);
+  });
+
+  it('honors an explicit URL anchor over saved progress', async () => {
+    getReadableText.mockResolvedValueOnce(ownedTextWithChapters(5));
+    getTextProgress.mockResolvedValueOnce({
+      userId: USER.id,
+      textId: VALID_ID,
+      lastChapterIdx: 3,
+      lastTokenIdx: 42,
+      pctRead: 60,
+      updatedAt: new Date(),
+    });
+    const data = (await callLoad(
+      `http://x/reader/${VALID_ID}?chapter=1`,
+    )) as { anchor: { chapterIdx: number } };
+    expect(data.anchor.chapterIdx).toBe(1);
   });
 
   it('attaches server tokens onto each chapter when the worker has run', async () => {

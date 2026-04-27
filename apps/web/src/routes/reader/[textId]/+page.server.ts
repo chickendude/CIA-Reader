@@ -22,6 +22,7 @@ import { error } from '@sveltejs/kit';
 
 import { getReadableText } from '$lib/server/texts/upload.js';
 import { loadChapterTokens } from '$lib/server/texts/tokens.js';
+import { getTextProgress } from '$lib/server/texts/progress.js';
 import type { PageServerLoad } from './$types';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -61,14 +62,35 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
   const result = await getReadableText(viewer, params.textId);
   if (!result) throw error(404, 'Text not found');
 
+  // Resume from saved progress when the URL has no anchor of its
+  // own. T-5.6: a returning reader who clicks the library card
+  // should land where they left off, not at chapter 0.
+  let savedProgress: Awaited<ReturnType<typeof getTextProgress>> = null;
+  if (locals.user) {
+    savedProgress = await getTextProgress(locals.user.id, params.textId);
+  }
+  const hasUrlAnchor =
+    url.searchParams.has('chapter') || url.searchParams.has('token');
+
   // Clamp anchor params to valid ranges. A bad `?chapter=999` URL
   // shouldn't 500 — it should land on the first chapter.
-  const requestedChapter = readInt(url, 'chapter', 0);
+  const requestedChapter = readInt(
+    url,
+    'chapter',
+    !hasUrlAnchor && savedProgress ? savedProgress.lastChapterIdx : 0,
+  );
   const chapterIdx = Math.max(
     0,
     Math.min(requestedChapter, result.chapters.length - 1),
   );
-  const tokenIdx = Math.max(0, readInt(url, 'token', 0));
+  const tokenIdx = Math.max(
+    0,
+    readInt(
+      url,
+      'token',
+      !hasUrlAnchor && savedProgress ? savedProgress.lastTokenIdx : 0,
+    ),
+  );
 
   // Mode preference: URL > user pref > default. user_languages.reader_layout_mode
   // is per-user/per-language; the per-user pref read lands when M5
