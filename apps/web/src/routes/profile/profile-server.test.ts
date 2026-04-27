@@ -83,6 +83,7 @@ describe('profile +page.server.ts', () => {
           },
         },
       } as unknown as LoadEvent);
+      if (!data) throw new Error('load returned void');
       expect(data.user?.id).toBe('u1');
       expect(data.languages).toHaveLength(1);
       expect(data.languages[0]?.code).toBe('hi');
