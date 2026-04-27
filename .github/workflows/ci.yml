@@ -55,6 +55,42 @@ jobs:
           path: services/nlp/.coverage
           if-no-files-found: ignore
 
+  nlp-accuracy:
+    # Real-pipeline lemma-accuracy gate (T-2.8). Installs [models],
+    # downloads the Hindi + Marathi Stanza UD models, caches them, and
+    # enforces >=90% Hi / >=80% Mr / >=70% Or. Lives in its own job so
+    # the main `nlp` lane stays fast; this one trades latency for the
+    # only real end-to-end quality signal we have before release.
+    name: nlp (real-pipeline accuracy thresholds)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install -U pip && pip install -e 'services/nlp[dev,models]'
+      - name: Cache Stanza UD models
+        uses: actions/cache@v4
+        with:
+          path: ~/stanza_resources
+          key: stanza-models-hi-mr-v1-${{ hashFiles('services/nlp/pyproject.toml') }}
+      - name: Download Stanza Hi + Mr models
+        run: |
+          python - <<'PY'
+          import stanza
+          for lang in ("hi", "mr"):
+              stanza.download(lang, processors="tokenize,pos,lemma", verbose=False)
+          PY
+      - name: Run real-pipeline accuracy thresholds
+        working-directory: services/nlp
+        env:
+          PYTHONPATH: ${{ github.workspace }}/packages/shared-types/python
+        # Override the pyproject default (`-m 'not real_models'`) so
+        # only the threshold suite runs in this job. Coverage is
+        # irrelevant here — the default job enforces the floor already.
+        run: pytest -m real_models --no-cov -o addopts=""
+
   registry-parity:
     name: language registry parity (TS vs Python)
     runs-on: ubuntu-latest

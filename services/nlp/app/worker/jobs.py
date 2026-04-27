@@ -20,6 +20,7 @@ from typing import Any
 
 from app.pipelines import get_pipeline
 
+from .overrides import OverrideStore, apply_overrides
 from .store import TextStore, TokenStore
 
 
@@ -38,6 +39,15 @@ def _store(ctx: dict[str, Any], key: str) -> Any:
             f"or ctx['store'] to be attached by on_startup."
         )
     return store
+
+
+def _optional_override_store(ctx: dict[str, Any]) -> Any:
+    # Explicit key only — unlike text/token stores we do NOT fall back
+    # to ctx['store'], because a unified backend that implements the
+    # other protocols won't necessarily also implement OverrideStore.
+    # on_startup (M4) can alias ``ctx['override_store'] = ctx['store']``
+    # when the real DB-backed class happens to satisfy all three.
+    return ctx.get("override_store")
 
 
 async def process_text(
@@ -62,6 +72,7 @@ async def process_text(
     """
     text_store: TextStore = _store(ctx, "text_store")
     token_store: TokenStore = _store(ctx, "token_store")
+    override_store: OverrideStore | None = _optional_override_store(ctx)
     job_id: str = ctx.get("job_id", "unknown-job")
 
     await token_store.record_job_started(job_id=job_id, text_id=text_id)
@@ -73,8 +84,13 @@ async def process_text(
             payload = await text_store.load_chapter(chapter_id)
             pipeline = get_pipeline(payload.language)
             result = pipeline.process(payload.text)
-            await token_store.write_tokens(chapter_id, result.tokens)
-            tokens_written += len(result.tokens)
+            tokens = await apply_overrides(
+                tokens=list(result.tokens),
+                language=payload.language,
+                store=override_store,
+            )
+            await token_store.write_tokens(chapter_id, tokens)
+            tokens_written += len(tokens)
 
         await text_store.mark_ready(text_id)
         await token_store.record_job_finished(job_id=job_id)

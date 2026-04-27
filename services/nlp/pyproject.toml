@@ -57,7 +57,14 @@ select = ["E", "F", "I", "B", "UP", "N", "W"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
-addopts = "--cov=app --cov-report=term-missing --cov-fail-under=70"
+# `real_models` accuracy tests (T-2.8) need Stanza + the 600MB Hi/Mr
+# UD models downloaded. They run in the dedicated `nlp-accuracy` CI
+# job — the default `pytest` invocation opts out so local dev and the
+# main `nlp` CI job don't have to pay the install cost.
+addopts = "--cov=app --cov-report=term-missing --cov-fail-under=70 -m 'not real_models'"
+markers = [
+  "real_models: tests that load real Stanza / IndicNLP models; skipped by default, run via `pytest -m real_models` with `[models]` installed.",
+]
 
 [tool.coverage.run]
 branch = true
