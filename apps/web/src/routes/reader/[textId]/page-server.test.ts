@@ -5,6 +5,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const getReadableText = vi.fn();
+const loadChapterTokens = vi.fn();
 
 vi.mock('$lib/server/texts/upload.js', async () => {
   const actual = await vi.importActual<typeof import('$lib/server/texts/upload.js')>(
@@ -14,6 +15,16 @@ vi.mock('$lib/server/texts/upload.js', async () => {
     ...actual,
     getReadableText: (...a: unknown[]) => getReadableText(...a),
     getOwnedText: (...a: unknown[]) => getReadableText(...a),
+  };
+});
+
+vi.mock('$lib/server/texts/tokens.js', async () => {
+  const actual = await vi.importActual<typeof import('$lib/server/texts/tokens.js')>(
+    '$lib/server/texts/tokens.js',
+  );
+  return {
+    ...actual,
+    loadChapterTokens: (...a: unknown[]) => loadChapterTokens(...a),
   };
 });
 
@@ -65,6 +76,11 @@ function ownedTextWithChapters(n: number) {
 
 beforeEach(() => {
   getReadableText.mockReset();
+  loadChapterTokens.mockReset();
+  // The token loader is called once per chapter; default to "no
+  // tokens written yet" so the loader falls back to client-side
+  // tokenization in tests that don't care.
+  loadChapterTokens.mockResolvedValue(null);
 });
 
 afterEach(() => {
@@ -145,5 +161,32 @@ describe('/reader/[textId] loader', () => {
     )) as { isOwner: boolean };
     expect(data.isOwner).toBe(false);
     expect(getReadableText).toHaveBeenCalledWith(null, VALID_ID);
+  });
+
+  it('attaches server tokens onto each chapter when the worker has run', async () => {
+    getReadableText.mockResolvedValueOnce(ownedTextWithChapters(2));
+    const tokenRow = (id: string, idx: number) => ({
+      id,
+      idx,
+      surface: 'पाठ',
+      isWord: true,
+      isAmbiguous: false,
+      isOov: false,
+      lemmaId: 'lem-1',
+      romanization: null,
+      status: 'unknown' as const,
+    });
+    loadChapterTokens
+      .mockResolvedValueOnce([tokenRow('t0', 0)])
+      .mockResolvedValueOnce(null);
+    const data = (await callLoad(`http://x/reader/${VALID_ID}`)) as {
+      chapters: Array<{ id: string; tokens: unknown }>;
+    };
+    expect(data.chapters[0]!.tokens).toHaveLength(1);
+    expect(data.chapters[1]!.tokens).toBeNull();
+    // The loader called the token service once per chapter, with the
+    // viewer id forwarded.
+    expect(loadChapterTokens).toHaveBeenCalledTimes(2);
+    expect(loadChapterTokens).toHaveBeenCalledWith('c0', USER.id);
   });
 });

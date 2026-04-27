@@ -1,15 +1,13 @@
 <!--
-  Page-mode reader (T-5.1).
+  Page-mode reader (T-5.1, token-aware in T-5.2).
 
-  Classic LingQ-style pagination: one rendered chapter at a time with
-  prev/next buttons. Pixel-precise viewport-driven page breaks
-  (preventing mid-word cuts) land in T-5.1a + T-5.1c — the skeleton
-  here treats one chapter as one page, which keeps the contract for
-  the navigation buttons stable while we layer real pagination on.
+  Classic LingQ-style pagination: one chapter at a time with prev/next
+  buttons. Token rendering is delegated to <ChapterBody/>.
 -->
 <script lang="ts">
   import { goto } from '$app/navigation';
-  import { paragraphsOfTokens, tokenize, type ChapterView } from './types.js';
+  import ChapterBody from './ChapterBody.svelte';
+  import type { ChapterView } from './types.js';
 
   let {
     chapters,
@@ -17,9 +15,8 @@
     textId,
   }: { chapters: ChapterView[]; chapterIdx: number; textId: string } = $props();
 
-  const current = $derived(chapters[Math.max(0, Math.min(chapterIdx, chapters.length - 1))]);
-  const paragraphs = $derived(
-    current ? paragraphsOfTokens(tokenize(current.body)) : [],
+  const current = $derived(
+    chapters[Math.max(0, Math.min(chapterIdx, chapters.length - 1))],
   );
   const hasPrev = $derived(chapterIdx > 0);
   const hasNext = $derived(chapterIdx < chapters.length - 1);
@@ -45,13 +42,9 @@
   </header>
 
   <article>
-    {#each paragraphs as paragraph, pIdx (pIdx)}
-      <p class="body">
-        {#each paragraph as token (token.idx)}<span
-            class:word={token.isWord}
-            data-token-idx={token.idx}>{token.surface}</span>{/each}
-      </p>
-    {/each}
+    {#if current}
+      <ChapterBody chapter={current} />
+    {/if}
   </article>
 
   <nav class="pager" aria-label="Chapter navigation">
@@ -81,19 +74,6 @@
   }
   article {
     min-height: 50vh;
-  }
-  .body {
-    margin: 0 0 1rem;
-    line-height: 1.75;
-    font-size: 1.05rem;
-  }
-  .word {
-    cursor: pointer;
-    border-radius: 3px;
-    transition: background 80ms ease;
-  }
-  .word:hover {
-    background: color-mix(in srgb, var(--color-accent) 12%, transparent);
   }
   .pager {
     display: flex;

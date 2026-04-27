@@ -7,12 +7,28 @@
  * every mode (T-5.2 onward).
  */
 
+/** Per-token row from the NLP worker (T-5.2). When present, the
+ *  component renders these spans directly; when null, it falls back
+ *  to client-side whitespace tokenization. */
+export type ServerToken = {
+  id: string;
+  idx: number;
+  surface: string;
+  isWord: boolean;
+  isAmbiguous: boolean;
+  isOov: boolean;
+  lemmaId: string | null;
+  romanization: string | null;
+  status: 'known' | 'learning' | 'ignored' | 'unknown';
+};
+
 export type ChapterView = {
   id: string;
   idx: number;
   title: string | null;
   body: string;
   tokenCount: number;
+  tokens: ServerToken[] | null;
 };
 
 export type ReaderLayoutMode = 'page' | 'paged_scroll' | 'continuous';
@@ -72,6 +88,26 @@ export function tokenize(body: string): RenderToken[] {
 export function paragraphsOfTokens(tokens: RenderToken[]): RenderToken[][] {
   const out: RenderToken[][] = [];
   let current: RenderToken[] = [];
+  for (const t of tokens) {
+    if (!t.isWord && /\n\s*\n/.test(t.surface)) {
+      if (current.length > 0) out.push(current);
+      current = [];
+      continue;
+    }
+    current.push(t);
+  }
+  if (current.length > 0) out.push(current);
+  return out;
+}
+
+/** Server-token analogue of `paragraphsOfTokens`. The worker writes
+ * the surface form including paragraph-boundary whitespace as its
+ * own non-word token; we cut on those. */
+export function paragraphsOfServerTokens(
+  tokens: ServerToken[],
+): ServerToken[][] {
+  const out: ServerToken[][] = [];
+  let current: ServerToken[] = [];
   for (const t of tokens) {
     if (!t.isWord && /\n\s*\n/.test(t.surface)) {
       if (current.length > 0) out.push(current);
