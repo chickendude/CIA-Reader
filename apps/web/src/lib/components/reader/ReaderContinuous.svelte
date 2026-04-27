@@ -13,7 +13,12 @@
   let {
     chapters,
     initialChapterIdx = 0,
-  }: { chapters: ChapterView[]; initialChapterIdx?: number } = $props();
+    showRomanization = false,
+  }: {
+    chapters: ChapterView[];
+    initialChapterIdx?: number;
+    showRomanization?: boolean;
+  } = $props();
 </script>
 
 <div class="reader-continuous" data-mode="continuous" data-initial-chapter={initialChapterIdx}>
@@ -28,7 +33,7 @@
           <span class="muted">({chapter.tokenCount.toLocaleString()} tokens)</span>
         </h2>
       {/if}
-      <ChapterBody {chapter} />
+      <ChapterBody {chapter} {showRomanization} />
     </section>
   {/each}
 </div>

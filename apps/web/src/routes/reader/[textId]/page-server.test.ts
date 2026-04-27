@@ -163,6 +163,22 @@ describe('/reader/[textId] loader', () => {
     expect(getReadableText).toHaveBeenCalledWith(null, VALID_ID);
   });
 
+  it('reads ?roman=1 as showRomanization=true (T-5.3)', async () => {
+    getReadableText.mockResolvedValueOnce(ownedTextWithChapters(1));
+    const data = (await callLoad(
+      `http://x/reader/${VALID_ID}?roman=1`,
+    )) as { showRomanization: boolean };
+    expect(data.showRomanization).toBe(true);
+  });
+
+  it('defaults showRomanization to false when ?roman is absent', async () => {
+    getReadableText.mockResolvedValueOnce(ownedTextWithChapters(1));
+    const data = (await callLoad(`http://x/reader/${VALID_ID}`)) as {
+      showRomanization: boolean;
+    };
+    expect(data.showRomanization).toBe(false);
+  });
+
   it('attaches server tokens onto each chapter when the worker has run', async () => {
     getReadableText.mockResolvedValueOnce(ownedTextWithChapters(2));
     const tokenRow = (id: string, idx: number) => ({

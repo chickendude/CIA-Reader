@@ -1,21 +1,24 @@
 <!--
-  Single token render (T-5.2).
+  Single token render (T-5.2, romanization in T-5.3).
 
   One `<span>` per token, with a `.status-*` class when we have a
   lemma resolution. Word tokens get a hover affordance. Whitespace
   tokens render as plain text without any classes — the reader
   preserves the original layout faithfully.
 
-  T-5.4 layers the word pop-up on top of this; T-5.5 wires status
-  changes back to the server. The classes are stable so those tickets
-  don't have to touch markup.
+  When `showRomanization` is on AND the token has a precomputed
+  `romanization` (worker-time, T-2.5), the surface form renders
+  inside an HTML `<ruby>` element with the romanized form on top so
+  learners who aren't yet fluent in the script can decode each word
+  inline. Tokens without a romanization just render the surface.
 -->
 <script lang="ts">
   import type { ServerToken } from './types.js';
 
   let {
     token,
-  }: { token: ServerToken } = $props();
+    showRomanization = false,
+  }: { token: ServerToken; showRomanization?: boolean } = $props();
 
   // OOV tokens get a distinct visual state (T-5.4a) — dashed
   // underline rather than the known/unknown highlight, so the user
@@ -29,13 +32,21 @@
     if (token.isAmbiguous) classes.push('ambiguous');
     return classes.join(' ');
   });
+
+  const showRuby = $derived(
+    showRomanization && token.isWord && Boolean(token.romanization),
+  );
 </script>
 
-{#if token.isWord}<span
+{#if !token.isWord}{token.surface}{:else if showRuby}<ruby
     class={cssClass}
     data-token-id={token.id}
     data-token-idx={token.idx}
-    data-lemma-id={token.lemmaId ?? ''}>{token.surface}</span>{:else}{token.surface}{/if}
+    data-lemma-id={token.lemmaId ?? ''}>{token.surface}<rt>{token.romanization}</rt></ruby>{:else}<span
+    class={cssClass}
+    data-token-id={token.id}
+    data-token-idx={token.idx}
+    data-lemma-id={token.lemmaId ?? ''}>{token.surface}</span>{/if}
 
 <style>
   .word {
@@ -46,8 +57,17 @@
   .word:hover {
     background: color-mix(in srgb, var(--color-accent) 12%, transparent);
   }
-  /* Default — token has a lemma but the user hasn't marked it. The
-     LingQ-style "this is a word you should pay attention to" colour. */
+  /* `<ruby>` defaults to `display: ruby` which behaves like an inline
+     element — perfect for in-line text. We only need to nudge the
+     `<rt>` styling. */
+  ruby.word rt {
+    font-size: 0.6em;
+    color: var(--color-fg-muted);
+    line-height: 1.1;
+    /* Tight character spacing on rt so a long romanization doesn't
+       blow the underlying word's width out. */
+    letter-spacing: -0.01em;
+  }
   .status-unknown {
     background: color-mix(in srgb, var(--color-accent) 18%, transparent);
   }
@@ -55,21 +75,15 @@
     background: color-mix(in srgb, #b07a31 30%, transparent);
     color: var(--color-fg);
   }
-  /* Known + ignored: render as plain text, no highlight. */
   .status-known,
   .status-ignored {
     background: transparent;
   }
-  /* OOV: no dictionary match — dashed underline rather than a
-     highlight, so the user knows the system needs help on this token. */
   .oov {
     background: transparent;
     border-bottom: 1px dashed var(--color-fg-muted);
     border-radius: 0;
   }
-  /* Ambiguous: an extra dot above to hint that there are alternate
-     parses available (T-6.1's "N possible meanings" chevron lives in
-     the pop-up; this is the at-a-glance affordance). */
   .ambiguous::after {
     content: '·';
     color: var(--color-accent);

@@ -13,7 +13,13 @@
     chapters,
     chapterIdx,
     textId,
-  }: { chapters: ChapterView[]; chapterIdx: number; textId: string } = $props();
+    showRomanization = false,
+  }: {
+    chapters: ChapterView[];
+    chapterIdx: number;
+    textId: string;
+    showRomanization?: boolean;
+  } = $props();
 
   const current = $derived(
     chapters[Math.max(0, Math.min(chapterIdx, chapters.length - 1))],
@@ -43,7 +49,7 @@
 
   <article>
     {#if current}
-      <ChapterBody chapter={current} />
+      <ChapterBody chapter={current} {showRomanization} />
     {/if}
   </article>
 

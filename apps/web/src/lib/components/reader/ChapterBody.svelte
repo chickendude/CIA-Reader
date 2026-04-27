@@ -1,15 +1,6 @@
 <!--
-  Renders one chapter's body with the right tokenizer (T-5.2).
-
-  When the chapter has server-rendered tokens (the NLP worker has
-  run), we render a span per ServerToken with `.status-*` classes
-  driving the highlight. Otherwise, we fall back to the client-side
-  whitespace tokenizer — every word becomes a `.word` span with no
-  status, so the layout still looks right and click-handlers / pop-ups
-  can attach (the lemma_id is just null until the worker fills it in).
-
-  Both layout modes (`page`, `paged_scroll`, `continuous`) consume
-  this so the rendering rules live in one place.
+  Renders one chapter's body with the right tokenizer (T-5.2,
+  romanization wired in T-5.3).
 -->
 <script lang="ts">
   import TokenSpan from './TokenSpan.svelte';
@@ -20,7 +11,10 @@
     type ChapterView,
   } from './types.js';
 
-  let { chapter }: { chapter: ChapterView } = $props();
+  let {
+    chapter,
+    showRomanization = false,
+  }: { chapter: ChapterView; showRomanization?: boolean } = $props();
 
   const serverParagraphs = $derived(
     chapter.tokens ? paragraphsOfServerTokens(chapter.tokens) : null,
@@ -33,7 +27,10 @@
 {#if serverParagraphs}
   {#each serverParagraphs as paragraph, pIdx (pIdx)}
     <p class="body">
-      {#each paragraph as token (token.id)}<TokenSpan {token} />{/each}
+      {#each paragraph as token (token.id)}<TokenSpan
+          {token}
+          {showRomanization}
+        />{/each}
     </p>
   {/each}
 {:else if fallbackParagraphs}
@@ -49,11 +46,9 @@
 <style>
   .body {
     margin: 0 0 1rem;
-    line-height: 1.75;
+    line-height: 1.85;
     font-size: 1.05rem;
   }
-  /* The fallback path has its own minimal hover treatment — the real
-     status-aware classes live on TokenSpan. */
   .word {
     cursor: pointer;
     border-radius: 3px;
