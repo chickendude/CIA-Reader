@@ -17,12 +17,16 @@ import { fail, redirect } from '@sveltejs/kit';
 import { z } from 'zod';
 
 import {
+  createEpubText,
   createPastedText,
   createTxtText,
+  EpubParseError,
   TextValidationError,
+  MAX_EPUB_BYTES,
   MAX_PASTE_BYTES,
   MAX_TXT_BYTES,
   MAX_TITLE_LEN,
+  MIN_TITLE_LEN,
 } from '$lib/server/texts/upload.js';
 import { LANGUAGES, SUPPORTED_LANGUAGE_CODES } from '@ciareader/shared-types';
 import type { Actions, PageServerLoad } from './$types';
@@ -65,6 +69,7 @@ export const load: PageServerLoad = async ({ locals, url }) => {
       // a server round-trip.
       maxPasteBytes: MAX_PASTE_BYTES,
       maxTxtBytes: MAX_TXT_BYTES,
+      maxEpubBytes: MAX_EPUB_BYTES,
     },
   };
 };
@@ -120,6 +125,88 @@ export const actions: Actions = {
           ok: false,
           message: err.message,
           values: raw,
+        });
+      }
+      throw err;
+    }
+  },
+
+  epub: async ({ request, locals }) => {
+    if (!locals.user) {
+      throw redirect(303, '/login?next=/upload');
+    }
+    const fd = await request.formData();
+    const language = fd.get('language')?.toString() ?? '';
+    const titleRaw = fd.get('title')?.toString() ?? '';
+    const file = fd.get('file');
+    if (
+      language !== 'hi' &&
+      language !== 'mr' &&
+      language !== 'or'
+    ) {
+      return fail(400, {
+        ok: false,
+        section: 'epub',
+        message: `Unsupported language '${language}'`,
+      });
+    }
+    if (!(file instanceof File)) {
+      return fail(400, {
+        ok: false,
+        section: 'epub',
+        message: 'Please select an .epub file to upload',
+      });
+    }
+    if (file.size === 0) {
+      return fail(400, {
+        ok: false,
+        section: 'epub',
+        message: 'EPUB file is empty',
+      });
+    }
+    if (file.size > MAX_EPUB_BYTES) {
+      return fail(400, {
+        ok: false,
+        section: 'epub',
+        message: `EPUB exceeds ${MAX_EPUB_BYTES.toLocaleString()} bytes`,
+      });
+    }
+    let title = titleRaw.trim();
+    if (title.length === 0) title = file.name.replace(/\.epub$/i, '').trim();
+    if (title.length < MIN_TITLE_LEN) {
+      return fail(400, {
+        ok: false,
+        section: 'epub',
+        message: 'title is required',
+      });
+    }
+    if (title.length > MAX_TITLE_LEN) {
+      return fail(400, {
+        ok: false,
+        section: 'epub',
+        message: `title exceeds ${MAX_TITLE_LEN} characters`,
+      });
+    }
+    const epubBytes = new Uint8Array(await file.arrayBuffer());
+    try {
+      const created = await createEpubText(
+        { id: locals.user.id },
+        { language, title, epubBytes },
+      );
+      throw redirect(303, `/texts/${created.text.id}`);
+    } catch (err) {
+      if (err instanceof TextValidationError) {
+        return fail(err.status, {
+          ok: false,
+          section: 'epub',
+          message: err.message,
+        });
+      }
+      if (err instanceof EpubParseError) {
+        return fail(400, {
+          ok: false,
+          section: 'epub',
+          message: err.message,
         });
       }
       throw err;

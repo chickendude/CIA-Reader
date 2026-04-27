@@ -73,14 +73,58 @@ vi.mock('../db/index.js', () => ({
 
 const {
   TextValidationError,
+  EpubParseError,
   createPastedText,
   createTxtText,
+  createEpubText,
   estimateTokenCount,
   getOwnedText,
   MAX_PASTE_BYTES,
   MAX_TXT_BYTES,
+  MAX_EPUB_BYTES,
   MAX_TITLE_LEN,
 } = await import('./upload.js');
+
+const JSZip = (await import('jszip')).default;
+
+async function buildFixtureEpub(
+  chapters: Array<{ id: string; href: string; title: string; bodyHtml: string }>,
+): Promise<Uint8Array> {
+  const zip = new JSZip();
+  zip.file('mimetype', 'application/epub+zip');
+  zip.file(
+    'META-INF/container.xml',
+    `<?xml version="1.0"?>
+<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+  <rootfiles>
+    <rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/>
+  </rootfiles>
+</container>`,
+  );
+  const manifest = chapters
+    .map((c) => `<item id="${c.id}" href="${c.href}" media-type="application/xhtml+xml"/>`)
+    .join('\n');
+  const spine = chapters.map((c) => `<itemref idref="${c.id}"/>`).join('\n');
+  zip.file(
+    'OEBPS/content.opf',
+    `<?xml version="1.0"?>
+<package version="3.0">
+  <manifest>${manifest}</manifest>
+  <spine>${spine}</spine>
+</package>`,
+  );
+  for (const c of chapters) {
+    zip.file(
+      `OEBPS/${c.href}`,
+      `<?xml version="1.0"?>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head><title>${c.title}</title></head>
+<body>${c.bodyHtml}</body>
+</html>`,
+    );
+  }
+  return zip.generateAsync({ type: 'uint8array' });
+}
 
 const OWNER = { id: 'user-1' };
 
@@ -317,6 +361,106 @@ describe('createTxtText', () => {
       body: oversized,
     });
     // Did not throw.
+  });
+});
+
+// -----------------------------------------------------------------------
+// createEpubText (T-4.3)
+// -----------------------------------------------------------------------
+
+describe('createEpubText', () => {
+  it('parses an EPUB and inserts one chapter row per spine item', async () => {
+    stage([textRow({ sourceType: 'epub' })]);
+    stage([
+      chapterRow({ id: 'c0', idx: 0, body: 'one body.' }),
+      chapterRow({ id: 'c1', idx: 1, body: 'two body.' }),
+    ]);
+
+    const epubBytes = await buildFixtureEpub([
+      {
+        id: 'ch1',
+        href: 'ch1.xhtml',
+        title: 'Chapter One',
+        bodyHtml: '<p>one body.</p>',
+      },
+      {
+        id: 'ch2',
+        href: 'ch2.xhtml',
+        title: 'Chapter Two',
+        bodyHtml: '<p>two body.</p>',
+      },
+    ]);
+
+    const result = await createEpubText(OWNER, {
+      language: 'hi',
+      title: 'Imported novel',
+      epubBytes,
+    });
+
+    expect(result.chapters).toHaveLength(2);
+    const insertCalls = calls.filter(
+      (c): c is Extract<Call, { kind: 'insert' }> => c.kind === 'insert',
+    );
+    expect(insertCalls[0]!.values).toMatchObject({ sourceType: 'epub' });
+    const chapterValues = insertCalls[1]!.values as Array<{
+      idx: number;
+      title: string | null;
+      body: string;
+    }>;
+    expect(chapterValues).toHaveLength(2);
+    expect(chapterValues.map((c) => c.title)).toEqual(['Chapter One', 'Chapter Two']);
+    expect(chapterValues[0]!.body).toBe('one body.');
+  });
+
+  it('rejects an unsupported language without parsing', async () => {
+    const epubBytes = await buildFixtureEpub([
+      { id: 'ch1', href: 'ch1.xhtml', title: 'X', bodyHtml: '<p>body.</p>' },
+    ]);
+    await expect(
+      createEpubText(OWNER, { language: 'xx', title: 'X', epubBytes }),
+    ).rejects.toBeInstanceOf(TextValidationError);
+  });
+
+  it('rejects a missing title', async () => {
+    const epubBytes = await buildFixtureEpub([
+      { id: 'ch1', href: 'ch1.xhtml', title: 'X', bodyHtml: '<p>body.</p>' },
+    ]);
+    await expect(
+      createEpubText(OWNER, { language: 'hi', title: '', epubBytes }),
+    ).rejects.toBeInstanceOf(TextValidationError);
+  });
+
+  it('rejects an empty file', async () => {
+    await expect(
+      createEpubText(OWNER, {
+        language: 'hi',
+        title: 'X',
+        epubBytes: new Uint8Array(0),
+      }),
+    ).rejects.toBeInstanceOf(TextValidationError);
+  });
+
+  it('rejects an oversize archive', async () => {
+    // We don't actually allocate 50MB — just lie about the byte length
+    // via a fake ArrayBuffer subview that reports the cap.
+    const tooBig = new ArrayBuffer(MAX_EPUB_BYTES + 1);
+    await expect(
+      createEpubText(OWNER, {
+        language: 'hi',
+        title: 'X',
+        epubBytes: tooBig,
+      }),
+    ).rejects.toBeInstanceOf(TextValidationError);
+  });
+
+  it('surfaces parse failures as EpubParseError', async () => {
+    await expect(
+      createEpubText(OWNER, {
+        language: 'hi',
+        title: 'X',
+        epubBytes: new Uint8Array([1, 2, 3, 4]),
+      }),
+    ).rejects.toBeInstanceOf(EpubParseError);
   });
 });
 
