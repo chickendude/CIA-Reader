@@ -52,6 +52,18 @@ export const highlightStyle = pgEnum('highlight_style', [
   'colored_text',
 ]);
 
+/**
+ * Assumed-known baseline captured during onboarding. Used in a future
+ * ticket to seed `user_known_lemmas` against frequency_rank buckets —
+ * `beginner` pre-marks the top-100 most-frequent lemmas as 'known',
+ * `intermediate` the top-1000. At MVP we persist the choice only.
+ */
+export const languageBaseline = pgEnum('language_baseline', [
+  'none',
+  'beginner',
+  'intermediate',
+]);
+
 export const users = pgTable(
   'users',
   {
@@ -62,6 +74,7 @@ export const users = pgTable(
     displayName: text('display_name'),
     themePreference: themePreference('theme_preference').notNull().default('system'),
     emailVerifiedAt: timestamp('email_verified_at', { withTimezone: true }),
+    onboardedAt: timestamp('onboarded_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
@@ -161,6 +174,7 @@ export const userLanguages = pgTable(
     fontSize: real('font_size').notNull().default(18),
     lineSpacing: real('line_spacing').notNull().default(1.6),
     highlightStyle: highlightStyle('highlight_style').notNull().default('background'),
+    baseline: languageBaseline('baseline').notNull().default('none'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
