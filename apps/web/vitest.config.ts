@@ -30,6 +30,15 @@ export default defineConfig({
         'src/lib/server/db/schema.ts',
         'src/lib/server/db/index.ts',
         'src/lib/server/email/**',
+        // Thin Drizzle wrapper — tested meaningfully only against a real
+        // Postgres (planned for M4's testcontainers setup). Its behavior
+        // is mirrored by InMemoryDictionaryRepo, which the runner tests
+        // exercise end-to-end.
+        'src/lib/server/dictionary/drizzle-repo.ts',
+        // Barrels / type-only modules have no runtime to cover.
+        'src/lib/server/dictionary/index.ts',
+        'src/lib/server/dictionary/repo.ts',
+        'src/lib/server/dictionary/types.ts',
         // SvelteKit route handlers tend to be thin glue over tested helpers;
         // they're easier to cover via integration tests (separate milestone) than
         // via vitest mocks. Excluded for now so the unit-coverage floor reflects

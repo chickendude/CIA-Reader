@@ -1,12 +1,16 @@
 import {
+  type AnyPgColumn,
+  boolean,
   index,
   integer,
+  jsonb,
   pgEnum,
   pgTable,
   primaryKey,
   real,
   text,
   timestamp,
+  unique,
   uuid,
 } from 'drizzle-orm/pg-core';
 import type { InferSelectModel } from 'drizzle-orm';
@@ -183,8 +187,156 @@ export const userLanguages = pgTable(
   }),
 );
 
+/**
+ * Where a translation originated. Drives ordering in the reader pop-up:
+ * user customizations first (for the acting user only), then officials,
+ * then community submissions sorted by vote.
+ */
+export const translationSource = pgEnum('translation_source', [
+  'official_dictionary',
+  'curator',
+  'user',
+]);
+
+/**
+ * Dictionary headwords (T-3.1). A lemma is identified by (language, headword,
+ * pos) — the same surface may be multiple lemmas across POS (e.g. Hindi "सोना"
+ * as noun "gold" vs. verb "to sleep"). `script` is an ISO 15924 code (Deva /
+ * Orya / etc.) — redundant with `language` for MVP but kept explicit so Urdu
+ * / Sindhi (multi-script) slot in cleanly later.
+ *
+ * `source_attribution` is the human-readable credit shown in the pop-up and
+ * on the browse page (T-3.8). `source_id` is the upstream primary key so a
+ * re-import can UPDATE rather than duplicate (idempotency).
+ *
+ * `curator_locked = true` means "a human has touched this and future
+ * imports MUST NOT clobber it." The import runner enforces that invariant;
+ * curators can unlock in the dictionary editor (T-3.7) if they want to
+ * accept a fresh upstream payload over their edit.
+ */
+export const lemmas = pgTable(
+  'lemmas',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    language: language('language').notNull(),
+    headword: text('headword').notNull(),
+    pos: text('pos').notNull(),
+    script: text('script').notNull(),
+    glossDefault: text('gloss_default'),
+    frequencyRank: integer('frequency_rank'),
+    source: translationSource('source').notNull(),
+    sourceAttribution: text('source_attribution'),
+    sourceId: text('source_id'),
+    curatorLocked: boolean('curator_locked').notNull().default(false),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    headwordKey: unique('lemmas_language_headword_pos_uq').on(t.language, t.headword, t.pos),
+    languageIdx: index('lemmas_language_idx').on(t.language),
+    frequencyIdx: index('lemmas_language_frequency_idx').on(t.language, t.frequencyRank),
+    // Lookup by (language, source, source_id) is the idempotent-upsert key
+    // for re-running an importer — indexed so re-imports don't full-scan.
+    sourceIdx: index('lemmas_source_lookup_idx').on(t.language, t.source, t.sourceId),
+  }),
+);
+
+/**
+ * Known inflected forms per lemma. Populated opportunistically by the NLP
+ * pipeline (a surface it successfully lemmatized) and by dictionary imports
+ * that ship form tables. Used as a fallback lookup cache and as input to
+ * T-6.2's "apply-to-all-instances" flow. `romanization` is precomputed at
+ * write time so the script-aware input can display it instantly.
+ */
+export const lemmaForms = pgTable(
+  'lemma_forms',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    lemmaId: uuid('lemma_id')
+      .notNull()
+      .references(() => lemmas.id, { onDelete: 'cascade' }),
+    surface: text('surface').notNull(),
+    features: jsonb('features').$type<Record<string, string>>().notNull().default({}),
+    romanization: text('romanization'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    lemmaIdx: index('lemma_forms_lemma_idx').on(t.lemmaId),
+    surfaceIdx: index('lemma_forms_surface_idx').on(t.surface),
+  }),
+);
+
+/**
+ * Translation rows for a lemma. Officials, curator edits, and user
+ * submissions all live here and are distinguished by `source`. A user can
+ * fork an official into a personal copy via `parent_translation_id` (T-3.5)
+ * — the fork is visible only to the forker and renders at the top of the
+ * pop-up for them specifically.
+ *
+ * `hidden` is the moderation switch for community translations; officials
+ * are edited in place (with an audit trail in T-3.4's `lemma_edit_history`)
+ * rather than hidden.
+ */
+export const translations = pgTable(
+  'translations',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    lemmaId: uuid('lemma_id')
+      .notNull()
+      .references(() => lemmas.id, { onDelete: 'cascade' }),
+    source: translationSource('source').notNull(),
+    submittedBy: uuid('submitted_by').references(() => users.id, { onDelete: 'set null' }),
+    parentTranslationId: uuid('parent_translation_id').references(
+      (): AnyPgColumn => translations.id,
+      { onDelete: 'set null' },
+    ),
+    body: text('body').notNull(),
+    targetLanguage: text('target_language').notNull().default('en'),
+    sourceAttribution: text('source_attribution'),
+    sourceId: text('source_id'),
+    hidden: boolean('hidden').notNull().default(false),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    lemmaIdx: index('translations_lemma_idx').on(t.lemmaId),
+    submittedByIdx: index('translations_submitted_by_idx').on(t.submittedBy),
+    // The (lemma, source, source_id) triple is how a re-import finds its
+    // own previously-written row to update.
+    sourceLookupIdx: index('translations_source_lookup_idx').on(t.lemmaId, t.source, t.sourceId),
+  }),
+);
+
+/**
+ * Audit row per dictionary-import run. One row written per `runImport(...)`
+ * invocation so we can answer "when did we last pull Hindi WordNet and
+ * what changed?" without re-reading the source file or scanning lemmas.
+ */
+export const dictionaryImports = pgTable(
+  'dictionary_imports',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    sourceName: text('source_name').notNull(),
+    language: language('language').notNull(),
+    runAt: timestamp('run_at', { withTimezone: true }).notNull().defaultNow(),
+    lemmasCreated: integer('lemmas_created').notNull().default(0),
+    lemmasUpdated: integer('lemmas_updated').notNull().default(0),
+    lemmasSkippedCuratorLocked: integer('lemmas_skipped_curator_locked').notNull().default(0),
+    translationsCreated: integer('translations_created').notNull().default(0),
+    translationsUpdated: integer('translations_updated').notNull().default(0),
+    notes: text('notes'),
+  },
+  (t) => ({
+    languageIdx: index('dictionary_imports_language_idx').on(t.language, t.runAt),
+  }),
+);
+
 export type User = InferSelectModel<typeof users>;
 export type Session = InferSelectModel<typeof sessions>;
 export type RefreshToken = InferSelectModel<typeof refreshTokens>;
 export type MagicLink = InferSelectModel<typeof magicLinks>;
 export type UserLanguage = InferSelectModel<typeof userLanguages>;
+export type Lemma = InferSelectModel<typeof lemmas>;
+export type LemmaForm = InferSelectModel<typeof lemmaForms>;
+export type Translation = InferSelectModel<typeof translations>;
+export type DictionaryImport = InferSelectModel<typeof dictionaryImports>;
