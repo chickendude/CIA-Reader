@@ -89,9 +89,9 @@ async function callDefault(fields: Record<string, string>, urlStr = 'http://x/lo
     request: { formData: () => Promise.resolve(fd) } as unknown as Request,
     cookies: {} as unknown,
     url: new URL(urlStr),
-  } as unknown as Parameters<Mod['actions']['default']>[0];
+  } as unknown as Parameters<Mod['actions']['signin']>[0];
   try {
-    return await actions.default!(event);
+    return await actions.signin!(event);
   } catch (e) {
     return e as { status: number; location?: string };
   }
@@ -145,7 +145,7 @@ describe('/login loader', () => {
   });
 });
 
-describe('/login default action', () => {
+describe('/login signin action', () => {
   it('signs the user in and redirects to ?next=', async () => {
     dbSelect.mockReturnValueOnce([USER_ROW]);
     verifyPassword.mockResolvedValueOnce(true);

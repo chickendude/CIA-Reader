@@ -51,7 +51,11 @@ export const load: PageServerLoad = ({ locals, url }) => {
 };
 
 export const actions: Actions = {
-  default: async ({ request, cookies, url }) => {
+  // SvelteKit rule: a page either has a single `default` action OR
+  // a set of named actions, never both. The magic-link path is
+  // distinct enough to deserve its own name, so we keep both as
+  // named actions and the password form posts to `?/signin`.
+  signin: async ({ request, cookies, url }) => {
     const fd = await request.formData();
     const raw = {
       email: fd.get('email')?.toString() ?? '',
@@ -61,6 +65,7 @@ export const actions: Actions = {
     if (!parsed.success) {
       return fail(400, {
         ok: false,
+        section: 'signin' as const,
         message: parsed.error.issues
           .map((i) => `${i.path.join('.')}: ${i.message}`)
           .join('; '),
@@ -76,6 +81,7 @@ export const actions: Actions = {
     const invalid = () =>
       fail(401, {
         ok: false,
+        section: 'signin' as const,
         message: 'Invalid email or password',
         values: { email: raw.email },
       });

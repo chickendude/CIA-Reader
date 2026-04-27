@@ -8,12 +8,10 @@
   let email = $state(untrack(() => form?.values?.email ?? ''));
   let password = $state('');
 
-  // Discriminate the two action results — the magic-link action
-  // returns `section: 'magic'` so we can render its success message
-  // inline next to the magic-link button rather than the password
-  // form.
+  // Discriminate the two action results by `section` so each form
+  // can show its own inline message.
   const passwordError = $derived(
-    form && !form.ok && !('section' in form && form.section === 'magic')
+    form && !form.ok && 'section' in form && form.section === 'signin'
       ? form.message
       : null,
   );
@@ -40,7 +38,7 @@
     <p class="err" role="alert">{passwordError}</p>
   {/if}
 
-  <form method="post" use:enhance class="stack">
+  <form method="post" action="?/signin" use:enhance class="stack">
     <label>
       Email
       <input
