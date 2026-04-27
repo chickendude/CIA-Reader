@@ -20,7 +20,8 @@ describe('access token JWTs', () => {
     const jwt = await signAccessToken('user-123');
     const parts = jwt.split('.');
     // Flip a character in the signature segment.
-    parts[2] = parts[2].split('').reverse().join('');
+    const sig = parts[2] ?? '';
+    parts[2] = sig.split('').reverse().join('');
     const tampered = parts.join('.');
     expect(await verifyAccessToken(tampered)).toBeNull();
   });
