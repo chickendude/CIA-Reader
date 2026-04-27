@@ -72,6 +72,15 @@ async function loadLemmaIndex(
   return { byHeadwordPos, byHeadword };
 }
 
+// Each MVP language has a single canonical script today (multi-script
+// languages — Sindhi, Urdu — land in M15). Hardcoded here so the
+// dispatcher doesn't have to drag the Python language registry in.
+const SCRIPT_FOR: Record<'hi' | 'mr' | 'or', string> = {
+  hi: 'Deva',
+  mr: 'Deva',
+  or: 'Orya',
+};
+
 function lookupCandidate(
   c: { lemma: string; pos: string },
   index: LemmaIndex,
@@ -83,7 +92,84 @@ function lookupCandidate(
   );
 }
 
-function pickLemmaId(token: NlpToken, index: LemmaIndex): string | null {
+/**
+ * Find or auto-create a lemma row for a Stanza candidate. The
+ * dispatcher calls this for every word token so unrecognized lemmas
+ * (Stanza had a lemmatization but the dictionary had no row yet)
+ * become real `lemmas` rows the user can attach translations to.
+ *
+ * The auto-created row is tagged `source='official_dictionary'` +
+ * `sourceAttribution='Stanza UD'` so curators can see where it came
+ * from in the dictionary editor (T-3.7) and clean up / promote it.
+ * `curator_locked` stays false so a real upstream dictionary import
+ * can still overwrite the auto-created entry later.
+ *
+ * Skips creation when the candidate's lemma is empty (punctuation /
+ * symbol tokens) — those don't deserve a dictionary row.
+ */
+async function ensureLemma(
+  language: 'hi' | 'mr' | 'or',
+  candidate: { lemma: string; pos: string },
+  index: LemmaIndex,
+): Promise<string | null> {
+  const headword = candidate.lemma?.trim();
+  const pos = candidate.pos?.trim() || 'X';
+  if (!headword) return null;
+
+  const existing = lookupCandidate({ lemma: headword, pos }, index);
+  if (existing) return existing;
+
+  const [row] = (await db
+    .insert(schema.lemmas)
+    .values({
+      language,
+      headword,
+      pos,
+      script: SCRIPT_FOR[language],
+      source: 'official_dictionary',
+      sourceAttribution: 'Stanza UD',
+    })
+    .onConflictDoNothing({
+      target: [schema.lemmas.language, schema.lemmas.headword, schema.lemmas.pos],
+    })
+    .returning()) as Lemma[];
+
+  if (row) {
+    index.byHeadwordPos.set(`${headword} ${pos}`, row.id);
+    if (!index.byHeadword.has(headword)) {
+      index.byHeadword.set(headword, row.id);
+    }
+    return row.id;
+  }
+
+  // Concurrent insert won the race — read it back.
+  const [found] = (await db
+    .select()
+    .from(schema.lemmas)
+    .where(
+      and(
+        eq(schema.lemmas.language, language),
+        eq(schema.lemmas.headword, headword),
+        eq(schema.lemmas.pos, pos),
+      ),
+    )
+    .limit(1)) as Lemma[];
+  if (found) {
+    index.byHeadwordPos.set(`${headword} ${pos}`, found.id);
+    if (!index.byHeadword.has(headword)) {
+      index.byHeadword.set(headword, found.id);
+    }
+    return found.id;
+  }
+  return null;
+}
+
+async function pickLemmaId(
+  token: NlpToken,
+  language: 'hi' | 'mr' | 'or',
+  index: LemmaIndex,
+): Promise<string | null> {
+  if (!token.is_word) return null;
   // Strict-POS lookup first across every candidate. Real Stanza
   // output usually hits this path.
   for (const c of token.candidates) {
@@ -98,7 +184,13 @@ function pickLemmaId(token: NlpToken, index: LemmaIndex): string | null {
     const loose = index.byHeadword.get(c.lemma);
     if (loose) return loose;
   }
-  return null;
+  // Last resort — auto-create a lemma row from the top candidate so
+  // the user can attach translations to it. Stub-pipeline candidates
+  // (`pos: 'X'`, `lemma === surface`) still create a row; T-3.7's
+  // editor lets curators clean those up later.
+  const top = token.candidates[0];
+  if (!top || !top.lemma) return null;
+  return ensureLemma(language, top, index);
 }
 
 async function processChapter(
@@ -107,23 +199,40 @@ async function processChapter(
   index: LemmaIndex,
 ): Promise<number> {
   const result = await nlpClient.process(language, chapter.body);
-  const rows = result.tokens.map((t) => ({
-    chapterId: chapter.id,
-    idx: t.idx,
-    surface: t.surface,
-    lemmaId: pickLemmaId(t, index),
-    lemmaCandidates: t.candidates.map((c) => ({
-      lemmaId: lookupCandidate(c, index),
-      features: c.features,
-      score: c.score,
-    })),
-    features: t.candidates[0]?.features ?? {},
-    isAmbiguous: t.is_ambiguous,
-    isOov: t.is_oov,
-    isWord: t.is_word,
-    sentenceIdx: 0,
-    romanization: t.romanization,
-  })) satisfies Array<Omit<TextToken, 'id'>>;
+  // Resolve / auto-create lemmas first so each token's lemma_id is
+  // ready for the bulk insert. We can't `Promise.all` because
+  // ensureLemma writes into the shared index — sequential keeps
+  // duplicate inserts from racing each other across tokens of the
+  // same lemma.
+  const resolvedLemmaIds: Array<string | null> = [];
+  for (const t of result.tokens) {
+    resolvedLemmaIds.push(await pickLemmaId(t, language, index));
+  }
+  const rows = result.tokens.map((t, i) => {
+    const lemmaId = resolvedLemmaIds[i] ?? null;
+    return {
+      chapterId: chapter.id,
+      idx: t.idx,
+      surface: t.surface,
+      lemmaId,
+      lemmaCandidates: t.candidates.map((c) => ({
+        lemmaId: lookupCandidate(c, index),
+        features: c.features,
+        score: c.score,
+      })),
+      features: t.candidates[0]?.features ?? {},
+      isAmbiguous: t.is_ambiguous,
+      // If we resolved (or auto-created) a dictionary row, the token
+      // is no longer "no dictionary match" — even if Stanza initially
+      // flagged it OOV because lemma==surface. The reader's "No
+      // dictionary match" copy + dashed-underline is reserved for
+      // tokens that genuinely have no lemma row to attach to.
+      isOov: lemmaId ? false : t.is_oov,
+      isWord: t.is_word,
+      sentenceIdx: 0,
+      romanization: t.romanization,
+    };
+  }) satisfies Array<Omit<TextToken, 'id'>>;
   if (rows.length === 0) return 0;
   // Replace any previous tokens for idempotency (re-processing a
   // text via T-6.8 admin endpoint should overwrite, not duplicate).

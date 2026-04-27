@@ -86,6 +86,63 @@ async function main() {
     byHeadwordPos.get(`${c.lemma} ${c.pos}`) ??
     byHeadword.get(c.lemma) ??
     null;
+
+  const SCRIPT_FOR = { hi: 'Deva', mr: 'Deva', or: 'Orya' };
+
+  // Find-or-auto-create. Mirrors ensureLemma() in
+  // lib/server/texts/in-process-dispatcher.ts: if Stanza gave us a
+  // lemma string but the dictionary has no row, insert one tagged
+  // sourceAttribution='Stanza UD' so curators can see it later.
+  let createdCount = 0;
+  async function ensureLemma(language, candidate) {
+    const headword = (candidate?.lemma ?? '').trim();
+    const pos = (candidate?.pos ?? '').trim() || 'X';
+    if (!headword) return null;
+    const existing = resolveCandidate({ lemma: headword, pos });
+    if (existing) return existing;
+    const inserted = await sql.unsafe(
+      `INSERT INTO lemmas (language, headword, pos, script, source, source_attribution, curator_locked, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, 'official_dictionary', 'Stanza UD', false, NOW(), NOW())
+       ON CONFLICT (language, headword, pos) DO NOTHING
+       RETURNING id`,
+      [language, headword, pos, SCRIPT_FOR[language]],
+    );
+    if (inserted.length > 0) {
+      createdCount++;
+      const id = inserted[0].id;
+      byHeadwordPos.set(`${headword} ${pos}`, id);
+      if (!byHeadword.has(headword)) byHeadword.set(headword, id);
+      return id;
+    }
+    // Concurrent insert won the race — read it back.
+    const found = await sql.unsafe(
+      'SELECT id FROM lemmas WHERE language = $1 AND headword = $2 AND pos = $3 LIMIT 1',
+      [language, headword, pos],
+    );
+    if (found.length > 0) {
+      const id = found[0].id;
+      byHeadwordPos.set(`${headword} ${pos}`, id);
+      if (!byHeadword.has(headword)) byHeadword.set(headword, id);
+      return id;
+    }
+    return null;
+  }
+
+  async function pickLemmaId(t, language) {
+    if (!t.is_word) return null;
+    for (const c of t.candidates ?? []) {
+      const strict = byHeadwordPos.get(`${c.lemma} ${c.pos}`);
+      if (strict) return strict;
+    }
+    for (const c of t.candidates ?? []) {
+      const loose = byHeadword.get(c.lemma);
+      if (loose) return loose;
+    }
+    const top = (t.candidates ?? [])[0];
+    if (!top || !top.lemma) return null;
+    return ensureLemma(language, top);
+  }
+
   console.log(
     `[reprocess] lemma index: ${byHeadwordPos.size} strict / ${byHeadword.size} loose`,
   );
@@ -107,14 +164,14 @@ async function main() {
       const result = await nlpProcess(text.language, chapter.body);
       console.log(`[reprocess]   got ${result.tokens.length} tokens back`);
 
-      const rows = result.tokens.map((t) => {
-        // Strict-POS first across every candidate, then loose by
-        // headword. Mirrors lib/server/texts/in-process-dispatcher.ts.
-        let lemmaId = null;
-        for (const c of t.candidates ?? []) {
-          lemmaId = resolveCandidate(c);
-          if (lemmaId) break;
-        }
+      // Resolve / auto-create lemmas first (sequentially so duplicate
+      // inserts don't race each other across tokens of the same lemma).
+      const lemmaIds = [];
+      for (const t of result.tokens) {
+        lemmaIds.push(await pickLemmaId(t, text.language));
+      }
+      const rows = result.tokens.map((t, i) => {
+        const lemmaId = lemmaIds[i];
         return {
         chapterId: chapter.id,
         idx: t.idx,
@@ -127,7 +184,10 @@ async function main() {
         })),
         features: (t.candidates && t.candidates[0]?.features) || {},
         isAmbiguous: t.is_ambiguous,
-        isOov: t.is_oov,
+        // If we resolved (or auto-created) a dictionary row, the token
+        // is no longer "no dictionary match" even if Stanza initially
+        // flagged it OOV.
+        isOov: lemmaId ? false : t.is_oov,
         isWord: t.is_word,
         sentenceIdx: 0,
         romanization: t.romanization,
@@ -180,7 +240,10 @@ async function main() {
       "UPDATE nlp_jobs SET status = 'completed', finished_at = NOW() WHERE text_id = $1",
       [textId],
     );
-    console.log(`[reprocess] done — ${totalTokens} tokens written, status=ready`);
+    console.log(
+      `[reprocess] done — ${totalTokens} tokens written, ` +
+        `${createdCount} new lemmas auto-created, status=ready`,
+    );
   } catch (e) {
     const message = String(e?.message ?? e).slice(0, 1000);
     await sql.unsafe(

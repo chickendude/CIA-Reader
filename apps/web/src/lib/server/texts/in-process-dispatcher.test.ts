@@ -46,6 +46,9 @@ function makeInsertChain() {
     entry.values = v;
     return chain;
   });
+  // ensureLemma() chains on these for upsert-style auto-create.
+  chain.onConflictDoNothing = vi.fn(() => chain);
+  chain.returning = vi.fn(() => nextStaged());
   chain.then = (resolve: (v: unknown) => unknown) => resolve(undefined);
   return chain;
 }
@@ -179,6 +182,61 @@ describe('processTextNow', () => {
 
     // Two delete calls (one per chapter, idempotency clear before insert).
     expect(calls.filter((c) => c.kind === 'delete')).toHaveLength(2);
+  });
+
+  it('auto-creates a lemma row when Stanza returns an unrecognized headword', async () => {
+    // text + chapters + empty lemma index
+    stage([{ id: 'text-1', language: 'hi' }]);
+    stage([{ id: 'chap-1', body: 'unfamiliar word' }]);
+    stage([]); // lemma index — no rows
+    // ensureLemma's onConflictDoNothing(...).returning() chain
+    // pulls one staged row.
+    stage([{ id: 'lemma-new', headword: 'नमस्ते', pos: 'INTJ' }]);
+
+    nlpProcess.mockResolvedValueOnce({
+      language: 'hi',
+      pipeline_id: 'stanza-hi',
+      tokens: [
+        {
+          idx: 0,
+          surface: 'नमस्ते',
+          is_word: true,
+          is_ambiguous: false,
+          // Stanza's OOV heuristic flags `lemma==surface` as OOV; the
+          // dispatcher should still auto-create + flip isOov=false
+          // because we now have a dictionary row to attach to.
+          is_oov: true,
+          romanization: 'namaste',
+          candidates: [
+            { lemma: 'नमस्ते', pos: 'INTJ', score: 1.0, features: {} },
+          ],
+        },
+      ],
+    });
+
+    await processTextNow('text-1');
+
+    // First insert is the auto-created lemma row (ensureLemma); second
+    // is the text_tokens batch.
+    const inserts = calls.filter(
+      (c): c is Extract<Call, { kind: 'insert' }> => c.kind === 'insert',
+    );
+    expect(inserts).toHaveLength(2);
+    expect(inserts[0]!.values).toMatchObject({
+      language: 'hi',
+      headword: 'नमस्ते',
+      pos: 'INTJ',
+      script: 'Deva',
+      sourceAttribution: 'Stanza UD',
+    });
+    const tokenInsert = inserts[1]!.values as Array<{
+      lemmaId: string | null;
+      isOov: boolean;
+    }>;
+    expect(tokenInsert[0]!.lemmaId).toBe('lemma-new');
+    // Token had is_oov=true from the worker, but the auto-created
+    // lemma row makes "no dictionary match" no longer correct.
+    expect(tokenInsert[0]!.isOov).toBe(false);
   });
 
   it('marks the text failed when the NLP service throws', async () => {
