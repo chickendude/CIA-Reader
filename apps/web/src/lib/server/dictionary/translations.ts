@@ -41,7 +41,7 @@ export type SubmitTranslationInput = {
 export class TranslationValidationError extends Error {
   constructor(
     message: string,
-    public readonly status: 400 | 404 | 409 = 400,
+    public readonly status: 400 | 403 | 404 | 409 = 400,
   ) {
     super(message);
     this.name = 'TranslationValidationError';
@@ -175,6 +175,92 @@ export async function submitUserTranslation(
     .returning();
   if (!row) throw new Error('Failed to insert translation');
   return row as Translation;
+}
+
+/**
+ * Edit the body of one of the caller's own user-submitted translations
+ * (T-3.5). Guards:
+ *   - Row must exist.
+ *   - Row must have `source='user'` (we never mutate officials in-place —
+ *     those go through the curator dictionary editor instead).
+ *   - Row's `submittedBy` must match the caller.
+ *   - New body must pass the same validation as a fresh submit.
+ *
+ * Not rate-limited: edits are cheap, and the real abuse vector (spam)
+ * is already bounded at create time.
+ */
+export async function updateUserTranslation(
+  userId: string,
+  translationId: string,
+  patch: { body: string },
+  now: Date = new Date(),
+): Promise<Translation> {
+  const body = normalizeBody(patch.body ?? '');
+  if (body.length === 0) {
+    throw new TranslationValidationError('Translation body cannot be empty');
+  }
+  if (body.length > MAX_BODY_LEN) {
+    throw new TranslationValidationError(
+      `Translation body exceeds ${MAX_BODY_LEN} characters`,
+    );
+  }
+  const [existing] = await db
+    .select()
+    .from(schema.translations)
+    .where(eq(schema.translations.id, translationId))
+    .limit(1);
+  if (!existing) {
+    throw new TranslationValidationError(
+      `Translation ${translationId} not found`,
+      404,
+    );
+  }
+  const row = existing as Translation;
+  if (row.source !== 'user' || row.submittedBy !== userId) {
+    throw new TranslationValidationError(
+      'You can only edit your own translations',
+      403,
+    );
+  }
+  const [updated] = await db
+    .update(schema.translations)
+    .set({ body, updatedAt: now })
+    .where(eq(schema.translations.id, translationId))
+    .returning();
+  if (!updated) throw new Error('Failed to update translation');
+  return updated as Translation;
+}
+
+/**
+ * Hard-delete one of the caller's own user-submitted translations
+ * (T-3.5). Curator/admin moderation uses `hidden=true` instead so the
+ * audit trail survives; the author themselves can just remove the row.
+ */
+export async function deleteUserTranslation(
+  userId: string,
+  translationId: string,
+): Promise<void> {
+  const [existing] = await db
+    .select()
+    .from(schema.translations)
+    .where(eq(schema.translations.id, translationId))
+    .limit(1);
+  if (!existing) {
+    throw new TranslationValidationError(
+      `Translation ${translationId} not found`,
+      404,
+    );
+  }
+  const row = existing as Translation;
+  if (row.source !== 'user' || row.submittedBy !== userId) {
+    throw new TranslationValidationError(
+      'You can only delete your own translations',
+      403,
+    );
+  }
+  await db
+    .delete(schema.translations)
+    .where(eq(schema.translations.id, translationId));
 }
 
 export function publicTranslation(row: Translation) {
