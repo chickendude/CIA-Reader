@@ -12,6 +12,7 @@ import pytest
 from app import pipelines
 from app.pipelines import Pipeline, PipelineResult, StubPipeline, get_pipeline
 from app.pipelines.hindi import HindiPipeline
+from app.pipelines.marathi import MarathiPipeline
 from app.schemas import LemmaCandidate, Token
 
 
@@ -23,17 +24,19 @@ def _clear_cache():
 
 
 def test_get_pipeline_returns_stub_for_languages_still_on_stub():
-    # After T-2.2 Hindi routes to HindiPipeline; Marathi (T-2.3) and Odia
-    # (T-2.3a) still use the stub until their own pipelines ship.
-    for code in ("mr", "or"):
-        pipe = get_pipeline(code)
-        assert isinstance(pipe, Pipeline)
-        assert isinstance(pipe, StubPipeline)
+    # After T-2.2 / T-2.3, Hindi and Marathi route to their real Stanza-
+    # backed pipelines; Odia (T-2.3a) is still on the stub.
+    pipe = get_pipeline("or")
+    assert isinstance(pipe, Pipeline)
+    assert isinstance(pipe, StubPipeline)
 
 
 def test_get_pipeline_returns_hindi_pipeline_for_hi():
-    pipe = get_pipeline("hi")
-    assert isinstance(pipe, HindiPipeline)
+    assert isinstance(get_pipeline("hi"), HindiPipeline)
+
+
+def test_get_pipeline_returns_marathi_pipeline_for_mr():
+    assert isinstance(get_pipeline("mr"), MarathiPipeline)
 
 
 def test_get_pipeline_reuses_instance_per_pipeline_id():

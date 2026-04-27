@@ -41,6 +41,7 @@ import pytest  # noqa: E402
 
 from app import pipelines  # noqa: E402
 from app.pipelines.hindi import HindiPipeline  # noqa: E402
+from app.pipelines.marathi import MarathiPipeline  # noqa: E402
 
 
 @dataclass
@@ -77,21 +78,42 @@ class _WhitespaceFakeStanza:
         return _FakeDoc(sentences=[_FakeSentence(words=words)] if words else [])
 
 
-@pytest.fixture(autouse=True)
-def _fake_hindi_factory():
-    """Replace the real Hindi factory with a whitespace-fake for the test."""
-    original = pipelines._PIPELINE_FACTORIES.get("stanza-hi")
+def _fallback_split(text: str) -> list[str]:
+    """Minimal fallback tokenizer used by the Marathi fake."""
+    return text.split()
 
-    def _factory() -> HindiPipeline:
+
+@pytest.fixture(autouse=True)
+def _fake_stanza_factories():
+    """Replace the real Stanza-backed factories with whitespace fakes.
+
+    Applies to both ``stanza-hi`` (T-2.2) and ``stanza-mr`` (T-2.3).
+    Dedicated tests for each pipeline still instantiate with their own
+    fakes when they need specific UPOS / features / fallback behavior.
+    """
+    originals = {
+        "stanza-hi": pipelines._PIPELINE_FACTORIES.get("stanza-hi"),
+        "stanza-mr": pipelines._PIPELINE_FACTORIES.get("stanza-mr"),
+    }
+
+    def _hi_factory() -> HindiPipeline:
         return HindiPipeline(nlp=_WhitespaceFakeStanza())
 
-    pipelines._PIPELINE_FACTORIES["stanza-hi"] = _factory
+    def _mr_factory() -> MarathiPipeline:
+        return MarathiPipeline(
+            nlp=_WhitespaceFakeStanza(),
+            fallback_tokenizer=_fallback_split,
+        )
+
+    pipelines._PIPELINE_FACTORIES["stanza-hi"] = _hi_factory
+    pipelines._PIPELINE_FACTORIES["stanza-mr"] = _mr_factory
     pipelines.reset_pipeline_cache()
     try:
         yield
     finally:
-        if original is None:
-            pipelines._PIPELINE_FACTORIES.pop("stanza-hi", None)
-        else:
-            pipelines._PIPELINE_FACTORIES["stanza-hi"] = original
+        for pipeline_id, original in originals.items():
+            if original is None:
+                pipelines._PIPELINE_FACTORIES.pop(pipeline_id, None)
+            else:
+                pipelines._PIPELINE_FACTORIES[pipeline_id] = original
         pipelines.reset_pipeline_cache()
