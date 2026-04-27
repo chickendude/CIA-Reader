@@ -18,16 +18,20 @@
     type ServerToken,
   } from './types.js';
 
+  import WordPopup from './WordPopup.svelte';
+
   let {
     chapters,
     chapterIdx,
     wordsPerPage = 250,
     showRomanization = false,
+    isOwner = false,
   }: {
     chapters: ChapterView[];
     chapterIdx: number;
     wordsPerPage?: number;
     showRomanization?: boolean;
+    isOwner?: boolean;
   } = $props();
 
   let page = $state(0);
@@ -107,6 +111,47 @@
   function next() {
     if (hasNext) page = clampedPage + 1;
   }
+
+  // Same click → popup pattern as ChapterBody — duplicated rather
+  // than refactored because ReaderScroll also slices by paragraph
+  // packing, and the shared component would have to know about
+  // pages.
+  const tokensById = $derived.by(() => {
+    if (!current?.tokens) return new Map<string, ServerToken>();
+    return new Map(current.tokens.map((t) => [t.id, t]));
+  });
+
+  let activeToken = $state<ServerToken | null>(null);
+  let activeRect = $state<{
+    top: number;
+    left: number;
+    bottom: number;
+    right: number;
+  } | null>(null);
+
+  function onArticleClick(event: MouseEvent) {
+    const target = event.target as HTMLElement | null;
+    if (!target) return;
+    const span = target.closest('[data-token-id]') as HTMLElement | null;
+    if (!span) return;
+    const tokenId = span.getAttribute('data-token-id');
+    if (!tokenId) return;
+    const token = tokensById.get(tokenId);
+    if (!token || !token.isWord) return;
+    const rect = span.getBoundingClientRect();
+    activeToken = token;
+    activeRect = {
+      top: rect.top,
+      left: rect.left,
+      bottom: rect.bottom,
+      right: rect.right,
+    };
+  }
+
+  function closePopup() {
+    activeToken = null;
+    activeRect = null;
+  }
 </script>
 
 <div class="reader-scroll" data-mode="paged-scroll">
@@ -122,7 +167,9 @@
     {/if}
   </header>
 
-  <article>
+  <!-- svelte-ignore a11y_click_events_have_key_events -->
+  <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+  <article onclick={onArticleClick}>
     {#if visibleServer}
       {#each visibleServer as paragraph, pIdx (pIdx)}
         <p class="body">
@@ -148,6 +195,15 @@
     <button type="button" disabled={!hasNext} onclick={next}>Next page →</button>
   </nav>
 </div>
+
+{#if activeToken && activeRect}
+  <WordPopup
+    token={activeToken}
+    anchorRect={activeRect}
+    {isOwner}
+    onClose={closePopup}
+  />
+{/if}
 
 <style>
   .reader-scroll {

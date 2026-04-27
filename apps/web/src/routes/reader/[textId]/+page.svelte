@@ -139,18 +139,21 @@
       chapterIdx={data.anchor.chapterIdx}
       textId={data.text.id}
       showRomanization={data.showRomanization}
+      isOwner={data.isOwner}
     />
   {:else if data.mode === 'paged_scroll'}
     <ReaderScroll
       chapters={data.chapters}
       chapterIdx={data.anchor.chapterIdx}
       showRomanization={data.showRomanization}
+      isOwner={data.isOwner}
     />
   {:else}
     <ReaderContinuous
       chapters={data.chapters}
       initialChapterIdx={data.anchor.chapterIdx}
       showRomanization={data.showRomanization}
+      isOwner={data.isOwner}
     />
   {/if}
 </div>

@@ -14,10 +14,12 @@
     chapters,
     initialChapterIdx = 0,
     showRomanization = false,
+    isOwner = false,
   }: {
     chapters: ChapterView[];
     initialChapterIdx?: number;
     showRomanization?: boolean;
+    isOwner?: boolean;
   } = $props();
 </script>
 
@@ -33,7 +35,7 @@
           <span class="muted">({chapter.tokenCount.toLocaleString()} tokens)</span>
         </h2>
       {/if}
-      <ChapterBody {chapter} {showRomanization} />
+      <ChapterBody {chapter} {showRomanization} {isOwner} />
     </section>
   {/each}
 </div>
