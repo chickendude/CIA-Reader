@@ -1,0 +1,79 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  web:
+    name: web (lint + typecheck + test + coverage)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.12.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20.18.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile=false
+      - run: pnpm --filter @ciareader/web exec svelte-kit sync
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm --filter @ciareader/web run test:coverage
+      - name: Upload web coverage artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-coverage
+          path: apps/web/coverage
+          if-no-files-found: ignore
+
+  nlp:
+    name: nlp (ruff + pytest + coverage)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install -U pip && pip install -e 'services/nlp[dev]'
+      - run: ruff check services/nlp
+      - name: Run pytest with coverage (fail-under enforced in pyproject.toml)
+        working-directory: services/nlp
+        env:
+          PYTHONPATH: ${{ github.workspace }}/packages/shared-types/python
+        run: pytest
+      - name: Upload nlp coverage artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nlp-coverage
+          path: services/nlp/.coverage
+          if-no-files-found: ignore
+
+  registry-parity:
+    name: language registry parity (TS vs Python)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Verify both registries declare the same language codes
+        run: |
+          python3 - <<'PY'
+          import re, sys, pathlib
+          ts = pathlib.Path("packages/shared-types/src/languages.ts").read_text(encoding="utf-8")
+          py = pathlib.Path("packages/shared-types/python/languages.py").read_text(encoding="utf-8")
+          ts_codes = set(re.findall(r"^\s+(hi|mr|or|pa|bn|gu|ne|ur|sd):\s", ts, re.M))
+          py_codes = set(re.findall(r'^\s+"(hi|mr|or|pa|bn|gu|ne|ur|sd)":\s', py, re.M))
+          if ts_codes != py_codes:
+              print(f"TS codes:     {sorted(ts_codes)}", file=sys.stderr)
+              print(f"Python codes: {sorted(py_codes)}", file=sys.stderr)
+              sys.exit("Language registries out of sync — update both files together.")
+          print(f"OK — {sorted(ts_codes)}")
+          PY

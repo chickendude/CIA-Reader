@@ -1,0 +1,97 @@
+<script lang="ts">
+  import type { PageData } from './$types';
+  let { data }: { data: PageData } = $props();
+</script>
+
+<main>
+  <h1>CIA Reader</h1>
+  <p class="sub">Comparative Indo-Aryan — a LingQ-style reader for Hindi, Marathi, and Odia.</p>
+
+  <section>
+    <h2>Stack status</h2>
+    <ul class="status">
+      <li>
+        Web <span class="ok">up</span>
+      </li>
+      <li>
+        NLP service
+        {#if data.nlpStatus === 'ok'}
+          <span class="ok">up</span>
+        {:else}
+          <span class="down">down</span>
+        {/if}
+      </li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>Supported languages</h2>
+    <ul class="langs">
+      {#each data.languages as lang}
+        <li>
+          <span class="native">{lang.nativeName}</span>
+          <span class="muted">({lang.displayName} — {lang.script})</span>
+        </li>
+      {/each}
+    </ul>
+  </section>
+
+  <section>
+    <h2>Smoke test</h2>
+    <p>
+      <a href="/api/v1/smoke">GET /api/v1/smoke</a> — end-to-end web → NLP round-trip.
+    </p>
+  </section>
+</main>
+
+<style>
+  main {
+    max-width: 48rem;
+    margin: 0 auto;
+    padding: 2rem 1.25rem;
+  }
+  h1 {
+    margin: 0 0 0.25rem;
+    font-size: 2rem;
+  }
+  h2 {
+    font-size: 1.1rem;
+    margin: 1.75rem 0 0.5rem;
+    color: var(--muted);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .sub {
+    margin: 0 0 1.5rem;
+    color: var(--muted);
+  }
+  ul {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+  }
+  .status li,
+  .langs li {
+    padding: 0.5rem 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .ok {
+    color: #059669;
+    font-weight: 600;
+  }
+  .down {
+    color: #dc2626;
+    font-weight: 600;
+  }
+  .muted {
+    color: var(--muted);
+  }
+  .native {
+    font-size: 1.15rem;
+    margin-right: 0.5rem;
+  }
+  a {
+    color: var(--accent);
+  }
+</style>
