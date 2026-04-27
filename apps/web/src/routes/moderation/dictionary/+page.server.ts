@@ -38,6 +38,7 @@ export const load: PageServerLoad = async ({ url, parent }) => {
       limit: DEFAULT_PAGE_SIZE,
       offset: 0,
       query: { q: '' },
+      isAdmin: moderator.role === 'admin',
     };
   }
 
@@ -80,5 +81,6 @@ export const load: PageServerLoad = async ({ url, parent }) => {
     limit: result.limit,
     offset: result.offset,
     query: { q: q ?? '' },
+    isAdmin: moderator.role === 'admin',
   };
 };

@@ -46,11 +46,17 @@ export default defineConfig({
         'src/routes/**/+server.ts',
         'src/routes/**/+page.server.ts',
       ],
+      // Tightened in T-3.9 once M3 landed real curator logic. Actual
+      // numbers at the time of the bump are ~88% lines / ~88% branches /
+      // ~91% funcs across the included surface; the floor sits a few
+      // points below so a small regression is allowed but a wholesale
+      // drop trips CI. Tighten further as M5/M6 land reader + moderation
+      // logic.
       thresholds: {
-        lines: 40,
-        functions: 40,
-        branches: 60,
-        statements: 40,
+        lines: 80,
+        functions: 80,
+        branches: 80,
+        statements: 80,
       },
     },
   },

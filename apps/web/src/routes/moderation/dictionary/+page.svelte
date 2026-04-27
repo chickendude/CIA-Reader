@@ -34,6 +34,11 @@
     {:else}
       <p class="sub">No language grants. Ask an admin for curator rights.</p>
     {/if}
+    {#if data.isAdmin}
+      <p class="admin-tools">
+        <a href="/moderation/dictionary/bulk">Bulk tools →</a>
+      </p>
+    {/if}
   </header>
 
   {#if data.descriptors.length > 1}
