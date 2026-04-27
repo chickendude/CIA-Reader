@@ -5,6 +5,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const createPastedText = vi.fn();
+const createTxtText = vi.fn();
 const requireUser = vi.fn();
 
 vi.mock('$lib/server/texts/upload.js', async () => {
@@ -14,6 +15,7 @@ vi.mock('$lib/server/texts/upload.js', async () => {
   return {
     ...actual,
     createPastedText: (...a: unknown[]) => createPastedText(...a),
+    createTxtText: (...a: unknown[]) => createTxtText(...a),
   };
 });
 
@@ -52,6 +54,7 @@ async function callPost(body: unknown, user: typeof USER | null = USER) {
 
 beforeEach(() => {
   createPastedText.mockReset();
+  createTxtText.mockReset();
   requireUser.mockReset();
 });
 
@@ -60,7 +63,7 @@ afterEach(() => {
 });
 
 describe('POST /api/v1/texts', () => {
-  it('returns 201 with the new text on a happy path', async () => {
+  it('returns 201 with the new text on the paste path', async () => {
     createPastedText.mockResolvedValueOnce({
       text: {
         id: 'text-1',
@@ -73,6 +76,7 @@ describe('POST /api/v1/texts', () => {
         createdAt: new Date('2026-04-27T00:00:00Z'),
       },
       chapter: { id: 'chap-1' },
+      chapters: [{ id: 'chap-1' }],
     });
     const res = (await callPost({
       language: 'hi',
@@ -87,10 +91,41 @@ describe('POST /api/v1/texts', () => {
       visibility: 'private',
       sourceType: 'paste',
     });
+    expect(json.chapterCount).toBe(1);
     expect(createPastedText).toHaveBeenCalledWith(
       { id: USER.id },
       { language: 'hi', title: 'My text', body: 'पाठ का मूल पाठ।' },
     );
+    expect(createTxtText).not.toHaveBeenCalled();
+  });
+
+  it('routes sourceType=txt through createTxtText and reports chapterCount', async () => {
+    createTxtText.mockResolvedValueOnce({
+      text: {
+        id: 'text-2',
+        ownerId: USER.id,
+        language: 'hi',
+        title: 'Big book',
+        sourceType: 'txt',
+        status: 'pending',
+        visibility: 'private',
+        createdAt: new Date('2026-04-27T00:00:00Z'),
+      },
+      chapter: { id: 'c0' },
+      chapters: [{ id: 'c0' }, { id: 'c1' }, { id: 'c2' }],
+    });
+    const res = (await callPost({
+      sourceType: 'txt',
+      language: 'hi',
+      title: 'Big book',
+      body: 'first.\n---\nsecond.\n---\nthird.',
+    })) as Response;
+    expect(res.status).toBe(201);
+    const json = await res.json();
+    expect(json.text.sourceType).toBe('txt');
+    expect(json.chapterCount).toBe(3);
+    expect(createTxtText).toHaveBeenCalledTimes(1);
+    expect(createPastedText).not.toHaveBeenCalled();
   });
 
   it('rejects an unsupported language with 400 before calling the service', async () => {

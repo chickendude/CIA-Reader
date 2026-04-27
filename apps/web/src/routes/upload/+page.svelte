@@ -18,13 +18,26 @@
   );
   let title = $state(untrack(() => form?.values?.title ?? ''));
   let body = $state(untrack(() => form?.values?.body ?? ''));
+  // Tracks whether the body originated from a file drop; controls
+  // which byte cap applies and gets posted to the form action so the
+  // server picks the right service (createTxtText vs createPastedText).
+  // Echoed back on a failed submit so the user keeps their state.
+  let sourceType = $state<'paste' | 'txt'>(
+    untrack(() => (form?.values?.sourceType === 'txt' ? 'txt' : 'paste')),
+  );
   let dropMessage = $state<string | null>(null);
 
+  // The applicable byte cap depends on the source type — paste paths
+  // are tighter than .txt paths.
+  const maxBodyBytes = $derived(
+    sourceType === 'txt' ? data.limits.maxTxtBytes : data.limits.maxPasteBytes,
+  );
+
   // Cheap UTF-8 byte count for the live counter — `TextEncoder` exists
-  // in every browser we care about. Match the server's MAX_PASTE_BYTES
-  // cap so we can disable submit before hitting the wire.
+  // in every browser we care about. Match the server's caps so we can
+  // disable submit before hitting the wire.
   const byteCount = $derived(new TextEncoder().encode(body).byteLength);
-  const overLimit = $derived(byteCount > data.limits.maxBodyBytes);
+  const overLimit = $derived(byteCount > maxBodyBytes);
 
   async function handleFileDrop(file: File) {
     const lower = file.name.toLowerCase();
@@ -37,15 +50,16 @@
       dropMessage = `Unsupported file type: ${file.name}`;
       return;
     }
-    if (file.size > data.limits.maxBodyBytes) {
+    if (file.size > data.limits.maxTxtBytes) {
       dropMessage = `File is too large (max ${(
-        data.limits.maxBodyBytes / 1000
-      ).toLocaleString()} KB).`;
+        data.limits.maxTxtBytes / 1_000_000
+      ).toLocaleString()} MB).`;
       return;
     }
     try {
       const text = await file.text();
       body = text;
+      sourceType = 'txt';
       if (!title) title = file.name.replace(/\.txt$/i, '');
       dropMessage = `Loaded ${file.name} (${(file.size / 1000).toFixed(1)} KB).`;
     } catch {
@@ -130,6 +144,8 @@
       {/if}
     </div>
 
+    <input type="hidden" name="sourceType" value={sourceType} />
+
     <label>
       Body
       <textarea
@@ -140,7 +156,20 @@
         placeholder="Paste your text here in the language's native script."
       ></textarea>
       <span class="counter" class:over={overLimit}>
-        {byteCount.toLocaleString()} / {data.limits.maxBodyBytes.toLocaleString()} bytes
+        {byteCount.toLocaleString()} / {maxBodyBytes.toLocaleString()} bytes
+        <span class="src">· {sourceType === 'txt' ? '.txt upload' : 'paste'}</span>
+        {#if sourceType === 'txt'}
+          <button
+            type="button"
+            class="reset"
+            onclick={() => {
+              sourceType = 'paste';
+              dropMessage = null;
+            }}
+          >
+            Treat as paste
+          </button>
+        {/if}
       </span>
     </label>
 
@@ -237,6 +266,22 @@
   .counter.over {
     color: #b03131;
     font-weight: 600;
+  }
+  .counter .src {
+    margin-left: 0.25rem;
+    color: var(--color-fg-muted);
+  }
+  .counter .reset {
+    margin-left: 0.5rem;
+    background: transparent;
+    border: 1px solid var(--color-border);
+    border-radius: 999px;
+    color: var(--color-fg-muted);
+    padding: 0 0.5rem;
+    min-height: 0;
+    font-size: 0.75rem;
+    line-height: 1.6;
+    cursor: pointer;
   }
   .err {
     color: #b03131;

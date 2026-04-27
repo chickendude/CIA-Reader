@@ -18,18 +18,34 @@ import { z } from 'zod';
 
 import {
   createPastedText,
+  createTxtText,
   TextValidationError,
   MAX_PASTE_BYTES,
+  MAX_TXT_BYTES,
   MAX_TITLE_LEN,
 } from '$lib/server/texts/upload.js';
 import { LANGUAGES, SUPPORTED_LANGUAGE_CODES } from '@ciareader/shared-types';
 import type { Actions, PageServerLoad } from './$types';
 
-const formSchema = z.object({
+// Source-type-aware schemas: paste keeps the tight 1MB cap, txt
+// allows up to 10MB. The body field comes from the same `<textarea>`
+// either way — the only difference is which service runs and which
+// cap applies.
+const pasteFormSchema = z.object({
+  sourceType: z.literal('paste').optional(),
   language: z.enum(['hi', 'mr', 'or']),
   title: z.string().min(1).max(MAX_TITLE_LEN),
   body: z.string().min(1).max(MAX_PASTE_BYTES),
 });
+
+const txtFormSchema = z.object({
+  sourceType: z.literal('txt'),
+  language: z.enum(['hi', 'mr', 'or']),
+  title: z.string().min(1).max(MAX_TITLE_LEN),
+  body: z.string().min(1).max(MAX_TXT_BYTES),
+});
+
+const formSchema = z.union([txtFormSchema, pasteFormSchema]);
 
 export const load: PageServerLoad = async ({ locals, url }) => {
   if (!locals.user) {
@@ -43,7 +59,12 @@ export const load: PageServerLoad = async ({ locals, url }) => {
     })),
     limits: {
       maxTitleLength: MAX_TITLE_LEN,
-      maxBodyBytes: MAX_PASTE_BYTES,
+      // The browser uses the paste cap by default and bumps to the
+      // txt cap when a file has been dropped. Both numbers are
+      // surfaced so the live byte counter can swap thresholds without
+      // a server round-trip.
+      maxPasteBytes: MAX_PASTE_BYTES,
+      maxTxtBytes: MAX_TXT_BYTES,
     },
   };
 };
@@ -54,7 +75,9 @@ export const actions: Actions = {
       throw redirect(303, '/login?next=/upload');
     }
     const fd = await request.formData();
+    const sourceType = fd.get('sourceType')?.toString() === 'txt' ? 'txt' : 'paste';
     const raw = {
+      sourceType,
       language: fd.get('language')?.toString() ?? '',
       title: fd.get('title')?.toString() ?? '',
       body: fd.get('body')?.toString() ?? '',
@@ -72,11 +95,25 @@ export const actions: Actions = {
       });
     }
     try {
-      const { text } = await createPastedText(
-        { id: locals.user.id },
-        parsed.data,
-      );
-      throw redirect(303, `/texts/${text.id}`);
+      const created =
+        parsed.data.sourceType === 'txt'
+          ? await createTxtText(
+              { id: locals.user.id },
+              {
+                language: parsed.data.language,
+                title: parsed.data.title,
+                body: parsed.data.body,
+              },
+            )
+          : await createPastedText(
+              { id: locals.user.id },
+              {
+                language: parsed.data.language,
+                title: parsed.data.title,
+                body: parsed.data.body,
+              },
+            );
+      throw redirect(303, `/texts/${created.text.id}`);
     } catch (err) {
       if (err instanceof TextValidationError) {
         return fail(err.status, {

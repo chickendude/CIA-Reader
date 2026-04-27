@@ -1,5 +1,5 @@
 /**
- * Text upload service (T-4.1).
+ * Text upload service (T-4.1, extended T-4.2).
  *
  * Front door for everything that lands in `texts` + `text_chapters`.
  * The reader/loader and library views read from those tables; the NLP
@@ -7,14 +7,19 @@
  * means downstream code has a single seam to add behaviors like "kick
  * the queue after insert" without touching every callsite.
  *
- * MVP scope (T-4.1):
- *  - `createPastedText` is the only public creator. It writes one
- *    `texts` row + a single `text_chapters` row holding the NFC-
- *    normalized body. Status starts `pending`; T-4.4 will flip it to
- *    `ready` after NLP runs.
- *  - `.txt` and `.epub` ingest land in T-4.2 / T-4.3 and will reuse
- *    this module — `createPastedText` becomes one of several creators,
- *    all sharing validation + visibility defaults.
+ * Two creators today:
+ *
+ *  - `createPastedText` — the paste box. Tight 1MB byte cap because we
+ *    don't want a 10MB paste blocking a request thread; the file
+ *    drop-zone is the right tool for that.
+ *  - `createTxtText` — `.txt` file ingest (T-4.2). Bigger 10MB cap
+ *    because dropping a whole novel as a `.txt` file is the intended
+ *    use. Both feed `splitIntoChapters` (T-4.2's chunker), so a long
+ *    body — paste OR file — auto-splits into reader-sized chapters.
+ *
+ * EPUB ingest lands in T-4.3 with its own creator that consumes the
+ * archive's per-chapter HTML directly; chapter boundaries from the
+ * source aren't subject to the auto-splitter at all.
  *
  * Authorization: every text gets `owner_id = creator.id` and
  * `visibility = 'private'` by default. Sharing + official promotion go
@@ -26,6 +31,7 @@ import { db, schema } from '../db/index.js';
 import type { LanguageCode } from '@ciareader/shared-types';
 import { isSupportedLanguage } from '@ciareader/shared-types';
 import type { Text, TextChapter, User } from '../db/schema.js';
+import { splitIntoChapters, estimateTokenCount } from './chunking.js';
 
 export class TextValidationError extends Error {
   constructor(
@@ -37,16 +43,25 @@ export class TextValidationError extends Error {
   }
 }
 
-/** Hard cap on a single pasted body. 1 MB of UTF-8 is comfortably bigger
- * than a typical short story but small enough that we don't accidentally
- * accept a whole novel pasted into the textarea (use EPUB upload for
- * that — T-4.3). */
+/** Hard cap on a single pasted body. 1 MB of UTF-8 is comfortably
+ * bigger than a typical short story but small enough that we don't
+ * accidentally accept a whole novel pasted into the textarea (use the
+ * `.txt` drop-zone for that). */
 export const MAX_PASTE_BYTES = 1_000_000;
+
+/** Hard cap on a `.txt` upload (T-4.2). 10MB is enough for any
+ * realistic novel + a generous margin — at ~3 bytes/codepoint for
+ * Devanagari that's ~3M codepoints, well past anything a user would
+ * realistically read in one go. EPUB uploads stream chapter-by-chapter
+ * and don't pay a single-blob cap (T-4.3). */
+export const MAX_TXT_BYTES = 10_000_000;
 
 /** Hard cap on the visible title; the library card and `<title>` tag
  * both render this without truncation. */
 export const MAX_TITLE_LEN = 200;
 export const MIN_TITLE_LEN = 1;
+
+export type SourceType = 'paste' | 'txt';
 
 export type CreatePastedTextInput = {
   language: string;
@@ -54,17 +69,25 @@ export type CreatePastedTextInput = {
   body: string;
 };
 
-export type CreatePastedTextResult = {
+export type CreateTxtTextInput = CreatePastedTextInput;
+
+export type CreatedText = {
   text: Text;
+  /** First chapter (idx=0) — convenient for the typical "redirect to
+   * the reader" caller. The full chapter list is on `chapters`. */
   chapter: TextChapter;
+  chapters: TextChapter[];
 };
+
+// Re-export so callers don't have to know about the chunking module.
+export { estimateTokenCount };
 
 function normalizeBody(body: string): string {
   // NFC is the canonical form for Indic scripts in our DB; doing it once
   // at write time means every downstream reader (tokenizer, search,
   // diff) compares apples to apples. Internal CR / CRLF are flattened
-  // to LF so paragraph splitting in T-4.2 doesn't need to special-case
-  // line-ending styles.
+  // to LF so the chunker's paragraph regex doesn't need to special-
+  // case line-ending styles.
   return body.normalize('NFC').replace(/\r\n?/g, '\n');
 }
 
@@ -74,23 +97,10 @@ function normalizeTitle(title: string): string {
   return title.normalize('NFC').trim().replace(/\s+/g, ' ');
 }
 
-/**
- * Cheap whitespace-based token estimator. The real token count comes
- * from the NLP worker (T-4.4) and overwrites this. We seed it to
- * something useful so the library card has a number to render even
- * before the worker has run.
- */
-export function estimateTokenCount(body: string): number {
-  const trimmed = body.trim();
-  if (trimmed.length === 0) return 0;
-  return trimmed.split(/\s+/).length;
-}
-
-function validateInput(input: CreatePastedTextInput): {
-  language: LanguageCode;
-  title: string;
-  body: string;
-} {
+function validateInput(
+  input: CreatePastedTextInput,
+  byteCap: number,
+): { language: LanguageCode; title: string; body: string } {
   if (!isSupportedLanguage(input.language)) {
     throw new TextValidationError(
       `Unsupported language '${input.language}' (expected one of: hi, mr, or)`,
@@ -107,67 +117,129 @@ function validateInput(input: CreatePastedTextInput): {
   if (body.trim().length === 0) {
     throw new TextValidationError('body cannot be empty');
   }
-  // UTF-8 byte length, not char length — the cap is about bytes flowing
-  // over the wire and into a Postgres TEXT column, not codepoints.
+  // UTF-8 byte length, not char length — the cap is about bytes
+  // flowing over the wire and into a Postgres TEXT column, not
+  // codepoints.
   const bodyBytes = new TextEncoder().encode(body).byteLength;
-  if (bodyBytes > MAX_PASTE_BYTES) {
+  if (bodyBytes > byteCap) {
     throw new TextValidationError(
-      `body exceeds ${MAX_PASTE_BYTES.toLocaleString()} bytes; use EPUB upload for longer texts`,
+      `body exceeds ${byteCap.toLocaleString()} bytes`,
     );
   }
   return { language: input.language as LanguageCode, title, body };
 }
 
 /**
- * Create a pasted text + a single chapter for the given owner.
- *
- * The chapter holds the entire body. When T-4.2 lands, long pastes will
- * auto-split into multiple chapter rows at paragraph boundaries; this
- * function's contract (returns the freshly created text + the *first*
- * chapter) is stable regardless.
+ * Internal helper shared by every creator. Inserts the `texts` row +
+ * one `text_chapters` row per draft and returns them all. Splitting
+ * the body into chapter drafts is the caller's responsibility — paste
+ * and `.txt` go through the same `splitIntoChapters`; EPUB (T-4.3)
+ * will pass already-structured chapters straight in.
+ */
+async function insertTextWithChapters(
+  owner: Pick<User, 'id'>,
+  args: {
+    sourceType: SourceType;
+    language: LanguageCode;
+    title: string;
+    chapters: Array<{
+      idx: number;
+      title: string | null;
+      body: string;
+      tokenCount: number;
+    }>;
+    now: Date;
+  },
+): Promise<CreatedText> {
+  const [text] = await db
+    .insert(schema.texts)
+    .values({
+      ownerId: owner.id,
+      language: args.language,
+      title: args.title,
+      sourceType: args.sourceType,
+      status: 'pending',
+      visibility: 'private',
+      createdAt: args.now,
+      updatedAt: args.now,
+    })
+    .returning();
+  if (!text) throw new Error('Failed to insert text row');
+
+  const chapterRows = (await db
+    .insert(schema.textChapters)
+    .values(
+      args.chapters.map((c) => ({
+        textId: (text as Text).id,
+        idx: c.idx,
+        title: c.title,
+        body: c.body,
+        tokenCount: c.tokenCount,
+        createdAt: args.now,
+      })),
+    )
+    .returning()) as TextChapter[];
+  if (chapterRows.length === 0) throw new Error('Failed to insert chapter rows');
+
+  // Sort defensively — drizzle's `returning` doesn't guarantee insert
+  // order across drivers.
+  chapterRows.sort((a, b) => a.idx - b.idx);
+
+  return {
+    text: text as Text,
+    chapter: chapterRows[0]!,
+    chapters: chapterRows,
+  };
+}
+
+/**
+ * Create a pasted text. The body is run through the chapter chunker
+ * just like a `.txt` upload would be — short bodies stay one chapter,
+ * longer ones (or ones with explicit `\f` / `---` delimiters) split
+ * automatically.
  */
 export async function createPastedText(
   owner: Pick<User, 'id'>,
   input: CreatePastedTextInput,
   now: Date = new Date(),
-): Promise<CreatePastedTextResult> {
-  const { language, title, body } = validateInput(input);
+): Promise<CreatedText> {
+  const { language, title, body } = validateInput(input, MAX_PASTE_BYTES);
+  const drafts = splitIntoChapters(body);
+  return insertTextWithChapters(owner, {
+    sourceType: 'paste',
+    language,
+    title,
+    chapters: drafts,
+    now,
+  });
+}
 
-  const [text] = await db
-    .insert(schema.texts)
-    .values({
-      ownerId: owner.id,
-      language,
-      title,
-      sourceType: 'paste',
-      status: 'pending',
-      visibility: 'private',
-      createdAt: now,
-      updatedAt: now,
-    })
-    .returning();
-  if (!text) throw new Error('Failed to insert text row');
-
-  const [chapter] = await db
-    .insert(schema.textChapters)
-    .values({
-      textId: (text as Text).id,
-      idx: 0,
-      title: null,
-      body,
-      tokenCount: estimateTokenCount(body),
-      createdAt: now,
-    })
-    .returning();
-  if (!chapter) throw new Error('Failed to insert chapter row');
-
-  return { text: text as Text, chapter: chapter as TextChapter };
+/**
+ * Create a text from a `.txt` upload (T-4.2). The body is treated as
+ * plain UTF-8 and run through the chunker — explicit `\f` / `---`
+ * delimiters from the original file are honored, otherwise the
+ * paragraph-boundary auto-splitter fires above the threshold.
+ */
+export async function createTxtText(
+  owner: Pick<User, 'id'>,
+  input: CreateTxtTextInput,
+  now: Date = new Date(),
+): Promise<CreatedText> {
+  const { language, title, body } = validateInput(input, MAX_TXT_BYTES);
+  const drafts = splitIntoChapters(body);
+  return insertTextWithChapters(owner, {
+    sourceType: 'txt',
+    language,
+    title,
+    chapters: drafts,
+    now,
+  });
 }
 
 /**
  * Read one of the user's own texts plus its chapters, in order. Used by
- * the placeholder reader page T-4.1 ships (a temporary view of the raw
- * body — the real reader lands in M5). Returns `null` if the text
+ * the placeholder reader page T-4.1 shipped (a temporary view of the
+ * raw body — the real reader lands in M5). Returns `null` if the text
  * doesn't exist OR is not readable by `viewer`.
  *
  * Sharing / official-text reads go through `assertCanRead` in T-4.6;
