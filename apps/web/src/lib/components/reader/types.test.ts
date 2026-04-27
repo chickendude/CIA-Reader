@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { paragraphsOfTokens, tokenize } from './types.js';
+import { STATUS_TO_CODE, paragraphsOfTokens, statusToCode, tokenize } from './types.js';
 
 describe('tokenize', () => {
   it('splits on word boundaries while preserving whitespace + punctuation', () => {
@@ -54,5 +54,23 @@ describe('paragraphsOfTokens', () => {
   it('skips empty paragraphs from runs of blank lines', () => {
     const tokens = tokenize('one\n\n\n\ntwo');
     expect(paragraphsOfTokens(tokens)).toHaveLength(2);
+  });
+});
+
+describe('statusToCode', () => {
+  it('maps every ServerToken status to a stable numeric code', () => {
+    expect(statusToCode('unknown')).toBe('0');
+    expect(statusToCode('learning')).toBe('2');
+    expect(statusToCode('known')).toBe('4');
+    expect(statusToCode('ignored')).toBe('5');
+  });
+
+  it('exposes the same mapping as a constant for callers that prefer the table', () => {
+    expect(STATUS_TO_CODE).toEqual({
+      unknown: '0',
+      learning: '2',
+      known: '4',
+      ignored: '5',
+    });
   });
 });

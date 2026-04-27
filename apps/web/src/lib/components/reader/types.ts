@@ -34,6 +34,28 @@ export type ChapterView = {
 export type ReaderLayoutMode = 'page' | 'paged_scroll' | 'continuous';
 
 /**
+ * Numeric status code emitted as `data-s` on each rendered word so the
+ * design's highlight CSS (background-tint vs. underline modes, see
+ * `tokens.css`) can target the right tint without the markup needing to
+ * know about saffron OKLCH math. The numbers are stable: `0=new` for an
+ * unknown lemma the user hasn't categorized, `2=L2` is where we map our
+ * single "learning" bucket today, `4=known`, `5=ignored`. `1` and `3`
+ * are reserved for L1 / L3 once we split the learning bucket.
+ */
+export type StatusCode = '0' | '1' | '2' | '3' | '4' | '5';
+export const STATUS_TO_CODE: Readonly<Record<ServerToken['status'], StatusCode>> =
+  {
+    unknown: '0',
+    learning: '2',
+    known: '4',
+    ignored: '5',
+  } as const;
+
+export function statusToCode(status: ServerToken['status']): StatusCode {
+  return STATUS_TO_CODE[status];
+}
+
+/**
  * Cheap whitespace tokenizer for the placeholder render path. M5's
  * later tickets replace this with token rows from the NLP worker
  * (T-2.6) — at that point the reader pulls token spans straight from
