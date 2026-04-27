@@ -9,7 +9,7 @@
  */
 import { describe, expect, it } from 'vitest';
 
-import { bucketTranslations } from './lookups.js';
+import { bucketTranslations, deriveProvenance } from './lookups.js';
 import type { Translation } from '../db/schema.js';
 
 let _id = 0;
@@ -111,6 +111,69 @@ describe('bucketTranslations — ordering', () => {
     ];
     const out = bucketTranslations(rows, { id: 'u1', role: 'user' });
     expect(out.personal.map((t) => t.body)).toEqual(['old-fork', 'new-fork']);
+  });
+});
+
+describe('deriveProvenance — viewer-relative classification (T-3.8)', () => {
+  it('returns personal/null when the viewer authored the row', () => {
+    const r = row({ source: 'user', submittedBy: 'u1' });
+    expect(deriveProvenance(r, { id: 'u1' })).toEqual({
+      kind: 'personal',
+      attribution: null,
+    });
+  });
+
+  it('returns community/null when another user authored the row', () => {
+    const r = row({ source: 'user', submittedBy: 'u2' });
+    expect(deriveProvenance(r, { id: 'u1' })).toEqual({
+      kind: 'community',
+      attribution: null,
+    });
+  });
+
+  it('returns community/null for a user-row when the viewer is anonymous', () => {
+    const r = row({ source: 'user', submittedBy: 'u2' });
+    expect(deriveProvenance(r, null)).toEqual({
+      kind: 'community',
+      attribution: null,
+    });
+  });
+
+  it('returns curator with the row attribution', () => {
+    const r = row({ source: 'curator', sourceAttribution: 'CIA Reader curators' });
+    expect(deriveProvenance(r, null)).toEqual({
+      kind: 'curator',
+      attribution: 'CIA Reader curators',
+    });
+  });
+
+  it('returns imported with upstream attribution preserved verbatim', () => {
+    const r = row({
+      source: 'official_dictionary',
+      sourceAttribution: 'Hindi WordNet (CFILT, IIT-Bombay)',
+    });
+    expect(deriveProvenance(r, { id: 'u1' })).toEqual({
+      kind: 'imported',
+      attribution: 'Hindi WordNet (CFILT, IIT-Bombay)',
+    });
+  });
+});
+
+describe('bucketTranslations — provenance attached to every public row', () => {
+  it('attaches the right kind to each bucket', () => {
+    const rows: Translation[] = [
+      row({ source: 'official_dictionary', sourceAttribution: 'Molesworth' }),
+      row({ source: 'curator' }),
+      row({ source: 'user', submittedBy: 'me' }),
+      row({ source: 'user', submittedBy: 'them' }),
+    ];
+    const out = bucketTranslations(rows, { id: 'me', role: 'user' });
+    expect(out.personal[0]!.provenance.kind).toBe('personal');
+    expect(out.official.map((t) => t.provenance.kind).sort()).toEqual([
+      'curator',
+      'imported',
+    ]);
+    expect(out.community[0]!.provenance.kind).toBe('community');
   });
 });
 

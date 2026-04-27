@@ -1,5 +1,6 @@
 <script lang="ts">
   import { enhance } from '$app/forms';
+  import ProvenanceBadge from '$lib/components/dictionary/ProvenanceBadge.svelte';
   import type { ActionData, PageData } from './$types';
 
   let {
@@ -126,7 +127,7 @@
         {#each data.translations as t (t.id)}
           <li>
             <div class="meta">
-              <span class="tag">{t.source}</span>
+              <ProvenanceBadge provenance={t.provenance} />
               <span class="muted">{t.targetLanguage}</span>
               {#if t.hidden}<span class="tag warn">hidden</span>{/if}
             </div>
