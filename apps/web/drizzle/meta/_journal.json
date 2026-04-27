@@ -36,6 +36,13 @@
       "when": 1777008698995,
       "tag": "0004_fancy_siren",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1777010005356,
+      "tag": "0005_powerful_lady_bullseye",
+      "breakpoints": true
     }
   ]
 }
