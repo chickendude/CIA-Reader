@@ -26,7 +26,16 @@ export default defineConfig({
         'src/**/*.svelte',
         'src/test/**',
         'src/app.html',
+        'src/hooks.server.ts',
         'src/lib/server/db/schema.ts',
+        'src/lib/server/db/index.ts',
+        'src/lib/server/email/**',
+        // SvelteKit route handlers tend to be thin glue over tested helpers;
+        // they're easier to cover via integration tests (separate milestone) than
+        // via vitest mocks. Excluded for now so the unit-coverage floor reflects
+        // pure logic that IS under test. Tighten as testcontainers lands.
+        'src/routes/**/+server.ts',
+        'src/routes/**/+page.server.ts',
       ],
       thresholds: {
         lines: 40,

@@ -37,6 +37,18 @@
   </section>
 
   <section>
+    <h2>You</h2>
+    {#if data.user}
+      <p>
+        Signed in as <strong>{data.user.displayName ?? data.user.email}</strong>
+        <span class="muted">({data.user.role})</span>
+      </p>
+    {:else}
+      <p class="muted">Not signed in. Use <code>/api/v1/auth/register</code> or <code>/api/v1/auth/login</code>.</p>
+    {/if}
+  </section>
+
+  <section>
     <h2>Smoke test</h2>
     <p>
       <a href="/api/v1/smoke">GET /api/v1/smoke</a> — end-to-end web → NLP round-trip.

@@ -2,7 +2,7 @@ import { nlpClient } from '$lib/server/nlp-client.js';
 import { SUPPORTED_LANGUAGE_CODES, LANGUAGES } from '@ciareader/shared-types';
 import type { PageServerLoad } from './$types';
 
-export const load: PageServerLoad = async () => {
+export const load: PageServerLoad = async ({ locals }) => {
   let nlpStatus: 'ok' | 'down' = 'down';
   let nlpLanguages: string[] = [];
   try {
@@ -22,5 +22,13 @@ export const load: PageServerLoad = async () => {
       nativeName: LANGUAGES[code].nativeName,
       script: LANGUAGES[code].script,
     })),
+    user: locals.user
+      ? {
+          id: locals.user.id,
+          email: locals.user.email,
+          displayName: locals.user.displayName,
+          role: locals.user.role,
+        }
+      : null,
   };
 };
