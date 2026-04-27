@@ -21,7 +21,7 @@
   accessibility pass can wire focus management without restructuring.
 -->
 <script lang="ts">
-  import { onMount, untrack } from 'svelte';
+  import { untrack } from 'svelte';
   import type { ServerToken } from './types.js';
 
   type Provenance =
@@ -77,56 +77,80 @@
   let payload = $state<LemmaPayload | null>(null);
   let loadError = $state<string | null>(null);
   let showAlternates = $state(false);
-  // Optimistic mirror of the token's status — flips immediately when
-  // the user picks Learning / Known / Ignored, then reverts if the
-  // server write fails. Initialised once via untrack so Svelte 5
-  // doesn't flag the prop read.
   let optimisticStatus = $state<'unknown' | 'learning' | 'known' | 'ignored'>(
     untrack(() => token.status),
   );
   let writeError = $state<string | null>(null);
-
-  // Position state — set after mount once we know our own size.
   let popupEl: HTMLElement | null = $state(null);
-  let style = $state('');
 
-  onMount(async () => {
-    if (token.lemmaId) {
+  // Compute an initial positioned style synchronously so the popup
+  // appears at the click site on the very first paint — without it,
+  // the popup briefly renders inline before onMount's reposition
+  // call moves it to fixed coordinates.
+  function computeStyle(rect: typeof anchorRect, measured?: HTMLElement | null): string {
+    const POPUP_W = measured?.offsetWidth || 320;
+    const POPUP_H = measured?.offsetHeight || 240;
+    const MARGIN = 8;
+    const vw = typeof window !== 'undefined' ? window.innerWidth : 1024;
+    const vh = typeof window !== 'undefined' ? window.innerHeight : 768;
+    let top = rect.bottom + MARGIN;
+    let left = rect.left;
+    if (top + POPUP_H + MARGIN > vh) {
+      top = Math.max(MARGIN, rect.top - POPUP_H - MARGIN);
+    }
+    if (left + POPUP_W + MARGIN > vw) {
+      left = Math.max(MARGIN, vw - POPUP_W - MARGIN);
+    }
+    if (left < MARGIN) left = MARGIN;
+    return `position: fixed; top: ${top}px; left: ${left}px; width: ${POPUP_W}px;`;
+  }
+
+  // Position is a `$derived` of the anchor + measured popup, so it
+  // recalculates whenever the token changes (parent passes a new
+  // anchorRect) or the popup grows after content loads. The
+  // `payload`/`loadError` deps make sure measurement re-runs after
+  // the fetch resolves.
+  const style = $derived.by(() => {
+    void payload;
+    void loadError;
+    return computeStyle(anchorRect, popupEl);
+  });
+
+  // Re-fetch translations whenever the token prop changes. `$effect`
+  // runs the body each time `token` (and thus `token.id` / `lemmaId`)
+  // changes — which happens when the parent rebinds the popup to a
+  // different word — so navigating word-to-word loads the new
+  // entry instead of leaving the old one stuck.
+  $effect(() => {
+    const t = token;
+    optimisticStatus = t.status;
+    if (!t.lemmaId) {
+      payload = null;
+      loadError = null;
+      return;
+    }
+    let cancelled = false;
+    payload = null;
+    loadError = null;
+    void (async () => {
       try {
-        const res = await fetch(
-          `/api/v1/lemmas/${token.lemmaId}/translations`,
-        );
+        const res = await fetch(`/api/v1/lemmas/${t.lemmaId}/translations`);
+        if (cancelled) return;
         if (res.ok) {
           payload = (await res.json()) as LemmaPayload;
         } else {
           loadError = `Could not load translations (${res.status})`;
         }
       } catch (e) {
-        loadError = `Network error: ${(e as Error).message}`;
+        if (!cancelled) {
+          loadError = `Network error: ${(e as Error).message}`;
+        }
       }
-    }
-    repositionToFitViewport();
+    })();
+    return () => {
+      cancelled = true;
+    };
   });
-
-  function repositionToFitViewport() {
-    if (!popupEl) return;
-    const POPUP_W = popupEl.offsetWidth || 320;
-    const POPUP_H = popupEl.offsetHeight || 240;
-    const MARGIN = 8;
-    const vw = window.innerWidth;
-    const vh = window.innerHeight;
-    let top = anchorRect.bottom + MARGIN;
-    let left = anchorRect.left;
-    if (top + POPUP_H + MARGIN > vh) {
-      // Not enough room below — flip above the anchor.
-      top = Math.max(MARGIN, anchorRect.top - POPUP_H - MARGIN);
-    }
-    if (left + POPUP_W + MARGIN > vw) {
-      left = Math.max(MARGIN, vw - POPUP_W - MARGIN);
-    }
-    if (left < MARGIN) left = MARGIN;
-    style = `position: fixed; top: ${top}px; left: ${left}px; width: ${POPUP_W}px;`;
-  }
 
   function handleKeydown(e: KeyboardEvent) {
     if (e.key === 'Escape') {
