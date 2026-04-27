@@ -11,9 +11,30 @@ vi.mock('$lib/server/nlp-client.js', () => ({
   },
 }));
 
+// Mock the userLanguages query — the home loader now reads
+// `knownWordsCountCache` per language for signed-in users (T-5.12).
+const knownRows = vi.fn<
+  () => Promise<Array<{ language: string; knownWordsCountCache: number }>>
+>();
+vi.mock('$lib/server/db/index.js', () => ({
+  db: {
+    select() {
+      return {
+        from() {
+          return {
+            where: () => knownRows(),
+          };
+        },
+      };
+    },
+  },
+}));
+
 describe('root +page.server.ts load', () => {
   beforeEach(() => {
     health.mockReset();
+    knownRows.mockReset();
+    knownRows.mockResolvedValue([]);
   });
 
   afterEach(() => {
@@ -54,5 +75,32 @@ describe('root +page.server.ts load', () => {
     const data = await callLoad({});
     expect(data.nlpStatus).toBe('down');
     expect(data.nlpLanguages).toEqual([]);
+  });
+
+  it('returns 0 known per language for signed-out visitors without querying user_languages', async () => {
+    health.mockResolvedValue({ status: 'ok', languages: [] });
+    const data = await callLoad({});
+    expect(knownRows).not.toHaveBeenCalled();
+    for (const l of data.languages) {
+      expect(l.known).toBe(0);
+    }
+  });
+
+  it('merges per-user knownWordsCountCache values onto the language list', async () => {
+    health.mockResolvedValue({ status: 'ok', languages: [] });
+    knownRows.mockResolvedValue([
+      { language: 'hi', knownWordsCountCache: 1247 },
+      { language: 'mr', knownWordsCountCache: 421 },
+    ]);
+    const data = await callLoad({
+      user: { id: 'u1', email: 'a@b.c', displayName: 'Alex', role: 'user' },
+    });
+    const hi = data.languages.find((l: { code: string }) => l.code === 'hi');
+    const mr = data.languages.find((l: { code: string }) => l.code === 'mr');
+    const or = data.languages.find((l: { code: string }) => l.code === 'or');
+    expect(hi?.known).toBe(1247);
+    expect(mr?.known).toBe(421);
+    // Languages without a row default to 0.
+    expect(or?.known).toBe(0);
   });
 });
