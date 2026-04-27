@@ -8,6 +8,7 @@ also add that directory to sys.path via conftest.py.
 from languages import (  # type: ignore[import-not-found]
     LANGUAGES,
     SUPPORTED_LANGUAGE_CODES,
+    LanguageCode,
     LanguageDescriptor,
     get_language,
     is_supported_language,
@@ -16,6 +17,7 @@ from languages import (  # type: ignore[import-not-found]
 __all__ = [
     "LANGUAGES",
     "SUPPORTED_LANGUAGE_CODES",
+    "LanguageCode",
     "LanguageDescriptor",
     "get_language",
     "is_supported_language",

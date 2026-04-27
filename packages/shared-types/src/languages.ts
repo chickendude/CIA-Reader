@@ -16,12 +16,7 @@ export type LanguageCode = 'hi' | 'mr' | 'or';
 // modeled cleanly later without retrofitting.
 export type ScriptCode = 'Deva' | 'Orya' | 'Beng' | 'Guru' | 'Gujr' | 'Arab';
 
-export type RomanizationScheme =
-  | 'iso15919'
-  | 'iast'
-  | 'hunterian'
-  | 'itrans'
-  | 'velthuis';
+export type RomanizationScheme = 'iso15919';
 
 export type TextDirection = 'ltr' | 'rtl';
 
@@ -45,7 +40,7 @@ export const LANGUAGES: Readonly<Record<LanguageCode, LanguageDescriptor>> = {
     nativeName: 'हिन्दी',
     script: 'Deva',
     textDirection: 'ltr',
-    supportedRomanizations: ['iso15919', 'iast', 'hunterian', 'itrans'],
+    supportedRomanizations: ['iso15919'],
     defaultRomanization: 'iso15919',
     recommendedFonts: [
       'Noto Serif Devanagari',
@@ -61,7 +56,7 @@ export const LANGUAGES: Readonly<Record<LanguageCode, LanguageDescriptor>> = {
     nativeName: 'मराठी',
     script: 'Deva',
     textDirection: 'ltr',
-    supportedRomanizations: ['iso15919', 'iast', 'hunterian', 'itrans'],
+    supportedRomanizations: ['iso15919'],
     defaultRomanization: 'iso15919',
     recommendedFonts: [
       'Noto Serif Devanagari',
@@ -77,7 +72,7 @@ export const LANGUAGES: Readonly<Record<LanguageCode, LanguageDescriptor>> = {
     nativeName: 'ଓଡ଼ିଆ',
     script: 'Orya',
     textDirection: 'ltr',
-    supportedRomanizations: ['iso15919', 'iast', 'itrans'],
+    supportedRomanizations: ['iso15919'],
     defaultRomanization: 'iso15919',
     recommendedFonts: ['Noto Sans Oriya', 'Noto Serif Oriya', 'Lohit Odia'],
     pipelineId: 'custom-or',

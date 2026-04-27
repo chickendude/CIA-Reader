@@ -12,7 +12,7 @@ from typing import Literal
 
 LanguageCode = Literal["hi", "mr", "or"]
 ScriptCode = Literal["Deva", "Orya", "Beng", "Guru", "Gujr", "Arab"]
-RomanizationScheme = Literal["iso15919", "iast", "hunterian", "itrans", "velthuis"]
+RomanizationScheme = Literal["iso15919"]
 TextDirection = Literal["ltr", "rtl"]
 
 
@@ -37,7 +37,7 @@ LANGUAGES: dict[LanguageCode, LanguageDescriptor] = {
         native_name="हिन्दी",
         script="Deva",
         text_direction="ltr",
-        supported_romanizations=("iso15919", "iast", "hunterian", "itrans"),
+        supported_romanizations=("iso15919",),
         default_romanization="iso15919",
         recommended_fonts=(
             "Noto Serif Devanagari",
@@ -53,7 +53,7 @@ LANGUAGES: dict[LanguageCode, LanguageDescriptor] = {
         native_name="मराठी",
         script="Deva",
         text_direction="ltr",
-        supported_romanizations=("iso15919", "iast", "hunterian", "itrans"),
+        supported_romanizations=("iso15919",),
         default_romanization="iso15919",
         recommended_fonts=(
             "Noto Serif Devanagari",
@@ -69,7 +69,7 @@ LANGUAGES: dict[LanguageCode, LanguageDescriptor] = {
         native_name="ଓଡ଼ିଆ",
         script="Orya",
         text_direction="ltr",
-        supported_romanizations=("iso15919", "iast", "itrans"),
+        supported_romanizations=("iso15919",),
         default_romanization="iso15919",
         recommended_fonts=("Noto Sans Oriya", "Noto Serif Oriya", "Lohit Odia"),
         pipeline_id="custom-or",
