@@ -93,10 +93,18 @@ class StanzaUDPipeline(Pipeline):
         *,
         script: str | None = None,
         roman_scheme: str | None = None,
+        language: str | None = None,
     ) -> None:
         self._nlp = nlp
         self._script = script
         self._roman_scheme = roman_scheme
+        # Optional registry language code ("hi", "mr", "or"). Forwarded
+        # to ``to_roman`` so language-specific phonological rules
+        # (currently just Hindi schwa deletion + ē/ō fold) fire when
+        # the language hint is present. ``None`` keeps the legacy
+        # script-only behavior — callers without language context
+        # round-trip cleanly.
+        self._language = language
 
     def process(self, text: str) -> PipelineResult:
         doc = self._nlp(text)
@@ -187,6 +195,7 @@ class StanzaUDPipeline(Pipeline):
                 surface,
                 from_script=self._script,
                 to_scheme=self._roman_scheme,
+                language=self._language,
             )
         except UnsupportedScriptError:
             return None

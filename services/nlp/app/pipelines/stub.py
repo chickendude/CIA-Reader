@@ -56,9 +56,14 @@ class StubPipeline(Pipeline):
         *,
         script: str | None = None,
         roman_scheme: str | None = None,
+        language: str | None = None,
     ) -> None:
         self._script = script
         self._roman_scheme = roman_scheme
+        # See :class:`StanzaUDPipeline` — language hint forwards to
+        # ``to_roman`` so the stub also produces schwa-deleted Hindi
+        # output when the dev/CI fallback path is in use.
+        self._language = language
 
     def process(self, text: str) -> PipelineResult:
         if not text:
@@ -93,6 +98,7 @@ class StubPipeline(Pipeline):
                 surface,
                 from_script=self._script,
                 to_scheme=self._roman_scheme,
+                language=self._language,
             )
         except UnsupportedScriptError:
             # The registry passed a script we don't yet have a

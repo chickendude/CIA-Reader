@@ -75,6 +75,7 @@ def get_pipeline(language_code: str) -> Pipeline:
             _PIPELINE_CACHE[pipeline_id] = StubPipeline(
                 script=descriptor.script,
                 roman_scheme=descriptor.default_romanization,
+                language=descriptor.code,
             )
         else:
             factory = _PIPELINE_FACTORIES.get(pipeline_id, StubPipeline)

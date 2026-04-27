@@ -12,6 +12,12 @@ dependencies = [
   # from the script-aware editor (T-6.2a). Kept as a base dep rather
   # than under [models] so CI exercises it directly.
   "indic-transliteration>=2.3.68",
+  # Aksharamukha is used only for Hindi schwa-deletion preprocessing
+  # (Devanagari → schwa-deleted Devanagari, virama-marked); the actual
+  # romanization is then handled by indic-transliteration as for every
+  # other language. We don't depend on aksharamukha's romanization
+  # output schemes — only on its `RemoveSchwaHindi` source-side rule.
+  "aksharamukha>=2.3",
   # Python-native Redis job queue for async NLP work (T-2.6). The
   # worker process imports RedisSettings at module load; keep it in
   # base deps so tests that import app.worker don't need [models].
