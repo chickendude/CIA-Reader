@@ -352,25 +352,27 @@ export async function createEpubText(
 }
 
 /**
- * Read one of the user's own texts plus its chapters, in order. Used by
- * the placeholder reader page T-4.1 shipped (a temporary view of the
- * raw body — the real reader lands in M5). Returns `null` if the text
- * doesn't exist OR is not readable by `viewer`.
+ * Read a text + its chapters, gated by the central `canReadText`
+ * helper (T-4.6). Returns `null` if the text doesn't exist OR the
+ * viewer isn't allowed to read it (deny-by-default). Endpoints map
+ * `null` to 404 so we don't leak existence to non-readers.
  *
- * Sharing / official-text reads go through `assertCanRead` in T-4.6;
- * for now the rule is simply "owner can read their own private texts."
+ * This replaces the old owner-only `getOwnedText`. Public endpoints
+ * (e.g. anonymous reads of an official text) pass `viewer = null`.
  */
-export async function getOwnedText(
-  viewer: Pick<User, 'id'>,
+export async function getReadableText(
+  viewer: { id: string } | null,
   textId: string,
 ): Promise<{ text: Text; chapters: TextChapter[] } | null> {
+  const { canReadText } = await import('../auth/can-read.js');
   const [text] = await db
     .select()
     .from(schema.texts)
     .where(eq(schema.texts.id, textId))
     .limit(1);
   if (!text) return null;
-  if ((text as Text).ownerId !== viewer.id) return null;
+  const ok = await canReadText(viewer, text as Text);
+  if (!ok) return null;
   const chapters = (await db
     .select()
     .from(schema.textChapters)
@@ -378,3 +380,12 @@ export async function getOwnedText(
     .orderBy(schema.textChapters.idx)) as TextChapter[];
   return { text: text as Text, chapters };
 }
+
+/**
+ * Backwards-compatible alias for the old `getOwnedText` name. Prefer
+ * `getReadableText` in new code; this exists so existing callers
+ * (and their tests) don't all need to flip in one ticket.
+ *
+ * @deprecated Use `getReadableText` directly.
+ */
+export const getOwnedText = getReadableText;

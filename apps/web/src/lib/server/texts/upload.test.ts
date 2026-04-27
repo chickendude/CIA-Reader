@@ -524,10 +524,10 @@ describe('estimateTokenCount', () => {
 });
 
 // -----------------------------------------------------------------------
-// getOwnedText
+// getReadableText (T-4.6)
 // -----------------------------------------------------------------------
 
-describe('getOwnedText', () => {
+describe('getReadableText', () => {
   it('returns the text + ordered chapters when the viewer owns it', async () => {
     stage([textRow()]);
     stage([
@@ -547,11 +547,32 @@ describe('getOwnedText', () => {
     expect(result).toBeNull();
   });
 
-  it('returns null when the viewer is not the owner (no chapter SELECT)', async () => {
+  it('returns null when the viewer is not the owner of a private text (no chapter SELECT)', async () => {
     stage([textRow({ ownerId: 'someone-else' })]);
     const result = await getOwnedText(OWNER, 'text-1');
     expect(result).toBeNull();
     // Only one SELECT — chapters were never queried.
     expect(calls.filter((c) => c.kind === 'select')).toHaveLength(1);
+  });
+
+  it('lets a non-owner read an official text', async () => {
+    stage([textRow({ ownerId: null, visibility: 'official' })]);
+    stage([chapterRow({ id: 'c0', idx: 0 })]);
+    const result = await getOwnedText(OWNER, 'text-1');
+    expect(result).not.toBeNull();
+    expect(result!.text.visibility).toBe('official');
+  });
+
+  it('lets an anonymous viewer read an official text', async () => {
+    stage([textRow({ ownerId: null, visibility: 'official' })]);
+    stage([chapterRow({ id: 'c0', idx: 0 })]);
+    const result = await getOwnedText(null, 'text-1');
+    expect(result).not.toBeNull();
+  });
+
+  it('rejects an anonymous viewer of a private text', async () => {
+    stage([textRow()]);
+    const result = await getOwnedText(null, 'text-1');
+    expect(result).toBeNull();
   });
 });
