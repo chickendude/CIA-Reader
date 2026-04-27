@@ -3,7 +3,7 @@
   let { data }: { data: PageData } = $props();
 </script>
 
-<main>
+<div class="page">
   <h1>CIA Reader</h1>
   <p class="sub">Comparative Indo-Aryan — a LingQ-style reader for Hindi, Marathi, and Odia.</p>
 
@@ -37,15 +37,28 @@
   </section>
 
   <section>
+    <h2>You</h2>
+    {#if data.user}
+      <p>
+        Signed in as <strong>{data.user.displayName ?? data.user.email}</strong>
+        <span class="muted">({data.user.role})</span>
+        — <a href="/profile">Profile</a>
+      </p>
+    {:else}
+      <p class="muted">Not signed in. Use <code>/api/v1/auth/register</code> or <code>/api/v1/auth/login</code>.</p>
+    {/if}
+  </section>
+
+  <section>
     <h2>Smoke test</h2>
     <p>
       <a href="/api/v1/smoke">GET /api/v1/smoke</a> — end-to-end web → NLP round-trip.
     </p>
   </section>
-</main>
+</div>
 
 <style>
-  main {
+  .page {
     max-width: 48rem;
     margin: 0 auto;
     padding: 2rem 1.25rem;
@@ -57,14 +70,14 @@
   h2 {
     font-size: 1.1rem;
     margin: 1.75rem 0 0.5rem;
-    color: var(--muted);
+    color: var(--color-fg-muted);
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.04em;
   }
   .sub {
     margin: 0 0 1.5rem;
-    color: var(--muted);
+    color: var(--color-fg-muted);
   }
   ul {
     list-style: none;
@@ -74,24 +87,24 @@
   .status li,
   .langs li {
     padding: 0.5rem 0;
-    border-bottom: 1px solid var(--border);
+    border-bottom: 1px solid var(--color-border);
   }
   .ok {
-    color: #059669;
+    color: var(--color-success);
     font-weight: 600;
   }
   .down {
-    color: #dc2626;
+    color: var(--color-danger);
     font-weight: 600;
   }
   .muted {
-    color: var(--muted);
+    color: var(--color-fg-muted);
   }
   .native {
     font-size: 1.15rem;
     margin-right: 0.5rem;
   }
   a {
-    color: var(--accent);
+    color: var(--color-accent);
   }
 </style>

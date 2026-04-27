@@ -1,10 +1,32 @@
 <!doctype html>
-<html lang="en" data-theme="system">
+<html lang="en" data-theme="%cia.theme%">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light dark" />
     <meta name="description" content="CIA Reader — Comparative Indo-Aryan reader." />
     <title>CIA Reader</title>
+    <!--
+      Resolve the user's theme preference before first paint to avoid a
+      light-mode flash for dark-mode users. Reads the cookie written by
+      the profile form and falls back to the OS preference. Mirrored by
+      server-side rendering in hooks.server.ts so hydration matches.
+    -->
+    <script>
+      (function () {
+        try {
+          var match = document.cookie.match(/(?:^|; )cia_theme=([^;]+)/);
+          var pref = match ? decodeURIComponent(match[1]) : 'system';
+          var resolved =
+            pref === 'light' || pref === 'dark'
+              ? pref
+              : window.matchMedia('(prefers-color-scheme: dark)').matches
+                ? 'dark'
+                : 'light';
+          document.documentElement.setAttribute('data-theme', resolved);
+        } catch (_) {}
+      })();
+    </script>
     %sveltekit.head%
   </head>
   <body data-sveltekit-preload-data="hover">

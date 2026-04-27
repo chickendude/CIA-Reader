@@ -1,22 +1,21 @@
 """NLP service entry.
 
-M0 scope: health check + a canned /process response that proves the web
-service can reach this service through Docker networking and that types
-round-trip. Real pipelines land in M2 (T-2.2 / T-2.3 / T-2.3a).
+Routes the /process HTTP request to the per-language pipeline registered
+in :mod:`app.pipelines`. The HTTP layer's job is narrow: validate the
+language, NFC-normalize input, dispatch, and echo the pipeline_id back to
+the client. Real tokenization / lemmatization lives in the pipeline
+modules so each language can evolve independently.
 """
 
 from __future__ import annotations
 
+import unicodedata
+
 from fastapi import FastAPI, HTTPException
 
 from app.languages import LANGUAGES, SUPPORTED_LANGUAGE_CODES, is_supported_language
-from app.schemas import (
-    HealthResponse,
-    LemmaCandidate,
-    ProcessRequest,
-    ProcessResponse,
-    Token,
-)
+from app.pipelines import get_pipeline
+from app.schemas import HealthResponse, ProcessRequest, ProcessResponse
 
 app = FastAPI(title="CIA Reader NLP", version="0.0.0")
 
@@ -38,30 +37,20 @@ async def process(req: ProcessRequest) -> ProcessResponse:
             detail=f"Unsupported language '{req.language}'. Supported: {supported}",
         )
 
-    descriptor = LANGUAGES[req.language]  # type: ignore[index]
+    # NFC is the canonical form for every Indic script we support; many
+    # Devanagari / Odia inputs arrive in other normalizations from the
+    # wild web. Doing it once here means pipelines can assume NFC.
+    text = unicodedata.normalize("NFC", req.text)
+    pipeline = get_pipeline(req.language)
+    result = pipeline.process(text)
 
-    # Canned tokenization: split on whitespace, each word becomes a token with
-    # a single low-confidence candidate = the surface form. Real tokenization
-    # + lemmatization comes in M2.
-    raw_tokens = req.text.split()
-    tokens: list[Token] = []
-    for idx, surface in enumerate(raw_tokens):
-        tokens.append(
-            Token(
-                idx=idx,
-                surface=surface,
-                is_word=True,
-                candidates=[
-                    LemmaCandidate(lemma=surface, pos="X", score=1.0, features={}),
-                ],
-                is_ambiguous=False,
-                is_oov=True,
-                romanization=None,
-            )
-        )
-
+    # The client always sees the language's canonical pipeline_id (from
+    # the shared registry), not the pipeline instance's internal id — so
+    # swapping in a stub during local dev still looks like the real
+    # pipeline to the caller.
+    canonical_pipeline_id = LANGUAGES[req.language].pipeline_id
     return ProcessResponse(
         language=req.language,
-        pipeline_id=descriptor.pipeline_id,
-        tokens=tokens,
+        pipeline_id=canonical_pipeline_id,
+        tokens=result.tokens,
     )

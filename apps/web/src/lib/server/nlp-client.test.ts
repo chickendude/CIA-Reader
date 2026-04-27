@@ -26,7 +26,8 @@ describe('nlpClient', () => {
     expect(health.status).toBe('ok');
     expect(health.languages).toEqual(['hi', 'mr', 'or']);
     expect(fetchMock).toHaveBeenCalledOnce();
-    const [url, init] = fetchMock.mock.calls[0];
+    const firstCall = fetchMock.mock.calls[0]!;
+    const [url, init] = firstCall;
     expect(String(url)).toMatch(/\/health$/);
     expect(init?.headers).toMatchObject({ 'content-type': 'application/json' });
   });
@@ -42,7 +43,8 @@ describe('nlpClient', () => {
     const out = await nlpClient.process('hi', 'मैं');
     expect(out.language).toBe('hi');
     expect(out.tokens).toEqual([]);
-    const [, init] = fetchMock.mock.calls[0];
+    const processCall = fetchMock.mock.calls[0]!;
+    const [, init] = processCall;
     expect(init?.method).toBe('POST');
     expect(JSON.parse(String(init?.body))).toEqual({ language: 'hi', text: 'मैं' });
   });

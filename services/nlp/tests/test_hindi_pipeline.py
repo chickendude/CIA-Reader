@@ -1,0 +1,237 @@
+"""Unit tests for :class:`app.pipelines.hindi.HindiPipeline` (T-2.2).
+
+We inject a minimal fake Stanza-like object rather than running the real
+model, so these tests exercise the pipeline's output shaping logic —
+feature parsing, POS-aware ``is_word`` / ``is_oov``, token indexing
+across sentences — without a ~600MB model download. The trade-off is
+we're testing our adapter, not Stanza itself; Stanza's own accuracy is
+covered by the golden-file suite (T-2.8).
+
+The shared output-shaping logic was extracted into
+:mod:`app.pipelines.stanza_ud` in T-2.3 so Marathi could reuse it; the
+feature-parsing tests target ``parse_feats`` at its new public home but
+the HindiPipeline behavior tests stay here to pin down the
+language-specific contract.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+
+from app.pipelines.hindi import HindiPipeline
+from app.pipelines.stanza_ud import parse_feats
+
+
+@dataclass
+class FakeWord:
+    text: str
+    lemma: str | None = None
+    upos: str = "NOUN"
+    feats: str | None = None
+
+
+@dataclass
+class FakeSentence:
+    words: list[FakeWord] = field(default_factory=list)
+
+
+@dataclass
+class FakeDoc:
+    sentences: list[FakeSentence] = field(default_factory=list)
+
+
+class FakeStanza:
+    """Returns a pre-built :class:`FakeDoc` regardless of input text."""
+
+    def __init__(self, doc: FakeDoc) -> None:
+        self._doc = doc
+        self.calls: list[str] = []
+
+    def __call__(self, text: str) -> FakeDoc:
+        self.calls.append(text)
+        return self._doc
+
+
+def _pipe(doc: FakeDoc) -> tuple[HindiPipeline, FakeStanza]:
+    fake = FakeStanza(doc)
+    return HindiPipeline(nlp=fake), fake
+
+
+# --- parse_feats --------------------------------------------------------
+
+
+def test_parse_feats_none_returns_empty():
+    assert parse_feats(None) == {}
+
+
+def test_parse_feats_empty_string_returns_empty():
+    assert parse_feats("") == {}
+
+
+def test_parse_feats_single_pair():
+    assert parse_feats("Number=Sing") == {"Number": "Sing"}
+
+
+def test_parse_feats_multiple_pairs():
+    out = parse_feats("Tense=Pres|Number=Sing|Person=3|Gender=Fem|Aspect=Hab")
+    assert out == {
+        "Tense": "Pres",
+        "Number": "Sing",
+        "Person": "3",
+        "Gender": "Fem",
+        "Aspect": "Hab",
+    }
+
+
+def test_parse_feats_skips_malformed_pairs():
+    # Defensive: a stray token or missing "=" from a Stanza model update
+    # shouldn't surface as a 500 on /process.
+    out = parse_feats("Tense=Pres|bogus|Number=Sing|=orphan")
+    assert out == {"Tense": "Pres", "Number": "Sing"}
+
+
+# --- HindiPipeline.process ----------------------------------------------
+
+
+def test_process_empty_doc_produces_zero_tokens():
+    pipe, _ = _pipe(FakeDoc(sentences=[]))
+    result = pipe.process("")
+    assert result.pipeline_id == "stanza-hi"
+    assert result.tokens == []
+
+
+def test_process_returns_canonical_pipeline_id():
+    pipe, _ = _pipe(FakeDoc(sentences=[FakeSentence(words=[FakeWord("बोलता", lemma="बोलना")])]))
+    assert pipe.process("whatever").pipeline_id == "stanza-hi"
+
+
+def test_process_extracts_lemma_pos_and_features():
+    doc = FakeDoc(
+        sentences=[
+            FakeSentence(
+                words=[
+                    FakeWord(
+                        text="बोलती",
+                        lemma="बोलना",
+                        upos="VERB",
+                        feats="Tense=Pres|Number=Sing|Person=3|Gender=Fem|Aspect=Hab",
+                    )
+                ]
+            )
+        ]
+    )
+    pipe, _ = _pipe(doc)
+    result = pipe.process("she-speaks")
+    assert len(result.tokens) == 1
+    tok = result.tokens[0]
+    assert tok.surface == "बोलती"
+    assert tok.is_word is True
+    assert tok.is_oov is False  # lemma differs from surface
+    assert tok.is_ambiguous is False  # top-K disambiguation lands later
+    assert len(tok.candidates) == 1
+    cand = tok.candidates[0]
+    assert cand.lemma == "बोलना"
+    assert cand.pos == "VERB"
+    assert cand.score == 1.0
+    assert cand.features["Tense"] == "Pres"
+    assert cand.features["Gender"] == "Fem"
+
+
+def test_process_flags_oov_when_lemma_equals_surface_for_content_word():
+    doc = FakeDoc(
+        sentences=[
+            FakeSentence(words=[FakeWord(text="फ़्लर्ब", lemma="फ़्लर्ब", upos="NOUN")])
+        ]
+    )
+    pipe, _ = _pipe(doc)
+    result = pipe.process("x")
+    tok = result.tokens[0]
+    assert tok.is_oov is True
+
+
+def test_process_does_not_flag_oov_for_proper_nouns():
+    # Proper nouns legitimately have lemma == surface. Marking them OOV
+    # would trigger the correction UX in M6 for every name in the text,
+    # which would be terrible UX. The PROPN guard prevents that.
+    doc = FakeDoc(
+        sentences=[
+            FakeSentence(words=[FakeWord(text="रवि", lemma="रवि", upos="PROPN")])
+        ]
+    )
+    pipe, _ = _pipe(doc)
+    assert pipe.process("x").tokens[0].is_oov is False
+
+
+def test_process_does_not_flag_oov_for_numbers_punctuation_symbols():
+    doc = FakeDoc(
+        sentences=[
+            FakeSentence(
+                words=[
+                    FakeWord(text="42", lemma="42", upos="NUM"),
+                    FakeWord(text="।", lemma="।", upos="PUNCT"),
+                    FakeWord(text="%", lemma="%", upos="SYM"),
+                    FakeWord(text="hello", lemma="hello", upos="X"),
+                ]
+            )
+        ]
+    )
+    pipe, _ = _pipe(doc)
+    tokens = pipe.process("x").tokens
+    assert [t.is_oov for t in tokens] == [False, False, False, False]
+
+
+def test_process_marks_punctuation_as_non_word():
+    doc = FakeDoc(
+        sentences=[
+            FakeSentence(
+                words=[
+                    FakeWord(text="बोलता", lemma="बोलना", upos="VERB"),
+                    FakeWord(text="।", lemma="।", upos="PUNCT"),
+                ]
+            )
+        ]
+    )
+    pipe, _ = _pipe(doc)
+    tokens = pipe.process("x").tokens
+    assert tokens[0].is_word is True
+    assert tokens[1].is_word is False
+
+
+def test_process_indexes_tokens_contiguously_across_sentences():
+    doc = FakeDoc(
+        sentences=[
+            FakeSentence(
+                words=[FakeWord(text="एक"), FakeWord(text="दो")]
+            ),
+            FakeSentence(
+                words=[FakeWord(text="तीन"), FakeWord(text="चार")]
+            ),
+        ]
+    )
+    pipe, _ = _pipe(doc)
+    result = pipe.process("x")
+    assert [t.idx for t in result.tokens] == [0, 1, 2, 3]
+    assert [t.surface for t in result.tokens] == ["एक", "दो", "तीन", "चार"]
+
+
+def test_process_defaults_missing_upos_and_lemma_safely():
+    # Stanza can emit word.lemma=None when the lemmatizer declines to
+    # pick; word.upos can also be None if POS wasn't run. The pipeline
+    # must not crash — defaulting to surface / "X" is the documented
+    # behavior.
+    doc = FakeDoc(
+        sentences=[FakeSentence(words=[FakeWord(text="foo", lemma=None, upos=None)])]  # type: ignore[arg-type]
+    )
+    pipe, _ = _pipe(doc)
+    tok = pipe.process("x").tokens[0]
+    assert tok.candidates[0].lemma == "foo"
+    assert tok.candidates[0].pos == "X"
+    # Lemma==surface and POS=X: X is in _NON_OOV_UPOS (code-switch), so
+    # we do NOT flag this as OOV.
+    assert tok.is_oov is False
+
+
+def test_process_passes_input_text_through_to_stanza():
+    pipe, fake = _pipe(FakeDoc(sentences=[]))
+    pipe.process("the quick brown fox")
+    assert fake.calls == ["the quick brown fox"]
