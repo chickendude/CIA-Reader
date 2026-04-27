@@ -124,7 +124,7 @@ describe('/upload default action', () => {
       body: 'पाठ का मूल पाठ।',
     })) as { status: number; location: string };
     expect(res.status).toBe(303);
-    expect(res.location).toBe('/texts/text-1');
+    expect(res.location).toBe('/reader/text-1');
     expect(createPastedText).toHaveBeenCalledWith(
       { id: USER.id },
       { language: 'hi', title: 'My text', body: 'पाठ का मूल पाठ।' },
@@ -145,7 +145,7 @@ describe('/upload default action', () => {
       body: 'first.\n---\nsecond.',
     })) as { status: number; location: string };
     expect(res.status).toBe(303);
-    expect(res.location).toBe('/texts/text-2');
+    expect(res.location).toBe('/reader/text-2');
     expect(createTxtText).toHaveBeenCalledTimes(1);
     expect(createPastedText).not.toHaveBeenCalled();
   });
@@ -210,7 +210,7 @@ describe('/upload epub action', () => {
       file: fakeFile(),
     })) as { status: number; location: string };
     expect(res.status).toBe(303);
-    expect(res.location).toBe('/texts/text-3');
+    expect(res.location).toBe('/reader/text-3');
     expect(createEpubText).toHaveBeenCalledWith(
       { id: USER.id },
       expect.objectContaining({ language: 'hi', title: 'My EPUB' }),

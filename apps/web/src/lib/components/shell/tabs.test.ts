@@ -24,9 +24,9 @@ describe('visibleTabs', () => {
     expect(shown).not.toContain('profile');
   });
 
-  it('highlights the library tab on /texts/* paths so the reader stays under Library', () => {
+  it('highlights the library tab on /reader/* paths so the reader stays under Library', () => {
     expect(getActiveTabId('/library', TABS)).toBe('library');
-    expect(getActiveTabId('/texts/abc-123', TABS)).toBe('library');
+    expect(getActiveTabId('/reader/abc-123', TABS)).toBe('library');
   });
 
   it('highlights the upload tab on /upload', () => {
