@@ -57,6 +57,29 @@ export default [
     },
   },
   {
+    // One-shot Node helper scripts under `scripts/`. They run directly
+    // under the local Node interpreter, so the standard Node globals
+    // (process, console, …) are available. Keeping them out of the
+    // svelte/browser-globals block above avoids polluting the route
+    // code's typecheck with Node names.
+    files: ['scripts/**/*.mjs', 'scripts/**/*.js'],
+    languageOptions: {
+      globals: {
+        process: 'readonly',
+        console: 'readonly',
+        Buffer: 'readonly',
+        URL: 'readonly',
+        URLSearchParams: 'readonly',
+        fetch: 'readonly',
+      },
+    },
+    rules: {
+      // Scripts often pull in helpers they end up not using as the
+      // shape evolves; not worth blocking commits over.
+      '@typescript-eslint/no-unused-vars': 'off',
+    },
+  },
+  {
     ignores: ['build/', '.svelte-kit/', 'drizzle/', 'node_modules/'],
   },
 ];

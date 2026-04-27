@@ -66,14 +66,29 @@ async function main() {
   );
   console.log(`[reprocess] ${chapters.length} chapter(s)`);
 
-  // Pre-load lemma map for the language.
+  // Pre-load lemma index for the language. Two maps:
+  //   byHeadwordPos: strict (headword, pos) → id
+  //   byHeadword:    loose headword → id (first row wins)
+  // The strict map matches real Stanza output; the loose map covers
+  // the stub pipeline (which emits pos='X' for everything) and
+  // the rare cases where Stanza's POS disagrees with the dictionary.
   const lemmas = await fetchAll(
     'SELECT id, headword, pos FROM lemmas WHERE language = $1',
     text.language,
   );
-  const lemmaMap = new Map();
-  for (const r of lemmas) lemmaMap.set(`${r.headword} ${r.pos}`, r.id);
-  console.log(`[reprocess] lemma table size: ${lemmaMap.size}`);
+  const byHeadwordPos = new Map();
+  const byHeadword = new Map();
+  for (const r of lemmas) {
+    byHeadwordPos.set(`${r.headword} ${r.pos}`, r.id);
+    if (!byHeadword.has(r.headword)) byHeadword.set(r.headword, r.id);
+  }
+  const resolveCandidate = (c) =>
+    byHeadwordPos.get(`${c.lemma} ${c.pos}`) ??
+    byHeadword.get(c.lemma) ??
+    null;
+  console.log(
+    `[reprocess] lemma index: ${byHeadwordPos.size} strict / ${byHeadword.size} loose`,
+  );
 
   // Mark processing.
   await sql.unsafe(
@@ -92,17 +107,21 @@ async function main() {
       const result = await nlpProcess(text.language, chapter.body);
       console.log(`[reprocess]   got ${result.tokens.length} tokens back`);
 
-      const rows = result.tokens.map((t) => ({
+      const rows = result.tokens.map((t) => {
+        // Strict-POS first across every candidate, then loose by
+        // headword. Mirrors lib/server/texts/in-process-dispatcher.ts.
+        let lemmaId = null;
+        for (const c of t.candidates ?? []) {
+          lemmaId = resolveCandidate(c);
+          if (lemmaId) break;
+        }
+        return {
         chapterId: chapter.id,
         idx: t.idx,
         surface: t.surface,
-        lemmaId:
-          t.candidates && t.candidates[0]
-            ? lemmaMap.get(`${t.candidates[0].lemma} ${t.candidates[0].pos}`) ??
-              null
-            : null,
+        lemmaId,
         lemmaCandidates: (t.candidates ?? []).map((c) => ({
-          lemmaId: lemmaMap.get(`${c.lemma} ${c.pos}`) ?? null,
+          lemmaId: resolveCandidate(c),
           features: c.features ?? {},
           score: c.score,
         })),
@@ -112,7 +131,8 @@ async function main() {
         isWord: t.is_word,
         sentenceIdx: 0,
         romanization: t.romanization,
-      }));
+        };
+      });
 
       // Idempotency: clear existing tokens before insert.
       await sql.unsafe(
