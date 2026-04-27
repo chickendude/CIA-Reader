@@ -31,7 +31,14 @@ import { db, schema } from '../db/index.js';
 import type { LanguageCode } from '@ciareader/shared-types';
 import { isSupportedLanguage } from '@ciareader/shared-types';
 import type { Text, TextChapter, User } from '../db/schema.js';
-import { splitIntoChapters, estimateTokenCount } from './chunking.js';
+import {
+  splitIntoChapters,
+  estimateTokenCount,
+  type ChapterDraft,
+} from './chunking.js';
+import { parseEpub, EpubParseError } from './epub.js';
+
+export { EpubParseError };
 
 export class TextValidationError extends Error {
   constructor(
@@ -52,16 +59,20 @@ export const MAX_PASTE_BYTES = 1_000_000;
 /** Hard cap on a `.txt` upload (T-4.2). 10MB is enough for any
  * realistic novel + a generous margin — at ~3 bytes/codepoint for
  * Devanagari that's ~3M codepoints, well past anything a user would
- * realistically read in one go. EPUB uploads stream chapter-by-chapter
- * and don't pay a single-blob cap (T-4.3). */
+ * realistically read in one go. */
 export const MAX_TXT_BYTES = 10_000_000;
+
+/** Hard cap on the raw EPUB archive size (T-4.3). 50MB covers anything
+ * with reasonable images; bigger files almost always indicate
+ * embedded video / audio that we can't use anyway. */
+export const MAX_EPUB_BYTES = 50_000_000;
 
 /** Hard cap on the visible title; the library card and `<title>` tag
  * both render this without truncation. */
 export const MAX_TITLE_LEN = 200;
 export const MIN_TITLE_LEN = 1;
 
-export type SourceType = 'paste' | 'txt';
+export type SourceType = 'paste' | 'txt' | 'epub';
 
 export type CreatePastedTextInput = {
   language: string;
@@ -229,6 +240,100 @@ export async function createTxtText(
   const drafts = splitIntoChapters(body);
   return insertTextWithChapters(owner, {
     sourceType: 'txt',
+    language,
+    title,
+    chapters: drafts,
+    now,
+  });
+}
+
+export type CreateEpubTextInput = {
+  language: string;
+  title: string;
+  /** Raw EPUB archive bytes. */
+  epubBytes: ArrayBuffer | Uint8Array;
+};
+
+/**
+ * Create a text from an EPUB upload (T-4.3).
+ *
+ * EPUB chapter structure is authored — the spine is the canonical
+ * order, each spine item is a chapter — so we feed the parsed
+ * chapters straight into `text_chapters` without going through the
+ * paragraph auto-splitter. The chunker WOULD fire only if a single
+ * EPUB chapter is itself enormous (>50k tokens), which essentially
+ * never happens in real publishing.
+ *
+ * Per-chapter NFC normalization happens here rather than in the
+ * parser so the parser stays a pure XML/HTML utility usable elsewhere
+ * (e.g. an admin re-import path later).
+ */
+export async function createEpubText(
+  owner: Pick<User, 'id'>,
+  input: CreateEpubTextInput,
+  now: Date = new Date(),
+): Promise<CreatedText> {
+  if (!isSupportedLanguage(input.language)) {
+    throw new TextValidationError(
+      `Unsupported language '${input.language}' (expected one of: hi, mr, or)`,
+    );
+  }
+  const language = input.language as LanguageCode;
+  const title = normalizeTitle(input.title ?? '');
+  if (title.length < MIN_TITLE_LEN) {
+    throw new TextValidationError('title is required');
+  }
+  if (title.length > MAX_TITLE_LEN) {
+    throw new TextValidationError(`title exceeds ${MAX_TITLE_LEN} characters`);
+  }
+  const byteLength =
+    input.epubBytes instanceof Uint8Array
+      ? input.epubBytes.byteLength
+      : input.epubBytes.byteLength;
+  if (byteLength > MAX_EPUB_BYTES) {
+    throw new TextValidationError(
+      `EPUB exceeds ${MAX_EPUB_BYTES.toLocaleString()} bytes`,
+    );
+  }
+  if (byteLength === 0) {
+    throw new TextValidationError('EPUB file is empty');
+  }
+
+  const parsed = await parseEpub(input.epubBytes);
+
+  // For each parsed chapter, run it through the chunker — short
+  // chapters stay one row, freakishly long ones get split. We then
+  // re-number `idx` across the flattened result so the order is
+  // contiguous regardless of any per-chapter sub-splits.
+  const drafts: ChapterDraft[] = [];
+  let nextIdx = 0;
+  for (const c of parsed) {
+    const body = c.body.normalize('NFC').replace(/\r\n?/g, '\n');
+    const subChapters = splitIntoChapters(body);
+    for (let i = 0; i < subChapters.length; i += 1) {
+      const sub = subChapters[i]!;
+      // The first sub-chapter inherits the EPUB chapter's title; any
+      // additional splits within that chapter get a derived title or
+      // fall back to "{title} (cont.)".
+      let derivedTitle: string | null;
+      if (i === 0) derivedTitle = c.title;
+      else if (c.title) derivedTitle = `${c.title} (cont. ${i})`;
+      else derivedTitle = sub.title;
+      drafts.push({
+        idx: nextIdx,
+        title: derivedTitle,
+        body: sub.body,
+        tokenCount: sub.tokenCount,
+      });
+      nextIdx += 1;
+    }
+  }
+  if (drafts.length === 0) {
+    throw new TextValidationError('EPUB has no readable chapters');
+  }
+
+  return insertTextWithChapters(owner, {
+    sourceType: 'epub',
     language,
     title,
     chapters: drafts,

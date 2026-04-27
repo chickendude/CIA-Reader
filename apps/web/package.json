@@ -23,6 +23,7 @@
     "@node-rs/argon2": "^2.0.2",
     "drizzle-orm": "^0.35.3",
     "jose": "^5.9.4",
+    "jszip": "^3.10.1",
     "nodemailer": "^6.9.15",
     "postgres": "^3.4.4",
     "zod": "^3.23.8"

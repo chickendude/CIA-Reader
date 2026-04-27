@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const createPastedText = vi.fn();
 const createTxtText = vi.fn();
+const createEpubText = vi.fn();
 
 vi.mock('$lib/server/texts/upload.js', async () => {
   const actual = await vi.importActual<typeof import('$lib/server/texts/upload.js')>(
@@ -15,6 +16,7 @@ vi.mock('$lib/server/texts/upload.js', async () => {
     ...actual,
     createPastedText: (...a: unknown[]) => createPastedText(...a),
     createTxtText: (...a: unknown[]) => createTxtText(...a),
+    createEpubText: (...a: unknown[]) => createEpubText(...a),
   };
 });
 
@@ -56,7 +58,28 @@ async function callAction(
 beforeEach(() => {
   createPastedText.mockReset();
   createTxtText.mockReset();
+  createEpubText.mockReset();
 });
+
+async function callEpubAction(
+  fields: { language?: string; title?: string; file?: File | null },
+  user: typeof USER | null = USER,
+) {
+  const { actions } = (await import('./+page.server.js')) as Mod;
+  const fd = new FormData();
+  if (fields.language !== undefined) fd.append('language', fields.language);
+  if (fields.title !== undefined) fd.append('title', fields.title);
+  if (fields.file) fd.append('file', fields.file);
+  const event = {
+    locals: { user },
+    request: { formData: () => Promise.resolve(fd) } as unknown as Request,
+  } as unknown as Parameters<Mod['actions']['epub']>[0];
+  try {
+    return await actions.epub!(event);
+  } catch (e) {
+    return e as { status: number; location?: string };
+  }
+}
 
 afterEach(() => {
   vi.resetModules();
@@ -162,6 +185,110 @@ describe('/upload default action', () => {
   it('redirects unauthenticated submissions to /login', async () => {
     const res = (await callAction(
       { language: 'hi', title: 'X', body: 'hello' },
+      null,
+    )) as { status: number; location: string };
+    expect(res.status).toBe(303);
+    expect(res.location).toContain('/login');
+  });
+});
+
+describe('/upload epub action', () => {
+  function fakeFile(size = 100, name = 'novel.epub') {
+    const bytes = new Uint8Array(size);
+    return new File([bytes], name, { type: 'application/epub+zip' });
+  }
+
+  it('creates an EPUB-sourced text and 303s to it', async () => {
+    createEpubText.mockResolvedValueOnce({
+      text: { id: 'text-3', ownerId: USER.id },
+      chapter: { id: 'c0' },
+      chapters: [{ id: 'c0' }, { id: 'c1' }],
+    });
+    const res = (await callEpubAction({
+      language: 'hi',
+      title: 'My EPUB',
+      file: fakeFile(),
+    })) as { status: number; location: string };
+    expect(res.status).toBe(303);
+    expect(res.location).toBe('/texts/text-3');
+    expect(createEpubText).toHaveBeenCalledWith(
+      { id: USER.id },
+      expect.objectContaining({ language: 'hi', title: 'My EPUB' }),
+    );
+  });
+
+  it('falls back to filename when no title is given', async () => {
+    createEpubText.mockResolvedValueOnce({
+      text: { id: 'text-3', ownerId: USER.id },
+      chapter: { id: 'c0' },
+      chapters: [{ id: 'c0' }],
+    });
+    await callEpubAction({
+      language: 'hi',
+      file: fakeFile(100, 'A Hindi Novel.epub'),
+    });
+    expect(createEpubText).toHaveBeenCalledWith(
+      { id: USER.id },
+      expect.objectContaining({ title: 'A Hindi Novel' }),
+    );
+  });
+
+  it('rejects an unsupported language with a section=epub fail', async () => {
+    const result = (await callEpubAction({
+      language: 'xx',
+      title: 'X',
+      file: fakeFile(),
+    })) as {
+      status: number;
+      data: { ok: boolean; section: string; message: string };
+    };
+    expect(result.status).toBe(400);
+    expect(result.data.section).toBe('epub');
+    expect(createEpubText).not.toHaveBeenCalled();
+  });
+
+  it('rejects a missing file', async () => {
+    const result = (await callEpubAction({
+      language: 'hi',
+      title: 'X',
+    })) as {
+      status: number;
+      data: { ok: boolean; section: string; message: string };
+    };
+    expect(result.status).toBe(400);
+    expect(result.data.section).toBe('epub');
+  });
+
+  it('rejects an empty file', async () => {
+    const result = (await callEpubAction({
+      language: 'hi',
+      title: 'X',
+      file: fakeFile(0),
+    })) as {
+      status: number;
+      data: { ok: boolean; section: string; message: string };
+    };
+    expect(result.status).toBe(400);
+  });
+
+  it('surfaces an EpubParseError as a section=epub fail', async () => {
+    const { EpubParseError } = await import('$lib/server/texts/upload.js');
+    createEpubText.mockRejectedValueOnce(new EpubParseError('bad zip'));
+    const result = (await callEpubAction({
+      language: 'hi',
+      title: 'X',
+      file: fakeFile(),
+    })) as {
+      status: number;
+      data: { ok: boolean; section: string; message: string };
+    };
+    expect(result.status).toBe(400);
+    expect(result.data.message).toMatch(/bad zip/);
+  });
+
+  it('redirects unauthenticated EPUB submissions to /login', async () => {
+    const res = (await callEpubAction(
+      { language: 'hi', title: 'X', file: fakeFile() },
       null,
     )) as { status: number; location: string };
     expect(res.status).toBe(303);

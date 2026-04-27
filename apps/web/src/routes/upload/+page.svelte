@@ -43,7 +43,7 @@
     const lower = file.name.toLowerCase();
     if (lower.endsWith('.epub')) {
       dropMessage =
-        'EPUB upload is coming in T-4.3 — for now, paste the chapter text directly.';
+        `EPUB '${file.name}' selected — upload it via the EPUB section below.`;
       return;
     }
     if (!lower.endsWith('.txt')) {
@@ -66,6 +66,36 @@
       dropMessage = `Failed to read ${file.name}.`;
     }
   }
+
+  // The EPUB upload uses its own form action (multipart) rather than
+  // re-using the JSON paste/txt path. This separation keeps the JSON
+  // validator schema strict and avoids dragging EPUB-specific concerns
+  // (file picker, multipart, parser-driven errors) into the paste UI.
+  let epubLanguage = $state(
+    untrack(() => form?.values?.language ?? data.languages[0]!.code),
+  );
+  let epubTitle = $state('');
+  let epubFileName = $state<string | null>(null);
+  let epubFileSize = $state(0);
+
+  function onEpubPick(event: Event) {
+    const input = event.currentTarget as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) {
+      epubFileName = null;
+      epubFileSize = 0;
+      return;
+    }
+    epubFileName = file.name;
+    epubFileSize = file.size;
+    if (!epubTitle) epubTitle = file.name.replace(/\.epub$/i, '');
+  }
+
+  const epubMessage = $derived(
+    form && 'section' in form && form.section === 'epub' && !form.ok
+      ? form.message
+      : null,
+  );
 
   function onDragOver(event: DragEvent) {
     event.preventDefault();
@@ -175,6 +205,71 @@
 
     <button type="submit" disabled={overLimit}>Upload</button>
   </form>
+
+  <hr class="divider" />
+
+  <section class="epub-section">
+    <h2>Upload an EPUB</h2>
+    <p class="sub">
+      Chapters are imported as authored — the EPUB's own table of
+      contents drives the chapter list. Up to {(
+        data.limits.maxEpubBytes / 1_000_000
+      ).toLocaleString()} MB.
+    </p>
+
+    {#if epubMessage}
+      <p class="err" role="alert">{epubMessage}</p>
+    {/if}
+
+    <form
+      method="post"
+      action="?/epub"
+      enctype="multipart/form-data"
+      use:enhance
+      class="stack"
+    >
+      <label>
+        Language
+        <select name="language" bind:value={epubLanguage} required>
+          {#each data.languages as lang (lang.code)}
+            <option value={lang.code}>
+              {lang.displayName} ({lang.nativeName})
+            </option>
+          {/each}
+        </select>
+      </label>
+
+      <label>
+        Title (optional — defaults to the filename)
+        <input
+          name="title"
+          bind:value={epubTitle}
+          maxlength={data.limits.maxTitleLength}
+          placeholder="e.g. The Far Pavilions"
+        />
+      </label>
+
+      <label>
+        EPUB file
+        <input
+          type="file"
+          name="file"
+          accept=".epub,application/epub+zip"
+          required
+          onchange={onEpubPick}
+        />
+      </label>
+
+      {#if epubFileName}
+        <p class="muted">
+          Selected: <code>{epubFileName}</code>
+          ({(epubFileSize / 1000).toFixed(1)} KB)
+        </p>
+      {/if}
+
+      <button type="submit" disabled={!epubFileName}>Upload EPUB</button>
+    </form>
+  </section>
 </div>
 
 <style>
@@ -289,5 +384,19 @@
   code {
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
     font-size: 0.85em;
+  }
+  .divider {
+    border: 0;
+    border-top: 1px solid var(--color-border);
+    margin: 2rem 0 1.25rem;
+  }
+  .epub-section h2 {
+    margin: 0 0 0.4rem;
+    font-size: 1.2rem;
+  }
+  .muted {
+    color: var(--color-fg-muted);
+    font-size: 0.85rem;
+    margin: 0 0 0.5rem;
   }
 </style>
