@@ -14,11 +14,13 @@
     chapterIdx,
     textId,
     showRomanization = false,
+    isOwner = false,
   }: {
     chapters: ChapterView[];
     chapterIdx: number;
     textId: string;
     showRomanization?: boolean;
+    isOwner?: boolean;
   } = $props();
 
   const current = $derived(
@@ -49,7 +51,7 @@
 
   <article>
     {#if current}
-      <ChapterBody chapter={current} {showRomanization} />
+      <ChapterBody chapter={current} {showRomanization} {isOwner} />
     {/if}
   </article>
 
