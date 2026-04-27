@@ -152,21 +152,24 @@ export type StatusView = {
 };
 
 /**
- * Owner-scoped status lookup for the polling endpoint. Returns null
- * for non-owners + missing texts; the endpoint maps that to 404 so
- * we don't leak text existence.
+ * Status lookup for the polling endpoint, gated by the central
+ * `canReadText` helper (T-4.6). Returns null for missing or
+ * unreadable texts; the endpoint maps that to 404 so we don't leak
+ * text existence to non-readers.
  */
 export async function getTextStatus(
-  viewer: Pick<User, 'id'>,
+  viewer: Pick<User, 'id'> | null,
   textId: string,
 ): Promise<StatusView | null> {
+  const { canReadText } = await import('../auth/can-read.js');
   const [text] = await db
     .select()
     .from(schema.texts)
     .where(eq(schema.texts.id, textId))
     .limit(1);
   if (!text) return null;
-  if ((text as Text).ownerId !== viewer.id) return null;
+  const ok = await canReadText(viewer, text as Text);
+  if (!ok) return null;
   const [job] = await db
     .select()
     .from(schema.nlpJobs)

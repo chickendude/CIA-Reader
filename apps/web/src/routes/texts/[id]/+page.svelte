@@ -38,6 +38,9 @@
     // then start polling if needed.
     liveStatus = data.text.status;
 
+    // Only the owner can hit the status endpoint; anonymous viewers
+    // of an official text would just get 401s in a tight loop.
+    if (!data.isOwner) return;
     if (!shouldPoll(liveStatus)) return;
 
     // Conservative 2.5s interval — fast enough that the user feels the
