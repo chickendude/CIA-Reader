@@ -142,8 +142,18 @@ def evaluate(pipeline: Pipeline, corpus: GoldenCorpus) -> EvalResult:
                 f"[{sentence.id}] token count mismatch — "
                 f"expected {len(sentence.tokens)}, got {len(actual_tokens)}"
             )
-            # Token count mismatch: skip per-token scoring but still count
-            # the sentence so a systematic tokenizer regression trips this.
+            # Charge the mismatched sentence as N lemma + N pos failures so
+            # the lemma_accuracy threshold actually catches a tokenizer
+            # regression. Without this, sentence-skipping leaves the
+            # counters at 0/0 and `_Counter.rate` returns 1.0, masking
+            # systematic mismatches as a perfect score.
+            for expected in sentence.tokens:
+                if expected.lemma is not None:
+                    result.lemma.add(False)
+                if expected.pos is not None:
+                    result.pos.add(False)
+                if expected.lemma is not None and expected.pos is not None:
+                    result.joint_lemma_pos.add(False)
             continue
 
         for expected, actual in zip(sentence.tokens, actual_tokens, strict=True):

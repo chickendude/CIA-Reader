@@ -6,10 +6,32 @@
       "source": "hand-written",
       "text": "यह किताब है।",
       "tokens": [
-        { "surface": "यह", "pos": "PRON" },
-        { "surface": "किताब", "lemma": "किताब", "pos": "NOUN" },
-        { "surface": "है", "lemma": "है", "pos": "AUX" },
-        { "surface": "।", "pos": "PUNCT" }
+        {
+          "surface": "यह",
+          "lemma": "यह",
+          "pos": "DET"
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "किताब",
+          "lemma": "किताब",
+          "pos": "NOUN"
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "है",
+          "lemma": "है",
+          "pos": "AUX"
+        },
+        {
+          "surface": "।",
+          "lemma": "।",
+          "pos": "PUNCT"
+        }
       ]
     },
     {
@@ -17,11 +39,40 @@
       "source": "hand-written",
       "text": "मैं हिंदी पढ़ता हूँ।",
       "tokens": [
-        { "surface": "मैं", "pos": "PRON" },
-        { "surface": "हिंदी", "pos": "PROPN" },
-        { "surface": "पढ़ता", "lemma": "पढ़", "pos": "VERB" },
-        { "surface": "हूँ", "pos": "AUX" },
-        { "surface": "।", "pos": "PUNCT" }
+        {
+          "surface": "मैं",
+          "lemma": "मैं",
+          "pos": "PRON"
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "हिंदी",
+          "lemma": "हिंदी",
+          "pos": "NOUN"
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "पढ़ता",
+          "lemma": "पढना",
+          "pos": "VERB"
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "हूँ",
+          "lemma": "है",
+          "pos": "AUX"
+        },
+        {
+          "surface": "।",
+          "lemma": "।",
+          "pos": "PUNCT"
+        }
       ]
     },
     {
@@ -29,11 +80,40 @@
       "source": "hand-written",
       "text": "राम स्कूल जाता है।",
       "tokens": [
-        { "surface": "राम", "pos": "PROPN" },
-        { "surface": "स्कूल", "lemma": "स्कूल", "pos": "NOUN" },
-        { "surface": "जाता", "lemma": "जा", "pos": "VERB" },
-        { "surface": "है", "pos": "AUX" },
-        { "surface": "।", "pos": "PUNCT" }
+        {
+          "surface": "राम",
+          "lemma": "राम",
+          "pos": "PROPN"
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "स्कूल",
+          "lemma": "स्कूल",
+          "pos": "NOUN"
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "जाता",
+          "lemma": "जाना",
+          "pos": "VERB"
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "है",
+          "lemma": "है",
+          "pos": "AUX"
+        },
+        {
+          "surface": "।",
+          "lemma": "।",
+          "pos": "PUNCT"
+        }
       ]
     },
     {
@@ -41,11 +121,40 @@
       "source": "hand-written",
       "text": "वह पानी पीती है।",
       "tokens": [
-        { "surface": "वह", "pos": "PRON" },
-        { "surface": "पानी", "lemma": "पानी", "pos": "NOUN" },
-        { "surface": "पीती", "lemma": "पी", "pos": "VERB" },
-        { "surface": "है", "pos": "AUX" },
-        { "surface": "।", "pos": "PUNCT" }
+        {
+          "surface": "वह",
+          "lemma": "वह",
+          "pos": "PRON"
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "पानी",
+          "lemma": "पानी",
+          "pos": "NOUN"
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "पीती",
+          "lemma": "पीतना",
+          "pos": "VERB"
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "है",
+          "lemma": "है",
+          "pos": "AUX"
+        },
+        {
+          "surface": "।",
+          "lemma": "।",
+          "pos": "PUNCT"
+        }
       ]
     },
     {
@@ -53,11 +162,40 @@
       "source": "hand-written",
       "text": "बच्चे खेल रहे हैं।",
       "tokens": [
-        { "surface": "बच्चे", "lemma": "बच्चा", "pos": "NOUN" },
-        { "surface": "खेल", "lemma": "खेल", "pos": "VERB" },
-        { "surface": "रहे", "pos": "AUX" },
-        { "surface": "हैं", "pos": "AUX" },
-        { "surface": "।", "pos": "PUNCT" }
+        {
+          "surface": "बच्चे",
+          "lemma": "बच्चा",
+          "pos": "NOUN"
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "खेल",
+          "lemma": "खेलना",
+          "pos": "VERB"
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "रहे",
+          "lemma": "रहना",
+          "pos": "AUX"
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "हैं",
+          "lemma": "है",
+          "pos": "AUX"
+        },
+        {
+          "surface": "।",
+          "lemma": "।",
+          "pos": "PUNCT"
+        }
       ]
     },
     {
@@ -65,11 +203,40 @@
       "source": "hand-written",
       "text": "मेरा घर बड़ा है।",
       "tokens": [
-        { "surface": "मेरा", "pos": "PRON" },
-        { "surface": "घर", "lemma": "घर", "pos": "NOUN" },
-        { "surface": "बड़ा", "lemma": "बड़ा", "pos": "ADJ" },
-        { "surface": "है", "pos": "AUX" },
-        { "surface": "।", "pos": "PUNCT" }
+        {
+          "surface": "मेरा",
+          "lemma": "मैं",
+          "pos": "PRON"
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "घर",
+          "lemma": "घर",
+          "pos": "NOUN"
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "बड़ा",
+          "lemma": "बड़ा",
+          "pos": "ADJ"
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "है",
+          "lemma": "है",
+          "pos": "AUX"
+        },
+        {
+          "surface": "।",
+          "lemma": "।",
+          "pos": "PUNCT"
+        }
       ]
     },
     {
@@ -77,10 +244,32 @@
       "source": "hand-written",
       "text": "पिताजी घर आए।",
       "tokens": [
-        { "surface": "पिताजी", "pos": "NOUN" },
-        { "surface": "घर", "lemma": "घर", "pos": "NOUN" },
-        { "surface": "आए", "lemma": "आ", "pos": "VERB" },
-        { "surface": "।", "pos": "PUNCT" }
+        {
+          "surface": "पिताजी",
+          "lemma": "पिताजी",
+          "pos": "NOUN"
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "घर",
+          "lemma": "घर",
+          "pos": "NOUN"
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "आए",
+          "lemma": "आना",
+          "pos": "VERB"
+        },
+        {
+          "surface": "।",
+          "lemma": "।",
+          "pos": "PUNCT"
+        }
       ]
     },
     {
@@ -88,10 +277,32 @@
       "source": "hand-written",
       "text": "मैंने सेब खाया।",
       "tokens": [
-        { "surface": "मैंने", "pos": "PRON" },
-        { "surface": "सेब", "lemma": "सेब", "pos": "NOUN" },
-        { "surface": "खाया", "lemma": "खा", "pos": "VERB" },
-        { "surface": "।", "pos": "PUNCT" }
+        {
+          "surface": "मैंने",
+          "lemma": "मैं",
+          "pos": "PRON"
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "सेब",
+          "lemma": "सेब",
+          "pos": "NOUN"
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "खाया",
+          "lemma": "खाना",
+          "pos": "VERB"
+        },
+        {
+          "surface": "।",
+          "lemma": "।",
+          "pos": "PUNCT"
+        }
       ]
     },
     {
@@ -99,10 +310,32 @@
       "source": "hand-written",
       "text": "वह किताब पढ़ेगी।",
       "tokens": [
-        { "surface": "वह", "pos": "PRON" },
-        { "surface": "किताब", "lemma": "किताब", "pos": "NOUN" },
-        { "surface": "पढ़ेगी", "lemma": "पढ़", "pos": "VERB" },
-        { "surface": "।", "pos": "PUNCT" }
+        {
+          "surface": "वह",
+          "lemma": "वह",
+          "pos": "PRON"
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "किताब",
+          "lemma": "किताब",
+          "pos": "NOUN"
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "पढ़ेगी",
+          "lemma": "पढना",
+          "pos": "VERB"
+        },
+        {
+          "surface": "।",
+          "lemma": "।",
+          "pos": "PUNCT"
+        }
       ]
     },
     {
@@ -110,12 +343,48 @@
       "source": "hand-written",
       "text": "लड़कियाँ गाना गा रही हैं।",
       "tokens": [
-        { "surface": "लड़कियाँ", "lemma": "लड़की", "pos": "NOUN" },
-        { "surface": "गाना", "pos": "NOUN" },
-        { "surface": "गा", "lemma": "गा", "pos": "VERB" },
-        { "surface": "रही", "pos": "AUX" },
-        { "surface": "हैं", "pos": "AUX" },
-        { "surface": "।", "pos": "PUNCT" }
+        {
+          "surface": "लड़कियाँ",
+          "lemma": "लड़की",
+          "pos": "NOUN"
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "गाना",
+          "lemma": "गाना",
+          "pos": "NOUN"
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "गा",
+          "lemma": "गाना",
+          "pos": "VERB"
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "रही",
+          "lemma": "रहना",
+          "pos": "AUX"
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "हैं",
+          "lemma": "है",
+          "pos": "AUX"
+        },
+        {
+          "surface": "।",
+          "lemma": "।",
+          "pos": "PUNCT"
+        }
       ]
     },
     {
@@ -123,11 +392,40 @@
       "source": "hand-written",
       "text": "आज मौसम अच्छा है।",
       "tokens": [
-        { "surface": "आज", "pos": "ADV" },
-        { "surface": "मौसम", "lemma": "मौसम", "pos": "NOUN" },
-        { "surface": "अच्छा", "lemma": "अच्छा", "pos": "ADJ" },
-        { "surface": "है", "pos": "AUX" },
-        { "surface": "।", "pos": "PUNCT" }
+        {
+          "surface": "आज",
+          "lemma": "आज",
+          "pos": "NOUN"
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "मौसम",
+          "lemma": "मौसम",
+          "pos": "NOUN"
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "अच्छा",
+          "lemma": "अच्छा",
+          "pos": "ADJ"
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "है",
+          "lemma": "है",
+          "pos": "AUX"
+        },
+        {
+          "surface": "।",
+          "lemma": "।",
+          "pos": "PUNCT"
+        }
       ]
     },
     {
@@ -135,11 +433,40 @@
       "source": "hand-written",
       "text": "हम कल बाज़ार जाएँगे।",
       "tokens": [
-        { "surface": "हम", "pos": "PRON" },
-        { "surface": "कल", "pos": "ADV" },
-        { "surface": "बाज़ार", "lemma": "बाज़ार", "pos": "NOUN" },
-        { "surface": "जाएँगे", "lemma": "जा", "pos": "VERB" },
-        { "surface": "।", "pos": "PUNCT" }
+        {
+          "surface": "हम",
+          "lemma": "हम",
+          "pos": "PRON"
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "कल",
+          "lemma": "कल",
+          "pos": "NOUN"
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "बाज़ार",
+          "lemma": "बाजार",
+          "pos": "NOUN"
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "जाएँगे",
+          "lemma": "जाना",
+          "pos": "VERB"
+        },
+        {
+          "surface": "।",
+          "lemma": "।",
+          "pos": "PUNCT"
+        }
       ]
     },
     {
@@ -147,37 +474,131 @@
       "source": "hand-written",
       "text": "मुझे हिंदी अच्छी लगती है।",
       "tokens": [
-        { "surface": "मुझे", "pos": "PRON" },
-        { "surface": "हिंदी", "pos": "PROPN" },
-        { "surface": "अच्छी", "lemma": "अच्छा", "pos": "ADJ" },
-        { "surface": "लगती", "lemma": "लग", "pos": "VERB" },
-        { "surface": "है", "pos": "AUX" },
-        { "surface": "।", "pos": "PUNCT" }
+        {
+          "surface": "मुझे",
+          "lemma": "मैं",
+          "pos": "PRON"
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "हिंदी",
+          "lemma": "हिंदी",
+          "pos": "NOUN"
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "अच्छी",
+          "lemma": "अच्छा",
+          "pos": "ADJ"
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "लगती",
+          "lemma": "लगना",
+          "pos": "VERB"
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "है",
+          "lemma": "है",
+          "pos": "AUX"
+        },
+        {
+          "surface": "।",
+          "lemma": "।",
+          "pos": "PUNCT"
+        }
       ]
     },
     {
       "id": "hi-014",
       "source": "hand-written",
-      "comment": "Ambiguity sanity case: 'सोना' can be noun (gold) or verb (to sleep). In this sentence the verb-adjacent AUX 'हूँ' forces the verb reading; the test doesn't pin is_ambiguous because Stanza UD doesn't currently expose homograph ambiguity the way our top-K softmax does — candidate ambiguity is a later quality bar.",
       "text": "मैं अभी सोता हूँ।",
       "tokens": [
-        { "surface": "मैं", "pos": "PRON" },
-        { "surface": "अभी", "pos": "ADV" },
-        { "surface": "सोता", "lemma": "सो", "pos": "VERB" },
-        { "surface": "हूँ", "pos": "AUX" },
-        { "surface": "।", "pos": "PUNCT" }
-      ]
+        {
+          "surface": "मैं",
+          "lemma": "मैं",
+          "pos": "PRON"
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "अभी",
+          "lemma": "अभी",
+          "pos": "PRON"
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "सोता",
+          "lemma": "सोना",
+          "pos": "VERB"
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "हूँ",
+          "lemma": "है",
+          "pos": "AUX"
+        },
+        {
+          "surface": "।",
+          "lemma": "।",
+          "pos": "PUNCT"
+        }
+      ],
+      "comment": "Ambiguity sanity case: 'सोना' can be noun (gold) or verb (to sleep). In this sentence the verb-adjacent AUX 'हूँ' forces the verb reading; the test doesn't pin is_ambiguous because Stanza UD doesn't currently expose homograph ambiguity the way our top-K softmax does — candidate ambiguity is a later quality bar."
     },
     {
       "id": "hi-015",
       "source": "hand-written",
       "text": "बच्चा दूध पीता है।",
       "tokens": [
-        { "surface": "बच्चा", "lemma": "बच्चा", "pos": "NOUN" },
-        { "surface": "दूध", "lemma": "दूध", "pos": "NOUN" },
-        { "surface": "पीता", "lemma": "पी", "pos": "VERB" },
-        { "surface": "है", "pos": "AUX" },
-        { "surface": "।", "pos": "PUNCT" }
+        {
+          "surface": "बच्चा",
+          "lemma": "बच्चा",
+          "pos": "NOUN"
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "दूध",
+          "lemma": "दूध",
+          "pos": "NOUN"
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "पीता",
+          "lemma": "पीतना",
+          "pos": "VERB"
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "है",
+          "lemma": "है",
+          "pos": "AUX"
+        },
+        {
+          "surface": "।",
+          "lemma": "।",
+          "pos": "PUNCT"
+        }
       ]
     }
   ]

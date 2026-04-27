@@ -181,6 +181,30 @@ def test_token_count_mismatch_reports_descriptive_failure():
     assert result.token_count == 0
 
 
+def test_token_count_mismatch_charges_lemma_and_pos_counters():
+    # Without this, a tokenizer regression (e.g. Stanza splitting "माझे"
+    # into two pieces) leaves lemma/pos counters at 0/0 and the rate
+    # silently defaults to 1.0 — a vacuous pass that hides the
+    # regression behind a "perfect score." Charge mismatched sentences
+    # as failures against every pinned field instead.
+    corpus = GoldenCorpus(
+        sentences=(
+            _sentence(
+                "a",
+                "x",
+                GoldenToken(surface="x", lemma="x", pos="NOUN"),
+                GoldenToken(surface="y", lemma="y", pos="VERB"),
+            ),
+        )
+    )
+    pipeline = _ScriptedPipeline({"x": [_tok(0, "x", "x", "NOUN")]})
+    result = evaluate(pipeline, corpus)
+    summary = result.summary()
+    assert summary["lemma_accuracy"] == 0.0
+    assert summary["pos_accuracy"] == 0.0
+    assert summary["joint_lemma_pos_accuracy"] == 0.0
+
+
 def test_is_oov_expectation_enforced():
     corpus = GoldenCorpus(
         sentences=(

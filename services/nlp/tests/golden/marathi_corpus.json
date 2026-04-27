@@ -6,10 +6,32 @@
       "source": "hand-written",
       "text": "मी मराठी शिकतो.",
       "tokens": [
-        { "surface": "मी", "pos": "PRON" },
-        { "surface": "मराठी", "pos": "PROPN" },
-        { "surface": "शिकतो", "lemma": "शिक", "pos": "VERB" },
-        { "surface": ".", "pos": "PUNCT" }
+        {
+          "surface": "मी",
+          "lemma": "मी",
+          "pos": "PRON"
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "मराठी",
+          "lemma": "मर",
+          "pos": "NOUN"
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "शिकतो",
+          "lemma": "शिकणे",
+          "pos": "VERB"
+        },
+        {
+          "surface": ".",
+          "lemma": ".",
+          "pos": "PUNCT"
+        }
       ]
     },
     {
@@ -17,10 +39,32 @@
       "source": "hand-written",
       "text": "ती शाळेत जाते.",
       "tokens": [
-        { "surface": "ती", "pos": "PRON" },
-        { "surface": "शाळेत", "lemma": "शाळा", "pos": "NOUN" },
-        { "surface": "जाते", "lemma": "जा", "pos": "VERB" },
-        { "surface": ".", "pos": "PUNCT" }
+        {
+          "surface": "ती",
+          "lemma": "तो",
+          "pos": "PRON"
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "शाळेत",
+          "lemma": "शाळ",
+          "pos": "NOUN"
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "जाते",
+          "lemma": "जाणे",
+          "pos": "VERB"
+        },
+        {
+          "surface": ".",
+          "lemma": ".",
+          "pos": "PUNCT"
+        }
       ]
     },
     {
@@ -28,10 +72,32 @@
       "source": "hand-written",
       "text": "मुले खेळत आहेत.",
       "tokens": [
-        { "surface": "मुले", "lemma": "मूल", "pos": "NOUN" },
-        { "surface": "खेळत", "lemma": "खेळ", "pos": "VERB" },
-        { "surface": "आहेत", "pos": "AUX" },
-        { "surface": ".", "pos": "PUNCT" }
+        {
+          "surface": "मुले",
+          "lemma": "मुल",
+          "pos": "NOUN"
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "खेळत",
+          "lemma": "खेळणे",
+          "pos": "VERB"
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "आहेत",
+          "lemma": "असणे",
+          "pos": "AUX"
+        },
+        {
+          "surface": ".",
+          "lemma": ".",
+          "pos": "PUNCT"
+        }
       ]
     },
     {
@@ -39,11 +105,40 @@
       "source": "hand-written",
       "text": "आज पाऊस पडतो आहे.",
       "tokens": [
-        { "surface": "आज", "pos": "ADV" },
-        { "surface": "पाऊस", "lemma": "पाऊस", "pos": "NOUN" },
-        { "surface": "पडतो", "lemma": "पड", "pos": "VERB" },
-        { "surface": "आहे", "pos": "AUX" },
-        { "surface": ".", "pos": "PUNCT" }
+        {
+          "surface": "आज",
+          "lemma": "आज",
+          "pos": "ADV"
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "पाऊस",
+          "lemma": "पाऊस",
+          "pos": "NOUN"
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "पडतो",
+          "lemma": "पडणे",
+          "pos": "VERB"
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "आहे",
+          "lemma": "असणे",
+          "pos": "AUX"
+        },
+        {
+          "surface": ".",
+          "lemma": ".",
+          "pos": "PUNCT"
+        }
       ]
     },
     {
@@ -51,11 +146,36 @@
       "source": "hand-written",
       "text": "माझे घर मोठे आहे.",
       "tokens": [
-        { "surface": "माझे", "pos": "PRON" },
-        { "surface": "घर", "lemma": "घर", "pos": "NOUN" },
-        { "surface": "मोठे", "lemma": "मोठा", "pos": "ADJ" },
-        { "surface": "आहे", "pos": "AUX" },
-        { "surface": ".", "pos": "PUNCT" }
+        {
+          "surface": "माझ",
+          "lemma": "मी",
+          "pos": "PRON"
+        },
+        {
+          "surface": "चे",
+          "lemma": "चा",
+          "pos": "ADP"
+        },
+        {
+          "surface": "घर",
+          "lemma": "घर",
+          "pos": "NOUN"
+        },
+        {
+          "surface": "मोठे",
+          "lemma": "मोठा",
+          "pos": "ADJ"
+        },
+        {
+          "surface": "आहे",
+          "lemma": "असणे",
+          "pos": "AUX"
+        },
+        {
+          "surface": ".",
+          "lemma": ".",
+          "pos": "PUNCT"
+        }
       ]
     },
     {
@@ -63,10 +183,32 @@
       "source": "hand-written",
       "text": "राम पुस्तक वाचतो.",
       "tokens": [
-        { "surface": "राम", "pos": "PROPN" },
-        { "surface": "पुस्तक", "lemma": "पुस्तक", "pos": "NOUN" },
-        { "surface": "वाचतो", "lemma": "वाच", "pos": "VERB" },
-        { "surface": ".", "pos": "PUNCT" }
+        {
+          "surface": "राम",
+          "lemma": "राम",
+          "pos": "NOUN"
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "पुस्तक",
+          "lemma": "पुस्तक",
+          "pos": "NOUN"
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "वाचतो",
+          "lemma": "वाचणे",
+          "pos": "VERB"
+        },
+        {
+          "surface": ".",
+          "lemma": ".",
+          "pos": "PUNCT"
+        }
       ]
     },
     {
@@ -74,11 +216,40 @@
       "source": "hand-written",
       "text": "आम्ही उद्या बाजारात जाऊ.",
       "tokens": [
-        { "surface": "आम्ही", "pos": "PRON" },
-        { "surface": "उद्या", "pos": "ADV" },
-        { "surface": "बाजारात", "lemma": "बाजार", "pos": "NOUN" },
-        { "surface": "जाऊ", "lemma": "जा", "pos": "VERB" },
-        { "surface": ".", "pos": "PUNCT" }
+        {
+          "surface": "आम्ही",
+          "lemma": "मी",
+          "pos": "DET"
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "उद्या",
+          "lemma": "उद्या",
+          "pos": "ADV"
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "बाजारात",
+          "lemma": "बाजार",
+          "pos": "NOUN"
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "जाऊ",
+          "lemma": "जाणे",
+          "pos": "VERB"
+        },
+        {
+          "surface": ".",
+          "lemma": ".",
+          "pos": "PUNCT"
+        }
       ]
     },
     {
@@ -86,10 +257,32 @@
       "source": "hand-written",
       "text": "तिने सफरचंद खाल्ले.",
       "tokens": [
-        { "surface": "तिने", "pos": "PRON" },
-        { "surface": "सफरचंद", "lemma": "सफरचंद", "pos": "NOUN" },
-        { "surface": "खाल्ले", "lemma": "खा", "pos": "VERB" },
-        { "surface": ".", "pos": "PUNCT" }
+        {
+          "surface": "तिने",
+          "lemma": "तो",
+          "pos": "PRON"
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "सफरचंद",
+          "lemma": "सफरचंद",
+          "pos": "NOUN"
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "खाल्ले",
+          "lemma": "खाल्ले",
+          "pos": "VERB"
+        },
+        {
+          "surface": ".",
+          "lemma": ".",
+          "pos": "PUNCT"
+        }
       ]
     },
     {
@@ -97,10 +290,32 @@
       "source": "hand-written",
       "text": "मुलगी गाणे गाते.",
       "tokens": [
-        { "surface": "मुलगी", "lemma": "मुलगी", "pos": "NOUN" },
-        { "surface": "गाणे", "lemma": "गाणे", "pos": "NOUN" },
-        { "surface": "गाते", "lemma": "गा", "pos": "VERB" },
-        { "surface": ".", "pos": "PUNCT" }
+        {
+          "surface": "मुलगी",
+          "lemma": "मुलगी",
+          "pos": "NOUN"
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "गाणे",
+          "lemma": "गाण",
+          "pos": "NOUN"
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "गाते",
+          "lemma": "जाणे",
+          "pos": "VERB"
+        },
+        {
+          "surface": ".",
+          "lemma": ".",
+          "pos": "PUNCT"
+        }
       ]
     },
     {
@@ -108,10 +323,32 @@
       "source": "hand-written",
       "text": "मला मराठी आवडते.",
       "tokens": [
-        { "surface": "मला", "pos": "PRON" },
-        { "surface": "मराठी", "pos": "PROPN" },
-        { "surface": "आवडते", "lemma": "आवड", "pos": "VERB" },
-        { "surface": ".", "pos": "PUNCT" }
+        {
+          "surface": "मला",
+          "lemma": "मी",
+          "pos": "PRON"
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "मराठी",
+          "lemma": "मर",
+          "pos": "NOUN"
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "आवडते",
+          "lemma": "आवडणे",
+          "pos": "VERB"
+        },
+        {
+          "surface": ".",
+          "lemma": ".",
+          "pos": "PUNCT"
+        }
       ]
     },
     {
@@ -119,10 +356,32 @@
       "source": "hand-written",
       "text": "तो पाणी पितो.",
       "tokens": [
-        { "surface": "तो", "pos": "PRON" },
-        { "surface": "पाणी", "lemma": "पाणी", "pos": "NOUN" },
-        { "surface": "पितो", "lemma": "पि", "pos": "VERB" },
-        { "surface": ".", "pos": "PUNCT" }
+        {
+          "surface": "तो",
+          "lemma": "तो",
+          "pos": "PRON"
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "पाणी",
+          "lemma": "पाणी",
+          "pos": "NOUN"
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "पितो",
+          "lemma": "पिणे",
+          "pos": "VERB"
+        },
+        {
+          "surface": ".",
+          "lemma": ".",
+          "pos": "PUNCT"
+        }
       ]
     },
     {
@@ -130,10 +389,32 @@
       "source": "hand-written",
       "text": "आई घरी आली.",
       "tokens": [
-        { "surface": "आई", "lemma": "आई", "pos": "NOUN" },
-        { "surface": "घरी", "lemma": "घर", "pos": "NOUN" },
-        { "surface": "आली", "lemma": "ये", "pos": "VERB" },
-        { "surface": ".", "pos": "PUNCT" }
+        {
+          "surface": "आई",
+          "lemma": "आई",
+          "pos": "NOUN"
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "घरी",
+          "lemma": "घरी",
+          "pos": "ADV"
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "आली",
+          "lemma": "येणे",
+          "pos": "VERB"
+        },
+        {
+          "surface": ".",
+          "lemma": ".",
+          "pos": "PUNCT"
+        }
       ]
     }
   ]
