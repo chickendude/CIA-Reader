@@ -1,0 +1,140 @@
+{
+  "__description__": "Marathi golden-file corpus (T-2.8). Scored against the real Stanza UD Marathi model in the `nlp-accuracy` CI job. Threshold is lower than Hindi (≥80% vs ≥90%) because the stanza-mr model is noisier in the wild — matches the quality-bar in the plan. Grows post-MVP.",
+  "sentences": [
+    {
+      "id": "mr-001",
+      "source": "hand-written",
+      "text": "मी मराठी शिकतो.",
+      "tokens": [
+        { "surface": "मी", "pos": "PRON" },
+        { "surface": "मराठी", "pos": "PROPN" },
+        { "surface": "शिकतो", "lemma": "शिक", "pos": "VERB" },
+        { "surface": ".", "pos": "PUNCT" }
+      ]
+    },
+    {
+      "id": "mr-002",
+      "source": "hand-written",
+      "text": "ती शाळेत जाते.",
+      "tokens": [
+        { "surface": "ती", "pos": "PRON" },
+        { "surface": "शाळेत", "lemma": "शाळा", "pos": "NOUN" },
+        { "surface": "जाते", "lemma": "जा", "pos": "VERB" },
+        { "surface": ".", "pos": "PUNCT" }
+      ]
+    },
+    {
+      "id": "mr-003",
+      "source": "hand-written",
+      "text": "मुले खेळत आहेत.",
+      "tokens": [
+        { "surface": "मुले", "lemma": "मूल", "pos": "NOUN" },
+        { "surface": "खेळत", "lemma": "खेळ", "pos": "VERB" },
+        { "surface": "आहेत", "pos": "AUX" },
+        { "surface": ".", "pos": "PUNCT" }
+      ]
+    },
+    {
+      "id": "mr-004",
+      "source": "hand-written",
+      "text": "आज पाऊस पडतो आहे.",
+      "tokens": [
+        { "surface": "आज", "pos": "ADV" },
+        { "surface": "पाऊस", "lemma": "पाऊस", "pos": "NOUN" },
+        { "surface": "पडतो", "lemma": "पड", "pos": "VERB" },
+        { "surface": "आहे", "pos": "AUX" },
+        { "surface": ".", "pos": "PUNCT" }
+      ]
+    },
+    {
+      "id": "mr-005",
+      "source": "hand-written",
+      "text": "माझे घर मोठे आहे.",
+      "tokens": [
+        { "surface": "माझे", "pos": "PRON" },
+        { "surface": "घर", "lemma": "घर", "pos": "NOUN" },
+        { "surface": "मोठे", "lemma": "मोठा", "pos": "ADJ" },
+        { "surface": "आहे", "pos": "AUX" },
+        { "surface": ".", "pos": "PUNCT" }
+      ]
+    },
+    {
+      "id": "mr-006",
+      "source": "hand-written",
+      "text": "राम पुस्तक वाचतो.",
+      "tokens": [
+        { "surface": "राम", "pos": "PROPN" },
+        { "surface": "पुस्तक", "lemma": "पुस्तक", "pos": "NOUN" },
+        { "surface": "वाचतो", "lemma": "वाच", "pos": "VERB" },
+        { "surface": ".", "pos": "PUNCT" }
+      ]
+    },
+    {
+      "id": "mr-007",
+      "source": "hand-written",
+      "text": "आम्ही उद्या बाजारात जाऊ.",
+      "tokens": [
+        { "surface": "आम्ही", "pos": "PRON" },
+        { "surface": "उद्या", "pos": "ADV" },
+        { "surface": "बाजारात", "lemma": "बाजार", "pos": "NOUN" },
+        { "surface": "जाऊ", "lemma": "जा", "pos": "VERB" },
+        { "surface": ".", "pos": "PUNCT" }
+      ]
+    },
+    {
+      "id": "mr-008",
+      "source": "hand-written",
+      "text": "तिने सफरचंद खाल्ले.",
+      "tokens": [
+        { "surface": "तिने", "pos": "PRON" },
+        { "surface": "सफरचंद", "lemma": "सफरचंद", "pos": "NOUN" },
+        { "surface": "खाल्ले", "lemma": "खा", "pos": "VERB" },
+        { "surface": ".", "pos": "PUNCT" }
+      ]
+    },
+    {
+      "id": "mr-009",
+      "source": "hand-written",
+      "text": "मुलगी गाणे गाते.",
+      "tokens": [
+        { "surface": "मुलगी", "lemma": "मुलगी", "pos": "NOUN" },
+        { "surface": "गाणे", "lemma": "गाणे", "pos": "NOUN" },
+        { "surface": "गाते", "lemma": "गा", "pos": "VERB" },
+        { "surface": ".", "pos": "PUNCT" }
+      ]
+    },
+    {
+      "id": "mr-010",
+      "source": "hand-written",
+      "text": "मला मराठी आवडते.",
+      "tokens": [
+        { "surface": "मला", "pos": "PRON" },
+        { "surface": "मराठी", "pos": "PROPN" },
+        { "surface": "आवडते", "lemma": "आवड", "pos": "VERB" },
+        { "surface": ".", "pos": "PUNCT" }
+      ]
+    },
+    {
+      "id": "mr-011",
+      "source": "hand-written",
+      "text": "तो पाणी पितो.",
+      "tokens": [
+        { "surface": "तो", "pos": "PRON" },
+        { "surface": "पाणी", "lemma": "पाणी", "pos": "NOUN" },
+        { "surface": "पितो", "lemma": "पि", "pos": "VERB" },
+        { "surface": ".", "pos": "PUNCT" }
+      ]
+    },
+    {
+      "id": "mr-012",
+      "source": "hand-written",
+      "text": "आई घरी आली.",
+      "tokens": [
+        { "surface": "आई", "lemma": "आई", "pos": "NOUN" },
+        { "surface": "घरी", "lemma": "घर", "pos": "NOUN" },
+        { "surface": "आली", "lemma": "ये", "pos": "VERB" },
+        { "surface": ".", "pos": "PUNCT" }
+      ]
+    }
+  ]
+}
