@@ -1,0 +1,186 @@
+{
+  "__description__": "Odia golden-file corpus (T-2.3b). Each entry pairs an Odia sentence with its expected per-token analysis. Serves as (a) an eval set for T-2.3a pipeline iteration, (b) a regression guard for future rule-table / lemma-seed edits, and (c) the fixture T-2.8 CI accuracy thresholds run against. Format per entry: 'text' is the whole sentence (NFC-normalized Odia script). 'tokens' is an ordered list — one entry per whitespace-separated surface — with optional expectations: 'lemma', 'pos', 'features' (subset check — only keys present are checked), 'is_oov', 'is_ambiguous'. A missing key means 'do not enforce'. This lets contributors add a sentence and assert only what they're sure of. The seed is deliberately small + paradigm-focused: it only uses lemmas from seed_lemmas.json so the eval is reproducible without the Odia WordNet import (T-3.1). Expanded corpora land post-T-3.1, ideally reviewed by a native Odia speaker. Known gaps documented in docs/dictionary-sources.md.",
+  "sentences": [
+    {
+      "id": "greeting-01",
+      "source": "hand-written",
+      "text": "ନମସ୍କାର ଦୁନିଆ",
+      "tokens": [
+        { "surface": "ନମସ୍କାର", "lemma": "ନମସ୍କାର", "pos": "INTJ", "is_oov": false },
+        { "surface": "ଦୁନିଆ", "lemma": "ଦୁନିଆ", "pos": "NOUN", "is_oov": false }
+      ]
+    },
+    {
+      "id": "noun-nom-01",
+      "source": "hand-written",
+      "text": "ଘର ବଡ଼",
+      "tokens": [
+        { "surface": "ଘର", "lemma": "ଘର", "pos": "NOUN", "is_oov": false },
+        { "surface": "ବଡ଼", "lemma": "ବଡ଼", "pos": "ADJ", "is_oov": false }
+      ]
+    },
+    {
+      "id": "noun-loc-01",
+      "source": "hand-written",
+      "text": "ଘରରେ ବହି",
+      "tokens": [
+        { "surface": "ଘରରେ", "lemma": "ଘର", "pos": "NOUN", "features": { "Case": "Loc" }, "is_oov": false },
+        { "surface": "ବହି", "lemma": "ବହି", "pos": "NOUN", "is_oov": false }
+      ]
+    },
+    {
+      "id": "noun-acc-01",
+      "source": "hand-written",
+      "text": "ପିଲାକୁ ବହି",
+      "tokens": [
+        { "surface": "ପିଲାକୁ", "lemma": "ପିଲା", "pos": "NOUN", "features": { "Case": "Acc" }, "is_oov": false },
+        { "surface": "ବହି", "lemma": "ବହି", "pos": "NOUN", "is_oov": false }
+      ]
+    },
+    {
+      "id": "noun-gen-01",
+      "source": "hand-written",
+      "text": "ଘରର ପିଲା",
+      "tokens": [
+        { "surface": "ଘରର", "lemma": "ଘର", "pos": "NOUN", "features": { "Case": "Gen" }, "is_oov": false },
+        { "surface": "ପିଲା", "lemma": "ପିଲା", "pos": "NOUN", "is_oov": false }
+      ]
+    },
+    {
+      "id": "noun-abl-01",
+      "source": "hand-written",
+      "text": "ଘରରୁ ପିଲା",
+      "tokens": [
+        { "surface": "ଘରରୁ", "lemma": "ଘର", "pos": "NOUN", "features": { "Case": "Abl" }, "is_oov": false },
+        { "surface": "ପିଲା", "lemma": "ପିଲା", "pos": "NOUN", "is_oov": false }
+      ]
+    },
+    {
+      "id": "noun-plural-nom-01",
+      "source": "hand-written",
+      "text": "ପିଲାମାନେ ଭଲ",
+      "tokens": [
+        { "surface": "ପିଲାମାନେ", "lemma": "ପିଲା", "pos": "NOUN", "features": { "Number": "Plur", "Case": "Nom" }, "is_oov": false },
+        { "surface": "ଭଲ", "lemma": "ଭଲ", "pos": "ADJ", "is_oov": false }
+      ]
+    },
+    {
+      "id": "noun-plural-acc-01",
+      "source": "hand-written",
+      "text": "ପିଲାମାନଙ୍କୁ ଦେଖ",
+      "tokens": [
+        { "surface": "ପିଲାମାନଙ୍କୁ", "lemma": "ପିଲା", "pos": "NOUN", "features": { "Number": "Plur", "Case": "Acc" }, "is_oov": false },
+        { "surface": "ଦେଖ", "lemma": "ଦେଖ", "pos": "VERB", "is_oov": false }
+      ]
+    },
+    {
+      "id": "noun-plural-gen-01",
+      "source": "hand-written",
+      "text": "ପିଲାମାନଙ୍କ ବହି",
+      "tokens": [
+        { "surface": "ପିଲାମାନଙ୍କ", "lemma": "ପିଲା", "pos": "NOUN", "features": { "Number": "Plur", "Case": "Gen" }, "is_oov": false },
+        { "surface": "ବହି", "lemma": "ବହି", "pos": "NOUN", "is_oov": false }
+      ]
+    },
+    {
+      "id": "verb-fut-3-01",
+      "source": "hand-written",
+      "text": "ସେ ଦେଖିବେ",
+      "tokens": [
+        { "surface": "ସେ", "lemma": "ସେ", "pos": "PRON", "is_oov": false },
+        { "surface": "ଦେଖିବେ", "lemma": "ଦେଖ", "pos": "VERB", "features": { "Tense": "Fut", "Person": "3" }, "is_oov": false }
+      ]
+    },
+    {
+      "id": "verb-inf-01",
+      "source": "hand-written",
+      "text": "ବହି ପଢ଼ିବା ଭଲ",
+      "tokens": [
+        { "surface": "ବହି", "lemma": "ବହି", "pos": "NOUN", "is_oov": false },
+        { "surface": "ପଢ଼ିବା", "lemma": "ପଢ଼", "pos": "VERB", "features": { "VerbForm": "Inf" }, "is_oov": false },
+        { "surface": "ଭଲ", "lemma": "ଭଲ", "pos": "ADJ", "is_oov": false }
+      ]
+    },
+    {
+      "id": "verb-past-3sg-01",
+      "source": "hand-written",
+      "text": "ସେ ଦେଖିଲା",
+      "tokens": [
+        { "surface": "ସେ", "lemma": "ସେ", "pos": "PRON", "is_oov": false },
+        { "surface": "ଦେଖିଲା", "lemma": "ଦେଖ", "pos": "VERB", "features": { "Tense": "Past", "Number": "Sing" }, "is_oov": false }
+      ]
+    },
+    {
+      "id": "verb-past-3pl-01",
+      "source": "hand-written",
+      "text": "ସେ ଦେଖିଲେ",
+      "tokens": [
+        { "surface": "ସେ", "lemma": "ସେ", "pos": "PRON", "is_oov": false },
+        { "surface": "ଦେଖିଲେ", "lemma": "ଦେଖ", "pos": "VERB", "features": { "Tense": "Past", "Person": "3" }, "is_oov": false }
+      ]
+    },
+    {
+      "id": "verb-pres-3pl-01",
+      "source": "hand-written",
+      "text": "ସେ ଦେଖନ୍ତି",
+      "tokens": [
+        { "surface": "ସେ", "lemma": "ସେ", "pos": "PRON", "is_oov": false },
+        { "surface": "ଦେଖନ୍ତି", "lemma": "ଦେଖ", "pos": "VERB", "features": { "Tense": "Pres", "Person": "3", "Number": "Plur" }, "is_oov": false }
+      ]
+    },
+    {
+      "id": "adj-cmp-01",
+      "source": "hand-written",
+      "text": "ବଡ଼ତର ଘର",
+      "tokens": [
+        { "surface": "ବଡ଼ତର", "lemma": "ବଡ଼", "pos": "ADJ", "features": { "Degree": "Cmp" }, "is_oov": false },
+        { "surface": "ଘର", "lemma": "ଘର", "pos": "NOUN", "is_oov": false }
+      ]
+    },
+    {
+      "id": "adj-sup-01",
+      "source": "hand-written",
+      "text": "ବଡ଼ତମ ଘର",
+      "tokens": [
+        { "surface": "ବଡ଼ତମ", "lemma": "ବଡ଼", "pos": "ADJ", "features": { "Degree": "Sup" }, "is_oov": false },
+        { "surface": "ଘର", "lemma": "ଘର", "pos": "NOUN", "is_oov": false }
+      ]
+    },
+    {
+      "id": "pron-01",
+      "source": "hand-written",
+      "text": "ମୁଁ ଜାଣ",
+      "tokens": [
+        { "surface": "ମୁଁ", "lemma": "ମୁଁ", "pos": "PRON", "is_oov": false },
+        { "surface": "ଜାଣ", "lemma": "ଜାଣ", "pos": "VERB", "is_oov": false }
+      ]
+    },
+    {
+      "id": "punct-01",
+      "source": "hand-written",
+      "text": "ନମସ୍କାର ।",
+      "tokens": [
+        { "surface": "ନମସ୍କାର", "lemma": "ନମସ୍କାର", "pos": "INTJ", "is_oov": false },
+        { "surface": "।", "pos": "PUNCT", "is_oov": false }
+      ]
+    },
+    {
+      "id": "ambiguous-01",
+      "source": "hand-written",
+      "comment": "'ଘରର' legitimately reads as either the Gen form of 'ଘର' OR a lemma in its own right if the dictionary adds it. With only 'ଘର' in seed the reading is unambiguous; this guard-rails against future seed edits accidentally introducing spurious ambiguity.",
+      "text": "ଘରର",
+      "tokens": [
+        { "surface": "ଘରର", "lemma": "ଘର", "pos": "NOUN", "features": { "Case": "Gen" }, "is_ambiguous": false, "is_oov": false }
+      ]
+    },
+    {
+      "id": "oov-01",
+      "source": "hand-written",
+      "comment": "A deliberately out-of-seed surface. Pipeline should flag is_oov=true with a fallback X candidate. Regression guard against the OOV fallback silently disappearing.",
+      "text": "ଜଣେ",
+      "tokens": [
+        { "surface": "ଜଣେ", "is_oov": true }
+      ]
+    }
+  ]
+}
