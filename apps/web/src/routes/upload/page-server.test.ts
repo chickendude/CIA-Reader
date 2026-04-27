@@ -1,0 +1,141 @@
+// @vitest-environment node
+/**
+ * Tests for /upload SSR loader + default action (T-4.1).
+ */
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+const createPastedText = vi.fn();
+
+vi.mock('$lib/server/texts/upload.js', async () => {
+  const actual = await vi.importActual<typeof import('$lib/server/texts/upload.js')>(
+    '$lib/server/texts/upload.js',
+  );
+  return {
+    ...actual,
+    createPastedText: (...a: unknown[]) => createPastedText(...a),
+  };
+});
+
+type Mod = typeof import('./+page.server.js');
+
+const USER = { id: 'user-1', role: 'user' as const };
+
+async function callLoad(user: typeof USER | null) {
+  const { load } = (await import('./+page.server.js')) as Mod;
+  const event = {
+    locals: { user },
+    url: new URL('http://x/upload'),
+  } as unknown as Parameters<Mod['load']>[0];
+  try {
+    return await load(event);
+  } catch (e) {
+    return e as { status: number; location?: string };
+  }
+}
+
+async function callAction(
+  fields: Record<string, string>,
+  user: typeof USER | null = USER,
+) {
+  const { actions } = (await import('./+page.server.js')) as Mod;
+  const fd = new FormData();
+  for (const [k, v] of Object.entries(fields)) fd.append(k, v);
+  const event = {
+    locals: { user },
+    request: { formData: () => Promise.resolve(fd) } as unknown as Request,
+  } as unknown as Parameters<Mod['actions']['default']>[0];
+  try {
+    return await actions.default!(event);
+  } catch (e) {
+    return e as { status: number; location?: string };
+  }
+}
+
+beforeEach(() => {
+  createPastedText.mockReset();
+});
+
+afterEach(() => {
+  vi.resetModules();
+});
+
+describe('/upload loader', () => {
+  it('returns the language list and the input limits for an authenticated user', async () => {
+    const data = (await callLoad(USER)) as {
+      languages: Array<{ code: string }>;
+      limits: { maxTitleLength: number; maxBodyBytes: number };
+    };
+    expect(data.languages.length).toBeGreaterThan(0);
+    expect(data.languages.map((l) => l.code)).toEqual(
+      expect.arrayContaining(['hi', 'mr', 'or']),
+    );
+    expect(data.limits.maxBodyBytes).toBeGreaterThan(0);
+  });
+
+  it('redirects unauthenticated visitors to /login with a next param', async () => {
+    const res = (await callLoad(null)) as { status: number; location: string };
+    expect(res.status).toBe(303);
+    expect(res.location).toBe('/login?next=%2Fupload');
+  });
+});
+
+describe('/upload default action', () => {
+  it('calls createPastedText with the form values and 303s to the new text', async () => {
+    createPastedText.mockResolvedValueOnce({
+      text: { id: 'text-1', ownerId: USER.id },
+      chapter: { id: 'chap-1' },
+    });
+    const res = (await callAction({
+      language: 'hi',
+      title: 'My text',
+      body: 'पाठ का मूल पाठ।',
+    })) as { status: number; location: string };
+    expect(res.status).toBe(303);
+    expect(res.location).toBe('/texts/text-1');
+    expect(createPastedText).toHaveBeenCalledWith(
+      { id: USER.id },
+      { language: 'hi', title: 'My text', body: 'पाठ का मूल पाठ।' },
+    );
+  });
+
+  it('returns a fail() with echoed values on validation failure', async () => {
+    const result = (await callAction({
+      language: 'xx',
+      title: '',
+      body: 'hello',
+    })) as {
+      status: number;
+      data: { ok: boolean; values: { title: string; body: string } };
+    };
+    expect(result.status).toBe(400);
+    expect(result.data.ok).toBe(false);
+    expect(result.data.values.body).toBe('hello');
+    expect(createPastedText).not.toHaveBeenCalled();
+  });
+
+  it('returns a fail() when the service raises a TextValidationError', async () => {
+    const { TextValidationError } = await import(
+      '$lib/server/texts/upload.js'
+    );
+    createPastedText.mockRejectedValueOnce(
+      new TextValidationError('body cannot be empty'),
+    );
+    const result = (await callAction({
+      language: 'hi',
+      title: 'X',
+      body: 'hello',
+    })) as { status: number; data: { ok: boolean; message: string } };
+    expect(result.status).toBe(400);
+    expect(result.data.ok).toBe(false);
+    expect(result.data.message).toMatch(/empty/);
+  });
+
+  it('redirects unauthenticated submissions to /login', async () => {
+    const res = (await callAction(
+      { language: 'hi', title: 'X', body: 'hello' },
+      null,
+    )) as { status: number; location: string };
+    expect(res.status).toBe(303);
+    expect(res.location).toContain('/login');
+  });
+});

@@ -43,6 +43,13 @@
       "when": 1777010005356,
       "tag": "0005_powerful_lady_bullseye",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1777299520720,
+      "tag": "0006_public_bedlam",
+      "breakpoints": true
     }
   ]
 }

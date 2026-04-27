@@ -22,6 +22,15 @@ export interface Tab {
 export const TABS: readonly Tab[] = [
   { id: 'home', label: 'Home', href: '/', auth: 'any', match: ['/'] },
   {
+    id: 'upload',
+    label: 'Upload',
+    href: '/upload',
+    auth: 'authenticated',
+    // /texts/[id] is the destination after a successful upload, so it
+    // should highlight the same tab the user used to get there.
+    match: ['/upload', '/texts'],
+  },
+  {
     id: 'profile',
     label: 'Profile',
     href: '/profile',
