@@ -27,12 +27,45 @@ land in a follow-up ticket (see docstring on :data:`SUPPORTED_SCHEMES`).
 Script + scheme tokens are the registry's canonical codes (ISO 15924
 script + the ``RomanizationScheme`` Literal). Calling code never
 touches ``sanscript``'s internal names.
+
+Hindi schwa deletion
+====================
+
+Hindi drops the Devanagari inherent schwa in most positions
+(राम → ``rām``, कमल → ``kamal``, भारत → ``bhārat``), and the schemes
+sanscript ships from a Sanskrit baseline don't model that — sanscript
+alone produces ``rāma``, ``kamala``, ``bhārata``. Marathi and Odia
+retain the schwa, so the bug is Hindi-specific.
+
+When :func:`to_roman` is called with ``language="hi"`` we route the
+Devanagari input through aksharamukha's ``RemoveSchwaHindi`` pre-rule,
+which emits the same Devanagari with explicit viramas where the schwa
+should be silent (e.g. कमला → कम्ला). That schwa-deleted Devanagari is
+then handed to sanscript like any other input, so every supported
+scheme (ISO / IAST / ITRANS / Velthuis) picks up the deletion
+uniformly — we don't depend on aksharamukha's romanization output.
+
+A second Hindi-specific quirk: ISO 15919 distinguishes ``ē/ō`` (long)
+from ``e/o`` (short). Hindi merged that distinction phonologically —
+there is only one /e/ and one /o/ — but sanscript still emits
+``ē/ō`` because the underlying Devanagari े/ो are mechanically the
+"long" forms. For ``language="hi"`` + ``to_scheme="iso15919"`` we
+fold ``ē → e`` and ``ō → o`` after transliteration so the output
+matches reader expectations. Marathi and Odia keep the macrons — they
+genuinely use the length distinction.
+
+The ``language`` kwarg is opt-in. Callers without language context
+(round-trip dictionary tooling, the script-aware editor's reverse
+``to_native`` direction) keep getting raw sanscript output, which
+is reversible. Schwa-deleted Hindi output is intentionally lossy —
+``rām`` doesn't round-trip back to राम — so it's display-only.
 """
 
 from __future__ import annotations
 
 import unicodedata
 
+from aksharamukha import transliterate as _aksharamukha
 from indic_transliteration import sanscript
 
 # Script codes (ISO 15924) → the sanscript scheme name. The registry
@@ -102,12 +135,42 @@ def _resolve_scheme(name: str) -> str:
         return _SCHEME_TO_SANSCRIPT[name]
     except KeyError as e:
         raise UnsupportedSchemeError(
-            f"Romanization scheme {name!r} not implemented; "
-            f"supported: {sorted(SUPPORTED_SCHEMES)}"
+            f"Romanization scheme {name!r} not implemented; supported: {sorted(SUPPORTED_SCHEMES)}"
         ) from e
 
 
-def to_roman(text: str, *, from_script: str, to_scheme: str) -> str:
+def _hindi_schwa_delete(devanagari: str) -> str:
+    """Apply aksharamukha's ``RemoveSchwaHindi`` to a Devanagari string.
+
+    Returns the same string with explicit viramas where the inherent
+    schwa should be silent. This is a Devanagari→Devanagari transform —
+    the actual romanization is still done by sanscript. Wrapped behind
+    a function so callers (and tests) don't import aksharamukha
+    directly and so the dependency is easy to swap if a better Hindi
+    schwa-deletion model lands later.
+    """
+    return _aksharamukha.process(
+        "Devanagari",
+        "Devanagari",
+        devanagari,
+        pre_options=["RemoveSchwaHindi"],
+    )
+
+
+# Hindi merges the ISO 15919 ē/ō length distinction into a single
+# /e/ and /o/. After sanscript emits ISO output we fold the macron
+# variants down to plain e/o for the Hindi display layer. Marathi and
+# Odia genuinely use the length distinction and skip this fold.
+_HINDI_ISO_FOLD = str.maketrans({"ē": "e", "ō": "o", "Ē": "E", "Ō": "O"})
+
+
+def to_roman(
+    text: str,
+    *,
+    from_script: str,
+    to_scheme: str,
+    language: str | None = None,
+) -> str:
     """Transliterate native-script text into a romanization scheme.
 
     The input is NFC-normalized defensively — the /process HTTP layer
@@ -115,13 +178,27 @@ def to_roman(text: str, *, from_script: str, to_scheme: str) -> str:
     dictionary-import code call this module directly, and a
     mis-normalized surface shouldn't produce a mis-romanized output.
     Empty string in, empty string out — a no-op rather than an error.
+
+    ``language`` is an opt-in hint that lets callers trigger
+    language-specific phonological rules — currently just Hindi schwa
+    deletion + ISO ē/ō → e/o fold (see module docstring). Pass the
+    registry's language code (``"hi"``, ``"mr"``, ``"or"``) when the
+    output is for *display*; leave it unset when the output must
+    round-trip back through :func:`to_native`.
     """
     if not text:
         return ""
     normalized = unicodedata.normalize("NFC", text)
+    if language == "hi" and from_script == "Deva":
+        # Schwa-delete on the Devanagari side, then let sanscript handle
+        # the actual romanization for whichever scheme was requested.
+        normalized = _hindi_schwa_delete(normalized)
     src = _resolve_script(from_script)
     dst = _resolve_scheme(to_scheme)
-    return sanscript.transliterate(normalized, src, dst)
+    out = sanscript.transliterate(normalized, src, dst)
+    if language == "hi" and to_scheme == "iso15919":
+        out = out.translate(_HINDI_ISO_FOLD)
+    return out
 
 
 def to_native(text: str, *, target_script: str, from_scheme: str) -> str:

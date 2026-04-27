@@ -62,6 +62,86 @@ def test_to_roman_empty_is_empty():
     assert romanize.to_roman("", from_script="Deva", to_scheme="iast") == ""
 
 
+# ---- Hindi-specific: schwa deletion + ē/ō → e/o fold ----
+#
+# These exercise the ``language="hi"`` opt-in path documented in the
+# module. Without the kwarg sanscript alone produces "rāma" / "kamala"
+# / "bhārata" — correct for Sanskrit, wrong for Hindi.
+
+
+@pytest.mark.parametrize(
+    "native,expected_iso",
+    [
+        ("राम", "rām"),  # final schwa deleted
+        ("कमल", "kamal"),  # final schwa deleted
+        ("भारत", "bhārat"),  # medial schwa kept, final deleted
+        ("कमला", "kamlā"),  # medial schwa deleted, long ā preserved
+        ("धर्म", "dharm"),  # consonant cluster, final deleted
+        ("पुस्तक", "pustak"),  # final deleted, NFC-stable
+    ],
+)
+def test_hindi_schwa_deletion_iso(native: str, expected_iso: str):
+    out = romanize.to_roman(native, from_script="Deva", to_scheme="iso15919", language="hi")
+    assert out == expected_iso
+
+
+def test_hindi_schwa_deletion_applies_to_iast_too():
+    # Schwa deletion is a phonological fact about Hindi, so it must
+    # apply regardless of which roman scheme is requested. IAST
+    # output should also drop the trailing schwa.
+    iast = romanize.to_roman("राम", from_script="Deva", to_scheme="iast", language="hi")
+    assert iast == "rām"
+
+
+def test_hindi_iso_folds_long_e_to_short_e():
+    # बोलना → "bolna"; without the fold sanscript emits "bōl…" because
+    # ISO 15919 mechanically marks े as the long ē. Hindi has only
+    # one /e/, so the fold is the right output.
+    out = romanize.to_roman("बोलता", from_script="Deva", to_scheme="iso15919", language="hi")
+    assert "ē" not in out
+    assert "ō" not in out
+    assert out == "boltā"
+
+
+def test_hindi_fold_does_not_apply_to_iast():
+    # IAST already uses bare e/o (no length distinction in the scheme),
+    # so the fold is a no-op there but worth pinning to catch
+    # regressions if the scheme tables shift.
+    out = romanize.to_roman("बोलता", from_script="Deva", to_scheme="iast", language="hi")
+    assert out == "boltā"
+
+
+def test_marathi_keeps_inherent_schwa_with_language_hint():
+    # Marathi retains the final schwa (राम → "rāma"). Passing
+    # ``language="mr"`` must NOT trigger schwa deletion — that's a
+    # Hindi-only rule.
+    out = romanize.to_roman("राम", from_script="Deva", to_scheme="iso15919", language="mr")
+    assert out == "rāma"
+
+
+def test_marathi_keeps_long_e_macron():
+    # Marathi genuinely uses the e/ē length distinction, so the ē→e
+    # fold must NOT apply for ``language="mr"``.
+    out = romanize.to_roman("हे", from_script="Deva", to_scheme="iso15919", language="mr")
+    assert "ē" in out
+
+
+def test_default_language_keeps_legacy_sanscript_behavior():
+    # Without ``language=``, callers (the to_native round-trip path,
+    # dictionary tooling) must keep getting raw sanscript output so
+    # round-trip remains lossless.
+    out = romanize.to_roman("राम", from_script="Deva", to_scheme="iso15919")
+    assert out == "rāma"
+
+
+def test_hindi_language_hint_is_noop_for_orya():
+    # The schwa-deletion path is gated on ``from_script="Deva"`` —
+    # Odia text with a stray ``language="hi"`` (a caller bug) must
+    # not get mangled by Devanagari-specific preprocessing.
+    out = romanize.to_roman("ନମସ୍କାର", from_script="Orya", to_scheme="iast", language="hi")
+    assert out == "namaskāra"
+
+
 # ---- to_native (romanization scheme → native script) ----
 
 
@@ -140,8 +220,7 @@ def test_round_trip_preserves_native(native: str, script: str, scheme: str):
     roman = romanize.to_roman(native, from_script=script, to_scheme=scheme)
     back = romanize.to_native(roman, target_script=script, from_scheme=scheme)
     assert back == unicodedata.normalize("NFC", native), (
-        f"round-trip broken for {native!r} via {scheme}: "
-        f"{native!r} -> {roman!r} -> {back!r}"
+        f"round-trip broken for {native!r} via {scheme}: {native!r} -> {roman!r} -> {back!r}"
     )
 
 

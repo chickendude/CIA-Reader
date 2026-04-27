@@ -67,6 +67,10 @@ def build_hindi_pipeline() -> HindiPipeline:  # pragma: no cover
         nlp=nlp,
         script=desc.script,
         roman_scheme=desc.default_romanization,
+        # Language hint triggers the schwa-deletion path in
+        # :func:`app.romanize.to_roman` so reader output is "rām" not
+        # "rāma" for words like राम / कमल / भारत.
+        language=desc.code,
     )
 
 
