@@ -159,7 +159,31 @@
     next.set(lemmaId, status);
     statusOverrides = next;
   }
+
+  // T-5.7: ←/→ flip pages within the chapter.
+  function isTypingInsideElement(target: EventTarget | null): boolean {
+    if (!(target instanceof HTMLElement)) return false;
+    const tag = target.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true;
+    if (target.isContentEditable) return true;
+    return false;
+  }
+
+  function onKeydown(e: KeyboardEvent) {
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    if (isTypingInsideElement(e.target)) return;
+    if (document.querySelector('[data-testid="word-popup"]')) return;
+    if (e.key === 'ArrowLeft' && hasPrev) {
+      e.preventDefault();
+      prev();
+    } else if (e.key === 'ArrowRight' && hasNext) {
+      e.preventDefault();
+      next();
+    }
+  }
 </script>
+
+<svelte:window onkeydown={onKeydown} />
 
 <div class="reader-scroll" data-mode="paged-scroll">
   <header class="page-header">

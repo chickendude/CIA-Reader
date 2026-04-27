@@ -51,6 +51,8 @@ export default [
         FileList: 'readonly',
         TextEncoder: 'readonly',
         TextDecoder: 'readonly',
+        // Reader keyboard handlers (T-5.7).
+        EventTarget: 'readonly',
       },
     },
   },
