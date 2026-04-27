@@ -13,6 +13,7 @@ from app import pipelines
 from app.pipelines import Pipeline, PipelineResult, StubPipeline, get_pipeline
 from app.pipelines.hindi import HindiPipeline
 from app.pipelines.marathi import MarathiPipeline
+from app.pipelines.odia import OdiaPipeline
 from app.schemas import LemmaCandidate, Token
 
 
@@ -23,20 +24,17 @@ def _clear_cache():
     pipelines.reset_pipeline_cache()
 
 
-def test_get_pipeline_returns_stub_for_languages_still_on_stub():
-    # After T-2.2 / T-2.3, Hindi and Marathi route to their real Stanza-
-    # backed pipelines; Odia (T-2.3a) is still on the stub.
-    pipe = get_pipeline("or")
-    assert isinstance(pipe, Pipeline)
-    assert isinstance(pipe, StubPipeline)
-
-
-def test_get_pipeline_returns_hindi_pipeline_for_hi():
+def test_get_pipeline_returns_real_pipelines_for_mvp_languages():
+    # After T-2.2 / T-2.3 / T-2.3a, every MVP language routes to its
+    # real implementation. No language is on the stub any more (the
+    # StubPipeline still exists as a test-only factory override target).
     assert isinstance(get_pipeline("hi"), HindiPipeline)
-
-
-def test_get_pipeline_returns_marathi_pipeline_for_mr():
     assert isinstance(get_pipeline("mr"), MarathiPipeline)
+    assert isinstance(get_pipeline("or"), OdiaPipeline)
+    for code in ("hi", "mr", "or"):
+        pipe = get_pipeline(code)
+        assert isinstance(pipe, Pipeline)
+        assert not isinstance(pipe, StubPipeline)
 
 
 def test_get_pipeline_reuses_instance_per_pipeline_id():

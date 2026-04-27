@@ -42,6 +42,8 @@ import pytest  # noqa: E402
 from app import pipelines  # noqa: E402
 from app.pipelines.hindi import HindiPipeline  # noqa: E402
 from app.pipelines.marathi import MarathiPipeline  # noqa: E402
+from app.pipelines.odia import OdiaPipeline  # noqa: E402
+from app.pipelines.odia.lemmas import default_lemma_table  # noqa: E402
 
 
 @dataclass
@@ -84,16 +86,18 @@ def _fallback_split(text: str) -> list[str]:
 
 
 @pytest.fixture(autouse=True)
-def _fake_stanza_factories():
-    """Replace the real Stanza-backed factories with whitespace fakes.
+def _fake_real_factories():
+    """Replace the real model-backed factories with lightweight fakes.
 
-    Applies to both ``stanza-hi`` (T-2.2) and ``stanza-mr`` (T-2.3).
-    Dedicated tests for each pipeline still instantiate with their own
-    fakes when they need specific UPOS / features / fallback behavior.
+    Applies to ``stanza-hi`` (T-2.2), ``stanza-mr`` (T-2.3), and
+    ``custom-or`` (T-2.3a). Dedicated tests for each pipeline still
+    instantiate with their own fakes when they need specific UPOS /
+    features / fallback behavior.
     """
     originals = {
         "stanza-hi": pipelines._PIPELINE_FACTORIES.get("stanza-hi"),
         "stanza-mr": pipelines._PIPELINE_FACTORIES.get("stanza-mr"),
+        "custom-or": pipelines._PIPELINE_FACTORIES.get("custom-or"),
     }
 
     def _hi_factory() -> HindiPipeline:
@@ -105,8 +109,18 @@ def _fake_stanza_factories():
             fallback_tokenizer=_fallback_split,
         )
 
+    def _or_factory() -> OdiaPipeline:
+        # Use the real seed lemma table so the smoke test for Odia
+        # exercises the real morphology pathway end-to-end; the tokenizer
+        # is swapped for a whitespace fake so IndicNLP isn't required.
+        return OdiaPipeline(
+            tokenizer=_fallback_split,
+            lemmas=default_lemma_table(),
+        )
+
     pipelines._PIPELINE_FACTORIES["stanza-hi"] = _hi_factory
     pipelines._PIPELINE_FACTORIES["stanza-mr"] = _mr_factory
+    pipelines._PIPELINE_FACTORIES["custom-or"] = _or_factory
     pipelines.reset_pipeline_cache()
     try:
         yield
