@@ -21,13 +21,19 @@ describe('resolveTheme', () => {
     expect(resolveTheme('system', true)).toBe('dark');
     expect(resolveTheme('system', false)).toBe('light');
   });
+
+  it("returns 'sepia' when preference is 'sepia' regardless of system preference", () => {
+    expect(resolveTheme('sepia', true)).toBe('sepia');
+    expect(resolveTheme('sepia', false)).toBe('sepia');
+  });
 });
 
 describe('isThemePreference', () => {
-  it('accepts the three valid preference strings', () => {
+  it('accepts the four valid preference strings', () => {
     expect(isThemePreference('system')).toBe(true);
     expect(isThemePreference('light')).toBe(true);
     expect(isThemePreference('dark')).toBe(true);
+    expect(isThemePreference('sepia')).toBe(true);
   });
 
   it('rejects other values', () => {

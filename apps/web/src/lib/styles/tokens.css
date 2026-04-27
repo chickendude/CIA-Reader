@@ -51,6 +51,97 @@
   /* Code */
   --color-code-bg: #f3f4f6;
   --color-code-fg: #111111;
+
+  /* CIAR design palette (Apr 2026 handoff).
+   * "Paper" / "ink" naming reflects the literary-reader positioning. The
+   * old `--color-*` tokens stay populated so unrenamed components keep
+   * working; new components consume these. */
+  --paper: #fdfaf3;
+  --paper-2: #f7f1e2;
+  --paper-3: #efe7d0;
+  --ink: #1f1a14;
+  --ink-2: #524a3d;
+  --ink-3: #877e6c;
+  --ink-4: #b3aa97;
+  --rule: #ece2c9;
+  --rule-2: #f3ebd6;
+  --card: #ffffff;
+  --card-edge: #ece2cc;
+
+  --accent: oklch(0.58 0.13 60); /* saffron */
+  --accent-soft: oklch(0.58 0.13 60 / 0.14);
+  --accent-ink: oklch(0.34 0.1 60);
+
+  --green: oklch(0.55 0.1 145);
+  --green-soft: oklch(0.55 0.1 145 / 0.14);
+  --rose: oklch(0.58 0.12 25);
+  --rose-soft: oklch(0.58 0.12 25 / 0.14);
+  --indigo: oklch(0.5 0.1 270);
+  --indigo-soft: oklch(0.5 0.1 270 / 0.14);
+
+  /* Word-status tints (background-highlight mode). Underline mode in T-5.9
+   * uses the accent hue at varying weights via the data-hl="underline" rules. */
+  --w-unknown-bg: transparent;
+  --w-l1-bg: oklch(0.92 0.07 80); /* very pale saffron */
+  --w-l2-bg: oklch(0.86 0.1 75);
+  --w-l3-bg: oklch(0.8 0.12 70);
+  --w-known-bg: transparent;
+  --w-ignored-bg: transparent;
+  --w-known-ink: var(--ink-3);
+  --w-ignored-ink: var(--ink-4);
+
+  --shadow-1:
+    0 1px 0 rgba(255, 255, 255, 0.5) inset, 0 1px 2px rgba(67, 47, 14, 0.06);
+  --shadow-2:
+    0 1px 0 rgba(255, 255, 255, 0.5) inset, 0 8px 24px rgba(67, 47, 14, 0.1);
+}
+
+[data-theme='sepia'] {
+  /* Surfaces */
+  --color-bg: #ead6b3;
+  --color-surface-1: #e1cb9f;
+  --color-surface-2: #d6bd8a;
+  --color-surface-3: #c9b083;
+  --color-overlay: rgba(42, 31, 16, 0.45);
+
+  /* Foreground */
+  --color-fg: #2a1f10;
+  --color-fg-muted: #4f3f25;
+  --color-fg-subtle: #7d6940;
+
+  --color-border: #c9b083;
+  --color-border-strong: #a8915e;
+
+  /* Sepia shares the saffron accent. */
+  --color-accent: oklch(0.58 0.13 60);
+  --color-accent-fg: #2a1f10;
+  --color-accent-hover: oklch(0.5 0.13 60);
+
+  --color-highlight-unknown: oklch(0.84 0.08 75);
+  --color-highlight-unknown-fg: #2a1f10;
+  --color-highlight-learning: oklch(0.76 0.12 70);
+  --color-highlight-learning-fg: #2a1f10;
+  --color-highlight-known: transparent;
+
+  --color-code-bg: #d6bd91;
+  --color-code-fg: #2a1f10;
+
+  /* CIAR design palette */
+  --paper: #ead6b3;
+  --paper-2: #e1cb9f;
+  --paper-3: #d6bd8a;
+  --ink: #2a1f10;
+  --ink-2: #4f3f25;
+  --ink-3: #7d6940;
+  --ink-4: #a8915e;
+  --rule: #c9b083;
+  --rule-2: #d6bd91;
+  --card: #f0dcb5;
+  --card-edge: #d2b884;
+
+  --w-l1-bg: oklch(0.84 0.08 75);
+  --w-l2-bg: oklch(0.76 0.12 70);
+  --w-l3-bg: oklch(0.68 0.13 65);
 }
 
 [data-theme='dark'] {
@@ -83,6 +174,32 @@
 
   --color-code-bg: #18181b;
   --color-code-fg: #f5f5f7;
+
+  /* CIAR design palette */
+  --paper: #161310;
+  --paper-2: #1d1916;
+  --paper-3: #25201b;
+  --ink: #f0e7d3;
+  --ink-2: #c9bfa9;
+  --ink-3: #897e6a;
+  --ink-4: #5d5547;
+  --rule: #2e2822;
+  --rule-2: #3a332b;
+  --card: #1a1714;
+  --card-edge: #2a241e;
+
+  --accent: oklch(0.78 0.13 70);
+  --accent-soft: oklch(0.78 0.13 70 / 0.18);
+  --accent-ink: oklch(0.86 0.11 70);
+
+  --w-l1-bg: oklch(0.3 0.05 70);
+  --w-l2-bg: oklch(0.38 0.08 68);
+  --w-l3-bg: oklch(0.46 0.11 65);
+
+  --shadow-1:
+    0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-2:
+    0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 12px 32px rgba(0, 0, 0, 0.55);
 }
 
 /* Typography, spacing, radii, shadows, motion — theme-invariant.
@@ -93,6 +210,18 @@
     system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   --font-mono:
     'SF Mono', ui-monospace, 'Cascadia Code', Menlo, Consolas, 'Liberation Mono', monospace;
+
+  /* CIAR design typography (Apr 2026 handoff). Loaded via Google Fonts in
+   * app.html. The reader chooses --serif-dev for Devanagari body text and
+   * falls back through Noto for Bengali / Gujarati / Gurmukhi / Oriya in
+   * T-5.9. UI chrome uses --sans + --serif. */
+  --font-sans: 'Inter', ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-serif: 'Source Serif 4', 'Iowan Old Style', 'Georgia', serif;
+  --font-serif-dev:
+    'Tiro Devanagari Hindi', 'Noto Serif Devanagari', 'Source Serif 4', serif;
+  --font-sans-dev: 'Noto Sans Devanagari', 'Inter', sans-serif;
+  --font-mono-display:
+    'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
 
   --font-size-xs: 0.75rem;
   --font-size-sm: 0.875rem;

@@ -58,6 +58,10 @@ describe('resolveServerTheme', () => {
   it("defaults to 'light' when no source has an opinion", () => {
     expect(resolveServerTheme(makeEvent({}))).toBe('light');
   });
+
+  it("honors a 'sepia' cookie for logged-out visitors", () => {
+    expect(resolveServerTheme(makeEvent({ cookie: 'sepia' }))).toBe('sepia');
+  });
 });
 
 describe('handle — onboarding redirect', () => {

@@ -8,8 +8,8 @@
  * dark-mode users' first paint) and client-side onMount code (to react to
  * OS preference changes) can share it.
  */
-export type ThemePreference = 'system' | 'light' | 'dark';
-export type ResolvedTheme = 'light' | 'dark';
+export type ThemePreference = 'system' | 'light' | 'dark' | 'sepia';
+export type ResolvedTheme = 'light' | 'dark' | 'sepia';
 
 export function resolveTheme(
   preference: ThemePreference,
@@ -23,5 +23,5 @@ export const THEME_COOKIE = 'cia_theme';
 export const THEME_COOKIE_MAX_AGE = 60 * 60 * 24 * 365; // 1 year
 
 export function isThemePreference(value: unknown): value is ThemePreference {
-  return value === 'system' || value === 'light' || value === 'dark';
+  return value === 'system' || value === 'light' || value === 'dark' || value === 'sepia';
 }

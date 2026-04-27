@@ -1,7 +1,12 @@
 import { redirect, type Handle } from '@sveltejs/kit';
 import { resolveUser } from '$lib/server/auth/require-user.js';
 import { shouldRedirectToOnboarding } from '$lib/server/onboarding.js';
-import { THEME_COOKIE, isThemePreference, resolveTheme } from '$lib/theme/index.js';
+import {
+  THEME_COOKIE,
+  isThemePreference,
+  resolveTheme,
+  type ResolvedTheme,
+} from '$lib/theme/index.js';
 import { setJobDispatcher } from '$lib/server/texts/jobs.js';
 import { inProcessDispatcher } from '$lib/server/texts/in-process-dispatcher.js';
 
@@ -30,7 +35,7 @@ setJobDispatcher(inProcessDispatcher);
  *  4. Default to 'light' (light-mode systems without a cookie or hint won't
  *     flip when the client-side script runs).
  */
-export function resolveServerTheme(event: Parameters<Handle>[0]['event']): 'light' | 'dark' {
+export function resolveServerTheme(event: Parameters<Handle>[0]['event']): ResolvedTheme {
   const userPref = event.locals.user?.themePreference;
   const cookiePref = event.cookies.get(THEME_COOKIE);
   const preference = userPref ?? (isThemePreference(cookiePref) ? cookiePref : 'system');

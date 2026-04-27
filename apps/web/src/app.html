@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" data-theme="%cia.theme%">
+<html lang="en" data-theme="%cia.theme%" data-hl="background">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -11,6 +11,11 @@
       light-mode flash for dark-mode users. Reads the cookie written by
       the profile form and falls back to the OS preference. Mirrored by
       server-side rendering in hooks.server.ts so hydration matches.
+
+      `data-hl` controls reader word-status highlighting style
+      (background tint vs. underline). It's a reader-mode setting written
+      by T-5.1b's text-settings popover and persisted client-side; the
+      attribute is set here so first paint already has the right rules.
     -->
     <script>
       (function () {
@@ -18,15 +23,34 @@
           var match = document.cookie.match(/(?:^|; )cia_theme=([^;]+)/);
           var pref = match ? decodeURIComponent(match[1]) : 'system';
           var resolved =
-            pref === 'light' || pref === 'dark'
+            pref === 'light' || pref === 'dark' || pref === 'sepia'
               ? pref
               : window.matchMedia('(prefers-color-scheme: dark)').matches
                 ? 'dark'
                 : 'light';
           document.documentElement.setAttribute('data-theme', resolved);
+
+          var hlMatch = document.cookie.match(/(?:^|; )cia_hl=([^;]+)/);
+          var hlPref = hlMatch ? decodeURIComponent(hlMatch[1]) : 'background';
+          document.documentElement.setAttribute(
+            'data-hl',
+            hlPref === 'underline' ? 'underline' : 'background',
+          );
         } catch (_) {}
       })();
     </script>
+    <!--
+      CIAR design font stack (T-5.8). Inter / Source Serif 4 / JetBrains
+      Mono are global UI fonts; the script-specific Noto + Tiro families
+      back the reader body. Loaded via Google Fonts with display=swap so
+      first paint never blocks on a font response.
+    -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Source+Serif+4:ital,wght@0,400;0,500;0,600;1,400&family=Tiro+Devanagari+Hindi:ital@0;1&family=Noto+Serif+Devanagari:wght@400;500&family=Noto+Sans+Devanagari:wght@400;500&family=Noto+Serif+Bengali&family=Noto+Serif+Gujarati&family=Noto+Serif+Gurmukhi&family=Noto+Serif+Oriya&family=JetBrains+Mono:wght@400;500&display=swap"
+    />
     %sveltekit.head%
   </head>
   <body data-sveltekit-preload-data="hover">
