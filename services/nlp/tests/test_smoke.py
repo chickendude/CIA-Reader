@@ -37,3 +37,21 @@ def test_process_odia_canned():
 def test_process_rejects_unsupported_language():
     resp = client.post("/process", json={"language": "ja", "text": "hello"})
     assert resp.status_code == 400
+
+
+def test_process_nfc_normalizes_input():
+    # Devanagari क़ (U+0958) is a Unicode composition exclusion — NFC
+    # canonicalizes it to the decomposed form क (U+0915) + nukta (U+093C).
+    # Sending the precomposed form and getting the decomposed surface back
+    # proves the /process endpoint ran NFC normalization.
+    precomposed = "\u0958"
+    canonical = "\u0915\u093c"
+    resp = client.post("/process", json={"language": "hi", "text": precomposed})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["tokens"][0]["surface"] == canonical
+
+
+def test_process_empty_text_rejected_by_validation():
+    resp = client.post("/process", json={"language": "hi", "text": ""})
+    assert resp.status_code == 422
