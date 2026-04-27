@@ -131,7 +131,7 @@
     <p class="err" role="alert">{form.message}</p>
   {/if}
 
-  <form method="post" use:enhance class="stack">
+  <form method="post" action="?/paste" use:enhance class="stack">
     <label>
       Language
       <select name="language" bind:value={language} required>

@@ -75,7 +75,11 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 };
 
 export const actions: Actions = {
-  default: async ({ request, locals }) => {
+  // SvelteKit rule: a page either has a single `default` action OR a
+  // set of named actions, never both. The EPUB upload deserves its
+  // own named action (multipart, separate form) so the paste/.txt
+  // path is also named to keep them coexisting.
+  paste: async ({ request, locals }) => {
     if (!locals.user) {
       throw redirect(303, '/login?next=/upload');
     }

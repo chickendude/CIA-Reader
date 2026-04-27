@@ -47,9 +47,9 @@ async function callAction(
   const event = {
     locals: { user },
     request: { formData: () => Promise.resolve(fd) } as unknown as Request,
-  } as unknown as Parameters<Mod['actions']['default']>[0];
+  } as unknown as Parameters<Mod['actions']['paste']>[0];
   try {
-    return await actions.default!(event);
+    return await actions.paste!(event);
   } catch (e) {
     return e as { status: number; location?: string };
   }
@@ -111,7 +111,7 @@ describe('/upload loader', () => {
   });
 });
 
-describe('/upload default action', () => {
+describe('/upload paste action', () => {
   it('calls createPastedText with the form values and 303s to the new text', async () => {
     createPastedText.mockResolvedValueOnce({
       text: { id: 'text-1', ownerId: USER.id },
