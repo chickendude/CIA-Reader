@@ -35,7 +35,7 @@
     children,
   }: Props = $props();
 
-  let panelEl = $state<HTMLDivElement | null>(null);
+  let panelEl: HTMLDivElement | null = $state(null);
   let trap: FocusTrap | null = null;
   let releaseScroll: (() => void) | null = null;
 
@@ -71,8 +71,6 @@
 </script>
 
 {#if open}
-  <!-- svelte-ignore a11y_click_events_have_key_events -->
-  <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
     class="sheet-back"
     role="presentation"
