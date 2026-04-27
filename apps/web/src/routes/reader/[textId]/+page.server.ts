@@ -50,6 +50,11 @@ function readMode(
   return fallback;
 }
 
+function readBool(url: URL, key: string): boolean {
+  const raw = url.searchParams.get(key);
+  return raw === '1' || raw === 'true';
+}
+
 export const load: PageServerLoad = async ({ params, locals, url }) => {
   if (!UUID_RE.test(params.textId)) throw error(400, 'Invalid text id');
   const viewer = locals.user ? { id: locals.user.id } : null;
@@ -70,6 +75,7 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
   // wires user-pref persistence (T-5.1b). For the skeleton the URL is
   // the only source.
   const mode = readMode(url, 'continuous');
+  const showRomanization = readBool(url, 'roman');
 
   // Pre-fetch NLP tokens for every chapter that has them. Chapters
   // without tokens fall back to client-side whitespace tokenization
@@ -112,6 +118,7 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
       tokenIdx,
     },
     mode,
+    showRomanization,
     isOwner: Boolean(locals.user && locals.user.id === result.text.ownerId),
   };
 };

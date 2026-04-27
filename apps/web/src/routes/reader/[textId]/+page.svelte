@@ -28,10 +28,23 @@
   );
 
   function setMode(mode: 'page' | 'paged_scroll' | 'continuous') {
-    void goto(
-      `/reader/${data.text.id}?mode=${mode}&chapter=${data.anchor.chapterIdx}`,
-      { keepFocus: true },
-    );
+    const params = new URLSearchParams();
+    params.set('mode', mode);
+    if (data.anchor.chapterIdx) params.set('chapter', String(data.anchor.chapterIdx));
+    if (data.showRomanization) params.set('roman', '1');
+    void goto(`/reader/${data.text.id}?${params.toString()}`, {
+      keepFocus: true,
+    });
+  }
+
+  function toggleRomanization() {
+    const params = new URLSearchParams();
+    params.set('mode', data.mode);
+    if (data.anchor.chapterIdx) params.set('chapter', String(data.anchor.chapterIdx));
+    if (!data.showRomanization) params.set('roman', '1');
+    void goto(`/reader/${data.text.id}?${params.toString()}`, {
+      keepFocus: true,
+    });
   }
 
   onMount(() => {
@@ -79,27 +92,39 @@
       </p>
     </div>
 
-    <div class="mode-toggle" role="group" aria-label="Reading mode">
+    <div class="toolbar-row">
+      <div class="mode-toggle" role="group" aria-label="Reading mode">
+        <button
+          type="button"
+          class:active={data.mode === 'page'}
+          onclick={() => setMode('page')}
+        >
+          Page
+        </button>
+        <button
+          type="button"
+          class:active={data.mode === 'paged_scroll'}
+          onclick={() => setMode('paged_scroll')}
+        >
+          Paged scroll
+        </button>
+        <button
+          type="button"
+          class:active={data.mode === 'continuous'}
+          onclick={() => setMode('continuous')}
+        >
+          Continuous
+        </button>
+      </div>
+
       <button
         type="button"
-        class:active={data.mode === 'page'}
-        onclick={() => setMode('page')}
+        class="roman-toggle"
+        class:active={data.showRomanization}
+        onclick={toggleRomanization}
+        aria-pressed={data.showRomanization}
       >
-        Page
-      </button>
-      <button
-        type="button"
-        class:active={data.mode === 'paged_scroll'}
-        onclick={() => setMode('paged_scroll')}
-      >
-        Paged scroll
-      </button>
-      <button
-        type="button"
-        class:active={data.mode === 'continuous'}
-        onclick={() => setMode('continuous')}
-      >
-        Continuous
+        Show romanization
       </button>
     </div>
   </header>
@@ -113,13 +138,19 @@
       chapters={data.chapters}
       chapterIdx={data.anchor.chapterIdx}
       textId={data.text.id}
+      showRomanization={data.showRomanization}
     />
   {:else if data.mode === 'paged_scroll'}
-    <ReaderScroll chapters={data.chapters} chapterIdx={data.anchor.chapterIdx} />
+    <ReaderScroll
+      chapters={data.chapters}
+      chapterIdx={data.anchor.chapterIdx}
+      showRomanization={data.showRomanization}
+    />
   {:else}
     <ReaderContinuous
       chapters={data.chapters}
       initialChapterIdx={data.anchor.chapterIdx}
+      showRomanization={data.showRomanization}
     />
   {/if}
 </div>
@@ -179,10 +210,33 @@
     border-color: color-mix(in srgb, #b07a31 60%, transparent);
     color: #b07a31;
   }
+  .toolbar-row {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+    flex-wrap: wrap;
+    justify-content: space-between;
+  }
   .mode-toggle {
     display: flex;
     gap: 0.25rem;
     flex-wrap: wrap;
+  }
+  .roman-toggle {
+    padding: 0.4rem 0.75rem;
+    font: inherit;
+    font-size: 0.85rem;
+    border: 1px solid var(--color-border);
+    background: var(--color-bg);
+    color: var(--color-fg-muted);
+    border-radius: 999px;
+    cursor: pointer;
+    min-height: 36px;
+  }
+  .roman-toggle.active {
+    background: var(--color-accent);
+    color: var(--color-accent-fg, #fff);
+    border-color: var(--color-accent);
   }
   .mode-toggle button {
     padding: 0.4rem 0.75rem;

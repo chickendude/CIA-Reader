@@ -22,10 +22,12 @@
     chapters,
     chapterIdx,
     wordsPerPage = 250,
+    showRomanization = false,
   }: {
     chapters: ChapterView[];
     chapterIdx: number;
     wordsPerPage?: number;
+    showRomanization?: boolean;
   } = $props();
 
   let page = $state(0);
@@ -124,7 +126,10 @@
     {#if visibleServer}
       {#each visibleServer as paragraph, pIdx (pIdx)}
         <p class="body">
-          {#each paragraph as token (token.id)}<TokenSpan {token} />{/each}
+          {#each paragraph as token (token.id)}<TokenSpan
+              {token}
+              {showRomanization}
+            />{/each}
         </p>
       {/each}
     {:else if visibleFallback}
