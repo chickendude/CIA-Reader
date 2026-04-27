@@ -37,6 +37,7 @@ import {
   type ChapterDraft,
 } from './chunking.js';
 import { parseEpub, EpubParseError } from './epub.js';
+import { enqueueNlpJob } from './jobs.js';
 
 export { EpubParseError };
 
@@ -195,6 +196,15 @@ async function insertTextWithChapters(
   // Sort defensively — drizzle's `returning` doesn't guarantee insert
   // order across drivers.
   chapterRows.sort((a, b) => a.idx - b.idx);
+
+  // Kick the NLP worker (T-4.4). The default dispatcher is a no-op so
+  // tests + dev environments without arq still succeed; production
+  // wiring registers a Redis-backed dispatcher at boot.
+  await enqueueNlpJob({
+    textId: (text as Text).id,
+    chapterIds: chapterRows.map((c) => c.id),
+    now: args.now,
+  });
 
   return {
     text: text as Text,
