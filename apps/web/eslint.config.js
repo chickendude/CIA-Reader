@@ -45,6 +45,12 @@ export default [
         KeyboardEvent: 'readonly',
         MouseEvent: 'readonly',
         FocusEvent: 'readonly',
+        // Drag-and-drop + file upload globals (T-4.1).
+        DragEvent: 'readonly',
+        File: 'readonly',
+        FileList: 'readonly',
+        TextEncoder: 'readonly',
+        TextDecoder: 'readonly',
       },
     },
   },

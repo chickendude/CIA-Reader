@@ -453,6 +453,98 @@ export type LemmaEditChangePayload = {
   bulkAttribution?: boolean;
 };
 
+/**
+ * User-imported texts (T-4.1, milestone M4).
+ *
+ * `source_type` records how the text was uploaded so we can show a
+ * friendly badge in the library and run source-specific re-import logic
+ * later (e.g. re-parsing the original EPUB after we improve chapter
+ * detection). `status` is the NLP processing state — at T-4.1 every new
+ * text starts `pending` and is flipped to `ready` once T-4.4 wires up
+ * the worker; `failed` lets the library show a retry affordance instead
+ * of a stuck spinner.
+ *
+ * `visibility` defaults to `private`. `shared` is granted via a row in
+ * `text_shares` / `text_group_shares` (M7); `official` can only be set
+ * by an admin/curator after a "make official" request and is gated on
+ * licensing review (T-7.1). owner_id is nullable because official
+ * curated texts are not owned by any one user.
+ *
+ * `text_chapters` is the natural pagination unit (EPUB chapters are
+ * preserved; pasted texts default to one chapter; long .txt files are
+ * auto-split at paragraph boundaries in T-4.2 / T-5.1a). The reader
+ * loads one chapter at a time, so the chapter table holds the raw
+ * `body` plus precomputed `token_count` for progress / library cards.
+ */
+export const textSourceType = pgEnum('text_source_type', [
+  'paste',
+  'txt',
+  'epub',
+]);
+
+export const textStatus = pgEnum('text_status', [
+  'pending',
+  'processing',
+  'ready',
+  'failed',
+]);
+
+export const textVisibility = pgEnum('text_visibility', [
+  'private',
+  'shared',
+  'official',
+]);
+
+export const texts = pgTable(
+  'texts',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    // Nullable so curated/official texts can exist without a user owning
+    // them. The auth helper in T-4.6 (`assertCanRead`) treats a null
+    // owner_id as "publicly readable iff visibility='official'."
+    ownerId: uuid('owner_id').references(() => users.id, {
+      onDelete: 'cascade',
+    }),
+    language: language('language').notNull(),
+    title: text('title').notNull(),
+    sourceType: textSourceType('source_type').notNull(),
+    status: textStatus('status').notNull().default('pending'),
+    visibility: textVisibility('visibility').notNull().default('private'),
+    statusError: text('status_error'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    // Library "your texts" tab needs a fast scan over the user's own
+    // imports ordered by recency.
+    ownerIdx: index('texts_owner_idx').on(t.ownerId, t.createdAt),
+    // Public official-library page needs a fast scan over (visibility,
+    // language) — see T-4.5.
+    visibilityIdx: index('texts_visibility_idx').on(t.visibility, t.language),
+  }),
+);
+
+export const textChapters = pgTable(
+  'text_chapters',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    textId: uuid('text_id')
+      .notNull()
+      .references(() => texts.id, { onDelete: 'cascade' }),
+    idx: integer('idx').notNull(),
+    title: text('title'),
+    body: text('body').notNull(),
+    // Cheap precompute on insert. The reader's library cards and
+    // progress bars need it; computing it on read is wasteful.
+    tokenCount: integer('token_count').notNull().default(0),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    textOrderUq: unique('text_chapters_text_idx_uq').on(t.textId, t.idx),
+    textIdx: index('text_chapters_text_idx').on(t.textId, t.idx),
+  }),
+);
+
 export type User = InferSelectModel<typeof users>;
 export type Session = InferSelectModel<typeof sessions>;
 export type RefreshToken = InferSelectModel<typeof refreshTokens>;
@@ -464,3 +556,5 @@ export type Translation = InferSelectModel<typeof translations>;
 export type DictionaryImport = InferSelectModel<typeof dictionaryImports>;
 export type CuratorLanguage = InferSelectModel<typeof curatorLanguages>;
 export type LemmaEditHistoryEntry = InferSelectModel<typeof lemmaEditHistory>;
+export type Text = InferSelectModel<typeof texts>;
+export type TextChapter = InferSelectModel<typeof textChapters>;

@@ -5,6 +5,7 @@ describe('visibleTabs', () => {
   it('shows authenticated + any tabs to signed-in users', () => {
     const shown = visibleTabs(TABS, true).map((t) => t.id);
     expect(shown).toContain('home');
+    expect(shown).toContain('upload');
     expect(shown).toContain('profile');
     expect(shown).not.toContain('signin');
   });
@@ -13,7 +14,13 @@ describe('visibleTabs', () => {
     const shown = visibleTabs(TABS, false).map((t) => t.id);
     expect(shown).toContain('home');
     expect(shown).toContain('signin');
+    expect(shown).not.toContain('upload');
     expect(shown).not.toContain('profile');
+  });
+
+  it('highlights the upload tab on /texts/* paths so users land back on it', () => {
+    expect(getActiveTabId('/upload', TABS)).toBe('upload');
+    expect(getActiveTabId('/texts/abc-123', TABS)).toBe('upload');
   });
 });
 
