@@ -10,6 +10,20 @@
  */
 export type TabAuth = 'any' | 'authenticated' | 'anonymous';
 
+/** Icon names supported by the shell. New entries map to a glyph in
+ * `AppShell.svelte`'s icon switch. */
+export type TabIcon =
+  | 'home'
+  | 'library'
+  | 'upload'
+  | 'profile'
+  | 'signin';
+
+/** Section heading the tab clusters under in the desktop rail (T-5.11).
+ * `null` (the default) renders the tab outside any section, above the
+ * first grouped tab. */
+export type TabSection = 'Read' | 'Track' | 'You' | null;
+
 export interface Tab {
   id: string;
   label: string;
@@ -17,10 +31,12 @@ export interface Tab {
   auth: TabAuth;
   /** Used for highlighting; a tab is active if the current pathname starts with any of these. */
   match: string[];
+  icon?: TabIcon;
+  section?: TabSection;
 }
 
 export const TABS: readonly Tab[] = [
-  { id: 'home', label: 'Home', href: '/', auth: 'any', match: ['/'] },
+  { id: 'home', label: 'Home', href: '/', auth: 'any', match: ['/'], icon: 'home' },
   {
     id: 'library',
     label: 'Library',
@@ -29,6 +45,8 @@ export const TABS: readonly Tab[] = [
     // /reader/[textId] is reached by clicking a library card, so the
     // Library tab should stay highlighted while reading.
     match: ['/library', '/reader'],
+    icon: 'library',
+    section: 'Read',
   },
   {
     id: 'upload',
@@ -36,6 +54,8 @@ export const TABS: readonly Tab[] = [
     href: '/upload',
     auth: 'authenticated',
     match: ['/upload'],
+    icon: 'upload',
+    section: 'Read',
   },
   {
     id: 'profile',
@@ -43,8 +63,17 @@ export const TABS: readonly Tab[] = [
     href: '/profile',
     auth: 'authenticated',
     match: ['/profile'],
+    icon: 'profile',
+    section: 'You',
   },
-  { id: 'signin', label: 'Sign in', href: '/login', auth: 'anonymous', match: ['/login'] },
+  {
+    id: 'signin',
+    label: 'Sign in',
+    href: '/login',
+    auth: 'anonymous',
+    match: ['/login'],
+    icon: 'signin',
+  },
 ];
 
 export function visibleTabs(tabs: readonly Tab[], isAuthenticated: boolean): Tab[] {
@@ -68,4 +97,25 @@ export function getActiveTabId(pathname: string, tabs: readonly Tab[]): string |
     }
   }
   return best?.id ?? null;
+}
+
+/** Group visible tabs by their `section` for the desktop rail (T-5.11).
+ * Tabs with `section: null | undefined` go in the unsectioned bucket
+ * (rendered above the first sectioned group). Order within a section
+ * preserves the order in `tabs`. */
+export function groupTabsBySection(
+  tabs: readonly Tab[],
+): { section: TabSection; tabs: Tab[] }[] {
+  const order: TabSection[] = [null, 'Read', 'Track', 'You'];
+  const buckets = new Map<TabSection, Tab[]>();
+  for (const s of order) buckets.set(s, []);
+  for (const t of tabs) {
+    const s = t.section ?? null;
+    const bucket = buckets.get(s);
+    if (bucket) bucket.push(t);
+    else buckets.set(s, [t]);
+  }
+  return order
+    .map((section) => ({ section, tabs: buckets.get(section) ?? [] }))
+    .filter((g) => g.tabs.length > 0);
 }

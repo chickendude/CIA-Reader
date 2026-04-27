@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { TABS, getActiveTabId, visibleTabs, type Tab } from './tabs.js';
+import {
+  TABS,
+  getActiveTabId,
+  groupTabsBySection,
+  visibleTabs,
+  type Tab,
+} from './tabs.js';
 
 describe('visibleTabs', () => {
   it('shows authenticated + any tabs to signed-in users', () => {
@@ -68,5 +74,40 @@ describe('getActiveTabId', () => {
     ];
     expect(getActiveTabId('/admin/reports', custom)).toBe('admin-reports');
     expect(getActiveTabId('/admin/something-else', custom)).toBe('admin');
+  });
+});
+
+describe('groupTabsBySection', () => {
+  it('places unsectioned tabs in their own bucket above the sectioned ones', () => {
+    const groups = groupTabsBySection(visibleTabs(TABS, true));
+    // home has no section, so it's first.
+    expect(groups[0]).toMatchObject({ section: null });
+    expect(groups[0]!.tabs.map((t) => t.id)).toEqual(['home']);
+  });
+
+  it('groups Read-section tabs (Library + Upload) together', () => {
+    const groups = groupTabsBySection(visibleTabs(TABS, true));
+    const read = groups.find((g) => g.section === 'Read');
+    expect(read).toBeDefined();
+    expect(read!.tabs.map((t) => t.id)).toEqual(['library', 'upload']);
+  });
+
+  it("groups Profile under 'You'", () => {
+    const groups = groupTabsBySection(visibleTabs(TABS, true));
+    const you = groups.find((g) => g.section === 'You');
+    expect(you!.tabs.map((t) => t.id)).toEqual(['profile']);
+  });
+
+  it('skips empty sections so signed-out users do not see a stray You header', () => {
+    const groups = groupTabsBySection(visibleTabs(TABS, false));
+    expect(groups.find((g) => g.section === 'You')).toBeUndefined();
+  });
+
+  it('preserves source order within a section', () => {
+    const custom: Tab[] = [
+      { id: 'b', label: 'B', href: '/b', auth: 'any', match: ['/b'], section: 'Read' },
+      { id: 'a', label: 'A', href: '/a', auth: 'any', match: ['/a'], section: 'Read' },
+    ];
+    expect(groupTabsBySection(custom)[0]!.tabs.map((t) => t.id)).toEqual(['b', 'a']);
   });
 });
