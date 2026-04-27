@@ -36,6 +36,9 @@
       <span class="who" aria-label="Signed-in user">
         {user.displayName ?? user.email}
       </span>
+      <form method="post" action="/logout" class="logout-form">
+        <button type="submit" class="logout">Sign out</button>
+      </form>
     {/if}
   </header>
 
@@ -99,6 +102,22 @@
     color: var(--color-fg-muted);
     font-size: var(--font-size-sm);
     white-space: nowrap;
+  }
+  .logout-form {
+    margin: 0;
+  }
+  .logout {
+    background: transparent;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    color: var(--color-fg-muted);
+    cursor: pointer;
+    font: inherit;
+    font-size: var(--font-size-xs);
+    padding: var(--space-1) var(--space-2);
+  }
+  .logout:hover {
+    color: var(--color-fg);
   }
   .tab {
     display: inline-flex;
