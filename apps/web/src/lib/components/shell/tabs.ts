@@ -22,13 +22,20 @@ export interface Tab {
 export const TABS: readonly Tab[] = [
   { id: 'home', label: 'Home', href: '/', auth: 'any', match: ['/'] },
   {
+    id: 'library',
+    label: 'Library',
+    href: '/library',
+    auth: 'any',
+    // /texts/[id] is reached by clicking a card, so the Library tab
+    // should stay highlighted while reading.
+    match: ['/library', '/texts'],
+  },
+  {
     id: 'upload',
     label: 'Upload',
     href: '/upload',
     auth: 'authenticated',
-    // /texts/[id] is the destination after a successful upload, so it
-    // should highlight the same tab the user used to get there.
-    match: ['/upload', '/texts'],
+    match: ['/upload'],
   },
   {
     id: 'profile',

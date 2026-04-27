@@ -5,9 +5,15 @@ describe('visibleTabs', () => {
   it('shows authenticated + any tabs to signed-in users', () => {
     const shown = visibleTabs(TABS, true).map((t) => t.id);
     expect(shown).toContain('home');
+    expect(shown).toContain('library');
     expect(shown).toContain('upload');
     expect(shown).toContain('profile');
     expect(shown).not.toContain('signin');
+  });
+
+  it('shows the public library tab to signed-out users', () => {
+    const shown = visibleTabs(TABS, false).map((t) => t.id);
+    expect(shown).toContain('library');
   });
 
   it('shows anonymous + any tabs to signed-out users', () => {
@@ -18,9 +24,13 @@ describe('visibleTabs', () => {
     expect(shown).not.toContain('profile');
   });
 
-  it('highlights the upload tab on /texts/* paths so users land back on it', () => {
+  it('highlights the library tab on /texts/* paths so the reader stays under Library', () => {
+    expect(getActiveTabId('/library', TABS)).toBe('library');
+    expect(getActiveTabId('/texts/abc-123', TABS)).toBe('library');
+  });
+
+  it('highlights the upload tab on /upload', () => {
     expect(getActiveTabId('/upload', TABS)).toBe('upload');
-    expect(getActiveTabId('/texts/abc-123', TABS)).toBe('upload');
   });
 });
 
