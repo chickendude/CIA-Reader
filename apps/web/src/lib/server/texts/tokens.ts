@@ -147,3 +147,107 @@ export async function listKnownLemmas(
 // Re-export `inArray` so callers can build composite predicates
 // without importing drizzle directly when needed.
 export { inArray };
+
+// -----------------------------------------------------------------------
+// setKnownLemmaStatus (T-5.5)
+// -----------------------------------------------------------------------
+
+/**
+ * Upsert the user's known-status for a lemma. The reader's pop-up
+ * (T-5.4) wires its Learning / Known / Ignored buttons through this.
+ * Recomputes the per-language known-count cache on
+ * `user_languages.known_words_count_cache` so the stats card on the
+ * profile page is correct without a full scan.
+ *
+ * Returns the new status row.
+ */
+export async function setKnownLemmaStatus(args: {
+  userId: string;
+  lemmaId: string;
+  status: 'unknown' | 'learning' | 'known' | 'ignored';
+  now?: Date;
+}): Promise<UserKnownLemma> {
+  const now = args.now ?? new Date();
+
+  // Look up the lemma to find its language — needed for the per-
+  // language cache update. A missing lemma is a 404; the caller
+  // converts the thrown error.
+  const [lemma] = await db
+    .select({ id: schema.lemmas.id, language: schema.lemmas.language })
+    .from(schema.lemmas)
+    .where(eq(schema.lemmas.id, args.lemmaId))
+    .limit(1);
+  if (!lemma) {
+    throw new Error(`Lemma ${args.lemmaId} not found`);
+  }
+  const language = (lemma as { language: 'hi' | 'mr' | 'or' }).language;
+
+  // Upsert. We can't use Drizzle's onConflictDoUpdate with a composite
+  // PK across all our drivers without a lot of ceremony — the simpler
+  // path is to read the existing row and conditionally INSERT or
+  // UPDATE.
+  const existing = (await db
+    .select()
+    .from(schema.userKnownLemmas)
+    .where(eq(schema.userKnownLemmas.userId, args.userId))) as UserKnownLemma[];
+  const row = existing.find((r) => r.lemmaId === args.lemmaId);
+
+  let result: UserKnownLemma;
+  if (row) {
+    const [updated] = (await db
+      .update(schema.userKnownLemmas)
+      .set({ status: args.status, updatedAt: now })
+      .where(
+        // Composite PK condition.
+        (await import('drizzle-orm')).and(
+          eq(schema.userKnownLemmas.userId, args.userId),
+          eq(schema.userKnownLemmas.lemmaId, args.lemmaId),
+        )!,
+      )
+      .returning()) as UserKnownLemma[];
+    if (!updated) throw new Error('Failed to update user_known_lemmas');
+    result = updated;
+  } else {
+    const [inserted] = (await db
+      .insert(schema.userKnownLemmas)
+      .values({
+        userId: args.userId,
+        lemmaId: args.lemmaId,
+        status: args.status,
+        updatedAt: now,
+      })
+      .returning()) as UserKnownLemma[];
+    if (!inserted) throw new Error('Failed to insert user_known_lemmas');
+    result = inserted;
+  }
+
+  // Recompute the cache for this user × language. Counted as the
+  // number of rows with status='known' for the lemmas in that
+  // language.
+  const allKnown = (await db
+    .select({
+      lemmaId: schema.userKnownLemmas.lemmaId,
+      language: schema.lemmas.language,
+    })
+    .from(schema.userKnownLemmas)
+    .innerJoin(schema.lemmas, eq(schema.lemmas.id, schema.userKnownLemmas.lemmaId))
+    .where(
+      (await import('drizzle-orm')).and(
+        eq(schema.userKnownLemmas.userId, args.userId),
+        eq(schema.userKnownLemmas.status, 'known'),
+        eq(schema.lemmas.language, language),
+      )!,
+    )) as Array<{ lemmaId: string; language: string }>;
+  const knownCount = allKnown.length;
+  await db
+    .update(schema.userLanguages)
+    .set({ knownWordsCountCache: knownCount })
+    .where(
+      (await import('drizzle-orm')).and(
+        eq(schema.userLanguages.userId, args.userId),
+        eq(schema.userLanguages.language, language),
+      )!,
+    );
+
+  return result;
+}

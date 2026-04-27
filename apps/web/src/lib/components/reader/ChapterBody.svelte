@@ -29,8 +29,26 @@
     isOwner?: boolean;
   } = $props();
 
+  // Local override map: lemmaId → user's most recent status. The
+  // popup's optimistic update writes through here so every other
+  // token tied to the same lemma flips its highlight in real time
+  // (the next page load reflects the same state via the loader).
+  let statusOverrides = $state(new Map<string, ServerToken['status']>());
+
+  // Apply any pending optimistic status flips to the token list
+  // before paragraph splitting so the .status-* classes update live.
+  const tokensWithOverrides = $derived.by(() => {
+    if (!chapter.tokens) return null;
+    if (statusOverrides.size === 0) return chapter.tokens;
+    return chapter.tokens.map((t) =>
+      t.lemmaId && statusOverrides.has(t.lemmaId)
+        ? { ...t, status: statusOverrides.get(t.lemmaId)! }
+        : t,
+    );
+  });
+
   const serverParagraphs = $derived(
-    chapter.tokens ? paragraphsOfServerTokens(chapter.tokens) : null,
+    tokensWithOverrides ? paragraphsOfServerTokens(tokensWithOverrides) : null,
   );
   const fallbackParagraphs = $derived(
     chapter.tokens ? null : paragraphsOfTokens(tokenize(chapter.body)),
@@ -38,8 +56,8 @@
 
   // Lookup helper — server tokens are keyed by id.
   const tokensById = $derived.by(() => {
-    if (!chapter.tokens) return new Map<string, ServerToken>();
-    return new Map(chapter.tokens.map((t) => [t.id, t]));
+    if (!tokensWithOverrides) return new Map<string, ServerToken>();
+    return new Map(tokensWithOverrides.map((t) => [t.id, t]));
   });
 
   let activeToken = $state<ServerToken | null>(null);
@@ -74,12 +92,15 @@
     activeRect = null;
   }
 
-  // T-5.5 wires this to the server. Today it's a no-op stub that just
-  // closes the popup so the click feels responsive — the actual
-  // status write lands one ticket later. We accept the status arg to
-  // keep the signature stable; t-5.5 will use it.
-  function onMarkStatus(/* status: 'learning' | 'known' | 'ignored' */) {
-    closePopup();
+  function onStatusChange(
+    lemmaId: string,
+    status: ServerToken['status'],
+  ) {
+    // Mutate the override map; the $derived chain re-runs so every
+    // other token tied to the same lemma flips its highlight too.
+    const next = new Map(statusOverrides);
+    next.set(lemmaId, status);
+    statusOverrides = next;
   }
 </script>
 
@@ -112,7 +133,7 @@
     anchorRect={activeRect}
     {isOwner}
     onClose={closePopup}
-    {onMarkStatus}
+    {onStatusChange}
   />
 {/if}
 
