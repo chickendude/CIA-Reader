@@ -5,6 +5,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const createPastedText = vi.fn();
+const createTxtText = vi.fn();
 
 vi.mock('$lib/server/texts/upload.js', async () => {
   const actual = await vi.importActual<typeof import('$lib/server/texts/upload.js')>(
@@ -13,6 +14,7 @@ vi.mock('$lib/server/texts/upload.js', async () => {
   return {
     ...actual,
     createPastedText: (...a: unknown[]) => createPastedText(...a),
+    createTxtText: (...a: unknown[]) => createTxtText(...a),
   };
 });
 
@@ -53,6 +55,7 @@ async function callAction(
 
 beforeEach(() => {
   createPastedText.mockReset();
+  createTxtText.mockReset();
 });
 
 afterEach(() => {
@@ -63,13 +66,19 @@ describe('/upload loader', () => {
   it('returns the language list and the input limits for an authenticated user', async () => {
     const data = (await callLoad(USER)) as {
       languages: Array<{ code: string }>;
-      limits: { maxTitleLength: number; maxBodyBytes: number };
+      limits: {
+        maxTitleLength: number;
+        maxPasteBytes: number;
+        maxTxtBytes: number;
+      };
     };
     expect(data.languages.length).toBeGreaterThan(0);
     expect(data.languages.map((l) => l.code)).toEqual(
       expect.arrayContaining(['hi', 'mr', 'or']),
     );
-    expect(data.limits.maxBodyBytes).toBeGreaterThan(0);
+    expect(data.limits.maxPasteBytes).toBeGreaterThan(0);
+    // .txt path must allow strictly more bytes than paste.
+    expect(data.limits.maxTxtBytes).toBeGreaterThan(data.limits.maxPasteBytes);
   });
 
   it('redirects unauthenticated visitors to /login with a next param', async () => {
@@ -84,6 +93,7 @@ describe('/upload default action', () => {
     createPastedText.mockResolvedValueOnce({
       text: { id: 'text-1', ownerId: USER.id },
       chapter: { id: 'chap-1' },
+      chapters: [{ id: 'chap-1' }],
     });
     const res = (await callAction({
       language: 'hi',
@@ -96,6 +106,25 @@ describe('/upload default action', () => {
       { id: USER.id },
       { language: 'hi', title: 'My text', body: 'पाठ का मूल पाठ।' },
     );
+    expect(createTxtText).not.toHaveBeenCalled();
+  });
+
+  it('routes sourceType=txt through createTxtText', async () => {
+    createTxtText.mockResolvedValueOnce({
+      text: { id: 'text-2', ownerId: USER.id },
+      chapter: { id: 'c0' },
+      chapters: [{ id: 'c0' }, { id: 'c1' }],
+    });
+    const res = (await callAction({
+      sourceType: 'txt',
+      language: 'hi',
+      title: 'Big book',
+      body: 'first.\n---\nsecond.',
+    })) as { status: number; location: string };
+    expect(res.status).toBe(303);
+    expect(res.location).toBe('/texts/text-2');
+    expect(createTxtText).toHaveBeenCalledTimes(1);
+    expect(createPastedText).not.toHaveBeenCalled();
   });
 
   it('returns a fail() with echoed values on validation failure', async () => {

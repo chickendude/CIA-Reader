@@ -1,17 +1,18 @@
 /**
- * POST /api/v1/texts (T-4.1).
+ * POST /api/v1/texts (T-4.1, extended T-4.2).
  *
- * Create a pasted text. The web upload UI calls this through the
- * SvelteKit form action; mobile / API clients can hit it directly with
- * a bearer token. Both go through the same `createPastedText` service.
+ * Create a text from either a paste or a `.txt` upload. The web UI
+ * hits this via the form action; mobile / API clients call it
+ * directly with a bearer token. Both paths land on the same service
+ * functions (`createPastedText` / `createTxtText`), so validation,
+ * chunking, and visibility defaults are identical between web and
+ * programmatic clients.
  *
- * `.txt` and `.epub` ingest land in T-4.2 / T-4.3 — until those ship,
- * `sourceType` is fixed to `'paste'` and the body must be supplied
- * inline. The schema allows the field for forward compatibility.
+ * EPUB ingest lands in T-4.3 with its own discriminator value.
  *
- * Response: 201 with the freshly created `text` (sans body) so the
- * caller can navigate to `/texts/:id`. Chapter content is NOT echoed
- * back to keep the create response small — the read endpoint serves it.
+ * Response: 201 with the freshly created `text` metadata only — chapter
+ * content is NOT echoed back to keep the create response small. Use the
+ * read endpoint (or `/texts/:id`) to fetch chapters.
  */
 import { error, json } from '@sveltejs/kit';
 import { z } from 'zod';
@@ -19,35 +20,57 @@ import { z } from 'zod';
 import { requireUser } from '$lib/server/auth/require-user.js';
 import {
   createPastedText,
+  createTxtText,
   TextValidationError,
   MAX_PASTE_BYTES,
+  MAX_TXT_BYTES,
   MAX_TITLE_LEN,
 } from '$lib/server/texts/upload.js';
 import type { RequestHandler } from './$types';
 import { parseJson } from '../auth/_helpers.js';
 
-const body = z.object({
+// One discriminated schema per source type — paste's body cap is
+// stricter than .txt's, and the error message users see should reflect
+// the path they took.
+const pasteSchema = z.object({
+  sourceType: z.literal('paste').optional(),
   language: z.enum(['hi', 'mr', 'or']),
   title: z.string().min(1).max(MAX_TITLE_LEN),
-  // Validated again in the service for byte length; the cap here is a
-  // cheap shot to reject obviously-too-large requests before we copy
-  // the string.
   body: z.string().min(1).max(MAX_PASTE_BYTES),
-  sourceType: z.literal('paste').optional(),
 });
+
+const txtSchema = z.object({
+  sourceType: z.literal('txt'),
+  language: z.enum(['hi', 'mr', 'or']),
+  title: z.string().min(1).max(MAX_TITLE_LEN),
+  body: z.string().min(1).max(MAX_TXT_BYTES),
+});
+
+const body = z.union([txtSchema, pasteSchema]);
 
 export const POST: RequestHandler = async (event) => {
   const user = await requireUser(event);
   const input = await parseJson(event.request, body);
   try {
-    const { text } = await createPastedText(
-      { id: user.id },
-      {
-        language: input.language,
-        title: input.title,
-        body: input.body,
-      },
-    );
+    const created =
+      input.sourceType === 'txt'
+        ? await createTxtText(
+            { id: user.id },
+            {
+              language: input.language,
+              title: input.title,
+              body: input.body,
+            },
+          )
+        : await createPastedText(
+            { id: user.id },
+            {
+              language: input.language,
+              title: input.title,
+              body: input.body,
+            },
+          );
+    const { text } = created;
     return json(
       {
         text: {
@@ -60,6 +83,7 @@ export const POST: RequestHandler = async (event) => {
           visibility: text.visibility,
           createdAt: text.createdAt,
         },
+        chapterCount: created.chapters.length,
       },
       { status: 201 },
     );

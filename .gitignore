@@ -34,3 +34,6 @@ coverage.lcov
 # ide
 .vscode/
 .idea/
+
+# claude code worktrees / scratch
+.claude/worktrees/

@@ -74,9 +74,11 @@ vi.mock('../db/index.js', () => ({
 const {
   TextValidationError,
   createPastedText,
+  createTxtText,
   estimateTokenCount,
   getOwnedText,
   MAX_PASTE_BYTES,
+  MAX_TXT_BYTES,
   MAX_TITLE_LEN,
 } = await import('./upload.js');
 
@@ -151,7 +153,10 @@ describe('createPastedText', () => {
       status: 'pending',
       visibility: 'private',
     });
-    expect(insertCalls[1]!.values).toMatchObject({
+    // Chapter values are passed as an array (T-4.2 batches them).
+    const chapterValues = insertCalls[1]!.values as Array<Record<string, unknown>>;
+    expect(chapterValues).toHaveLength(1);
+    expect(chapterValues[0]).toMatchObject({
       textId: 'text-1',
       idx: 0,
       title: null,
@@ -173,9 +178,9 @@ describe('createPastedText', () => {
     const chapterInsert = calls.filter(
       (c): c is Extract<Call, { kind: 'insert' }> => c.kind === 'insert',
     )[1]!;
-    const inserted = chapterInsert.values as { body: string };
+    const chapterValues = chapterInsert.values as Array<{ body: string }>;
     // No CR characters survive the normalize.
-    expect(inserted.body).toBe('line one\nline two\nline three');
+    expect(chapterValues[0]!.body).toBe('line one\nline two\nline three');
   });
 
   it('rejects an unsupported language', async () => {
@@ -229,6 +234,89 @@ describe('createPastedText', () => {
         body: oversized,
       }),
     ).rejects.toBeInstanceOf(TextValidationError);
+  });
+});
+
+// -----------------------------------------------------------------------
+// createTxtText (T-4.2)
+// -----------------------------------------------------------------------
+
+describe('createTxtText', () => {
+  it('inserts a single chapter for a short body', async () => {
+    stage([textRow({ sourceType: 'txt' })]);
+    stage([chapterRow({ idx: 0 })]);
+
+    const result = await createTxtText(OWNER, {
+      language: 'hi',
+      title: 'My file',
+      body: 'short body, no chunking.',
+    });
+    expect(result.chapters).toHaveLength(1);
+
+    const insertCalls = calls.filter(
+      (c): c is Extract<Call, { kind: 'insert' }> => c.kind === 'insert',
+    );
+    expect(insertCalls[0]!.values).toMatchObject({ sourceType: 'txt' });
+    const chapterValues = insertCalls[1]!.values as Array<Record<string, unknown>>;
+    expect(chapterValues).toHaveLength(1);
+  });
+
+  it('honors explicit `---` delimiters and inserts one chapter per section', async () => {
+    stage([textRow({ sourceType: 'txt' })]);
+    // Three chapter rows returned to match the three sections in the body.
+    stage([
+      chapterRow({ id: 'c0', idx: 0 }),
+      chapterRow({ id: 'c1', idx: 1 }),
+      chapterRow({ id: 'c2', idx: 2 }),
+    ]);
+
+    const body = ['# One', 'first chapter.', '---', '# Two', 'second.', '---', 'third.'].join(
+      '\n',
+    );
+    const result = await createTxtText(OWNER, {
+      language: 'hi',
+      title: 'Multi-chapter file',
+      body,
+    });
+    expect(result.chapters).toHaveLength(3);
+
+    const chapterInsert = calls.filter(
+      (c): c is Extract<Call, { kind: 'insert' }> => c.kind === 'insert',
+    )[1]!;
+    const values = chapterInsert.values as Array<{
+      idx: number;
+      title: string | null;
+      body: string;
+    }>;
+    expect(values).toHaveLength(3);
+    expect(values.map((v) => v.idx)).toEqual([0, 1, 2]);
+    expect(values[0]!.title).toBe('One');
+    expect(values[1]!.title).toBe('Two');
+    expect(values[2]!.title).toBeNull();
+  });
+
+  it('rejects a body over the .txt byte cap', async () => {
+    const oversized = 'a'.repeat(MAX_TXT_BYTES + 1);
+    await expect(
+      createTxtText(OWNER, {
+        language: 'hi',
+        title: 'too big',
+        body: oversized,
+      }),
+    ).rejects.toBeInstanceOf(TextValidationError);
+  });
+
+  it('accepts a body the paste path would reject (between paste-cap and txt-cap)', async () => {
+    stage([textRow({ sourceType: 'txt' })]);
+    stage([chapterRow({ idx: 0 })]);
+    // Build a body just over the paste cap but well under the .txt cap.
+    const oversized = 'a'.repeat(MAX_PASTE_BYTES + 100);
+    await createTxtText(OWNER, {
+      language: 'hi',
+      title: 'big file',
+      body: oversized,
+    });
+    // Did not throw.
   });
 });
 
