@@ -153,39 +153,36 @@
 </svelte:head>
 
 <div class="reader">
-  <header class="toolbar">
-    <p class="crumb">
-      <a href="/library">← Library</a>
-    </p>
-    <div class="title-row">
-      <h1>{data.text.title}</h1>
-      <p class="meta">
+  <header class="reader-top">
+    <a class="crumb" href="/library" aria-label="Back to library">← Library</a>
+    <div class="reader-meta">
+      <h1 class="t">{data.text.title}</h1>
+      <p class="a">
         <span class="badge">{data.text.language}</span>
-        <span class="badge">{data.text.sourceType}</span>
         <span class="badge status-{liveStatus}">{statusLabel}</span>
         <span class="badge">{data.text.visibility}</span>
       </p>
     </div>
 
-    <div class="toolbar-row">
-      <div class="mode-toggle" role="group" aria-label="Reading mode">
+    <div class="reader-tools">
+      <div class="mode-switch" role="group" aria-label="Reading mode">
         <button
           type="button"
-          class:active={data.mode === 'page'}
+          data-active={data.mode === 'page' ? '1' : '0'}
           onclick={() => setMode('page')}
         >
           Page
         </button>
         <button
           type="button"
-          class:active={data.mode === 'paged_scroll'}
+          data-active={data.mode === 'paged_scroll' ? '1' : '0'}
           onclick={() => setMode('paged_scroll')}
         >
-          Paged scroll
+          Scroll
         </button>
         <button
           type="button"
-          class:active={data.mode === 'continuous'}
+          data-active={data.mode === 'continuous' ? '1' : '0'}
           onclick={() => setMode('continuous')}
         >
           Continuous
@@ -195,11 +192,12 @@
       <button
         type="button"
         class="roman-toggle"
-        class:active={showRomanization}
+        data-active={showRomanization ? '1' : '0'}
         onclick={toggleRomanization}
         aria-pressed={showRomanization}
+        title="Toggle romanization"
       >
-        Show romanization
+        Aa
       </button>
     </div>
   </header>
@@ -234,107 +232,139 @@
 </div>
 
 <style>
+  /* CIAR design reader chrome (T-5.9). Paper background + serif title.
+     Stacks on small viewports; mode-switch + romanization sit on the
+     right at >=640px. */
   .reader {
-    --reader-toolbar-bg: var(--color-bg);
+    background: var(--paper, var(--color-bg));
+    color: var(--ink, var(--color-fg));
+    min-height: 100%;
   }
-  .toolbar {
+  .reader-top {
     position: sticky;
     top: 0;
-    z-index: 10;
-    background: var(--reader-toolbar-bg);
-    border-bottom: 1px solid var(--color-border);
-    padding: 0.75rem 1.25rem 0.85rem;
+    z-index: 5;
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 0.5rem 1rem;
+    padding: 0.85rem 1.25rem 0.9rem;
+    background: color-mix(in oklch, var(--paper, var(--color-bg)) 86%, var(--paper-2, transparent));
+    border-bottom: 1px solid var(--rule, var(--color-border));
+  }
+  @media (min-width: 640px) {
+    .reader-top {
+      grid-template-columns: auto 1fr auto;
+      align-items: center;
+      padding: 1rem 1.75rem;
+    }
   }
   .crumb {
-    margin: 0 0 0.4rem;
-    font-size: 0.85rem;
+    font-family: var(--font-sans, var(--font-ui));
+    font-size: 0.78rem;
+    color: var(--ink-3, var(--color-fg-muted));
+    text-decoration: none;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
   }
-  .crumb a {
-    color: var(--color-accent);
+  .crumb:hover {
+    color: var(--accent-ink, var(--color-accent));
   }
-  .title-row {
-    margin-bottom: 0.6rem;
+  .reader-meta {
+    min-width: 0;
   }
-  .title-row h1 {
-    margin: 0 0 0.25rem;
-    font-size: 1.25rem;
-  }
-  .meta {
+  .reader-meta .t {
     margin: 0;
+    font-family: var(--font-serif-dev, var(--font-serif));
+    font-size: 1.125rem;
+    font-weight: 500;
+    color: var(--ink, var(--color-fg));
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .reader-meta .a {
+    margin: 0.15rem 0 0;
     display: flex;
-    gap: 0.4rem;
     flex-wrap: wrap;
-    font-size: 0.85rem;
-    color: var(--color-fg-muted);
+    gap: 0.3rem;
+    font-family: var(--font-sans, var(--font-ui));
+    font-size: 0.78rem;
+    color: var(--ink-3, var(--color-fg-muted));
   }
   .badge {
-    font-size: 0.72rem;
-    padding: 0.05rem 0.45rem;
+    display: inline-flex;
+    align-items: center;
+    height: 22px;
+    padding: 0 0.6rem;
     border-radius: 999px;
-    border: 1px solid var(--color-border);
-    background: var(--color-bg);
-    color: var(--color-fg-muted);
+    background: color-mix(in oklch, var(--ink, var(--color-fg)) 6%, transparent);
+    color: var(--ink-2, var(--color-fg-muted));
+    font-size: 0.7rem;
+    letter-spacing: 0.01em;
   }
   .status-ready {
-    border-color: color-mix(in srgb, #197a2f 60%, transparent);
-    color: #197a2f;
+    background: var(--green-soft, color-mix(in srgb, #197a2f 12%, transparent));
+    color: var(--green, #197a2f);
   }
   .status-failed {
-    border-color: color-mix(in srgb, #b03131 60%, transparent);
-    color: #b03131;
+    background: var(--rose-soft, color-mix(in srgb, #b03131 12%, transparent));
+    color: var(--rose, #b03131);
   }
   .status-processing,
   .status-pending {
-    border-color: color-mix(in srgb, #b07a31 60%, transparent);
-    color: #b07a31;
+    background: var(--accent-soft, color-mix(in srgb, #b07a31 12%, transparent));
+    color: var(--accent-ink, #b07a31);
   }
-  .toolbar-row {
+  .reader-tools {
     display: flex;
-    gap: 0.5rem;
     align-items: center;
+    gap: 0.5rem;
     flex-wrap: wrap;
-    justify-content: space-between;
   }
-  .mode-toggle {
-    display: flex;
-    gap: 0.25rem;
-    flex-wrap: wrap;
+  .mode-switch {
+    display: inline-flex;
+    background: color-mix(in oklch, var(--ink, var(--color-fg)) 5%, transparent);
+    border-radius: 8px;
+    padding: 2px;
+    gap: 2px;
+  }
+  .mode-switch button {
+    height: 28px;
+    padding: 0 0.7rem;
+    font: inherit;
+    font-size: 0.78rem;
+    color: var(--ink-2, var(--color-fg-muted));
+    background: transparent;
+    border: 0;
+    border-radius: 6px;
+    cursor: pointer;
+  }
+  .mode-switch button[data-active='1'] {
+    background: var(--card, var(--color-bg));
+    color: var(--ink, var(--color-fg));
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
   }
   .roman-toggle {
-    padding: 0.4rem 0.75rem;
-    font: inherit;
+    width: 32px;
+    height: 32px;
+    display: grid;
+    place-items: center;
+    border: 1px solid var(--rule, var(--color-border));
+    border-radius: 8px;
+    background: transparent;
+    color: var(--ink-2, var(--color-fg-muted));
+    font-family: var(--font-serif, serif);
     font-size: 0.85rem;
-    border: 1px solid var(--color-border);
-    background: var(--color-bg);
-    color: var(--color-fg-muted);
-    border-radius: 999px;
     cursor: pointer;
-    min-height: 36px;
   }
-  .roman-toggle.active {
-    background: var(--color-accent);
-    color: var(--color-accent-fg, #fff);
-    border-color: var(--color-accent);
-  }
-  .mode-toggle button {
-    padding: 0.4rem 0.75rem;
-    font: inherit;
-    font-size: 0.85rem;
-    border: 1px solid var(--color-border);
-    background: var(--color-bg);
-    color: var(--color-fg);
-    border-radius: 999px;
-    cursor: pointer;
-    min-height: 36px;
-  }
-  .mode-toggle button.active {
-    background: var(--color-accent);
-    color: var(--color-accent-fg, #fff);
-    border-color: var(--color-accent);
+  .roman-toggle[data-active='1'] {
+    background: var(--accent-soft, var(--color-accent));
+    border-color: var(--accent, var(--color-accent));
+    color: var(--accent-ink, var(--color-accent-fg, #fff));
   }
   .err {
-    color: #b03131;
-    background: color-mix(in srgb, #b03131 8%, transparent);
+    color: var(--rose, #b03131);
+    background: var(--rose-soft, color-mix(in srgb, #b03131 8%, transparent));
     border: 1px solid color-mix(in srgb, #b03131 30%, transparent);
     border-radius: 8px;
     padding: 0.75rem 1rem;
