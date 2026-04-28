@@ -1,11 +1,13 @@
 <!--
   Page-mode reader (T-5.1, token-aware in T-5.2, chrome polish in T-5.9,
-  no-scroll pagination in T-5.23).
+  no-scroll pagination in T-5.23, horizontal column flow now).
 
-  The chapter renders into a fixed-height viewport that hides
-  overflow. Each "page" is one viewport-height slice of the chapter,
-  positioned via translateY. Off-screen content is still in the DOM
-  (so screen readers + Cmd-F still find it) — just clipped.
+  The chapter renders into a fixed-size viewport that hides overflow
+  and uses CSS multi-column with `column-width = viewport-width` so
+  content snake-flows into one tall column per page, side-by-side.
+  translateX slides between pages — like flipping a book's spread —
+  instead of slicing the chapter vertically. Off-screen content stays
+  in the DOM (screen readers + Cmd-F still find it).
 
   Side arrows + keyboard ←/→ step through pages within a chapter and
   spill over into the prev/next chapter at the boundaries. The
@@ -42,14 +44,17 @@
 
   // Pagination state. Recomputed on resize / chapter change /
   // showRomanization toggle (which changes line-height).
+  // pageW is one column's width (= the viewport's content-box width);
+  // contentW is the multicolumn container's total scrollWidth across
+  // every column laid out side-by-side.
   let viewportEl: HTMLDivElement | null = $state(null);
   let contentEl: HTMLDivElement | null = $state(null);
-  let viewportH = $state(0);
-  let contentH = $state(0);
+  let pageW = $state(0);
+  let contentW = $state(0);
   let pageInChapter = $state(0);
 
-  const pageCount = $derived(pageCountFor(contentH, viewportH));
-  const offset = $derived(pageOffset(pageInChapter, viewportH));
+  const pageCount = $derived(pageCountFor(contentW, pageW));
+  const offset = $derived(pageOffset(pageInChapter, pageW));
 
   // Reset to the first page whenever the chapter changes — the user
   // shouldn't see "stuck" mid-page state when they navigate.
@@ -144,18 +149,40 @@
   // both the viewport (window resize, font-size change) and the
   // content (chapter toggle, romanization toggle changing line
   // height) keeps pageCount honest.
+  //
+  // Horizontal pagination wants column-width to equal one visible
+  // column's width — i.e. the content element's own clientWidth.
+  // Set it inline first so the browser knows to lay the chapter out
+  // as side-by-side columns, then read scrollWidth (which forces a
+  // layout flush) to get the resulting total span.
+  function measure() {
+    if (!viewportEl || !contentEl) return;
+    const w = contentEl.clientWidth;
+    if (w <= 0) return;
+    contentEl.style.columnWidth = `${w}px`;
+    // Reading scrollWidth flushes pending layout, so by the next
+    // statement the column flow is committed.
+    const total = contentEl.scrollWidth;
+    pageW = w;
+    contentW = total;
+  }
+
   onMount(() => {
     if (typeof ResizeObserver === 'undefined') return;
-    const ro = new ResizeObserver(() => {
-      if (viewportEl) viewportH = viewportEl.clientHeight;
-      if (contentEl) contentH = contentEl.scrollHeight;
-    });
+    const ro = new ResizeObserver(() => measure());
     if (viewportEl) ro.observe(viewportEl);
     if (contentEl) ro.observe(contentEl);
     // Seed initial measurements before the observer fires.
-    if (viewportEl) viewportH = viewportEl.clientHeight;
-    if (contentEl) contentH = contentEl.scrollHeight;
+    measure();
     return () => ro.disconnect();
+  });
+
+  // Re-measure when the chapter or romanization toggle changes — both
+  // mutate the content's natural size and we want pageCount to track.
+  $effect(() => {
+    void chapterIdx;
+    void showRomanization;
+    measure();
   });
 </script>
 
@@ -172,24 +199,24 @@
     <span class="arrow-glyph" aria-hidden="true">‹</span>
   </button>
 
-  <div class="reader-page-viewport" bind:this={viewportEl}>
-    <div
-      class="reader-page-content"
-      bind:this={contentEl}
-      style:transform="translateY(-{offset}px)"
-    >
-      {#if current}
-        <header class="chapter-h">
-          {current.title ?? `Chapter ${current.idx + 1}`}
-          <span class="roman">
-            Chapter {current.idx + 1} of {chapters.length}
-            · {current.tokenCount.toLocaleString()} tokens
-          </span>
-        </header>
-        <article>
-          <ChapterBody chapter={current} {showRomanization} {isOwner} />
-        </article>
-      {/if}
+  <div class="reader-page-viewport">
+    <div class="reader-page-window" bind:this={viewportEl}>
+      <div class="reader-page-track" style:transform="translateX(-{offset}px)">
+        <div class="reader-page-content" bind:this={contentEl}>
+          {#if current}
+            <header class="chapter-h">
+              {current.title ?? `Chapter ${current.idx + 1}`}
+              <span class="roman">
+                Chapter {current.idx + 1} of {chapters.length}
+                · {current.tokenCount.toLocaleString()} tokens
+              </span>
+            </header>
+            <article>
+              <ChapterBody chapter={current} {showRomanization} {isOwner} />
+            </article>
+          {/if}
+        </div>
+      </div>
     </div>
   </div>
 
@@ -236,6 +263,8 @@
     min-height: 0;
     overflow: hidden;
     padding: 1.25rem 3rem;
+    display: flex;
+    justify-content: center;
   }
   @media (min-width: 1024px) {
     .reader-page-viewport {
@@ -243,17 +272,50 @@
     }
   }
 
+  /* The "window" is the clipping mask. It's exactly one column wide
+     (max 40rem so reading stays comfortable on big screens), and its
+     overflow:hidden is what hides the off-page columns sitting to its
+     right. The track inside (translateX target) carries the content,
+     and the content's overflow extends past the window horizontally. */
+  .reader-page-window {
+    flex: 1;
+    width: 100%;
+    max-width: 40rem;
+    height: 100%;
+    overflow: hidden;
+    position: relative;
+  }
+
+  /* The track is the transform target. We can't translateX a CSS
+     multicolumn container directly — Blink renders fragmented column
+     boxes and the transform is dropped — so the track wraps the
+     content and slides it with the chapter's overflow following. */
+  .reader-page-track {
+    width: 100%;
+    height: 100%;
+    transition: transform 200ms ease;
+    will-change: transform;
+  }
+
+  /* Horizontal pagination via CSS multi-column. The content element
+     fills its parent window and `column-width` is set inline to that
+     same width by `measure()`, so exactly one column is visible at a
+     time and the browser auto-flows the chapter into however many
+     columns the height allows. `column-fill: auto` keeps content
+     packing into the current column to its full height before starting
+     the next — without it the browser tries to balance columns, which
+     short-circuits the pagination. */
   .reader-page-content {
     font-family: var(--font-serif-dev, var(--font-serif));
     font-size: 1.1rem;
     line-height: 2;
     color: var(--ink, var(--color-fg));
-    max-width: 40rem;
-    margin: 0 auto;
+    width: 100%;
+    height: 100%;
+    column-gap: 0;
+    column-fill: auto;
     word-spacing: 0.03em;
     text-wrap: pretty;
-    transition: transform 200ms ease;
-    will-change: transform;
   }
   @media (min-width: 768px) {
     .reader-page-content {
@@ -388,7 +450,7 @@
 
   /* Respect reduced-motion: skip the page-flip slide. */
   @media (prefers-reduced-motion: reduce) {
-    .reader-page-content {
+    .reader-page-track {
       transition: none;
     }
   }

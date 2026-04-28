@@ -12,7 +12,7 @@ describe('pageCountFor', () => {
     expect(pageCountFor(1201, 600)).toBe(3);
   });
 
-  it("doesn't return 0 even for a zero-height viewport (defensive)", () => {
+  it("doesn't return 0 even for a zero-size viewport (defensive)", () => {
     expect(pageCountFor(1200, 0)).toBe(1);
   });
 });
@@ -36,7 +36,7 @@ describe('pageOffset', () => {
     expect(pageOffset(0, 600)).toBe(0);
   });
 
-  it('returns idx * viewportH for subsequent pages', () => {
+  it('returns idx * pageSize for subsequent pages', () => {
     expect(pageOffset(1, 600)).toBe(600);
     expect(pageOffset(3, 600)).toBe(1800);
   });

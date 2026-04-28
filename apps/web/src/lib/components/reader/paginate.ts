@@ -1,22 +1,20 @@
 /**
  * Reader page-mode pagination helpers (T-5.23).
  *
- * The page mode renders the whole chapter into a fixed-height
- * viewport and slides between "pages" with a CSS transform. Pure
- * helpers that the component composes:
- *   - `pageCountFor(contentH, viewportH)` — how many pages a chapter
- *     splits into.
- *   - `clampPage(idx, count)` — keep the active page index in range.
- *   - `pageOffset(idx, viewportH)` — the translateY offset for a
- *     given page.
- *
- * Kept pure / DOM-free so the maths is unit-tested without rendering.
+ * Page mode renders the whole chapter into a fixed-size viewport and
+ * slides between "pages" with a CSS transform. The helpers are
+ * dimension-agnostic — they take a content size and a page size and
+ * tell the component how many pages exist, where to clamp the active
+ * index, and what translate offset matches the active index. The
+ * component decides whether those numbers are widths (horizontal
+ * pagination, the current default) or heights (the previous vertical
+ * slice). Kept DOM-free so the maths can be unit-tested in isolation.
  */
 
-export function pageCountFor(contentH: number, viewportH: number): number {
-  if (viewportH <= 0) return 1;
-  if (contentH <= 0) return 1;
-  return Math.max(1, Math.ceil(contentH / viewportH));
+export function pageCountFor(contentSize: number, pageSize: number): number {
+  if (pageSize <= 0) return 1;
+  if (contentSize <= 0) return 1;
+  return Math.max(1, Math.ceil(contentSize / pageSize));
 }
 
 export function clampPage(idx: number, count: number): number {
@@ -26,7 +24,7 @@ export function clampPage(idx: number, count: number): number {
   return idx;
 }
 
-export function pageOffset(idx: number, viewportH: number): number {
-  if (viewportH <= 0) return 0;
-  return Math.max(0, idx) * viewportH;
+export function pageOffset(idx: number, pageSize: number): number {
+  if (pageSize <= 0) return 0;
+  return Math.max(0, idx) * pageSize;
 }
