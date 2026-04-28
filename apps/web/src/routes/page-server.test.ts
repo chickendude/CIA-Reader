@@ -103,4 +103,24 @@ describe('root +page.server.ts load', () => {
     // Languages without a row default to 0.
     expect(or?.known).toBe(0);
   });
+
+  it("renders with zero counts (not a 500) when the user_languages query throws (T-5.19)", async () => {
+    health.mockResolvedValue({ status: 'ok', languages: [] });
+    knownRows.mockRejectedValue(new Error('db down'));
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const data = await callLoad({
+      user: { id: 'u1', email: 'a@b.c', displayName: 'Alex', role: 'user' },
+    });
+    expect(data.languages.every((l: { known: number }) => l.known === 0)).toBe(true);
+  });
+
+  it('skips the user_languages query when locals.user has no id (defensive guard)', async () => {
+    health.mockResolvedValue({ status: 'ok', languages: [] });
+    await callLoad({
+      // intentionally malformed user record — should not crash, should
+      // not call the query.
+      user: { email: 'a@b.c', displayName: null, role: 'user' },
+    });
+    expect(knownRows).not.toHaveBeenCalled();
+  });
 });
