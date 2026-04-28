@@ -120,12 +120,20 @@
     position: fixed;
     inset: 0;
     z-index: 40;
-    /* Default: transparent — only sheets that opt in via dimmed=true
-     * paint the scrim. Click capture works either way. */
+    /* Undimmed: events pass straight through to the page behind so
+     * hover tooltips on the reader still fire while the sheet is
+     * locked open. The .sheet itself opts back into pointer events.
+     * Dimmed sheets keep the modal contract (backdrop catches
+     * outside clicks → close). */
+    pointer-events: none;
   }
   .sheet-back.dimmed {
     background: rgba(20, 16, 10, 0.42);
     backdrop-filter: blur(4px);
+    pointer-events: auto;
+  }
+  .sheet {
+    pointer-events: auto;
   }
   /* The bottom sheet on narrow viewports occludes the lower part of
    * the page even when `dimmed=false`. We still want a subtle
