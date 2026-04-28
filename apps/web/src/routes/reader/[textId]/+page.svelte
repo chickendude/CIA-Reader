@@ -7,7 +7,7 @@
   import ReaderScroll from '$lib/components/reader/ReaderScroll.svelte';
   import { ProgressWriter } from '$lib/components/reader/progress-client.js';
   import {
-    readPersistedImmersive,
+    isImmersiveAttributeSet,
     setImmersiveAttribute,
     writePersistedImmersive,
   } from '$lib/components/reader/immersive.js';
@@ -16,16 +16,10 @@
   let { data }: { data: PageData } = $props();
 
   // T-5.16: Immersive mode hides the AppShell rail / bottom-nav so
-  // the reader takes the full viewport. State persists in
-  // sessionStorage for this tab — paging stays immersive — but does
-  // not survive tab close. Cleaned up on unmount so other routes
-  // never inherit the hidden chrome.
-  let immersive = $state(false);
-  function toggleImmersive() {
-    immersive = !immersive;
-    setImmersiveAttribute(immersive);
-    writePersistedImmersive(immersive);
-  }
+  // the reader takes the full viewport. T-5.26 moved the actual
+  // toggle to the AppShell hamburger button — the reader page only
+  // owns the Esc-to-exit shortcut here. The cross-route cleanup also
+  // moved into AppShell, since the rail-toggle is now global.
 
   // Live status mirrors data.text.status; flips when the polling loop
   // hits a terminal state (T-4.4).
@@ -89,18 +83,16 @@
   onMount(() => {
     liveStatus = data.text.status;
 
-    // T-5.16: hydrate immersive mode from sessionStorage so paging
-    // within a reader visit keeps the chrome hidden. Tab close clears
-    // it. Listen for Esc to exit immersive (and only when the side
-    // panel isn't open — the popup owns Esc when it's mounted).
-    immersive = readPersistedImmersive();
-    setImmersiveAttribute(immersive);
+    // T-5.26: AppShell hydrates the immersive flag now. The reader
+    // only owns the Esc-to-exit shortcut — quick way out of
+    // full-screen reading without hunting for the hamburger button.
+    // We skip Esc when the word side-panel is open since the popup
+    // owns that key.
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
-      if (!immersive) return;
+      if (!isImmersiveAttributeSet()) return;
       if (document.querySelector('[data-testid="word-popup"]')) return;
       e.preventDefault();
-      immersive = false;
       setImmersiveAttribute(false);
       writePersistedImmersive(false);
     };
@@ -157,11 +149,6 @@
     return () => {
       cleanupPoll?.();
       window.removeEventListener('keydown', onKey);
-      // T-5.16: clear the attribute when the reader unmounts so other
-      // routes (Library / Words / Settings) never inherit hidden
-      // chrome. The sessionStorage flag stays so re-opening a text in
-      // the same tab restores the user's preference.
-      setImmersiveAttribute(false);
       if (beforeUnloadHandler)
         window.removeEventListener('beforeunload', beforeUnloadHandler);
       void progressWriter?.flush();
@@ -240,33 +227,10 @@
         Aa
       </button>
 
-      <button
-        type="button"
-        class="immersive-toggle"
-        data-active={immersive ? '1' : '0'}
-        onclick={toggleImmersive}
-        aria-pressed={immersive}
-        title={immersive
-          ? 'Exit immersive reading (Esc)'
-          : 'Hide app chrome for immersive reading'}
-        aria-label={immersive ? 'Exit immersive reading' : 'Enter immersive reading'}
-      >
-        {#if immersive}
-          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M9 4v5H4" />
-            <path d="M15 4v5h5" />
-            <path d="M9 20v-5H4" />
-            <path d="M15 20v-5h5" />
-          </svg>
-        {:else}
-          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M4 9V4h5" />
-            <path d="M20 9V4h-5" />
-            <path d="M4 15v5h5" />
-            <path d="M20 15v5h-5" />
-          </svg>
-        {/if}
-      </button>
+      <!-- T-5.26 moved the immersive / hide-chrome toggle to the
+           AppShell rail (a hamburger glyph) — it's globally available
+           now, not just from the reader top bar. -->
+
     </div>
   </header>
 
@@ -430,25 +394,9 @@
     border-color: var(--accent, var(--color-accent));
     color: var(--accent-ink, var(--color-accent-fg, #fff));
   }
-  .immersive-toggle {
-    width: 32px;
-    height: 32px;
-    display: grid;
-    place-items: center;
-    border: 1px solid var(--rule, var(--color-border));
-    border-radius: 8px;
-    background: transparent;
-    color: var(--ink-2, var(--color-fg-muted));
-    cursor: pointer;
-  }
-  .immersive-toggle:hover {
-    color: var(--ink, var(--color-fg));
-  }
-  .immersive-toggle[data-active='1'] {
-    background: var(--accent-soft, var(--color-accent));
-    border-color: var(--accent, var(--color-accent));
-    color: var(--accent-ink, var(--color-accent-fg, #fff));
-  }
+  /* T-5.26: the immersive-toggle button moved to AppShell as a
+     hamburger icon. The selector is gone but the Esc-to-exit
+     behavior stays in this component. */
   .err {
     color: var(--rose, #b03131);
     background: var(--rose-soft, color-mix(in srgb, #b03131 8%, transparent));
