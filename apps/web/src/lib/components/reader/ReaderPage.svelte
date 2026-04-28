@@ -169,7 +169,7 @@
     disabled={!hasPrev}
     onclick={prevPage}
   >
-    ‹
+    <span class="arrow-glyph" aria-hidden="true">‹</span>
   </button>
 
   <div class="reader-page-viewport" bind:this={viewportEl}>
@@ -200,7 +200,7 @@
     disabled={!hasNext}
     onclick={nextPage}
   >
-    ›
+    <span class="arrow-glyph" aria-hidden="true">›</span>
   </button>
 </div>
 
@@ -219,16 +219,21 @@
   /* The page mode owns the available vertical space between the
      reader top bar and progress foot. The viewport is the fixed-
      height window; .reader-page-content is the (potentially much
-     taller) chapter body that translates inside it. */
+     taller) chapter body that translates inside it.
+     `flex: 1; min-height: 0` is the critical pair — without
+     min-height:0 the viewport grows to fit the content (defeating
+     the clip), without flex:1 it collapses to nothing. */
   .reader-page-wrap {
     position: relative;
     flex: 1;
     min-height: 0;
-    display: grid;
-    grid-template-columns: 1fr;
+    display: flex;
+    flex-direction: column;
   }
 
   .reader-page-viewport {
+    flex: 1;
+    min-height: 0;
     overflow: hidden;
     padding: 1.25rem 3rem;
   }
@@ -276,54 +281,61 @@
     text-transform: uppercase;
   }
 
-  /* Floating round page arrows — visible on every viewport so mouse +
-     touch users always have an explicit nav affordance (T-5.23). */
+  /* Page arrows fill the full vertical strip on either side of the
+     reader so the user can click anywhere in that column to flip
+     pages — the round visual is just a hint. The viewport's padding
+     keeps the body text from sliding under the strip. */
   .page-arrow {
     position: absolute;
-    top: 50%;
-    transform: translateY(-50%);
-    width: 44px;
-    height: 44px;
-    border-radius: 50%;
-    background: var(--card, var(--color-bg));
-    border: 1px solid var(--card-edge, var(--color-border));
+    top: 0;
+    bottom: 0;
+    width: 3rem;
+    background: transparent;
+    border: 0;
     color: var(--ink-2, var(--color-fg-muted));
     display: grid;
     place-items: center;
     cursor: pointer;
     z-index: 8;
+    padding: 0;
+  }
+  @media (min-width: 1024px) {
+    .page-arrow {
+      width: 5rem;
+    }
+  }
+  .page-arrow-l {
+    left: 0;
+  }
+  .page-arrow-r {
+    right: 0;
+  }
+  .arrow-glyph {
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    background: var(--card, var(--color-bg));
+    border: 1px solid var(--card-edge, var(--color-border));
+    display: grid;
+    place-items: center;
+    font-size: 1.4rem;
+    line-height: 1;
     box-shadow: 0 2px 10px rgba(0, 0, 0, 0.06);
     transition:
       background 150ms ease,
       color 150ms ease,
-      transform 150ms ease,
-      opacity 150ms ease;
-    font-size: 1.4rem;
-    line-height: 1;
-    padding: 0;
+      transform 150ms ease;
   }
-  .page-arrow-l {
-    left: 0.5rem;
-  }
-  .page-arrow-r {
-    right: 0.5rem;
-  }
-  @media (min-width: 1024px) {
-    .page-arrow-l {
-      left: 1rem;
-    }
-    .page-arrow-r {
-      right: 1rem;
-    }
-  }
-  .page-arrow:hover:not(:disabled) {
+  .page-arrow:hover:not(:disabled) .arrow-glyph {
     background: var(--accent-soft, var(--color-accent));
     color: var(--accent-ink, var(--color-accent-fg, #fff));
-    transform: translateY(-50%) scale(1.05);
+    transform: scale(1.05);
   }
   .page-arrow:disabled {
-    opacity: 0.25;
     cursor: not-allowed;
+  }
+  .page-arrow:disabled .arrow-glyph {
+    opacity: 0.25;
   }
 
   .reader-foot {
