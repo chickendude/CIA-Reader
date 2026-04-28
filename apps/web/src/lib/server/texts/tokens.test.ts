@@ -116,15 +116,46 @@ describe('loadChapterTokens', () => {
     ]);
     stage([]); // user_known_lemmas
     stage([
-      { id: 'lem-a', glossDefault: 'morning' },
-      { id: 'lem-b', glossDefault: null },
+      { id: 'lem-a', language: 'hi', headword: 'सुबह', glossDefault: 'morning' },
+      { id: 'lem-b', language: 'hi', headword: 'rare', glossDefault: null },
     ]);
+    // T-3.14 sibling fallback: lem-b had no gloss, so the loader runs
+    // a sibling lookup. No sibling exists for "rare", so an empty
+    // result keeps the null gloss as-is.
+    stage([]); // sibling fallback — no rows
     const result = await loadChapterTokens('chap-1', 'user-1');
     expect(result![0]).toMatchObject({ id: 't1', glossDefault: 'morning' });
-    // Lemma row exists but the gloss column is null — should pass through.
+    // Lemma row exists but the gloss column is null AND no sibling has
+    // a gloss — should pass through as null.
     expect(result![1]).toMatchObject({ id: 't2', glossDefault: null });
     // Whitespace token has no lemma id; glossDefault defaults to null.
     expect(result![2]).toMatchObject({ id: 't3', glossDefault: null });
+  });
+
+  it('falls back to a sibling lemma\'s gloss when the linked lemma has none (T-3.14)', async () => {
+    // Common case: NLP tagged "पार्क" as PROPN with no gloss; the
+    // dictionary entry is under "पार्क/NOUN" with the actual gloss.
+    stage([tokenRow({ id: 't1', idx: 0, lemmaId: 'lem-propn' })]);
+    stage([]); // user_known_lemmas
+    stage([
+      { id: 'lem-propn', language: 'hi', headword: 'पार्क', glossDefault: null },
+    ]);
+    stage([
+      { language: 'hi', headword: 'पार्क', glossDefault: 'park' },
+    ]);
+    const result = await loadChapterTokens('chap-1', 'user-1');
+    expect(result![0]).toMatchObject({ id: 't1', glossDefault: 'park' });
+  });
+
+  it('skips the sibling fallback query entirely when every lemma has its own gloss (T-3.14)', async () => {
+    stage([tokenRow({ id: 't1', idx: 0, lemmaId: 'lem-a' })]);
+    stage([]); // user_known_lemmas
+    stage([{ id: 'lem-a', language: 'hi', headword: 'पानी', glossDefault: 'water' }]);
+    // No 4th stage — fallback query must not fire.
+    await loadChapterTokens('chap-1', 'user-1');
+    // 1 (tokens) + 1 (user_known_lemmas) + 1 (gloss lookup) = 3, no
+    // sibling fallback.
+    expect(selectFn).toHaveBeenCalledTimes(3);
   });
 
   it('handles anonymous viewers (no user_known_lemmas SELECT, every status=unknown)', async () => {
