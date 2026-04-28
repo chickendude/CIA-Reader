@@ -11,7 +11,7 @@
  * client-side whitespace tokenizer in that case (still readable, just
  * no lemma colouring).
  */
-import { eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull } from 'drizzle-orm';
 
 import { db, schema } from '../db/index.js';
 import type { TextToken, UserKnownLemma } from '../db/schema.js';
@@ -81,20 +81,86 @@ export async function loadChapterTokens(
   // T-5.18: pull each lemma's `glossDefault` so the hover tooltip can
   // surface a brief definition without a per-hover fetch. Cheap — a
   // single SELECT against an indexed primary key.
+  //
+  // T-3.14: also pull `language` and `headword` so we can fall back
+  // to a sibling lemma's gloss when the directly-linked one is empty.
+  // Common case: a token tagged PROPN (because it's part of a
+  // multi-word proper name) where the dictionary entry actually lives
+  // under NOUN. Pre-fix the tooltip said "No translations"; post-fix
+  // it shows the sibling NOUN's gloss. Mirrors the popup-side
+  // fallback in `getLemmaTranslations` so both surfaces stay in sync.
   const glossByLemma = new Map<string, string | null>();
+  const lemmaHeadwords: Array<{
+    id: string;
+    language: string;
+    headword: string;
+  }> = [];
   if (lemmaIds.length > 0) {
     const lemmaRows = (await db
       .select({
         id: schema.lemmas.id,
+        language: schema.lemmas.language,
+        headword: schema.lemmas.headword,
         glossDefault: schema.lemmas.glossDefault,
       })
       .from(schema.lemmas)
       .where(inArray(schema.lemmas.id, lemmaIds))) as Array<{
       id: string;
+      language: string;
+      headword: string;
       glossDefault: string | null;
     }>;
     for (const r of lemmaRows) {
       glossByLemma.set(r.id, r.glossDefault);
+      if (!r.glossDefault) {
+        lemmaHeadwords.push({
+          id: r.id,
+          language: r.language,
+          headword: r.headword,
+        });
+      }
+    }
+  }
+
+  // Sibling-fallback pass: for any chapter lemma whose own gloss is
+  // null, find another lemma with the same (language, headword) that
+  // has a non-null gloss and use it. We bucket by (language,
+  // headword) so the fallback query is one SELECT regardless of how
+  // many tokens are gloss-less, and we only run it when there's
+  // actually something to fix.
+  if (lemmaHeadwords.length > 0) {
+    const headwords = Array.from(new Set(lemmaHeadwords.map((l) => l.headword)));
+    const languages = Array.from(new Set(lemmaHeadwords.map((l) => l.language)));
+    const siblingRows = (await db
+      .select({
+        language: schema.lemmas.language,
+        headword: schema.lemmas.headword,
+        glossDefault: schema.lemmas.glossDefault,
+      })
+      .from(schema.lemmas)
+      .where(
+        and(
+          inArray(schema.lemmas.language, languages as ('hi' | 'mr' | 'or')[]),
+          inArray(schema.lemmas.headword, headwords),
+          isNotNull(schema.lemmas.glossDefault),
+        ),
+      )) as Array<{
+      language: string;
+      headword: string;
+      glossDefault: string | null;
+    }>;
+    const fallbackByKey = new Map<string, string>();
+    for (const r of siblingRows) {
+      if (!r.glossDefault) continue;
+      const key = `${r.language}\t${r.headword}`;
+      if (!fallbackByKey.has(key)) {
+        fallbackByKey.set(key, r.glossDefault);
+      }
+    }
+    for (const l of lemmaHeadwords) {
+      const key = `${l.language}\t${l.headword}`;
+      const fallback = fallbackByKey.get(key);
+      if (fallback) glossByLemma.set(l.id, fallback);
     }
   }
 
