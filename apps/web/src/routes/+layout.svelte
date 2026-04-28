@@ -6,6 +6,10 @@
   let { data, children }: { data: LayoutData; children: import('svelte').Snippet } = $props();
 </script>
 
-<AppShell user={data.user}>
+<AppShell
+  user={data.user}
+  currentLanguage={data.currentLanguage}
+  availableLanguages={data.availableLanguages}
+>
   {@render children()}
 </AppShell>
