@@ -18,11 +18,13 @@ import {
 } from './kaikki.js';
 import { kaikkiHindiSource } from './kaikki-hindi.js';
 import { kaikkiMarathiSource } from './kaikki-marathi.js';
+import { kaikkiOdiaSource } from './kaikki-odia.js';
 import type { ImportEntry } from '../types.js';
 
 const FIXTURES = dirname(fileURLToPath(import.meta.url)) + '/__fixtures__';
 const HINDI_FIXTURE = resolve(FIXTURES, 'kaikki-hindi.jsonl');
 const MARATHI_FIXTURE = resolve(FIXTURES, 'kaikki-marathi.jsonl');
+const ODIA_FIXTURE = resolve(FIXTURES, 'kaikki-odia.jsonl');
 
 const HINDI_OPTS = { script: 'Deva' as const, sourceIdPrefix: 'kaikki:hi' };
 
@@ -318,5 +320,35 @@ describe('kaikkiMarathiSource (streaming over fixture)', () => {
     }
     // Spot-check known entries from the fixture.
     expect(out.find((e) => e.headword === 'पाणी' && e.pos === 'NOUN')).toBeDefined();
+  });
+});
+
+describe('kaikkiOdiaSource (streaming over fixture)', () => {
+  beforeEach(() => {
+    process.env.KAIKKI_ODIA_FILE = ODIA_FIXTURE;
+  });
+  afterEach(() => {
+    delete process.env.KAIKKI_ODIA_FILE;
+  });
+
+  it('exposes the expected metadata + Odia script identifier', () => {
+    expect(kaikkiOdiaSource.name).toBe('kaikki-odia');
+    expect(kaikkiOdiaSource.language).toBe('or');
+    expect(kaikkiOdiaSource.license).toBe('CC-BY-SA-3.0');
+    expect(kaikkiOdiaSource.sourceAttribution).toContain('Odia');
+  });
+
+  it('uses the Odia script (Orya) — not silently defaulting to Deva', async () => {
+    const out: ImportEntry[] = [];
+    for await (const entry of await kaikkiOdiaSource.entries()) {
+      out.push(entry);
+    }
+    expect(out.length).toBeGreaterThan(0);
+    for (const e of out) {
+      expect(e.script).toBe('Orya');
+      expect(e.sourceId.startsWith('kaikki:or:')).toBe(true);
+    }
+    // Spot-check known entries from the fixture.
+    expect(out.find((e) => e.headword === 'ପାଣି' && e.pos === 'NOUN')).toBeDefined();
   });
 });
