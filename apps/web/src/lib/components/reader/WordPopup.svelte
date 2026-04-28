@@ -115,6 +115,15 @@
 
   function handleKeydown(e: KeyboardEvent) {
     if (!isOwner || !token.lemmaId) return;
+    // T-5.21: skip the k/l/i shortcuts whenever the user is typing
+    // into a form field — otherwise typing 'l' in the add-translation
+    // textarea would silently flip the lemma to learning.
+    const target = e.target as HTMLElement | null;
+    if (target) {
+      const tag = target.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      if (target.isContentEditable) return;
+    }
     // T-5.7: power-user shortcuts. Only fire when modifier-free so we
     // don't fight the browser's own shortcuts (Cmd-K, Ctrl-L, etc.).
     if (e.metaKey || e.ctrlKey || e.altKey) return;
@@ -152,6 +161,7 @@
       addError = 'Translation cannot be empty.';
       return;
     }
+    const lemmaId = token.lemmaId;
     savingTranslation = true;
     addError = null;
     try {
@@ -159,7 +169,7 @@
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
-          lemmaId: token.lemmaId,
+          lemmaId,
           body: trimmed,
           targetLanguage: 'en',
         }),
@@ -168,23 +178,14 @@
         const text = await res.text().catch(() => '');
         throw new Error(text || `POST failed: ${res.status}`);
       }
-      const created = (await res.json()) as {
-        translation: {
-          id: string;
-          body: string;
-          targetLanguage: string;
-          sourceAttribution: string | null;
-          provenance: Provenance;
-        };
-      };
-      if (payload) {
-        payload = {
-          ...payload,
-          translations: {
-            ...payload.translations,
-            personal: [created.translation, ...payload.translations.personal],
-          },
-        };
+      // T-5.22: re-fetch the lemma payload so the new row definitely
+      // shows. The optimistic prepend was unreliable — between
+      // payload-may-be-null states and Svelte 5 $state proxy edge
+      // cases, the freshly-saved translation sometimes never
+      // appeared. A single GET on success is small and reliable.
+      const fresh = await fetch(`/api/v1/lemmas/${lemmaId}/translations`);
+      if (fresh.ok) {
+        payload = (await fresh.json()) as LemmaPayload;
       }
       newTranslationBody = '';
       showAddForm = false;
@@ -192,6 +193,24 @@
       addError = (e as Error).message;
     } finally {
       savingTranslation = false;
+    }
+  }
+
+  // T-5.21: Enter submits, Shift+Enter inserts a newline, Esc cancels
+  // the form (without closing the panel). The textarea handler stops
+  // propagation on Esc so Sheet doesn't also close itself.
+  function onAddFormKeydown(e: KeyboardEvent) {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      void submitNewTranslation();
+      return;
+    }
+    if (e.key === 'Escape') {
+      e.stopPropagation();
+      e.preventDefault();
+      showAddForm = false;
+      newTranslationBody = '';
+      addError = null;
     }
   }
 
@@ -321,10 +340,11 @@
           >
             <textarea
               bind:value={newTranslationBody}
-              placeholder="Your translation in English"
+              placeholder="Your translation (Enter to save, Shift+Enter for a newline, Esc to cancel)"
               rows="2"
               maxlength="500"
               disabled={savingTranslation}
+              onkeydown={onAddFormKeydown}
             ></textarea>
             {#if addError}
               <p class="err small">{addError}</p>

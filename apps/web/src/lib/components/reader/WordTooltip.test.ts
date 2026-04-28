@@ -50,33 +50,33 @@ describe('WordTooltip — gloss display (T-5.18)', () => {
     expect(def?.classList.contains('muted')).toBe(false);
   });
 
-  it("falls back to the placeholder when glossDefault is null but the lemma is known", () => {
+  it("falls back to italic 'No translations' when glossDefault is null but the lemma is known (T-5.20)", () => {
     const { container } = render(WordTooltip, {
       token: makeToken({ glossDefault: null }),
       anchorRect: ANCHOR,
     });
     const def = container.querySelector('.tip-def');
-    expect(def?.textContent).toBe('Click to see translations');
-    expect(def?.classList.contains('muted')).toBe(true);
+    expect(def?.textContent).toBe('No translations');
+    expect(def?.classList.contains('empty')).toBe(true);
   });
 
-  it("shows 'No dictionary match' for OOV tokens regardless of glossDefault", () => {
+  it("shows 'No dictionary match' for OOV tokens regardless of glossDefault (T-5.20)", () => {
     const { container } = render(WordTooltip, {
       token: makeToken({ isOov: true, glossDefault: 'should not show' }),
       anchorRect: ANCHOR,
     });
-    expect(container.querySelector('.tip-def')?.textContent).toBe(
-      'No dictionary match',
-    );
+    const def = container.querySelector('.tip-def');
+    expect(def?.textContent).toBe('No dictionary match');
+    expect(def?.classList.contains('empty')).toBe(true);
   });
 
-  it("shows 'Click to look up' when there is no lemma id", () => {
+  it("treats no-lemma tokens like an empty-translation lemma — italic 'No translations' (T-5.20)", () => {
     const { container } = render(WordTooltip, {
       token: makeToken({ lemmaId: null, glossDefault: null }),
       anchorRect: ANCHOR,
     });
     expect(container.querySelector('.tip-def')?.textContent).toBe(
-      'Click to look up',
+      'No translations',
     );
   });
 });

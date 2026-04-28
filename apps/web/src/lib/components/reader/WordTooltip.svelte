@@ -58,14 +58,18 @@
       <span class="tip-roman">{token.romanization}</span>
     {/if}
   </div>
+  <!-- T-5.20: surface the top translation when we have one, fall
+       back to an italic "No translations" otherwise so the user
+       always knows whether the lookup is empty or just absent. The
+       tooltip stays no-fetch — it reads `glossDefault` off the token
+       row, which the side-panel still backs up with the full
+       hierarchy on click. -->
   {#if token.isOov}
-    <div class="tip-def muted">No dictionary match</div>
-  {:else if !token.lemmaId}
-    <div class="tip-def muted">Click to look up</div>
+    <div class="tip-def empty">No dictionary match</div>
   {:else if token.glossDefault}
     <div class="tip-def">{token.glossDefault}</div>
   {:else}
-    <div class="tip-def muted">Click to see translations</div>
+    <div class="tip-def empty">No translations</div>
   {/if}
 </div>
 
@@ -115,8 +119,10 @@
     -webkit-box-orient: vertical;
     overflow: hidden;
   }
-  .tip-def.muted {
+  /* T-5.20: italic "no match" / "no translations" copy. */
+  .tip-def.empty {
     color: color-mix(in oklch, var(--paper, #fdfaf3) 65%, transparent);
+    font-style: italic;
   }
   @keyframes fade-in {
     from {
