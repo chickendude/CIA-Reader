@@ -345,6 +345,15 @@
 <Sheet open={true} onClose={onClose} title="" dimmed={false}>
   <div data-testid="word-popup">
     <header class="sp-head">
+      <button
+        type="button"
+        class="sp-close"
+        aria-label="Close"
+        title="Close"
+        onclick={onClose}
+      >
+        ×
+      </button>
       <h2 class="sp-word">{token.surface}</h2>
       {#if token.romanization}
         <p class="sp-roman">{token.romanization}</p>
@@ -550,7 +559,28 @@
 
 <style>
   .sp-head {
+    position: relative;
     margin-bottom: 0.85rem;
+  }
+  .sp-close {
+    position: absolute;
+    top: -0.25rem;
+    right: -0.25rem;
+    width: 28px;
+    height: 28px;
+    display: grid;
+    place-items: center;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--ink-3, var(--color-fg-muted));
+    font-size: 1.4rem;
+    line-height: 1;
+    cursor: pointer;
+  }
+  .sp-close:hover {
+    background: color-mix(in oklch, var(--ink, var(--color-fg)) 8%, transparent);
+    color: var(--ink, var(--color-fg));
   }
   .sp-word {
     margin: 0 0 0.25rem;

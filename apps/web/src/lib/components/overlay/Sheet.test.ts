@@ -38,16 +38,23 @@ describe('Sheet — dimmed prop (T-5.17)', () => {
     expect(back!.classList.contains('dimmed')).toBe(false);
   });
 
-  it('keeps the backdrop element so click-outside-to-close still works when dimmed=false', async () => {
+  // The .dimmed class is what gates pointer-events in CSS:
+  //   .sheet-back            { pointer-events: none; }
+  //   .sheet-back.dimmed     { pointer-events: auto; }
+  // jsdom doesn't compute Svelte-scoped CSS rules so we assert the
+  // class state instead and let manual / preview verification cover
+  // the pixel-level behavior.
+  it('keeps the dimmed backdrop interactive so click-outside-to-close works in modal mode', async () => {
     let closed = 0;
     render(Sheet, {
       open: true,
-      dimmed: false,
+      dimmed: true,
       onClose: () => {
         closed += 1;
       },
     });
     const back = document.body.querySelector('.sheet-back') as HTMLElement;
+    expect(back.classList.contains('dimmed')).toBe(true);
     await fireEvent.click(back);
     expect(closed).toBe(1);
   });
