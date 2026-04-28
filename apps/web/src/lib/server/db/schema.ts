@@ -57,6 +57,18 @@ export const highlightStyle = pgEnum('highlight_style', [
 ]);
 
 /**
+ * Per-user reading column width. Drives the max-width of the reader's
+ * text column — narrow for tight focus, wide for laptop-screen full-
+ * bleed. Stored per-language so a user can prefer wider columns for
+ * Devanagari and tighter for Odia (or vice versa). T-5.1b.
+ */
+export const readingWidth = pgEnum('reading_width', [
+  'narrow',
+  'medium',
+  'wide',
+]);
+
+/**
  * Assumed-known baseline captured during onboarding. Used in a future
  * ticket to seed `user_known_lemmas` against frequency_rank buckets —
  * `beginner` pre-marks the top-100 most-frequent lemmas as 'known',
@@ -178,6 +190,7 @@ export const userLanguages = pgTable(
     fontSize: real('font_size').notNull().default(18),
     lineSpacing: real('line_spacing').notNull().default(1.6),
     highlightStyle: highlightStyle('highlight_style').notNull().default('background'),
+    readingWidth: readingWidth('reading_width').notNull().default('medium'),
     baseline: languageBaseline('baseline').notNull().default('none'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),

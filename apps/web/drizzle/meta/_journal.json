@@ -92,6 +92,13 @@
       "when": 1777388271909,
       "tag": "0012_tired_vermin",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1777414377234,
+      "tag": "0013_tan_dragon_lord",
+      "breakpoints": true
     }
   ]
 }

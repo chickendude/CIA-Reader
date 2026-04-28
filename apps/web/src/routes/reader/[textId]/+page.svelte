@@ -5,12 +5,18 @@
   import ReaderContinuous from '$lib/components/reader/ReaderContinuous.svelte';
   import ReaderPage from '$lib/components/reader/ReaderPage.svelte';
   import ReaderScroll from '$lib/components/reader/ReaderScroll.svelte';
+  import ReaderSettings from '$lib/components/reader/ReaderSettings.svelte';
   import { ProgressWriter } from '$lib/components/reader/progress-client.js';
   import {
     isImmersiveAttributeSet,
     setImmersiveAttribute,
     writePersistedImmersive,
   } from '$lib/components/reader/immersive.js';
+  import {
+    READING_WIDTH_REM,
+    type ReaderSettings as ReaderSettingsT,
+  } from '$lib/components/reader/reader-settings.js';
+  import type { LanguageCode } from '@ciareader/shared-types';
   import type { PageData } from './$types';
 
   let { data }: { data: PageData } = $props();
@@ -38,6 +44,34 @@
   $effect(() => {
     showRomanization = data.showRomanization;
   });
+
+  // T-5.1b: live reader settings. Seeded from the server-loaded
+  // user_languages row; the popover updates this state on every
+  // interaction (live preview) and PATCHes the row in the background.
+  let readerSettings = $state<ReaderSettingsT>(
+    untrack(() => data.readerSettings),
+  );
+  $effect(() => {
+    readerSettings = data.readerSettings;
+  });
+  let settingsOpen = $state(false);
+
+  // CSS-variable string applied to the reader root so every reader
+  // mode picks up the setting without each one having to know about
+  // every CSS variable. Keeping the math in JS lets the popover's
+  // live-preview path skip a layout-thrashing class swap.
+  const readerStyle = $derived(
+    [
+      `--reader-font-size: ${readerSettings.fontSize}pt`,
+      `--reader-line-height: ${readerSettings.lineSpacing}`,
+      `--reader-col-width: ${READING_WIDTH_REM[readerSettings.readingWidth]}rem`,
+      readerSettings.fontFamily
+        ? `--reader-font-family: '${readerSettings.fontFamily.replace(/'/g, "\\'")}'`
+        : '',
+    ]
+      .filter(Boolean)
+      .join('; '),
+  );
 
   function shouldPoll(s: typeof data.text.status): boolean {
     return s === 'pending' || s === 'processing';
@@ -179,7 +213,12 @@
   <title>{data.text.title} — CIA Reader</title>
 </svelte:head>
 
-<div class="reader" data-mode={data.mode}>
+<div
+  class="reader"
+  data-mode={data.mode}
+  data-hl={readerSettings.highlightStyle}
+  style={readerStyle}
+>
   <header class="reader-top">
     <a class="reader-close" href="/library" aria-label="Close reader" title="Close reader">
       <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true">
@@ -232,6 +271,20 @@
         Aa
       </button>
 
+      <button
+        type="button"
+        class="settings-toggle"
+        onclick={() => (settingsOpen = true)}
+        aria-label="Reader settings"
+        aria-expanded={settingsOpen}
+        title="Reader settings"
+      >
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="12" cy="12" r="3" />
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33 1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82 1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+        </svg>
+      </button>
+
       <!-- T-5.26 moved the immersive / hide-chrome toggle to the
            AppShell rail (a hamburger glyph) — it's globally available
            now, not just from the reader top bar. -->
@@ -255,6 +308,7 @@
     <ReaderScroll
       chapters={data.chapters}
       chapterIdx={data.anchor.chapterIdx}
+      wordsPerPage={readerSettings.wordsPerPage}
       {showRomanization}
       isOwner={data.isOwner}
     />
@@ -268,6 +322,15 @@
     />
   {/if}
 </div>
+
+<ReaderSettings
+  open={settingsOpen}
+  onClose={() => (settingsOpen = false)}
+  language={data.text.language as LanguageCode}
+  settings={readerSettings}
+  onChange={(next) => (readerSettings = next)}
+  canPersist={data.canPersistSettings}
+/>
 
 <style>
   /* CIAR design reader chrome (T-5.9). Paper background + serif title.
