@@ -243,52 +243,69 @@
 <svelte:window onkeydown={onKeydown} />
 
 <div class="reader-scroll" data-mode="paged-scroll">
-  <header class="page-header">
-    {#if current}
-      <h2>
-        {current.title ?? `Chapter ${current.idx + 1}`}
-      </h2>
-      <p class="muted">
-        Page {clampedPage + 1} of {pageCount}
-        · {wordsPerPage.toLocaleString()} words/page
-      </p>
-    {/if}
-  </header>
-
-  <!-- svelte-ignore a11y_click_events_have_key_events -->
-  <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-  <!-- svelte-ignore a11y_mouse_events_have_key_events -->
-  <article
-    onclick={onArticleClick}
-    onmouseover={showHoverTooltip}
-    onmouseout={hideHoverTooltip}
-    onfocusin={showHoverTooltip}
-    onfocusout={hideHoverTooltip}
+  <button
+    type="button"
+    class="page-arrow page-arrow-l"
+    aria-label="Previous page"
+    disabled={!hasPrev}
+    onclick={prev}
   >
-    {#if visibleServer}
-      {#each visibleServer as paragraph, pIdx (pIdx)}
-        <p class="body">
-          {#each paragraph as token (token.id)}<TokenSpan
-              {token}
-              {showRomanization}
-            />{/each}
-        </p>
-      {/each}
-    {:else if visibleFallback}
-      {#each visibleFallback as paragraph, pIdx (pIdx)}
-        <p class="body">
-          {#each paragraph as token (token.idx)}<span
-              class:word={token.isWord}
-              data-token-idx={token.idx}>{token.surface}</span>{/each}
-        </p>
-      {/each}
-    {/if}
-  </article>
+    ‹
+  </button>
 
-  <nav class="pager" aria-label="Page navigation">
-    <button type="button" disabled={!hasPrev} onclick={prev}>← Previous page</button>
-    <button type="button" disabled={!hasNext} onclick={next}>Next page →</button>
-  </nav>
+  <div class="reader-scroll-inner">
+    <header class="page-header">
+      {#if current}
+        <h2>
+          {current.title ?? `Chapter ${current.idx + 1}`}
+        </h2>
+        <p class="muted">
+          Page {clampedPage + 1} of {pageCount}
+          · {wordsPerPage.toLocaleString()} words/page
+        </p>
+      {/if}
+    </header>
+
+    <!-- svelte-ignore a11y_click_events_have_key_events -->
+    <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+    <!-- svelte-ignore a11y_mouse_events_have_key_events -->
+    <article
+      onclick={onArticleClick}
+      onmouseover={showHoverTooltip}
+      onmouseout={hideHoverTooltip}
+      onfocusin={showHoverTooltip}
+      onfocusout={hideHoverTooltip}
+    >
+      {#if visibleServer}
+        {#each visibleServer as paragraph, pIdx (pIdx)}
+          <p class="body">
+            {#each paragraph as token (token.id)}<TokenSpan
+                {token}
+                {showRomanization}
+              />{/each}
+          </p>
+        {/each}
+      {:else if visibleFallback}
+        {#each visibleFallback as paragraph, pIdx (pIdx)}
+          <p class="body">
+            {#each paragraph as token (token.idx)}<span
+                class:word={token.isWord}
+                data-token-idx={token.idx}>{token.surface}</span>{/each}
+          </p>
+        {/each}
+      {/if}
+    </article>
+  </div>
+
+  <button
+    type="button"
+    class="page-arrow page-arrow-r"
+    aria-label="Next page"
+    disabled={!hasNext}
+    onclick={next}
+  >
+    ›
+  </button>
 </div>
 
 {#if hoverToken && hoverRect}
@@ -306,27 +323,61 @@
 {/if}
 
 <style>
+  /* T-5.24: scroll mode now uses the same floating round arrows as
+     page mode (T-5.9) so mouse + touch users always have a click
+     target. The text column itself flows naturally — the user can
+     still scroll within a page. */
   .reader-scroll {
-    max-width: 38rem;
+    position: relative;
+    flex: 1;
+    min-height: 0;
+    padding: 0;
+  }
+  .reader-scroll-inner {
+    max-width: 40rem;
     margin: 0 auto;
-    padding: 1rem 1.25rem 4rem;
+    padding: 1.25rem 3rem 2rem;
+  }
+  @media (min-width: 1024px) {
+    .reader-scroll-inner {
+      padding: 2rem 5rem 2.5rem;
+    }
   }
   .page-header h2 {
-    font-size: 1.2rem;
-    margin: 0 0 0.25rem;
+    font-family: var(--font-serif-dev, var(--font-serif));
+    font-size: 1.05rem;
+    color: var(--ink-3, var(--color-fg-muted));
+    letter-spacing: 0.04em;
+    border-bottom: 1px solid var(--rule, var(--color-border));
+    padding-bottom: 0.85rem;
+    margin: 0 0 0.5rem;
+    font-weight: 400;
   }
   .muted {
-    color: var(--color-fg-muted);
-    font-size: 0.85rem;
+    color: var(--ink-3, var(--color-fg-muted));
+    font-size: 0.78rem;
     margin: 0 0 1rem;
+    font-family: var(--font-mono-display, var(--font-mono));
+    font-feature-settings: 'tnum';
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
   }
   article {
     min-height: 50vh;
+    font-family: var(--font-serif-dev, var(--font-serif));
+    font-size: 1.1rem;
+    line-height: 2;
+    color: var(--ink, var(--color-fg));
+    word-spacing: 0.03em;
+    text-wrap: pretty;
+  }
+  @media (min-width: 768px) {
+    article {
+      font-size: 1.25rem;
+    }
   }
   .body {
     margin: 0 0 1rem;
-    line-height: 1.75;
-    font-size: 1.05rem;
   }
   .word {
     cursor: pointer;
@@ -336,24 +387,53 @@
   .word:hover {
     background: color-mix(in srgb, var(--color-accent) 12%, transparent);
   }
-  .pager {
-    display: flex;
-    justify-content: space-between;
-    margin-top: 2rem;
-    gap: 0.75rem;
-  }
-  .pager button {
-    flex: 1;
-    min-height: 44px;
-    padding: 0 1rem;
-    background: var(--color-accent);
-    color: var(--color-accent-fg, #fff);
-    border: 0;
-    border-radius: 6px;
+
+  /* Floating round page arrows — same treatment as ReaderPage. */
+  .page-arrow {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    background: var(--card, var(--color-bg));
+    border: 1px solid var(--card-edge, var(--color-border));
+    color: var(--ink-2, var(--color-fg-muted));
+    display: grid;
+    place-items: center;
     cursor: pointer;
+    z-index: 8;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.06);
+    transition:
+      background 150ms ease,
+      color 150ms ease,
+      transform 150ms ease,
+      opacity 150ms ease;
+    font-size: 1.4rem;
+    line-height: 1;
+    padding: 0;
   }
-  .pager button[disabled] {
-    opacity: 0.4;
+  .page-arrow-l {
+    left: 0.5rem;
+  }
+  .page-arrow-r {
+    right: 0.5rem;
+  }
+  @media (min-width: 1024px) {
+    .page-arrow-l {
+      left: 1rem;
+    }
+    .page-arrow-r {
+      right: 1rem;
+    }
+  }
+  .page-arrow:hover:not(:disabled) {
+    background: var(--accent-soft, var(--color-accent));
+    color: var(--accent-ink, var(--color-accent-fg, #fff));
+    transform: translateY(-50%) scale(1.05);
+  }
+  .page-arrow:disabled {
+    opacity: 0.25;
     cursor: not-allowed;
   }
 </style>

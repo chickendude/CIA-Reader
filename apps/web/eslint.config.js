@@ -62,6 +62,8 @@ export default [
         // Shell hamburger toggle observes the immersive attribute
         // (T-5.26).
         MutationObserver: 'readonly',
+        // Page-mode pagination measurement (T-5.23).
+        ResizeObserver: 'readonly',
       },
     },
   },

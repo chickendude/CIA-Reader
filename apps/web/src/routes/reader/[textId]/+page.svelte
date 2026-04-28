@@ -181,7 +181,12 @@
 
 <div class="reader">
   <header class="reader-top">
-    <a class="crumb" href="/library" aria-label="Back to library">← Library</a>
+    <a class="reader-close" href="/library" aria-label="Close reader" title="Close reader">
+      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true">
+        <path d="M6 6l12 12" />
+        <path d="M18 6L6 18" />
+      </svg>
+    </a>
     <div class="reader-meta">
       <h1 class="t">{data.text.title}</h1>
       <p class="a">
@@ -270,7 +275,12 @@
   .reader {
     background: var(--paper, var(--color-bg));
     color: var(--ink, var(--color-fg));
-    min-height: 100%;
+    /* Fill the AppShell's content track so page mode can occupy the
+       full vertical space (T-5.23). Children flex-stack vertically:
+       sticky top bar, fluid body, and progress foot. */
+    min-height: 100dvh;
+    display: flex;
+    flex-direction: column;
   }
   .reader-top {
     position: sticky;
@@ -290,16 +300,29 @@
       padding: 1rem 1.75rem;
     }
   }
-  .crumb {
-    font-family: var(--font-sans, var(--font-ui));
-    font-size: 0.78rem;
+  /* T-5.27: small × close button replacing the "← Library" crumb. */
+  .reader-close {
+    width: 32px;
+    height: 32px;
+    display: grid;
+    place-items: center;
     color: var(--ink-3, var(--color-fg-muted));
     text-decoration: none;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    transition:
+      background 150ms ease,
+      color 150ms ease,
+      border-color 150ms ease;
   }
-  .crumb:hover {
-    color: var(--accent-ink, var(--color-accent));
+  .reader-close:hover {
+    color: var(--ink, var(--color-fg));
+    background: color-mix(
+      in oklch,
+      var(--ink, var(--color-fg)) 6%,
+      transparent
+    );
+    border-color: var(--rule, var(--color-border));
   }
   .reader-meta {
     min-width: 0;
