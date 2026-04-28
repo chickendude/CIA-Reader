@@ -226,8 +226,8 @@ describe('/reader/[textId] loader', () => {
     expect(data.anchor.chapterIdx).toBe(1);
   });
 
-  it('attaches server tokens onto each chapter when the worker has run', async () => {
-    getReadableText.mockResolvedValueOnce(ownedTextWithChapters(2));
+  it('attaches server tokens to the active chapter only (T-5.1a)', async () => {
+    getReadableText.mockResolvedValueOnce(ownedTextWithChapters(3));
     const tokenRow = (id: string, idx: number) => ({
       id,
       idx,
@@ -237,19 +237,32 @@ describe('/reader/[textId] loader', () => {
       isOov: false,
       lemmaId: 'lem-1',
       romanization: null,
+      glossDefault: null,
       status: 'unknown' as const,
     });
-    loadChapterTokens
-      .mockResolvedValueOnce([tokenRow('t0', 0)])
-      .mockResolvedValueOnce(null);
+    loadChapterTokens.mockResolvedValueOnce([tokenRow('t0', 0)]);
     const data = (await callLoad(`http://x/reader/${VALID_ID}`)) as {
       chapters: Array<{ id: string; tokens: unknown }>;
     };
     expect(data.chapters[0]!.tokens).toHaveLength(1);
     expect(data.chapters[1]!.tokens).toBeNull();
-    // The loader called the token service once per chapter, with the
-    // viewer id forwarded.
-    expect(loadChapterTokens).toHaveBeenCalledTimes(2);
+    expect(data.chapters[2]!.tokens).toBeNull();
+    // Single fetch — only the active (chapter 0) chapter is hit;
+    // siblings get filled in client-side via the lazy-load endpoint.
+    expect(loadChapterTokens).toHaveBeenCalledTimes(1);
     expect(loadChapterTokens).toHaveBeenCalledWith('c0', USER.id);
+  });
+
+  it('lazy-loads only the requested chapter when ?chapter=N is set (T-5.1a)', async () => {
+    getReadableText.mockResolvedValueOnce(ownedTextWithChapters(5));
+    loadChapterTokens.mockResolvedValueOnce(null);
+    const data = (await callLoad(
+      `http://x/reader/${VALID_ID}?chapter=3`,
+    )) as { chapters: Array<{ tokens: unknown }> };
+    // The loader is invoked exactly once, for the requested chapter's
+    // chapter id ("c3").
+    expect(loadChapterTokens).toHaveBeenCalledTimes(1);
+    expect(loadChapterTokens).toHaveBeenCalledWith('c3', USER.id);
+    expect(data.chapters.map((c) => c.tokens)).toEqual([null, null, null, null, null]);
   });
 });

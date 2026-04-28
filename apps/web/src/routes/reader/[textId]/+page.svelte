@@ -262,6 +262,7 @@
     <ReaderContinuous
       chapters={data.chapters}
       initialChapterIdx={data.anchor.chapterIdx}
+      textId={data.text.id}
       {showRomanization}
       isOwner={data.isOwner}
     />
