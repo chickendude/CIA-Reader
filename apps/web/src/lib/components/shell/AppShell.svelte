@@ -9,6 +9,7 @@
 -->
 <script lang="ts">
   import { page } from '$app/stores';
+  import { onMount } from 'svelte';
   import {
     TABS,
     getActiveTabId,
@@ -17,6 +18,12 @@
     type Tab,
     type TabIcon,
   } from './tabs.js';
+  import {
+    isImmersiveAttributeSet,
+    readPersistedImmersive,
+    setImmersiveAttribute,
+    writePersistedImmersive,
+  } from '../reader/immersive.js';
   import type { Snippet } from 'svelte';
 
   interface Props {
@@ -29,6 +36,34 @@
   const tabs = $derived<Tab[]>(visibleTabs(TABS, user !== null));
   const activeId = $derived(getActiveTabId($page.url.pathname, tabs));
   const groups = $derived(groupTabsBySection(tabs));
+
+  // T-5.26: hamburger toggle for the rail / shell chrome. Reuses the
+  // same `data-reader-immersive` attribute + `cia_reader_immersive`
+  // sessionStorage key from T-5.16 so the existing CSS keeps working
+  // — only the button location and icon change. Bootstrap on mount
+  // so a refresh keeps the user's preference.
+  let collapsed = $state(false);
+  onMount(() => {
+    collapsed = readPersistedImmersive();
+    setImmersiveAttribute(collapsed);
+    // Reflect any external attribute mutation (e.g. the reader page's
+    // Esc handler clearing immersive on exit) back into our local
+    // state so the button glyph stays in sync.
+    const obs = new MutationObserver(() => {
+      const next = isImmersiveAttributeSet();
+      if (next !== collapsed) collapsed = next;
+    });
+    obs.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['data-reader-immersive'],
+    });
+    return () => obs.disconnect();
+  });
+  function toggleCollapsed() {
+    collapsed = !collapsed;
+    setImmersiveAttribute(collapsed);
+    writePersistedImmersive(collapsed);
+  }
 
   // Inline-SVG glyphs match the CIAR design's atom set
   // (see design-handoff/ciar/project/atoms.jsx). One viewBox + a list
@@ -45,6 +80,33 @@
     signin: ['M11 8V5a2 2 0 012-2h6a2 2 0 012 2v14a2 2 0 01-2 2h-6a2 2 0 01-2-2v-3', 'M3 12h12', 'M9 8l-4 4 4 4'],
   };
 </script>
+
+<!-- T-5.26: hamburger button toggles the rail / shell chrome.
+     Positioned fixed so it stays clickable when the rail itself is
+     hidden — clicking it again brings the chrome back. -->
+<button
+  type="button"
+  class="rail-toggle"
+  aria-label={collapsed ? 'Show navigation' : 'Hide navigation'}
+  aria-pressed={collapsed}
+  title={collapsed ? 'Show navigation' : 'Hide navigation'}
+  onclick={toggleCollapsed}
+>
+  <svg
+    viewBox="0 0 24 24"
+    width="16"
+    height="16"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="1.6"
+    stroke-linecap="round"
+    aria-hidden="true"
+  >
+    <path d="M4 7h16" />
+    <path d="M4 12h16" />
+    <path d="M4 17h16" />
+  </svg>
+</button>
 
 <div class="shell">
   <aside class="rail" aria-label="Primary navigation">
@@ -401,12 +463,40 @@
     height: 18px;
   }
 
-  /* —— Immersive mode (T-5.16) ————————————————————————
-   * The reader page sets `data-reader-immersive="1"` on <html> when
-   * the user opts into a full-viewport reading view. We hide the
-   * shell's own chrome and let the reader content occupy the whole
-   * grid track. The reader's own top bar / progress foot stay
-   * visible — only cross-screen navigation chrome collapses. */
+  /* —— Hamburger / rail-toggle button (T-5.26) ————————————————
+   * Fixed top-left so it's clickable both when the rail is showing
+   * (sits flush against the rail's left edge) and when the rail has
+   * been collapsed (only thing left to click). High z-index so it
+   * floats over everything except the word side-panel sheet. */
+  .rail-toggle {
+    position: fixed;
+    top: 0.6rem;
+    left: 0.6rem;
+    width: 32px;
+    height: 32px;
+    display: grid;
+    place-items: center;
+    border-radius: 8px;
+    background: var(--card, var(--color-bg));
+    border: 1px solid var(--card-edge, var(--color-border));
+    color: var(--ink-2, var(--color-fg-muted));
+    cursor: pointer;
+    z-index: 30;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.06);
+    transition:
+      background 150ms ease,
+      color 150ms ease;
+  }
+  .rail-toggle:hover {
+    background: var(--accent-soft, var(--color-accent));
+    color: var(--accent-ink, var(--color-accent-fg, #fff));
+  }
+
+  /* —— Immersive mode (T-5.16, retriggered by T-5.26) ——————————
+   * `data-reader-immersive="1"` on <html> hides the rail / top-strip
+   * / bottom-nav so the screen content occupies the whole viewport.
+   * Originally a reader-specific affordance; T-5.26 generalised it
+   * via a hamburger button on the shell. */
   :global(html[data-reader-immersive='1']) .rail,
   :global(html[data-reader-immersive='1']) .top-strip,
   :global(html[data-reader-immersive='1']) .bottom-nav {

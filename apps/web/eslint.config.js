@@ -59,6 +59,9 @@ export default [
         TextDecoder: 'readonly',
         // Reader keyboard handlers (T-5.7).
         EventTarget: 'readonly',
+        // Shell hamburger toggle observes the immersive attribute
+        // (T-5.26).
+        MutationObserver: 'readonly',
       },
     },
   },
