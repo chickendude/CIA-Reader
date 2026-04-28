@@ -34,17 +34,25 @@ export const load: PageServerLoad = async ({ locals }) => {
     console.error('NLP health check failed:', err);
   }
 
+  // Per-language known-words cache. Wrapped in try/catch so a database
+  // hiccup or a schema regression in this single read can't take the
+  // whole landing page offline (T-5.19) — we'd rather render the
+  // language grid with zero counts than 500 the home route.
   const knownByLanguage: Partial<Record<LanguageCode, number>> = {};
-  if (locals.user) {
-    const rows = await db
-      .select({
-        language: userLanguages.language,
-        knownWordsCountCache: userLanguages.knownWordsCountCache,
-      })
-      .from(userLanguages)
-      .where(eq(userLanguages.userId, locals.user.id));
-    for (const r of rows) {
-      knownByLanguage[r.language as LanguageCode] = r.knownWordsCountCache;
+  if (locals.user?.id) {
+    try {
+      const rows = await db
+        .select({
+          language: userLanguages.language,
+          knownWordsCountCache: userLanguages.knownWordsCountCache,
+        })
+        .from(userLanguages)
+        .where(eq(userLanguages.userId, locals.user.id));
+      for (const r of rows) {
+        knownByLanguage[r.language as LanguageCode] = r.knownWordsCountCache;
+      }
+    } catch (err) {
+      console.error('home: user_languages query failed:', err);
     }
   }
 
