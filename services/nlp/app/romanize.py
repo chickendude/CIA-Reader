@@ -63,6 +63,7 @@ is reversible. Schwa-deleted Hindi output is intentionally lossy —
 
 from __future__ import annotations
 
+import re
 import unicodedata
 
 from aksharamukha import transliterate as _aksharamukha
@@ -139,6 +140,60 @@ def _resolve_scheme(name: str) -> str:
         ) from e
 
 
+# Word scanner used by :func:`_patch_nukta_final_virama`. The character
+# class lists every Devanagari codepoint that can occur *inside* a Hindi
+# word (consonants, vowel letters, vowel signs, virama, nukta, anusvara,
+# vocalic R/L letters and signs, Vedic accent marks). Punctuation
+# (danda U+0964, double-danda U+0965), the abbreviation sign U+0970, and
+# Devanagari digits U+0966-U+096F are deliberately excluded so they act
+# as word boundaries.
+_DEVA_WORD_RE = re.compile(
+    "[ँ-ःऄ-औक-हऺ-ॏ"
+    "॑-॔क़-य़ॠ-ॣ]+"
+)
+# A word-final nukta-bearing consonant: either a precomposed atomic
+# letter (U+0958-U+095F covers क़ख़ग़ज़ड़ढ़फ़य़, plus U+0931 ऱ) or a
+# base consonant followed by an explicit nukta U+093C.
+_NUKTA_CONS_AT_END = re.compile(
+    r"(?:[क़-य़ऱ]|[क-ह]़)$"
+)
+# Multi-syllable detector: any consonant or full vowel letter sitting
+# before our final nukta consonant means the word has at least two
+# syllables, so the final inherent schwa should drop. Single-syllable
+# forms (just `फ़`, just `क`) keep their schwa, matching aksharamukha's
+# own behavior for non-nukta minimal forms.
+_HAS_PRIOR_SYLLABLE = re.compile(
+    r"[ऄ-औक-हक़-य़ऱॠॡ]"
+)
+
+
+def _patch_nukta_final_virama(text: str) -> str:
+    """Append a virama after word-final nukta-bearing consonants.
+
+    aksharamukha's ``RemoveSchwaHindi`` pre-rule fails to virama-mark
+    the final inherent schwa when a word ends in a nukta-bearing
+    consonant — most reliably when that consonant is preceded by a
+    half-consonant. So बर्फ़ comes back unchanged from aksharamukha and
+    sanscript reads the trailing schwa as a real vowel: ``barfa``
+    instead of ``barf``. This pass closes the gap by scanning each
+    Devanagari word and appending a virama at the tail when the word
+    ends in a nukta consonant and is multi-syllable. Word-medial nukta
+    consonants (the medial फ़ in बर्फ़ानी, the ज़ in दर्ज़ी) and
+    single-syllable forms (standalone फ़) are left alone.
+    """
+
+    def _fix(m: re.Match[str]) -> str:
+        word = m.group(0)
+        tail = _NUKTA_CONS_AT_END.search(word)
+        if tail is None:
+            return word
+        if _HAS_PRIOR_SYLLABLE.search(word[: tail.start()]) is None:
+            return word
+        return word + "्"
+
+    return _DEVA_WORD_RE.sub(_fix, text)
+
+
 def _hindi_schwa_delete(devanagari: str) -> str:
     """Apply aksharamukha's ``RemoveSchwaHindi`` to a Devanagari string.
 
@@ -148,13 +203,17 @@ def _hindi_schwa_delete(devanagari: str) -> str:
     a function so callers (and tests) don't import aksharamukha
     directly and so the dependency is easy to swap if a better Hindi
     schwa-deletion model lands later.
+
+    Followed by :func:`_patch_nukta_final_virama` to compensate for an
+    aksharamukha gap on word-final nukta-bearing consonants.
     """
-    return _aksharamukha.process(
+    out = _aksharamukha.process(
         "Devanagari",
         "Devanagari",
         devanagari,
         pre_options=["RemoveSchwaHindi"],
     )
+    return _patch_nukta_final_virama(out)
 
 
 # Hindi merges the ISO 15919 ē/ō length distinction into a single

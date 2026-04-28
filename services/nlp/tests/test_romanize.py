@@ -134,6 +134,55 @@ def test_default_language_keeps_legacy_sanscript_behavior():
     assert out == "rāma"
 
 
+# ---- Hindi-specific: nukta-final schwa-deletion gap ----
+#
+# aksharamukha's ``RemoveSchwaHindi`` pre-rule occasionally fails to
+# virama-mark the final inherent schwa when a word ends in a
+# nukta-bearing consonant (most reliably when preceded by a
+# half-consonant). The romanize module patches the gap by appending a
+# virama post-hoc; these tests pin both the fix (बर्फ़ → barf, not
+# barfa) and the boundary cases that must NOT change.
+
+
+@pytest.mark.parametrize(
+    "native,expected_iso",
+    [
+        ("बर्फ़", "barf"),  # the canonical bug — half-consonant + final फ़
+        ("काग़ज़", "kāġaz"),  # already correct via aksharamukha; regression guard
+        ("दर्ज़ी", "darzī"),  # medial nukta + final ी; must stay untouched
+        ("बर्फ़ानी", "barfānī"),  # word-internal nukta-final + vowel sign
+    ],
+)
+def test_hindi_nukta_final_schwa_deletion_iso(native: str, expected_iso: str):
+    out = romanize.to_roman(native, from_script="Deva", to_scheme="iso15919", language="hi")
+    assert out == expected_iso
+
+
+def test_hindi_nukta_final_schwa_deletion_iast():
+    # Same fix must apply regardless of the requested roman scheme,
+    # since schwa-deletion is a fact about the Devanagari side.
+    assert (
+        romanize.to_roman("बर्फ़", from_script="Deva", to_scheme="iast", language="hi") == "barf"
+    )
+
+
+def test_hindi_single_syllable_nukta_keeps_schwa():
+    # Standalone single-syllable nukta-final words retain their inherent
+    # schwa — matching aksharamukha's behavior for non-nukta finals
+    # like क → "ka". Patching this would over-correct.
+    assert romanize.to_roman("फ़", from_script="Deva", to_scheme="iso15919", language="hi") == "fa"
+
+
+def test_hindi_nukta_final_in_phrase_with_punctuation():
+    # The patch must operate at word boundaries, not just end-of-string,
+    # so trailing punctuation / whitespace / danda still trigger it.
+    out = romanize.to_roman(
+        "बर्फ़ है।", from_script="Deva", to_scheme="iso15919", language="hi"
+    )
+    assert out.startswith("barf ")
+    assert "barfa" not in out
+
+
 def test_hindi_language_hint_is_noop_for_orya():
     # The schwa-deletion path is gated on ``from_script="Deva"`` —
     # Odia text with a stray ``language="hi"`` (a caller bug) must
