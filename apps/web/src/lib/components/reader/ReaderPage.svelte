@@ -1,15 +1,23 @@
 <!--
-  Page-mode reader (T-5.1, token-aware in T-5.2, chrome polish in T-5.9).
+  Page-mode reader (T-5.1, token-aware in T-5.2, chrome polish in T-5.9,
+  no-scroll pagination in T-5.23).
 
-  Classic LingQ-style pagination: one chapter at a time. Chrome layout
-  follows the CIAR design — chapter heading at the top, body in a
-  comfortable max-width column, floating round page-arrow buttons
-  flanking the column, and a bottom progress bar showing chapter
-  position. Token rendering is delegated to <ChapterBody/>.
+  The chapter renders into a fixed-height viewport that hides
+  overflow. Each "page" is one viewport-height slice of the chapter,
+  positioned via translateY. Off-screen content is still in the DOM
+  (so screen readers + Cmd-F still find it) — just clipped.
+
+  Side arrows + keyboard ←/→ step through pages within a chapter and
+  spill over into the prev/next chapter at the boundaries. The
+  bottom progress foot reports both the page-in-chapter and the
+  overall chapter position.
 -->
 <script lang="ts">
   import { goto } from '$app/navigation';
+  import { onMount } from 'svelte';
+
   import ChapterBody from './ChapterBody.svelte';
+  import { clampPage, pageCountFor, pageOffset } from './paginate.js';
   import type { ChapterView } from './types.js';
 
   let {
@@ -29,24 +37,88 @@
   const current = $derived(
     chapters[Math.max(0, Math.min(chapterIdx, chapters.length - 1))],
   );
-  const hasPrev = $derived(chapterIdx > 0);
-  const hasNext = $derived(chapterIdx < chapters.length - 1);
+  const hasPrevChapter = $derived(chapterIdx > 0);
+  const hasNextChapter = $derived(chapterIdx < chapters.length - 1);
+
+  // Pagination state. Recomputed on resize / chapter change /
+  // showRomanization toggle (which changes line-height).
+  let viewportEl: HTMLDivElement | null = $state(null);
+  let contentEl: HTMLDivElement | null = $state(null);
+  let viewportH = $state(0);
+  let contentH = $state(0);
+  let pageInChapter = $state(0);
+
+  const pageCount = $derived(pageCountFor(contentH, viewportH));
+  const offset = $derived(pageOffset(pageInChapter, viewportH));
+
+  // Reset to the first page whenever the chapter changes — the user
+  // shouldn't see "stuck" mid-page state when they navigate.
+  $effect(() => {
+    void chapterIdx;
+    pageInChapter = 0;
+  });
+
+  // Keep pageInChapter in range when pageCount shrinks (e.g. window
+  // grows so the chapter fits in fewer pages).
+  $effect(() => {
+    pageInChapter = clampPage(pageInChapter, pageCount);
+  });
+
+  const hasPrevPage = $derived(pageInChapter > 0);
+  const hasNextPage = $derived(pageInChapter < pageCount - 1);
+  const hasPrev = $derived(hasPrevPage || hasPrevChapter);
+  const hasNext = $derived(hasNextPage || hasNextChapter);
+
+  // Overall progress — fraction of the whole text the user has read.
+  // Fractional pages-in-chapter give a smoother percentage than just
+  // counting whole chapters.
   const progressPct = $derived(
     chapters.length > 0
-      ? Math.round(((chapterIdx + 1) / chapters.length) * 100)
+      ? Math.round(
+          ((chapterIdx + (pageCount > 0 ? (pageInChapter + 1) / pageCount : 0)) /
+            chapters.length) *
+            100,
+        )
       : 0,
   );
 
-  function go(nextIdx: number) {
+  function go(nextIdx: number, opts: { lastPage?: boolean } = {}) {
     void goto(`/reader/${textId}?mode=page&chapter=${nextIdx}`, {
       keepFocus: true,
     });
+    // The new chapter mounts with pageInChapter=0; if we're stepping
+    // backwards into the previous chapter, jump to its last page once
+    // pagination remeasures. Tracked via a flag so the resize $effect
+    // can apply it.
+    pendingJumpToLast = opts.lastPage === true;
   }
 
-  // T-5.7: ←/→ flip pages. We listen on the window so the user
-  // doesn't have to first click the reader to focus it. Skip
-  // when typing in a form / textarea / contenteditable element so
-  // we don't hijack legitimate input.
+  let pendingJumpToLast = $state(false);
+  $effect(() => {
+    if (!pendingJumpToLast) return;
+    if (pageCount > 0) {
+      pageInChapter = pageCount - 1;
+      pendingJumpToLast = false;
+    }
+  });
+
+  function nextPage() {
+    if (hasNextPage) {
+      pageInChapter += 1;
+    } else if (hasNextChapter) {
+      go(chapterIdx + 1);
+    }
+  }
+  function prevPage() {
+    if (hasPrevPage) {
+      pageInChapter -= 1;
+    } else if (hasPrevChapter) {
+      go(chapterIdx - 1, { lastPage: true });
+    }
+  }
+
+  // T-5.7: ←/→ flip pages. Skip when typing in a form / textarea so
+  // the popup's add-translation form keeps Enter/Esc behavior.
   function isTypingInsideElement(target: EventTarget | null): boolean {
     if (!(target instanceof HTMLElement)) return false;
     const tag = target.tagName;
@@ -58,17 +130,33 @@
   function onKeydown(e: KeyboardEvent) {
     if (e.metaKey || e.ctrlKey || e.altKey) return;
     if (isTypingInsideElement(e.target)) return;
-    // Don't fight the popup — when it's mounted, it owns the
-    // keyboard. The popup itself stops Esc / k / l / i propagation.
     if (document.querySelector('[data-testid="word-popup"]')) return;
     if (e.key === 'ArrowLeft' && hasPrev) {
       e.preventDefault();
-      go(chapterIdx - 1);
+      prevPage();
     } else if (e.key === 'ArrowRight' && hasNext) {
       e.preventDefault();
-      go(chapterIdx + 1);
+      nextPage();
     }
   }
+
+  // Measure on mount + on resize / content change. ResizeObserver on
+  // both the viewport (window resize, font-size change) and the
+  // content (chapter toggle, romanization toggle changing line
+  // height) keeps pageCount honest.
+  onMount(() => {
+    if (typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(() => {
+      if (viewportEl) viewportH = viewportEl.clientHeight;
+      if (contentEl) contentH = contentEl.scrollHeight;
+    });
+    if (viewportEl) ro.observe(viewportEl);
+    if (contentEl) ro.observe(contentEl);
+    // Seed initial measurements before the observer fires.
+    if (viewportEl) viewportH = viewportEl.clientHeight;
+    if (contentEl) contentH = contentEl.scrollHeight;
+    return () => ro.disconnect();
+  });
 </script>
 
 <svelte:window onkeydown={onKeydown} />
@@ -77,37 +165,40 @@
   <button
     type="button"
     class="page-arrow page-arrow-l"
-    aria-label="Previous chapter"
+    aria-label="Previous page"
     disabled={!hasPrev}
-    onclick={() => hasPrev && go(chapterIdx - 1)}
+    onclick={prevPage}
   >
     ‹
   </button>
 
-  <div class="reader-page">
-    {#if current}
-      <header class="chapter-h">
-        {current.title ?? `Chapter ${current.idx + 1}`}
-        <span class="roman">
-          Chapter {current.idx + 1} of {chapters.length}
-          · {current.tokenCount.toLocaleString()} tokens
-        </span>
-      </header>
-    {/if}
-
-    <article>
+  <div class="reader-page-viewport" bind:this={viewportEl}>
+    <div
+      class="reader-page-content"
+      bind:this={contentEl}
+      style:transform="translateY(-{offset}px)"
+    >
       {#if current}
-        <ChapterBody chapter={current} {showRomanization} {isOwner} />
+        <header class="chapter-h">
+          {current.title ?? `Chapter ${current.idx + 1}`}
+          <span class="roman">
+            Chapter {current.idx + 1} of {chapters.length}
+            · {current.tokenCount.toLocaleString()} tokens
+          </span>
+        </header>
+        <article>
+          <ChapterBody chapter={current} {showRomanization} {isOwner} />
+        </article>
       {/if}
-    </article>
+    </div>
   </div>
 
   <button
     type="button"
     class="page-arrow page-arrow-r"
-    aria-label="Next chapter"
+    aria-label="Next page"
     disabled={!hasNext}
-    onclick={() => hasNext && go(chapterIdx + 1)}
+    onclick={nextPage}
   >
     ›
   </button>
@@ -116,7 +207,8 @@
 <footer class="reader-foot" aria-label="Chapter progress">
   <div class="reader-foot-meta">
     <span class="pager-pages">
-      Chapter {chapterIdx + 1} of {chapters.length}
+      Page {pageInChapter + 1} of {pageCount}
+      <span class="muted">· Ch. {chapterIdx + 1} / {chapters.length}</span>
     </span>
     <span class="muted">{progressPct}% through text</span>
   </div>
@@ -124,16 +216,29 @@
 </footer>
 
 <style>
+  /* The page mode owns the available vertical space between the
+     reader top bar and progress foot. The viewport is the fixed-
+     height window; .reader-page-content is the (potentially much
+     taller) chapter body that translates inside it. */
   .reader-page-wrap {
     position: relative;
-    padding: 1.5rem 1rem 2.5rem;
+    flex: 1;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .reader-page-viewport {
+    overflow: hidden;
+    padding: 1.25rem 3rem;
   }
   @media (min-width: 1024px) {
-    .reader-page-wrap {
-      padding: 2.5rem 4.5rem 3rem;
+    .reader-page-viewport {
+      padding: 2rem 5rem;
     }
   }
-  .reader-page {
+
+  .reader-page-content {
     font-family: var(--font-serif-dev, var(--font-serif));
     font-size: 1.1rem;
     line-height: 2;
@@ -142,12 +247,15 @@
     margin: 0 auto;
     word-spacing: 0.03em;
     text-wrap: pretty;
+    transition: transform 200ms ease;
+    will-change: transform;
   }
   @media (min-width: 768px) {
-    .reader-page {
+    .reader-page-content {
       font-size: 1.25rem;
     }
   }
+
   .chapter-h {
     font-family: var(--font-serif-dev, var(--font-serif));
     font-size: 1.05rem;
@@ -167,15 +275,10 @@
     margin-top: 0.3rem;
     text-transform: uppercase;
   }
-  article {
-    min-height: 50vh;
-  }
 
-  /* Floating round page arrows. Hidden on narrow viewports — keyboard
-     ←/→ and the bottom progress bar still work, and the arrows would
-     overlap the body column anyway below the breakpoint. */
+  /* Floating round page arrows — visible on every viewport so mouse +
+     touch users always have an explicit nav affordance (T-5.23). */
   .page-arrow {
-    display: none;
     position: absolute;
     top: 50%;
     transform: translateY(-50%);
@@ -185,6 +288,7 @@
     background: var(--card, var(--color-bg));
     border: 1px solid var(--card-edge, var(--color-border));
     color: var(--ink-2, var(--color-fg-muted));
+    display: grid;
     place-items: center;
     cursor: pointer;
     z-index: 8;
@@ -198,16 +302,19 @@
     line-height: 1;
     padding: 0;
   }
-  @media (min-width: 1024px) {
-    .page-arrow {
-      display: grid;
-    }
-  }
   .page-arrow-l {
-    left: 1rem;
+    left: 0.5rem;
   }
   .page-arrow-r {
-    right: 1rem;
+    right: 0.5rem;
+  }
+  @media (min-width: 1024px) {
+    .page-arrow-l {
+      left: 1rem;
+    }
+    .page-arrow-r {
+      right: 1rem;
+    }
   }
   .page-arrow:hover:not(:disabled) {
     background: var(--accent-soft, var(--color-accent));
@@ -265,5 +372,12 @@
     background: var(--accent, var(--color-accent));
     border-radius: 2px;
     transition: width 250ms ease;
+  }
+
+  /* Respect reduced-motion: skip the page-flip slide. */
+  @media (prefers-reduced-motion: reduce) {
+    .reader-page-content {
+      transition: none;
+    }
   }
 </style>

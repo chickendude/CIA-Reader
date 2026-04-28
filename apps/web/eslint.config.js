@@ -59,6 +59,8 @@ export default [
         TextDecoder: 'readonly',
         // Reader keyboard handlers (T-5.7).
         EventTarget: 'readonly',
+        // Page-mode pagination measurement (T-5.23).
+        ResizeObserver: 'readonly',
       },
     },
   },
