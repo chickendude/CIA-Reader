@@ -400,4 +400,24 @@
     width: 18px;
     height: 18px;
   }
+
+  /* —— Immersive mode (T-5.16) ————————————————————————
+   * The reader page sets `data-reader-immersive="1"` on <html> when
+   * the user opts into a full-viewport reading view. We hide the
+   * shell's own chrome and let the reader content occupy the whole
+   * grid track. The reader's own top bar / progress foot stay
+   * visible — only cross-screen navigation chrome collapses. */
+  :global(html[data-reader-immersive='1']) .rail,
+  :global(html[data-reader-immersive='1']) .top-strip,
+  :global(html[data-reader-immersive='1']) .bottom-nav {
+    display: none;
+  }
+  :global(html[data-reader-immersive='1']) .shell {
+    grid-template-columns: 1fr;
+    grid-template-areas: 'content';
+  }
+  :global(html[data-reader-immersive='1']) .content {
+    /* Bottom nav is gone — drop the safe-area padding too. */
+    padding-bottom: 0;
+  }
 </style>
