@@ -13,25 +13,31 @@ cd "$(dirname "$0")/.."
 DATA_ROOT="data/dictionaries"
 mkdir -p "$DATA_ROOT"
 
-fetch_kaikki_hindi() {
-  local out="$DATA_ROOT/kaikki-hindi"
+fetch_kaikki() {
+  local lang_slug="$1"   # kebab-case, e.g. kaikki-hindi
+  local lang_name="$2"   # capitalized, e.g. Hindi (matches Kaikki's URL)
+  local out="$DATA_ROOT/$lang_slug"
   mkdir -p "$out"
-  local url="https://kaikki.org/dictionary/Hindi/kaikki.org-dictionary-Hindi.jsonl"
-  echo "[fetch] kaikki-hindi  $url -> $out/raw.jsonl"
+  local url="https://kaikki.org/dictionary/${lang_name}/kaikki.org-dictionary-${lang_name}.jsonl"
+  echo "[fetch] $lang_slug  $url -> $out/raw.jsonl"
   curl --fail --location --output "$out/raw.jsonl" "$url"
-  echo "[fetch] kaikki-hindi  done ($(wc -l <"$out/raw.jsonl") lines, $(du -h "$out/raw.jsonl" | cut -f1))"
+  echo "[fetch] $lang_slug  done ($(wc -l <"$out/raw.jsonl") lines, $(du -h "$out/raw.jsonl" | cut -f1))"
 }
 
 case "${1-all}" in
   all)
-    fetch_kaikki_hindi
+    fetch_kaikki kaikki-hindi Hindi
+    fetch_kaikki kaikki-marathi Marathi
     ;;
   kaikki-hindi)
-    fetch_kaikki_hindi
+    fetch_kaikki kaikki-hindi Hindi
+    ;;
+  kaikki-marathi)
+    fetch_kaikki kaikki-marathi Marathi
     ;;
   *)
     echo "unknown source: $1" >&2
-    echo "available: kaikki-hindi (more land per per-source PR)" >&2
+    echo "available: kaikki-hindi, kaikki-marathi (more land per per-source PR)" >&2
     exit 1
     ;;
 esac

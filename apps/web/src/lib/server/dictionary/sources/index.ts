@@ -16,6 +16,7 @@ import type { DictionaryImportSource } from '../types.js';
 
 import { hindiSeedSource } from './hindi-seed.js';
 import { kaikkiHindiSource } from './kaikki-hindi.js';
+import { kaikkiMarathiSource } from './kaikki-marathi.js';
 
 export type RegistryEntry = {
   name: string;
@@ -25,6 +26,7 @@ export type RegistryEntry = {
 export const dictionarySources: RegistryEntry[] = [
   { name: hindiSeedSource.name, source: hindiSeedSource },
   { name: kaikkiHindiSource.name, source: kaikkiHindiSource },
+  { name: kaikkiMarathiSource.name, source: kaikkiMarathiSource },
 ];
 
 export function findSource(name: string): DictionaryImportSource | undefined {
