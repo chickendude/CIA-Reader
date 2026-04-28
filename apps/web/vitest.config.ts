@@ -11,6 +11,13 @@ import { defineConfig } from 'vitest/config';
  */
 export default defineConfig({
   plugins: [sveltekit()],
+  resolve: {
+    // Tell vitest's resolver to pick the browser export of `svelte`
+    // when running under jsdom — otherwise `mount()` etc. resolve to
+    // the SSR build and throw `lifecycle_function_unavailable`. Only
+    // affects tests; the app build picks conditions normally.
+    conditions: process.env.VITEST ? ['browser'] : [],
+  },
   test: {
     environment: 'jsdom',
     globals: false,
