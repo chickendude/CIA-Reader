@@ -16,6 +16,29 @@ import { and, eq, inArray, isNotNull } from 'drizzle-orm';
 import { db, schema } from '../db/index.js';
 import type { TextToken, UserKnownLemma } from '../db/schema.js';
 
+/**
+ * One candidate in the disambiguation list (T-6.1). Set on
+ * is_ambiguous=true tokens; the reader popup expands the list so
+ * the user can pick the correct lemma.
+ *
+ * `lemmaId` is nullable on the on-disk row (the worker may have
+ * surfaced a candidate it couldn't link to a dictionary entry —
+ * e.g. an OOV form). The reader filters those out so only
+ * resolvable picks render.
+ */
+export type RenderedCandidate = {
+  lemmaId: string;
+  headword: string;
+  pos: string;
+  glossDefault: string | null;
+  /** Worker-time score (higher = more confident). Surfaced in
+   *  attribute form so the popup can sort or label without re-running
+   *  the math client-side. */
+  score: number;
+  /** Morphology features the worker emitted for this candidate. */
+  features: Record<string, string>;
+};
+
 export type RenderedToken = {
   id: string;
   idx: number;
@@ -30,6 +53,11 @@ export type RenderedToken = {
    *  locking the side panel. Null when the lemma has no glossDefault
    *  on file, or when the token has no lemma id (whitespace, OOV). */
   glossDefault: string | null;
+  /** T-6.1: alternate lemma candidates the worker scored. Empty
+   *  array when the token has no candidates beyond the top pick
+   *  (or when the worker hasn't run). The popup hides the
+   *  alternate-meanings affordance when this is empty. */
+  candidates: RenderedCandidate[];
   status: 'known' | 'learning' | 'ignored' | 'unknown';
 };
 
@@ -51,8 +79,23 @@ export async function loadChapterTokens(
 
   if (tokens.length === 0) return null;
 
+  // Primary lemma for each token (the worker's top pick).
+  const primaryLemmaIds = tokens
+    .map((t) => t.lemmaId)
+    .filter((id): id is string => !!id);
+  // T-6.1: also pre-fetch every lemma referenced as a CANDIDATE so
+  // the popup's alternate-meanings list can render headword + POS
+  // + gloss without a per-token fetch when the user expands it. The
+  // candidate list is small per token (typically 2-5 entries), so
+  // unioning across the chapter still hits one SELECT.
+  const candidateLemmaIds: string[] = [];
+  for (const t of tokens) {
+    for (const c of t.lemmaCandidates) {
+      if (c.lemmaId) candidateLemmaIds.push(c.lemmaId);
+    }
+  }
   const lemmaIds = Array.from(
-    new Set(tokens.map((t) => t.lemmaId).filter((id): id is string => !!id)),
+    new Set([...primaryLemmaIds, ...candidateLemmaIds]),
   );
 
   // Anonymous viewers have no `user_known_lemmas` rows; every word
@@ -89,7 +132,15 @@ export async function loadChapterTokens(
   // under NOUN. Pre-fix the tooltip said "No translations"; post-fix
   // it shows the sibling NOUN's gloss. Mirrors the popup-side
   // fallback in `getLemmaTranslations` so both surfaces stay in sync.
+  // T-6.1: extend the lemma fetch to include `pos` so candidate
+  // entries can render headword + POS + gloss in the alternate-
+  // meanings list. We re-use the same SELECT for the primary's
+  // glossDefault path.
   const glossByLemma = new Map<string, string | null>();
+  const lemmaMetaById = new Map<
+    string,
+    { language: string; headword: string; pos: string }
+  >();
   const lemmaHeadwords: Array<{
     id: string;
     language: string;
@@ -101,6 +152,7 @@ export async function loadChapterTokens(
         id: schema.lemmas.id,
         language: schema.lemmas.language,
         headword: schema.lemmas.headword,
+        pos: schema.lemmas.pos,
         glossDefault: schema.lemmas.glossDefault,
       })
       .from(schema.lemmas)
@@ -108,10 +160,16 @@ export async function loadChapterTokens(
       id: string;
       language: string;
       headword: string;
+      pos: string;
       glossDefault: string | null;
     }>;
     for (const r of lemmaRows) {
       glossByLemma.set(r.id, r.glossDefault);
+      lemmaMetaById.set(r.id, {
+        language: r.language,
+        headword: r.headword,
+        pos: r.pos,
+      });
       if (!r.glossDefault) {
         lemmaHeadwords.push({
           id: r.id,
@@ -169,6 +227,28 @@ export async function loadChapterTokens(
       t.lemmaId && statusByLemma.has(t.lemmaId)
         ? statusByLemma.get(t.lemmaId)!
         : 'unknown';
+    // T-6.1: build the candidate list, dropping (a) candidates with
+    // no lemmaId (the worker couldn't link them — those become
+    // "search the dictionary" picks under T-6.2), and (b) the
+    // current primary's lemmaId so the popup never offers the user
+    // their already-active pick. Sort descending by score so the
+    // strongest alternative reads first.
+    const candidates: RenderedCandidate[] = [];
+    for (const c of t.lemmaCandidates) {
+      if (!c.lemmaId) continue;
+      if (c.lemmaId === t.lemmaId) continue;
+      const meta = lemmaMetaById.get(c.lemmaId);
+      if (!meta) continue;
+      candidates.push({
+        lemmaId: c.lemmaId,
+        headword: meta.headword,
+        pos: meta.pos,
+        glossDefault: glossByLemma.get(c.lemmaId) ?? null,
+        score: c.score,
+        features: c.features,
+      });
+    }
+    candidates.sort((a, b) => b.score - a.score);
     return {
       id: t.id,
       idx: t.idx,
@@ -179,6 +259,7 @@ export async function loadChapterTokens(
       lemmaId: t.lemmaId,
       romanization: t.romanization,
       glossDefault: t.lemmaId ? glossByLemma.get(t.lemmaId) ?? null : null,
+      candidates,
       status,
     };
   });

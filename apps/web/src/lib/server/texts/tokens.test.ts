@@ -158,6 +158,60 @@ describe('loadChapterTokens', () => {
     expect(selectFn).toHaveBeenCalledTimes(3);
   });
 
+  it('populates token.candidates with metadata pulled from the lemmas table (T-6.1)', async () => {
+    stage([
+      tokenRow({
+        id: 't1',
+        idx: 0,
+        lemmaId: 'lem-primary',
+        isAmbiguous: true,
+        lemmaCandidates: [
+          { lemmaId: 'lem-primary', features: { Case: 'Nom' }, score: 0.6 },
+          { lemmaId: 'lem-alt', features: { Case: 'Acc' }, score: 0.3 },
+          // Candidate with no resolved lemma — must be filtered out.
+          { lemmaId: null, features: {}, score: 0.1 },
+        ],
+      }),
+    ]);
+    stage([]); // user_known_lemmas
+    stage([
+      {
+        id: 'lem-primary',
+        language: 'hi',
+        headword: 'पाठ',
+        pos: 'NOUN',
+        glossDefault: 'lesson',
+      },
+      {
+        id: 'lem-alt',
+        language: 'hi',
+        headword: 'पाठ',
+        pos: 'VERB',
+        glossDefault: 'to read',
+      },
+    ]);
+    const result = await loadChapterTokens('chap-1', 'user-1');
+    expect(result![0]).toMatchObject({
+      id: 't1',
+      isAmbiguous: true,
+      glossDefault: 'lesson',
+    });
+    // The primary's lemma is excluded from the candidate list (the
+    // popup never offers the user their already-active pick), the
+    // null-lemmaId candidate is dropped, and what remains carries
+    // headword + POS + gloss for the popup.
+    expect(result![0]!.candidates).toEqual([
+      {
+        lemmaId: 'lem-alt',
+        headword: 'पाठ',
+        pos: 'VERB',
+        glossDefault: 'to read',
+        score: 0.3,
+        features: { Case: 'Acc' },
+      },
+    ]);
+  });
+
   it('handles anonymous viewers (no user_known_lemmas SELECT, every status=unknown)', async () => {
     stage([tokenRow({ id: 't1', idx: 0 })]);
     stage([]); // lemmas (gloss lookup) — only this second SELECT runs

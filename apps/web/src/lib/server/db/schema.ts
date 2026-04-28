@@ -829,6 +829,78 @@ export const formLemmaOverrides = pgTable(
   }),
 );
 
+/**
+ * Per-user lemma corrections on a specific token (T-6.1 + onwards).
+ *
+ * The reader's WordPopup shows the NLP worker's top guess; when the
+ * user knows it's wrong they can:
+ *
+ *  - pick_candidate     — select one of the top-K lemma_candidates
+ *                         the worker returned (T-6.1 — the cheapest
+ *                         flow; data already on-row).
+ *  - manual_lemma       — search the dictionary and pick a lemma
+ *                         that wasn't in the candidate list (T-6.2).
+ *  - new_lemma          — propose a new lemma that doesn't exist
+ *                         yet (T-6.3 — also creates a lemma_proposal).
+ *  - mark_proper_noun / — soft "this surface isn't a learnable word"
+ *    mark_foreign /       flags. They suppress the OOV / unknown
+ *    mark_not_a_word      colouring without surfacing a lemma at all.
+ *
+ * Primary-keyed on (user, token) so re-correcting overwrites — a
+ * user changes their mind, the reader reflects the new pick. The
+ * crowdsourced aggregation worker (T-6.7) reads this table to
+ * promote consensus picks into `form_lemma_overrides`.
+ */
+export const tokenCorrectionType = pgEnum('token_correction_type', [
+  'pick_candidate',
+  'manual_lemma',
+  'new_lemma',
+  'mark_proper_noun',
+  'mark_foreign',
+  'mark_not_a_word',
+]);
+
+export const tokenCorrections = pgTable(
+  'token_corrections',
+  {
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    tokenId: uuid('token_id')
+      .notNull()
+      .references(() => textTokens.id, { onDelete: 'cascade' }),
+    type: tokenCorrectionType('type').notNull(),
+    // Set for `pick_candidate` / `manual_lemma`. NULL for the
+    // mark_* and new_lemma branches (new_lemma also writes a
+    // lemma_proposals row that carries the proposed entry —
+    // landing in T-6.3). On lemma deletion the row is kept (set
+    // null) so the audit trail isn't lost; the reader treats a
+    // null chosen_lemma_id like any other absent correction.
+    chosenLemmaId: uuid('chosen_lemma_id').references(() => lemmas.id, {
+      onDelete: 'set null',
+    }),
+    // Free-form reporter note. Optional today; T-6.5 surfaces it on
+    // the moderation dashboard.
+    note: text('note'),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.userId, t.tokenId] }),
+    tokenIdx: index('token_corrections_token_idx').on(t.tokenId),
+    // Aggregation worker (T-6.7) groups by (lemma, type) — index
+    // matches that lookup so the cron stays cheap.
+    lemmaIdx: index('token_corrections_chosen_lemma_idx').on(
+      t.chosenLemmaId,
+      t.type,
+    ),
+  }),
+);
+
 export type Text = InferSelectModel<typeof texts>;
 export type TextChapter = InferSelectModel<typeof textChapters>;
 export type NlpJob = InferSelectModel<typeof nlpJobs>;
@@ -836,3 +908,4 @@ export type TextToken = InferSelectModel<typeof textTokens>;
 export type UserKnownLemma = InferSelectModel<typeof userKnownLemmas>;
 export type UserTextProgress = InferSelectModel<typeof userTextProgress>;
 export type FormLemmaOverride = InferSelectModel<typeof formLemmaOverrides>;
+export type TokenCorrection = InferSelectModel<typeof tokenCorrections>;

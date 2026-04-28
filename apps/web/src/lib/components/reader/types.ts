@@ -7,6 +7,20 @@
  * every mode (T-5.2 onward).
  */
 
+/** One alternate-meaning entry the popup expands when
+ *  isAmbiguous=true (T-6.1). The reader pulls these from the
+ *  worker's `lemma_candidates` jsonb column and joins them against
+ *  `lemmas` so the row already carries headword + POS + gloss for
+ *  the popup. */
+export type ServerCandidate = {
+  lemmaId: string;
+  headword: string;
+  pos: string;
+  glossDefault: string | null;
+  score: number;
+  features: Record<string, string>;
+};
+
 /** Per-token row from the NLP worker (T-5.2). When present, the
  *  component renders these spans directly; when null, it falls back
  *  to client-side whitespace tokenization. */
@@ -22,6 +36,10 @@ export type ServerToken = {
   /** Canonical short gloss for the lemma — surfaced in the hover
    *  tooltip (T-5.18). Null when there's no lemma or no gloss yet. */
   glossDefault: string | null;
+  /** T-6.1: alternate-meaning candidates for is_ambiguous tokens.
+   *  Empty array when the worker scored only one viable candidate
+   *  or hasn't run yet. */
+  candidates: ServerCandidate[];
   status: 'known' | 'learning' | 'ignored' | 'unknown';
 };
 

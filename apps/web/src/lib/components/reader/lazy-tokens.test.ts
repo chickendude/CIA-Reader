@@ -18,6 +18,7 @@ function fakeTokens(n: number): ServerToken[] {
     lemmaId: `lem-${i}`,
     romanization: null,
     glossDefault: null,
+    candidates: [],
     status: 'unknown',
   }));
 }
