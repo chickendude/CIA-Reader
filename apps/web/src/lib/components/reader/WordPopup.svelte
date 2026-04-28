@@ -222,7 +222,9 @@
 
 <svelte:window onkeydown={handleKeydown} />
 
-<Sheet open={true} onClose={onClose} title="">
+<!-- T-5.17: dimmed=false so the reader paragraph remains readable
+     while a word is locked in the panel. -->
+<Sheet open={true} onClose={onClose} title="" dimmed={false}>
   <div data-testid="word-popup">
     <header class="sp-head">
       <h2 class="sp-word">{token.surface}</h2>

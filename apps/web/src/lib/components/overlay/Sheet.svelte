@@ -23,6 +23,11 @@
     width?: number;
     /** Sheet maximum height as a CSS length on <960px (bottom mode). */
     maxHeight?: string;
+    /** When `false`, the backdrop captures clicks (so clicking outside
+     *  still closes the sheet) but stays transparent — no dim, no
+     *  blur. The reader's word side-panel uses this so the surrounding
+     *  paragraph remains readable while a word is locked (T-5.17). */
+    dimmed?: boolean;
     children?: Snippet;
   }
 
@@ -32,6 +37,7 @@
     title = '',
     width = 380,
     maxHeight = '85dvh',
+    dimmed = true,
     children,
   }: Props = $props();
 
@@ -73,6 +79,7 @@
 {#if open}
   <div
     class="sheet-back"
+    class:dimmed
     role="presentation"
     onclick={onBackdropClick}
     onkeydown={onKeydown}
@@ -110,10 +117,18 @@
   .sheet-back {
     position: fixed;
     inset: 0;
-    background: rgba(20, 16, 10, 0.42);
     z-index: 40;
+    /* Default: transparent — only sheets that opt in via dimmed=true
+     * paint the scrim. Click capture works either way. */
+  }
+  .sheet-back.dimmed {
+    background: rgba(20, 16, 10, 0.42);
     backdrop-filter: blur(4px);
   }
+  /* The bottom sheet on narrow viewports occludes the lower part of
+   * the page even when `dimmed=false`. We still want a subtle
+   * separation so the panel doesn't visually blend into the reader.
+   * The sheet's own .sheet shadow handles that. */
   .sheet {
     position: absolute;
     background: var(--paper, var(--color-bg));
