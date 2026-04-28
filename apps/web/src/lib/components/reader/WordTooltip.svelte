@@ -22,6 +22,24 @@
   let tipEl: HTMLDivElement | null = $state(null);
   let measured = $state<{ w: number; h: number } | null>(null);
 
+  // T-5.28: portal to <body>. `position: fixed` sits relative to the
+  // nearest ancestor with `transform`, `backdrop-filter`, `filter`,
+  // or `will-change` (a CSS containing-block gotcha). The reader
+  // wraps tokens in a translateY-driven page slider, and Sheet's
+  // backdrop has `backdrop-filter: blur` — both create new
+  // containing blocks that throw off our viewport-relative
+  // coordinates. Portaling lifts the tooltip out so its `position:
+  // fixed` is genuinely viewport-relative again.
+  function portal(node: HTMLElement) {
+    if (typeof document === 'undefined') return {};
+    document.body.appendChild(node);
+    return {
+      destroy() {
+        if (node.parentNode) node.parentNode.removeChild(node);
+      },
+    };
+  }
+
   // Placement is derived from the anchor + measured dimensions so it
   // re-runs whenever the parent rebinds the tooltip to a new word.
   // Defaults seed the first paint near the word; the $effect below
@@ -49,6 +67,7 @@
   class="tip"
   role="tooltip"
   aria-hidden="false"
+  use:portal
   style:top="{placement.top}px"
   style:left="{placement.left}px"
 >
