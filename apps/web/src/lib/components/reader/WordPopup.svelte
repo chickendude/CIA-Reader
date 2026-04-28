@@ -20,6 +20,7 @@
 <script lang="ts">
   import { untrack } from 'svelte';
   import Sheet from '../overlay/Sheet.svelte';
+  import { customizableOfficialIds } from './customize-eligibility.js';
   import type { ServerToken } from './types.js';
 
   type Provenance =
@@ -33,6 +34,7 @@
     body: string;
     targetLanguage: string;
     sourceAttribution: string | null;
+    parentTranslationId: string | null;
     provenance: Provenance;
   };
 
@@ -154,6 +156,86 @@
   let savingTranslation = $state(false);
   let addError = $state<string | null>(null);
 
+  // ---- Customize-official flow (T-3.11) ---------------------------
+  // Which official translation (id) is currently being forked, if any,
+  // plus the body of the in-progress fork. The eligibility set itself
+  // lives in `customize-eligibility.ts` so the rule is unit-tested
+  // separately from the component.
+  let customizingId = $state<string | null>(null);
+  let customizeBody = $state('');
+  let savingCustomize = $state(false);
+  let customizeError = $state<string | null>(null);
+
+  const customizableIds = $derived(() =>
+    customizableOfficialIds(
+      isOwner,
+      payload?.translations.official ?? [],
+      payload?.translations.personal ?? [],
+    ),
+  );
+
+  function startCustomize(t: PublicTranslation) {
+    customizingId = t.id;
+    customizeBody = t.body;
+    customizeError = null;
+  }
+
+  function cancelCustomize() {
+    customizingId = null;
+    customizeBody = '';
+    customizeError = null;
+  }
+
+  type PostError = { message: string; status: number };
+
+  async function postTranslation(
+    body: string,
+    parentTranslationId: string | null,
+  ): Promise<PublicTranslation> {
+    if (!token.lemmaId) throw new Error('Missing lemma id');
+    const res = await fetch('/api/v1/translations', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        lemmaId: token.lemmaId,
+        body,
+        targetLanguage: 'en',
+        parentTranslationId,
+      }),
+    });
+    if (!res.ok) {
+      // 429 carries a JSON body with a friendly message; everything
+      // else falls through to the raw text + status combo.
+      let message = `POST failed: ${res.status}`;
+      if (res.status === 429) {
+        const errBody = (await res
+          .json()
+          .catch(() => null)) as { message?: string } | null;
+        message =
+          errBody?.message ?? 'Too many translations submitted. Try again later.';
+      } else {
+        const text = await res.text().catch(() => '');
+        if (text) message = text;
+      }
+      const err: PostError = { message, status: res.status };
+      throw err;
+    }
+    const created = (await res.json()) as { translation: PublicTranslation };
+    return created.translation;
+  }
+
+  // T-5.22: re-fetch the lemma payload after a write so the new row
+  // definitely shows. The optimistic prepend was unreliable across
+  // payload-may-be-null states and Svelte 5 $state proxy edge cases,
+  // and would have placed customize-fork rows in the wrong position
+  // anyway (the personal bucket sorts oldest-first server-side).
+  async function refetchPayload(lemmaId: string) {
+    const fresh = await fetch(`/api/v1/lemmas/${lemmaId}/translations`);
+    if (fresh.ok) {
+      payload = (await fresh.json()) as LemmaPayload;
+    }
+  }
+
   async function submitNewTranslation() {
     if (!token.lemmaId) return;
     const trimmed = newTranslationBody.trim();
@@ -165,32 +247,12 @@
     savingTranslation = true;
     addError = null;
     try {
-      const res = await fetch('/api/v1/translations', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          lemmaId,
-          body: trimmed,
-          targetLanguage: 'en',
-        }),
-      });
-      if (!res.ok) {
-        const text = await res.text().catch(() => '');
-        throw new Error(text || `POST failed: ${res.status}`);
-      }
-      // T-5.22: re-fetch the lemma payload so the new row definitely
-      // shows. The optimistic prepend was unreliable — between
-      // payload-may-be-null states and Svelte 5 $state proxy edge
-      // cases, the freshly-saved translation sometimes never
-      // appeared. A single GET on success is small and reliable.
-      const fresh = await fetch(`/api/v1/lemmas/${lemmaId}/translations`);
-      if (fresh.ok) {
-        payload = (await fresh.json()) as LemmaPayload;
-      }
+      await postTranslation(trimmed, null);
+      await refetchPayload(lemmaId);
       newTranslationBody = '';
       showAddForm = false;
     } catch (e) {
-      addError = (e as Error).message;
+      addError = (e as PostError).message ?? (e as Error).message;
     } finally {
       savingTranslation = false;
     }
@@ -211,6 +273,43 @@
       showAddForm = false;
       newTranslationBody = '';
       addError = null;
+    }
+  }
+
+  // Mirror onAddFormKeydown so Enter/Esc on the customize textarea
+  // behaves the same way as on the add-translation textarea.
+  function onCustomizeKeydown(e: KeyboardEvent) {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      void submitCustomize();
+      return;
+    }
+    if (e.key === 'Escape') {
+      e.stopPropagation();
+      e.preventDefault();
+      cancelCustomize();
+    }
+  }
+
+  async function submitCustomize() {
+    if (!customizingId || !token.lemmaId) return;
+    const trimmed = customizeBody.trim();
+    if (trimmed.length === 0) {
+      customizeError = 'Translation cannot be empty.';
+      return;
+    }
+    const lemmaId = token.lemmaId;
+    savingCustomize = true;
+    customizeError = null;
+    try {
+      await postTranslation(trimmed, customizingId);
+      await refetchPayload(lemmaId);
+      customizingId = null;
+      customizeBody = '';
+    } catch (e) {
+      customizeError = (e as PostError).message ?? (e as Error).message;
+    } finally {
+      savingCustomize = false;
     }
   }
 
@@ -311,11 +410,60 @@
           </li>
         {/each}
         {#each payload.translations.official as t (t.id)}
-          <li>
-            <span class="badge tone-{t.provenance.kind}">
-              {t.provenance.attribution ?? t.provenance.kind}
-            </span>
-            {t.body}
+          <li class="official-row">
+            <div class="official-body">
+              <span class="badge tone-{t.provenance.kind}">
+                {t.provenance.attribution ?? t.provenance.kind}
+              </span>
+              {t.body}
+              {#if customizableIds().has(t.id)}
+                <button
+                  type="button"
+                  class="customize-toggle"
+                  data-testid="customize-toggle"
+                  onclick={() => startCustomize(t)}
+                  disabled={customizingId !== null}
+                  title="Fork this translation into a private copy you can edit"
+                >
+                  Customize
+                </button>
+              {/if}
+            </div>
+            {#if customizingId === t.id}
+              <form
+                class="customize-form"
+                data-testid="customize-form"
+                onsubmit={(e) => {
+                  e.preventDefault();
+                  void submitCustomize();
+                }}
+              >
+                <textarea
+                  bind:value={customizeBody}
+                  rows="2"
+                  maxlength="500"
+                  disabled={savingCustomize}
+                  aria-label="Your customized translation"
+                  onkeydown={onCustomizeKeydown}
+                ></textarea>
+                {#if customizeError}
+                  <p class="err small">{customizeError}</p>
+                {/if}
+                <div class="add-row">
+                  <button type="submit" disabled={savingCustomize}>
+                    {savingCustomize ? 'Saving…' : 'Save'}
+                  </button>
+                  <button
+                    type="button"
+                    class="ghost"
+                    disabled={savingCustomize}
+                    onclick={cancelCustomize}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </form>
+            {/if}
           </li>
         {/each}
         {#each payload.translations.community as t (t.id)}
@@ -609,6 +757,61 @@
   .add-row button[disabled] {
     opacity: 0.5;
     cursor: not-allowed;
+  }
+
+  .official-row {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+  }
+  .official-body {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.3rem;
+  }
+  .customize-toggle {
+    margin-left: auto;
+    padding: 0.1rem 0.55rem;
+    background: transparent;
+    border: 1px solid var(--rule, var(--color-border));
+    border-radius: 999px;
+    font: inherit;
+    font-size: 0.7rem;
+    color: var(--ink-3, var(--color-fg-muted));
+    cursor: pointer;
+  }
+  .customize-toggle:hover:not([disabled]) {
+    border-color: var(--accent, var(--color-accent));
+    color: var(--accent-ink, var(--color-accent));
+  }
+  .customize-toggle[disabled] {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+  .customize-form {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    padding: 0.5rem;
+    border: 1px solid var(--rule, var(--color-border));
+    border-radius: 8px;
+    background: color-mix(
+      in oklch,
+      var(--ink, var(--color-fg)) 3%,
+      transparent
+    );
+  }
+  .customize-form textarea {
+    width: 100%;
+    padding: 0.45rem 0.6rem;
+    font: inherit;
+    font-size: 0.85rem;
+    border: 1px solid var(--rule, var(--color-border));
+    border-radius: 6px;
+    background: var(--card, var(--color-bg));
+    color: var(--ink, var(--color-fg));
+    resize: vertical;
   }
 
   .alt-toggle {
