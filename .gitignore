@@ -37,3 +37,9 @@ coverage.lcov
 
 # claude code worktrees / scratch
 .claude/worktrees/
+
+# upstream dictionary dumps fetched by scripts/fetch-dictionary-sources.sh
+# (T-3.10). The repo never carries the raw artifacts — tests use small
+# checked-in fixtures, prod runs the fetch step on demand.
+apps/web/data/dictionaries/*/raw.*
+apps/web/data/dictionaries/*/raw_*

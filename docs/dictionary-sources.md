@@ -19,6 +19,7 @@ and re-imports skip them by design.
 | [Hindi WordNet](http://www.cfilt.iitb.ac.in/wordnet/webhwn/) | CFILT, IIT Bombay | Research use, distributable with attribution | Planned for import — large (~40k synsets) |
 | [Dbnary Hindi-English](http://kaiko.getalp.org/about-dbnary/) | GETALP / Univ. Grenoble Alpes | CC-BY-SA 3.0 | Planned |
 | [Shabdanjali](http://ltrc.iiit.ac.in/onlineServices/Dictionaries/) | LTRC, IIIT Hyderabad | Non-commercial research use | Under review — license may restrict paid-tier use |
+| [Wiktionary Hindi (via Kaikki.org)](https://kaikki.org/dictionary/Hindi/) | Wiktionary contributors | CC-BY-SA 3.0 | **Imported (T-3.10, 2026-04-28)** — fetched via `scripts/fetch-dictionary-sources.sh kaikki-hindi`, runs idempotently against `(language, source, source_id)`; `source_id` is `kaikki:hi:<word>:<pos>:<sha1(joined glosses)>` so a Wiktionary edit creates a fresh row |
 | **CIA Reader Hindi Seed** | CIA Reader | CC0-1.0 | **Imported (T-3.1)** — ~10 public-domain core vocabulary entries, bundled for bootstrapping the import runner |
 
 Coverage: expected to be the best of the three MVP languages after
@@ -52,6 +53,16 @@ community submissions (T-6.3) to fill gaps post-launch.
 
 The Odia dictionary browse page (T-3.6) will carry a visible
 **"coverage: sparse"** notice so users calibrate expectations.
+
+## Cross-source duplication
+
+Multiple sources may ship the same `(language, headword, pos)` triple —
+Hindi WordNet and Kaikki could each define "किताब / NOUN", with different
+glosses and provenance. The schema's `(language, headword, pos)` index
+is **non-unique on purpose** (T-3.10): each source creates its own
+`lemmas` row, and curators reconcile duplicates via the existing T-3.7
+merge UI. Don't try to deduplicate at import time — the import path
+must remain idempotent on `(language, source, source_id)` only.
 
 ## Re-import policy
 

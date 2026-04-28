@@ -1,0 +1,13 @@
+{"word":"पानी","pos":"noun","lang_code":"hi","senses":[{"glosses":["water"]},{"glosses":["rain"]}]}
+{"word":"घर","pos":"noun","lang_code":"hi","senses":[{"glosses":["house"]},{"glosses":["home"]}],"forms":[{"form":"घरों","tags":["plural","oblique"]}]}
+{"word":"बोलना","pos":"verb","lang_code":"hi","senses":[{"glosses":["to speak"]},{"glosses":["to say"]}]}
+{"word":"सोना","pos":"noun","lang_code":"hi","senses":[{"glosses":["gold"]}]}
+{"word":"सोना","pos":"verb","lang_code":"hi","senses":[{"glosses":["to sleep"]}]}
+{"word":"और","pos":"conj","lang_code":"hi","senses":[{"glosses":["and"]}]}
+{"word":"में","pos":"postp","lang_code":"hi","senses":[{"glosses":["in","at","into"]}]}
+{"word":"बेकार","pos":"adj","lang_code":"hi","senses":[{"glosses":["useless"]},{"glosses":["unemployed"]}]}
+{"word":"PHRASE_NOT_LEMMA","pos":"phrase","lang_code":"hi","senses":[{"glosses":["a phrase"]}]}
+not-json-debug-line
+{"word":"empty","pos":"noun","lang_code":"hi","senses":[]}
+{"word":"","pos":"noun","lang_code":"hi","senses":[{"glosses":["empty headword"]}]}
+{"word":"बहुत","pos":"adv","lang_code":"hi","senses":[{"glosses":["very"]}]}
