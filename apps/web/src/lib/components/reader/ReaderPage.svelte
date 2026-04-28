@@ -272,15 +272,16 @@
     }
   }
 
-  /* The "window" is the clipping mask. It's exactly one column wide
-     (max 40rem so reading stays comfortable on big screens), and its
-     overflow:hidden is what hides the off-page columns sitting to its
-     right. The track inside (translateX target) carries the content,
-     and the content's overflow extends past the window horizontally. */
+  /* The "window" is the clipping mask. It fills the remaining width
+     of the reader chrome (the rail is static on desktop, so the
+     reader column already gets a sensible max width from the
+     viewport - rail). Its overflow:hidden is what hides the off-page
+     columns sitting to its right. The track inside (translateX
+     target) carries the content, and the content's overflow extends
+     past the window horizontally. */
   .reader-page-window {
     flex: 1;
     width: 100%;
-    max-width: 40rem;
     height: 100%;
     overflow: hidden;
     position: relative;
