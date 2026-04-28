@@ -270,7 +270,12 @@
   .reader {
     background: var(--paper, var(--color-bg));
     color: var(--ink, var(--color-fg));
-    min-height: 100%;
+    /* Fill the AppShell's content track so page mode can occupy the
+       full vertical space (T-5.23). Children flex-stack vertically:
+       sticky top bar, fluid body, and progress foot. */
+    min-height: 100dvh;
+    display: flex;
+    flex-direction: column;
   }
   .reader-top {
     position: sticky;
