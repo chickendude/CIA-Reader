@@ -11,6 +11,7 @@ type ChainShape = {
   limit: ReturnType<typeof vi.fn>;
   values: ReturnType<typeof vi.fn>;
   onConflictDoUpdate: ReturnType<typeof vi.fn>;
+  onConflictDoNothing: ReturnType<typeof vi.fn>;
   returning: ReturnType<typeof vi.fn>;
 };
 const chain: ChainShape = {
@@ -19,6 +20,10 @@ const chain: ChainShape = {
   limit: vi.fn(() => rows),
   values: vi.fn(() => chain),
   onConflictDoUpdate: vi.fn(() => chain),
+  // The user_known_lemmas seed insert is a fire-and-forget upsert;
+  // returning the chain keeps the mock awaitable when the
+  // implementation `await`s the chain.
+  onConflictDoNothing: vi.fn(() => Promise.resolve(undefined)),
   returning: vi.fn(() => rows),
 };
 const fakeDb = {
@@ -34,6 +39,10 @@ vi.mock('./db/index.js', () => ({
     tokenCorrections: {
       userId: 'tc.user_id',
       tokenId: 'tc.token_id',
+    },
+    userKnownLemmas: {
+      userId: 'ukl.user_id',
+      lemmaId: 'ukl.lemma_id',
     },
   },
 }));
@@ -57,7 +66,7 @@ describe('writeTokenCorrection', () => {
     chain.limit.mockReturnValueOnce([{ id: 'tok-1' }]);
     // Second select: lemma lookup → present.
     chain.limit.mockReturnValueOnce([{ id: 'lem-2' }]);
-    // returning() resolves the upsert.
+    // returning() resolves the upsert on token_corrections.
     chain.returning.mockReturnValueOnce([
       {
         userId: 'u1',
@@ -73,7 +82,8 @@ describe('writeTokenCorrection', () => {
       chosenLemmaId: 'lem-2',
     });
     expect(row.chosenLemmaId).toBe('lem-2');
-    expect(fakeDb.insert).toHaveBeenCalledOnce();
+    // Two inserts: token_corrections + user_known_lemmas seed (T-6.4).
+    expect(fakeDb.insert).toHaveBeenCalledTimes(2);
   });
 
   it('rejects pick_candidate without a chosenLemmaId', async () => {
@@ -141,6 +151,37 @@ describe('writeTokenCorrection', () => {
     expect(row.chosenLemmaId).toBeNull();
     const insertArg = chain.values.mock.calls[0]?.[0] as Record<string, unknown>;
     expect(insertArg.chosenLemmaId).toBeNull();
+    // T-6.4: mark_* corrections must NOT seed a user_known_lemmas
+    // row — there's no chosen lemma to seed against.
+    expect(chain.onConflictDoNothing).not.toHaveBeenCalled();
+  });
+
+  it('seeds a user_known_lemmas row on pick_candidate (T-6.4)', async () => {
+    chain.limit
+      .mockReturnValueOnce([{ id: 'tok-1' }])
+      .mockReturnValueOnce([{ id: 'lem-2' }]);
+    chain.returning.mockReturnValueOnce([
+      {
+        userId: 'u1',
+        tokenId: 'tok-1',
+        type: 'pick_candidate',
+        chosenLemmaId: 'lem-2',
+      },
+    ]);
+    await writeTokenCorrection({
+      userId: 'u1',
+      tokenId: 'tok-1',
+      type: 'pick_candidate',
+      chosenLemmaId: 'lem-2',
+    });
+    // Two inserts: token_corrections upsert + user_known_lemmas
+    // seed (do-nothing on conflict).
+    expect(fakeDb.insert).toHaveBeenCalledTimes(2);
+    expect(chain.onConflictDoNothing).toHaveBeenCalledOnce();
+    const seedArg = chain.values.mock.calls[1]?.[0] as Record<string, unknown>;
+    expect(seedArg.userId).toBe('u1');
+    expect(seedArg.lemmaId).toBe('lem-2');
+    expect(seedArg.status).toBe('learning');
   });
 });
 

@@ -118,6 +118,31 @@ export async function writeTokenCorrection(
     })
     .returning();
   if (!row) throw new Error('upsert returned no row');
+
+  // T-6.4: corrections are lemma-scoped. When the user picks a
+  // lemma we ensure they have a user_known_lemmas row so the next
+  // page renders the corrected token with a real status code (and
+  // so the user can mark it in the popup). We seed `learning` —
+  // they showed enough engagement to fix the parse, so they're at
+  // least studying it. Already-existing rows (e.g. they marked it
+  // known on a different text) are left untouched.
+  if (input.chosenLemmaId && requiresLemma) {
+    await db
+      .insert(schema.userKnownLemmas)
+      .values({
+        userId: input.userId,
+        lemmaId: input.chosenLemmaId,
+        status: 'learning',
+        updatedAt: now,
+      })
+      .onConflictDoNothing({
+        target: [
+          schema.userKnownLemmas.userId,
+          schema.userKnownLemmas.lemmaId,
+        ],
+      });
+  }
+
   return row;
 }
 
