@@ -19,7 +19,7 @@
 
   let { token, anchorRect }: Props = $props();
 
-  let tipEl = $state<HTMLDivElement | null>(null);
+  let tipEl: HTMLDivElement | null = $state(null);
   let measured = $state<{ w: number; h: number } | null>(null);
 
   // Placement is derived from the anchor + measured dimensions so it
@@ -62,6 +62,8 @@
     <div class="tip-def muted">No dictionary match</div>
   {:else if !token.lemmaId}
     <div class="tip-def muted">Click to look up</div>
+  {:else if token.glossDefault}
+    <div class="tip-def">{token.glossDefault}</div>
   {:else}
     <div class="tip-def muted">Click to see translations</div>
   {/if}
@@ -100,6 +102,18 @@
     font-size: 0.7rem;
     color: color-mix(in oklch, var(--paper, #fdfaf3) 70%, transparent);
     flex-shrink: 0;
+  }
+  .tip-def {
+    color: color-mix(in oklch, var(--paper, #fdfaf3) 88%, transparent);
+    font-size: 0.78rem;
+    line-height: 1.35;
+    /* Long glosses (e.g. multi-meaning lemmas) get clamped to two
+     * lines — the side panel still shows the full text on click. */
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
   }
   .tip-def.muted {
     color: color-mix(in oklch, var(--paper, #fdfaf3) 65%, transparent);

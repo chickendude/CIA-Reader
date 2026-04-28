@@ -25,6 +25,11 @@ export type RenderedToken = {
   isOov: boolean;
   lemmaId: string | null;
   romanization: string | null;
+  /** Canonical short gloss for the lemma — surfaced in the hover
+   *  tooltip (T-5.18) so a reader can scan a paragraph without
+   *  locking the side panel. Null when the lemma has no glossDefault
+   *  on file, or when the token has no lemma id (whitespace, OOV). */
+  glossDefault: string | null;
   status: 'known' | 'learning' | 'ignored' | 'unknown';
 };
 
@@ -73,6 +78,26 @@ export async function loadChapterTokens(
     }
   }
 
+  // T-5.18: pull each lemma's `glossDefault` so the hover tooltip can
+  // surface a brief definition without a per-hover fetch. Cheap — a
+  // single SELECT against an indexed primary key.
+  const glossByLemma = new Map<string, string | null>();
+  if (lemmaIds.length > 0) {
+    const lemmaRows = (await db
+      .select({
+        id: schema.lemmas.id,
+        glossDefault: schema.lemmas.glossDefault,
+      })
+      .from(schema.lemmas)
+      .where(inArray(schema.lemmas.id, lemmaIds))) as Array<{
+      id: string;
+      glossDefault: string | null;
+    }>;
+    for (const r of lemmaRows) {
+      glossByLemma.set(r.id, r.glossDefault);
+    }
+  }
+
   return tokens.map((t) => {
     const status: RenderedToken['status'] =
       t.lemmaId && statusByLemma.has(t.lemmaId)
@@ -87,6 +112,7 @@ export async function loadChapterTokens(
       isOov: t.isOov,
       lemmaId: t.lemmaId,
       romanization: t.romanization,
+      glossDefault: t.lemmaId ? glossByLemma.get(t.lemmaId) ?? null : null,
       status,
     };
   });
