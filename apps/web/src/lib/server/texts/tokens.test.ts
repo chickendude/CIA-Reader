@@ -36,6 +36,10 @@ vi.mock('../db/index.js', () => ({
       lemmaId: 'user_known_lemmas.lemma_id',
       status: 'user_known_lemmas.status',
     },
+    lemmas: {
+      id: 'lemmas.id',
+      glossDefault: 'lemmas.gloss_default',
+    },
   },
 }));
 
@@ -79,6 +83,7 @@ describe('loadChapterTokens', () => {
   it('returns tokens with status=unknown when the viewer has no known-lemma rows', async () => {
     stage([tokenRow({ id: 't1', idx: 0 }), tokenRow({ id: 't2', idx: 1 })]);
     stage([]); // user_known_lemmas → empty
+    stage([]); // lemmas (gloss lookup) → empty
     const result = await loadChapterTokens('chap-1', 'user-1');
     expect(result).not.toBeNull();
     expect(result!.every((t) => t.status === 'unknown')).toBe(true);
@@ -94,6 +99,7 @@ describe('loadChapterTokens', () => {
       { userId: 'user-1', lemmaId: 'lem-known', status: 'known' },
       { userId: 'user-1', lemmaId: 'lem-learning', status: 'learning' },
     ]);
+    stage([]); // lemmas (gloss lookup) — none on file for these lemmas
     const result = await loadChapterTokens('chap-1', 'user-1');
     expect(result).toEqual([
       expect.objectContaining({ id: 't1', status: 'known' }),
@@ -102,13 +108,34 @@ describe('loadChapterTokens', () => {
     ]);
   });
 
-  it('handles anonymous viewers (no second SELECT, every status=unknown)', async () => {
+  it('attaches glossDefault from the lemmas table for the hover tooltip (T-5.18)', async () => {
+    stage([
+      tokenRow({ id: 't1', idx: 0, lemmaId: 'lem-a' }),
+      tokenRow({ id: 't2', idx: 1, lemmaId: 'lem-b' }),
+      tokenRow({ id: 't3', idx: 2, lemmaId: null, isWord: false, surface: ' ' }),
+    ]);
+    stage([]); // user_known_lemmas
+    stage([
+      { id: 'lem-a', glossDefault: 'morning' },
+      { id: 'lem-b', glossDefault: null },
+    ]);
+    const result = await loadChapterTokens('chap-1', 'user-1');
+    expect(result![0]).toMatchObject({ id: 't1', glossDefault: 'morning' });
+    // Lemma row exists but the gloss column is null — should pass through.
+    expect(result![1]).toMatchObject({ id: 't2', glossDefault: null });
+    // Whitespace token has no lemma id; glossDefault defaults to null.
+    expect(result![2]).toMatchObject({ id: 't3', glossDefault: null });
+  });
+
+  it('handles anonymous viewers (no user_known_lemmas SELECT, every status=unknown)', async () => {
     stage([tokenRow({ id: 't1', idx: 0 })]);
+    stage([]); // lemmas (gloss lookup) — only this second SELECT runs
     const result = await loadChapterTokens('chap-1', null);
     expect(result).not.toBeNull();
     expect(result![0]!.status).toBe('unknown');
-    // Only ONE SELECT — the user_known_lemmas query was skipped.
-    expect(selectFn).toHaveBeenCalledTimes(1);
+    // Two SELECTs total — the user_known_lemmas query was skipped, but
+    // the lemmas-for-gloss query still runs.
+    expect(selectFn).toHaveBeenCalledTimes(2);
   });
 });
 

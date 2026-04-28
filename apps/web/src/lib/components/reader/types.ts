@@ -19,6 +19,9 @@ export type ServerToken = {
   isOov: boolean;
   lemmaId: string | null;
   romanization: string | null;
+  /** Canonical short gloss for the lemma — surfaced in the hover
+   *  tooltip (T-5.18). Null when there's no lemma or no gloss yet. */
+  glossDefault: string | null;
   status: 'known' | 'learning' | 'ignored' | 'unknown';
 };
 
