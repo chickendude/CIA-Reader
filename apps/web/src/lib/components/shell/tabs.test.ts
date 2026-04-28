@@ -92,14 +92,22 @@ describe('groupTabsBySection', () => {
     expect(read!.tabs.map((t) => t.id)).toEqual(['library', 'upload']);
   });
 
+  it("groups Words under 'Track' (T-10.6)", () => {
+    const groups = groupTabsBySection(visibleTabs(TABS, true));
+    const track = groups.find((g) => g.section === 'Track');
+    expect(track).toBeDefined();
+    expect(track!.tabs.map((t) => t.id)).toEqual(['words']);
+  });
+
   it("groups Profile under 'You'", () => {
     const groups = groupTabsBySection(visibleTabs(TABS, true));
     const you = groups.find((g) => g.section === 'You');
     expect(you!.tabs.map((t) => t.id)).toEqual(['profile']);
   });
 
-  it('skips empty sections so signed-out users do not see a stray You header', () => {
+  it('skips empty sections so signed-out users do not see a stray Track / You header', () => {
     const groups = groupTabsBySection(visibleTabs(TABS, false));
+    expect(groups.find((g) => g.section === 'Track')).toBeUndefined();
     expect(groups.find((g) => g.section === 'You')).toBeUndefined();
   });
 
