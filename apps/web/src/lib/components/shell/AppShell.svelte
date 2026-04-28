@@ -81,12 +81,15 @@
   };
 </script>
 
-<!-- T-5.26: hamburger button toggles the rail / shell chrome.
-     Positioned fixed so it stays clickable when the rail itself is
-     hidden — clicking it again brings the chrome back. -->
+<!-- T-5.26: chevron toggles the rail / shell chrome. Positioned fixed
+     so it stays clickable in both states — sits flush against the
+     rail's inner-right edge when expanded (chevron points left, "tuck
+     it in"), and snaps to the viewport's left edge when collapsed
+     (chevron points right, "pull it out"). -->
 <button
   type="button"
   class="rail-toggle"
+  data-collapsed={collapsed ? '1' : '0'}
   aria-label={collapsed ? 'Show navigation' : 'Hide navigation'}
   aria-pressed={collapsed}
   title={collapsed ? 'Show navigation' : 'Hide navigation'}
@@ -94,17 +97,20 @@
 >
   <svg
     viewBox="0 0 24 24"
-    width="16"
-    height="16"
+    width="14"
+    height="14"
     fill="none"
     stroke="currentColor"
-    stroke-width="1.6"
+    stroke-width="2"
     stroke-linecap="round"
+    stroke-linejoin="round"
     aria-hidden="true"
   >
-    <path d="M4 7h16" />
-    <path d="M4 12h16" />
-    <path d="M4 17h16" />
+    {#if collapsed}
+      <path d="M9 6l6 6-6 6" />
+    {:else}
+      <path d="M15 6l-6 6 6 6" />
+    {/if}
   </svg>
 </button>
 
@@ -463,29 +469,46 @@
     height: 18px;
   }
 
-  /* —— Hamburger / rail-toggle button (T-5.26) ————————————————
-   * Fixed top-left so it's clickable both when the rail is showing
-   * (sits flush against the rail's left edge) and when the rail has
-   * been collapsed (only thing left to click). High z-index so it
-   * floats over everything except the word side-panel sheet. */
+  /* —— Chevron / rail-toggle button (T-5.26) ————————————————
+   * Fixed-position so it stays clickable in both states. When the
+   * rail is open it sits flush inside the rail's right border (chevron
+   * points left, "collapse"); when the rail is hidden it snaps to the
+   * viewport's left edge (chevron points right, "expand"). High
+   * z-index so it floats over everything except the word side-panel.
+   *
+   * Mobile (<960px) doesn't have a rail to toggle into — keep the
+   * button at the top-left as a simple immersive-toggle there. */
   .rail-toggle {
     position: fixed;
-    top: 0.6rem;
-    left: 0.6rem;
-    width: 32px;
-    height: 32px;
+    top: 50%;
+    left: 0;
+    width: 22px;
+    height: 44px;
     display: grid;
     place-items: center;
-    border-radius: 8px;
+    border-radius: 0 8px 8px 0;
     background: var(--card, var(--color-bg));
     border: 1px solid var(--card-edge, var(--color-border));
-    color: var(--ink-2, var(--color-fg-muted));
+    border-left: 0;
+    color: var(--ink-3, var(--color-fg-muted));
     cursor: pointer;
     z-index: 30;
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.06);
+    box-shadow: 2px 0 8px rgba(0, 0, 0, 0.08);
+    transform: translateY(-50%);
     transition:
+      left 200ms cubic-bezier(0.2, 0, 0, 1),
       background 150ms ease,
       color 150ms ease;
+  }
+  /* Expanded: dock against the rail's right border (rail is 232px). */
+  @media (min-width: 960px) {
+    .rail-toggle[data-collapsed='0'] {
+      left: calc(232px - 22px);
+      border-radius: 8px 0 0 8px;
+      border-left: 1px solid var(--card-edge, var(--color-border));
+      border-right: 0;
+      box-shadow: -2px 0 8px rgba(0, 0, 0, 0.08);
+    }
   }
   .rail-toggle:hover {
     background: var(--accent-soft, var(--color-accent));

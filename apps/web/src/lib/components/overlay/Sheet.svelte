@@ -13,6 +13,7 @@
 <script lang="ts">
   import type { Snippet } from 'svelte';
   import { activateFocusTrap, type FocusTrap } from './focus-trap.js';
+  import { portal } from './portal.js';
   import { lockScroll } from './scroll-lock.js';
 
   interface Props {
@@ -78,6 +79,7 @@
 
 {#if open}
   <div
+    use:portal
     class="sheet-back"
     class:dimmed
     role="presentation"

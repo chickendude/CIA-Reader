@@ -21,34 +21,56 @@ afterEach(() => {
 
 describe('Sheet — dimmed prop (T-5.17)', () => {
   it('paints a dimmed scrim by default', () => {
-    const { container } = render(Sheet, { open: true, onClose: () => {} });
-    const back = container.querySelector('.sheet-back');
+    render(Sheet, { open: true, onClose: () => {} });
+    const back = document.body.querySelector('.sheet-back');
     expect(back).not.toBeNull();
     expect(back!.classList.contains('dimmed')).toBe(true);
   });
 
   it('omits the .dimmed class when dimmed={false} so the reader text stays readable', () => {
-    const { container } = render(Sheet, {
+    render(Sheet, {
       open: true,
       onClose: () => {},
       dimmed: false,
     });
-    const back = container.querySelector('.sheet-back');
+    const back = document.body.querySelector('.sheet-back');
     expect(back).not.toBeNull();
     expect(back!.classList.contains('dimmed')).toBe(false);
   });
 
   it('keeps the backdrop element so click-outside-to-close still works when dimmed=false', async () => {
     let closed = 0;
-    const { container } = render(Sheet, {
+    render(Sheet, {
       open: true,
       dimmed: false,
       onClose: () => {
         closed += 1;
       },
     });
-    const back = container.querySelector('.sheet-back') as HTMLElement;
+    const back = document.body.querySelector('.sheet-back') as HTMLElement;
     await fireEvent.click(back);
     expect(closed).toBe(1);
+  });
+});
+
+describe('Sheet — portal (T-5.28)', () => {
+  // The reader's page-mode content uses `transform` for the page-flip
+  // slide, which creates a containing block for fixed-positioned
+  // descendants. Without portaling, the sheet's backdrop would inherit
+  // that translated, max-width-capped column instead of spanning the
+  // viewport. Lock that the backdrop ends up directly under <body>.
+  it('portals the backdrop to <body> so it escapes ancestor containing blocks', () => {
+    const { container } = render(Sheet, { open: true, onClose: () => {} });
+    expect(container.querySelector('.sheet-back')).toBeNull();
+    const back = document.body.querySelector('.sheet-back');
+    expect(back).not.toBeNull();
+    expect(back!.parentElement).toBe(document.body);
+  });
+
+  it('removes the portaled backdrop when the sheet unmounts', () => {
+    const { unmount } = render(Sheet, { open: true, onClose: () => {} });
+    expect(document.body.querySelector('.sheet-back')).not.toBeNull();
+    unmount();
+    expect(document.body.querySelector('.sheet-back')).toBeNull();
   });
 });

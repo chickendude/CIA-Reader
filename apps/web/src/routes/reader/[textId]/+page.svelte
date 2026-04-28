@@ -179,7 +179,7 @@
   <title>{data.text.title} — CIA Reader</title>
 </svelte:head>
 
-<div class="reader">
+<div class="reader" data-mode={data.mode}>
   <header class="reader-top">
     <a class="reader-close" href="/library" aria-label="Close reader" title="Close reader">
       <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true">
@@ -281,6 +281,16 @@
     min-height: 100dvh;
     display: flex;
     flex-direction: column;
+  }
+  /* Page mode is meant to behave like a book — no vertical scroll;
+     overflow stays inside the viewport, page arrows step through it.
+     Hard-cap the height so the inner flex chain (.reader-page-wrap →
+     .reader-page-viewport with overflow:hidden) actually constrains
+     the content, instead of letting min-height grow with it. */
+  .reader[data-mode='page'] {
+    height: 100dvh;
+    min-height: 0;
+    overflow: hidden;
   }
   .reader-top {
     position: sticky;
