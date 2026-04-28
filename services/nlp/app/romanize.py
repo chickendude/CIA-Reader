@@ -213,7 +213,16 @@ def _hindi_schwa_delete(devanagari: str) -> str:
         devanagari,
         pre_options=["RemoveSchwaHindi"],
     )
-    return _patch_nukta_final_virama(out)
+    # aksharamukha recomposes nukta-bearing consonants back into the
+    # precomposed atomic codepoints in U+0958-U+095F (क़ख़ग़ज़ड़ढ़फ़य़) and
+    # U+0931 (ऱ). sanscript's Devanagari→ISO table only knows the
+    # decomposed form (base + U+093C nukta), so a recomposed ढ़ comes
+    # back as the literal Devanagari character with no romanization
+    # ("paढ़ēṁ" instead of "paṛhēṁ" for पढ़ें). NFD restores the
+    # decomposed form — these codepoints are on Unicode's composition-
+    # exclusion list, so NFD will leave them as base + nukta and NFC
+    # won't recompose them (they round-trip safely).
+    return unicodedata.normalize("NFD", _patch_nukta_final_virama(out))
 
 
 # Hindi merges the ISO 15919 ē/ō length distinction into a single
