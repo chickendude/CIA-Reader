@@ -22,7 +22,7 @@
  *                     lands. Hidden rows excluded for anonymous + non-
  *                     curator viewers.
  */
-import { and, eq } from 'drizzle-orm';
+import { and, eq, ne } from 'drizzle-orm';
 
 import { db, schema } from '../db/index.js';
 import type { Lemma, Translation, User } from '../db/schema.js';
@@ -217,7 +217,7 @@ export async function getLemmaTranslations(
     .limit(1);
   if (!lemma) throw new LemmaNotFoundError(lemmaId);
 
-  const rows = await db
+  const primaryRows = await db
     .select()
     .from(schema.translations)
     .where(
@@ -230,8 +230,37 @@ export async function getLemmaTranslations(
       ),
     );
 
+  // T-3.14: when the directly-linked lemma has no translations of its
+  // own, fall back to sibling lemmas (same language + same headword,
+  // any POS). This matters because the NLP pipeline frequently tags a
+  // word with a context-dependent POS — "पार्क" inside "ग्लेशियर नेशनल पार्क"
+  // gets PROPN — while the dictionary entry that ships the gloss is
+  // under a different POS (NOUN). The user clicked the token expecting
+  // its meaning, not a metadata lecture about how the parser tagged
+  // it. Only triggered on empty primaries so the cost is paid exactly
+  // when it would otherwise be a dead-end click.
+  const lemmaTyped = lemma as Lemma;
+  let rows: Translation[] = primaryRows as Translation[];
+  if (rows.length === 0) {
+    const joined = await db
+      .select({ translation: schema.translations })
+      .from(schema.translations)
+      .innerJoin(
+        schema.lemmas,
+        eq(schema.translations.lemmaId, schema.lemmas.id),
+      )
+      .where(
+        and(
+          eq(schema.lemmas.language, lemmaTyped.language),
+          eq(schema.lemmas.headword, lemmaTyped.headword),
+          ne(schema.lemmas.id, lemmaId),
+        ),
+      );
+    rows = joined.map((r) => r.translation as Translation);
+  }
+
   return {
-    lemma: toPublicLemma(lemma as Lemma),
-    translations: bucketTranslations(rows as Translation[], viewer),
+    lemma: toPublicLemma(lemmaTyped),
+    translations: bucketTranslations(rows, viewer),
   };
 }
