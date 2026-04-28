@@ -92,7 +92,7 @@ describe('root +layout.server.ts load', () => {
       }),
     );
     if (!data) throw new Error('load returned void');
-    expect(data.availableLanguages.map((l) => l.code)).toEqual(['hi', 'mr']);
+    expect(data.availableLanguages.map((l: { code: string }) => l.code)).toEqual(['hi', 'mr']);
     expect(data.currentLanguage).toBe('mr');
   });
 
