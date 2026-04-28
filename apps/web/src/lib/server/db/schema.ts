@@ -295,6 +295,13 @@ export const translations = pgTable(
     sourceAttribution: text('source_attribution'),
     sourceId: text('source_id'),
     hidden: boolean('hidden').notNull().default(false),
+    // Curator-set display order within a translation bucket (T-3.13).
+    // NULL = use the bucket's default tiebreaker (curator > imported,
+    // then createdAt). When non-null, smaller ranks sort earlier within
+    // the same bucket. Stored on every row even though most stay NULL —
+    // a separate ordering table would force a join on every read of the
+    // reader pop-up's translations payload.
+    displayRank: integer('display_rank'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
@@ -386,6 +393,11 @@ export const lemmaEditChangeType = pgEnum('lemma_edit_change_type', [
   // moved (for split), so a revert has enough information to reconstruct.
   'lemma_merge',
   'lemma_split',
+  // T-3.13: a curator reordered the translations on a lemma. `change`
+  // carries `before: {translationId, displayRank}[]` and the
+  // corresponding `after` snapshot so the audit can reconstruct either
+  // state.
+  'translation_reorder',
 ]);
 
 export const lemmaEditHistory = pgTable(
@@ -451,6 +463,11 @@ export type LemmaEditChangePayload = {
   bulkImportRow?: number;
   bulkPromote?: boolean;
   bulkAttribution?: boolean;
+  // T-3.13: ordered snapshots of `(translationId, displayRank)` before
+  // and after a `translation_reorder`. Stored as parallel arrays so the
+  // history viewer can render either side as a list.
+  translationOrderBefore?: Array<{ translationId: string; displayRank: number | null }>;
+  translationOrderAfter?: Array<{ translationId: string; displayRank: number | null }>;
 };
 
 /**

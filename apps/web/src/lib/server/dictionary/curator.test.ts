@@ -121,6 +121,7 @@ const {
   CuratorValidationError,
   getLemmaEditorView,
   mergeLemmas,
+  reorderTranslations,
   setLemmaLock,
   setTranslationHidden,
   splitLemma,
@@ -164,6 +165,7 @@ function translationRow(overrides: Record<string, unknown> = {}) {
     sourceAttribution: null,
     sourceId: null,
     hidden: false,
+    displayRank: null,
     createdAt: new Date(),
     updatedAt: new Date(),
     ...overrides,
@@ -566,5 +568,116 @@ describe('getLemmaEditorView', () => {
     await expect(
       getLemmaEditorView({ id: 'c1', role: 'curator' }, 'lemma-1'),
     ).rejects.toBeInstanceOf(ForbiddenError);
+  });
+});
+
+// -----------------------------------------------------------------------
+// reorderTranslations (T-3.13)
+// -----------------------------------------------------------------------
+
+describe('reorderTranslations', () => {
+  it('rejects an empty reason', async () => {
+    await expect(
+      reorderTranslations(ADMIN, 'lemma-1', ['tr-1', 'tr-2'], '  '),
+    ).rejects.toBeInstanceOf(MissingReasonError);
+  });
+
+  it('rejects an empty order list', async () => {
+    await expect(
+      reorderTranslations(ADMIN, 'lemma-1', [], 'pinning curated meanings up top'),
+    ).rejects.toBeInstanceOf(CuratorValidationError);
+  });
+
+  it('rejects a duplicate id in the order', async () => {
+    await expect(
+      reorderTranslations(
+        ADMIN,
+        'lemma-1',
+        ['tr-1', 'tr-1'],
+        'pinning curated meanings up top',
+      ),
+    ).rejects.toBeInstanceOf(CuratorValidationError);
+  });
+
+  it('rejects a non-curator non-admin', async () => {
+    stage([lemmaRow()]); // loadLemma
+    stage([]); // permission check: no curator_languages row
+    await expect(
+      reorderTranslations(
+        { id: 'plain', role: 'user' },
+        'lemma-1',
+        ['tr-1', 'tr-2'],
+        'pinning curated meanings up top',
+      ),
+    ).rejects.toBeInstanceOf(ForbiddenError);
+  });
+
+  it('rejects when the order count does not match the lemma translations', async () => {
+    stage([lemmaRow()]); // loadLemma
+    stage([translationRow({ id: 'tr-1' }), translationRow({ id: 'tr-2' })]); // existing
+    await expect(
+      reorderTranslations(
+        ADMIN,
+        'lemma-1',
+        ['tr-1'], // missing tr-2
+        'partial reorder',
+      ),
+    ).rejects.toMatchObject({ status: 409 });
+  });
+
+  it('rejects an order containing an unknown translation id', async () => {
+    stage([lemmaRow()]); // loadLemma
+    stage([translationRow({ id: 'tr-1' }), translationRow({ id: 'tr-2' })]); // existing
+    await expect(
+      reorderTranslations(
+        ADMIN,
+        'lemma-1',
+        ['tr-1', 'tr-99'],
+        'order references unknown id',
+      ),
+    ).rejects.toMatchObject({ status: 404 });
+  });
+
+  it('writes display_rank by index, audits with translation_reorder, and returns the new order', async () => {
+    stage([lemmaRow()]); // loadLemma
+    stage([
+      translationRow({ id: 'tr-2', body: 'second' }),
+      translationRow({ id: 'tr-1', body: 'first' }),
+    ]); // existing — reverse of desired order
+    stage([{ id: 'hist-1' }]); // audit insert
+
+    const result = await reorderTranslations(
+      ADMIN,
+      'lemma-1',
+      ['tr-1', 'tr-2'],
+      'Pinning the more idiomatic gloss first',
+    );
+
+    // Two updates, one per translation, each carrying the right rank.
+    const updateCalls = calls.filter(
+      (c): c is Extract<Call, { kind: 'update' }> => c.kind === 'update',
+    );
+    expect(updateCalls).toHaveLength(2);
+    expect((updateCalls[0]!.set as { displayRank?: number }).displayRank).toBe(0);
+    expect((updateCalls[1]!.set as { displayRank?: number }).displayRank).toBe(1);
+
+    // Returned rows in the new order with the assigned ranks.
+    expect(result.map((t) => t.id)).toEqual(['tr-1', 'tr-2']);
+    expect(result.map((t) => t.displayRank)).toEqual([0, 1]);
+
+    // Single audit insert with the reorder discriminator + before/after.
+    const audit = calls.find(
+      (c): c is Extract<Call, { kind: 'insert' }> =>
+        c.kind === 'insert' &&
+        (c.values as { changeType?: string } | undefined)?.changeType ===
+          'translation_reorder',
+    );
+    expect(audit).toBeDefined();
+    const change = (audit?.values as { change?: { translationOrderBefore?: unknown[]; translationOrderAfter?: unknown[] } } | undefined)?.change;
+    expect(change?.translationOrderBefore).toHaveLength(2);
+    expect(change?.translationOrderAfter).toEqual([
+      { translationId: 'tr-1', displayRank: 0 },
+      { translationId: 'tr-2', displayRank: 1 },
+    ]);
   });
 });

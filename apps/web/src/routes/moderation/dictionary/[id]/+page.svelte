@@ -34,6 +34,28 @@
       message: form.ok ? 'Saved.' : form.message,
     };
   }
+
+  // T-3.13: per-section reorder reason. Curators type once and the
+  // value is reused for every up/down click in the section. Required
+  // because the audit pipeline rejects empty reasons.
+  let reorderReason = $state('');
+  const canReorder = $derived(reorderReason.trim().length >= 3);
+
+  // Build the comma-separated orderedTranslationIds for swapping rows
+  // (i, j). Returns the unswapped order if either index is out of
+  // range — the corresponding button is disabled in that case anyway,
+  // so the form value doesn't matter; the type-safe path keeps Svelte
+  // happy.
+  function swappedOrder(translations: Array<{ id: string }>, i: number, j: number): string {
+    const ids = translations.map((t) => t.id);
+    if (i < 0 || j < 0 || i >= ids.length || j >= ids.length) {
+      return ids.join(',');
+    }
+    const tmp = ids[i] as string;
+    ids[i] = ids[j] as string;
+    ids[j] = tmp;
+    return ids.join(',');
+  }
 </script>
 
 <svelte:head>
@@ -120,16 +142,63 @@
   <!-- Translations ------------------------------------------------------ -->
   <section>
     <h2>Translations ({data.translations.length})</h2>
+    {#if msgFor('reorder')}
+      <p class:ok={form?.ok} class:err={!form?.ok}>{msgFor('reorder')}</p>
+    {/if}
     {#if data.translations.length === 0}
       <p class="muted">No translations.</p>
     {:else}
+      {#if data.translations.length > 1}
+        <label class="reorder-reason">
+          Reorder reason
+          <input
+            type="text"
+            bind:value={reorderReason}
+            placeholder="Required to use the ↑ / ↓ buttons (≥ 3 chars)"
+          />
+        </label>
+      {/if}
       <ul class="translations">
-        {#each data.translations as t (t.id)}
+        {#each data.translations as t, i (t.id)}
           <li>
             <div class="meta">
               <ProvenanceBadge provenance={t.provenance} />
               <span class="muted">{t.targetLanguage}</span>
               {#if t.hidden}<span class="tag warn">hidden</span>{/if}
+              {#if data.translations.length > 1}
+                <span class="reorder-buttons">
+                  <form method="post" action="?/reorderTranslations" use:enhance>
+                    <input
+                      type="hidden"
+                      name="orderedTranslationIds"
+                      value={swappedOrder(data.translations, i, i - 1)}
+                    />
+                    <input type="hidden" name="reason" value={reorderReason} />
+                    <button
+                      type="submit"
+                      class="arrow"
+                      aria-label="Move up"
+                      disabled={i === 0 || !canReorder}
+                      title={canReorder ? 'Move up' : 'Type a reorder reason first'}
+                    >↑</button>
+                  </form>
+                  <form method="post" action="?/reorderTranslations" use:enhance>
+                    <input
+                      type="hidden"
+                      name="orderedTranslationIds"
+                      value={swappedOrder(data.translations, i, i + 1)}
+                    />
+                    <input type="hidden" name="reason" value={reorderReason} />
+                    <button
+                      type="submit"
+                      class="arrow"
+                      aria-label="Move down"
+                      disabled={i === data.translations.length - 1 || !canReorder}
+                      title={canReorder ? 'Move down' : 'Type a reorder reason first'}
+                    >↓</button>
+                  </form>
+                </span>
+              {/if}
             </div>
             {#if translationMsg(t.id)}
               {@const tm = translationMsg(t.id)!}
@@ -390,6 +459,39 @@
     gap: 0.5rem;
     align-items: center;
     margin-bottom: 0.5rem;
+  }
+  .reorder-reason {
+    display: block;
+    margin-bottom: 0.75rem;
+    font-size: 0.85rem;
+  }
+  .reorder-buttons {
+    display: inline-flex;
+    gap: 0.2rem;
+    margin-left: auto;
+  }
+  .reorder-buttons form {
+    display: inline;
+    margin: 0;
+  }
+  .arrow {
+    min-height: 0;
+    min-width: 1.8rem;
+    padding: 0.1rem 0.4rem;
+    background: transparent;
+    color: var(--color-fg);
+    border: 1px solid var(--color-border);
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    line-height: 1;
+  }
+  .arrow:hover:not([disabled]) {
+    background: var(--color-border);
+  }
+  .arrow[disabled] {
+    opacity: 0.35;
+    cursor: not-allowed;
   }
   .history {
     list-style: none;
