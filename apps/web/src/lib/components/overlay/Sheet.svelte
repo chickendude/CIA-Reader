@@ -15,6 +15,7 @@
   import { activateFocusTrap, type FocusTrap } from './focus-trap.js';
   import { portal } from './portal.js';
   import { lockScroll } from './scroll-lock.js';
+  import { attachKeyboardInsetTracker } from '$lib/components/reader/keyboard-inset.js';
 
   interface Props {
     open: boolean;
@@ -45,6 +46,10 @@
   let panelEl: HTMLDivElement | null = $state(null);
   let trap: FocusTrap | null = null;
   let releaseScroll: (() => void) | null = null;
+  // T-5.1c: track soft-keyboard inset so the bottom sheet on mobile
+  // lifts above the keyboard when an input inside it gains focus.
+  // 0 on desktop / when no keyboard is visible.
+  let kbInsetPx = $state(0);
 
   $effect(() => {
     if (!open) {
@@ -52,16 +57,19 @@
       trap = null;
       releaseScroll?.();
       releaseScroll = null;
+      kbInsetPx = 0;
       return;
     }
     if (!panelEl) return;
     trap = activateFocusTrap(panelEl);
     releaseScroll = lockScroll();
+    const detachKb = attachKeyboardInsetTracker((px) => (kbInsetPx = px));
     return () => {
       trap?.deactivate();
       trap = null;
       releaseScroll?.();
       releaseScroll = null;
+      detachKb();
     };
   });
 
@@ -94,6 +102,7 @@
       aria-labelledby={title ? 'sheet-title' : undefined}
       style:--sheet-width="{width}px"
       style:--sheet-max-height={maxHeight}
+      style:--sheet-kb-inset="{kbInsetPx}px"
     >
       {#if title}
         <header class="sheet-h">
@@ -141,15 +150,18 @@
     flex-direction: column;
     overflow: hidden;
   }
-  /* Bottom-sheet layout (mobile / narrow). */
+  /* Bottom-sheet layout (mobile / narrow). T-5.1c: --sheet-kb-inset
+   * lifts the sheet above the soft keyboard when an input inside it
+   * gets focus; 0 when no keyboard is visible. */
   @media (max-width: 959.98px) {
     .sheet {
       left: 0;
       right: 0;
-      bottom: 0;
+      bottom: var(--sheet-kb-inset, 0);
       max-height: var(--sheet-max-height);
       border-radius: 14px 14px 0 0;
       animation: slide-up 220ms cubic-bezier(0.2, 0, 0, 1);
+      transition: bottom 180ms ease-out;
     }
   }
   /* Side-sheet layout (desktop / wide). */

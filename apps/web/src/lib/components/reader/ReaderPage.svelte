@@ -20,6 +20,7 @@
 
   import ChapterBody from './ChapterBody.svelte';
   import { clampPage, pageCountFor, pageOffset } from './paginate.js';
+  import { classifySwipe } from './touch-gestures.js';
   import type { ChapterView } from './types.js';
 
   let {
@@ -145,6 +146,29 @@
     }
   }
 
+  // T-5.1c: swipe to flip pages on touch devices. The page-flip
+  // arrows still work on mouse / keyboard / desktop touch; swipes
+  // are an additional input. We track only the first finger
+  // (`touches[0]`) so a pinch-zoom doesn't accidentally flip pages.
+  let touchStart: { x: number; y: number } | null = null;
+  function onTouchStart(e: TouchEvent) {
+    if (e.touches.length !== 1) {
+      touchStart = null;
+      return;
+    }
+    const t = e.touches[0]!;
+    touchStart = { x: t.clientX, y: t.clientY };
+  }
+  function onTouchEnd(e: TouchEvent) {
+    if (!touchStart) return;
+    const t = e.changedTouches[0];
+    if (!t) return;
+    const swipe = classifySwipe(touchStart, { x: t.clientX, y: t.clientY });
+    touchStart = null;
+    if (swipe.direction === -1 && hasNext) nextPage();
+    else if (swipe.direction === 1 && hasPrev) prevPage();
+  }
+
   // Measure on mount + on resize / content change. ResizeObserver on
   // both the viewport (window resize, font-size change) and the
   // content (chapter toggle, romanization toggle changing line
@@ -188,7 +212,17 @@
 
 <svelte:window onkeydown={onKeydown} />
 
-<div class="reader-page-wrap" data-mode="page">
+<!-- T-5.1c: swipe gestures supplement the visible arrows + keyboard
+     ←/→; role="region" appeases the static-element-interactions a11y
+     check without claiming this div is the primary control. -->
+<div
+  class="reader-page-wrap"
+  data-mode="page"
+  role="region"
+  aria-label="Reader pages"
+  ontouchstart={onTouchStart}
+  ontouchend={onTouchEnd}
+>
   <button
     type="button"
     class="page-arrow page-arrow-l"
