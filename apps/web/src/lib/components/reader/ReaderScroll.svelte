@@ -19,6 +19,7 @@
   } from './types.js';
 
   import WordPopup from './WordPopup.svelte';
+  import WordTooltip from './WordTooltip.svelte';
 
   let {
     chapters,
@@ -129,23 +130,79 @@
     right: number;
   } | null>(null);
 
-  function onArticleClick(event: MouseEvent) {
-    const target = event.target as HTMLElement | null;
-    if (!target) return;
+  // T-5.29: hover wiring matches ChapterBody (used by ReaderPage) so
+  // both modes show the WordTooltip on word hover.
+  let hoverToken = $state<ServerToken | null>(null);
+  let hoverRect = $state<{
+    top: number;
+    left: number;
+    bottom: number;
+    right: number;
+    width: number;
+    height: number;
+  } | null>(null);
+
+  function findToken(target: HTMLElement | null): {
+    token: ServerToken;
+    el: HTMLElement;
+  } | null {
+    if (!target) return null;
     const span = target.closest('[data-token-id]') as HTMLElement | null;
-    if (!span) return;
+    if (!span) return null;
     const tokenId = span.getAttribute('data-token-id');
-    if (!tokenId) return;
+    if (!tokenId) return null;
     const token = tokensById.get(tokenId);
-    if (!token || !token.isWord) return;
-    const rect = span.getBoundingClientRect();
-    activeToken = token;
+    if (!token || !token.isWord) return null;
+    return { token, el: span };
+  }
+
+  function onArticleClick(event: MouseEvent) {
+    const found = findToken(event.target as HTMLElement);
+    if (!found) return;
+    const rect = found.el.getBoundingClientRect();
+    activeToken = found.token;
     activeRect = {
       top: rect.top,
       left: rect.left,
       bottom: rect.bottom,
       right: rect.right,
     };
+    hoverToken = null;
+    hoverRect = null;
+  }
+
+  function showHoverTooltip(event: Event) {
+    const found = findToken(event.target as HTMLElement);
+    if (!found) {
+      hoverToken = null;
+      hoverRect = null;
+      return;
+    }
+    if (activeToken && activeToken.id === found.token.id) {
+      hoverToken = null;
+      hoverRect = null;
+      return;
+    }
+    const rect = found.el.getBoundingClientRect();
+    hoverToken = found.token;
+    hoverRect = {
+      top: rect.top,
+      left: rect.left,
+      bottom: rect.bottom,
+      right: rect.right,
+      width: rect.width,
+      height: rect.height,
+    };
+  }
+
+  function hideHoverTooltip(event: Event) {
+    const related =
+      'relatedTarget' in event ? (event.relatedTarget as HTMLElement | null) : null;
+    if (related && (event.currentTarget as HTMLElement).contains(related)) {
+      return;
+    }
+    hoverToken = null;
+    hoverRect = null;
   }
 
   function closePopup() {
@@ -200,7 +257,14 @@
 
   <!-- svelte-ignore a11y_click_events_have_key_events -->
   <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-  <article onclick={onArticleClick}>
+  <!-- svelte-ignore a11y_mouse_events_have_key_events -->
+  <article
+    onclick={onArticleClick}
+    onmouseover={showHoverTooltip}
+    onmouseout={hideHoverTooltip}
+    onfocusin={showHoverTooltip}
+    onfocusout={hideHoverTooltip}
+  >
     {#if visibleServer}
       {#each visibleServer as paragraph, pIdx (pIdx)}
         <p class="body">
@@ -226,6 +290,10 @@
     <button type="button" disabled={!hasNext} onclick={next}>Next page →</button>
   </nav>
 </div>
+
+{#if hoverToken && hoverRect}
+  <WordTooltip token={hoverToken} anchorRect={hoverRect} />
+{/if}
 
 {#if activeToken && activeRect}
   <WordPopup

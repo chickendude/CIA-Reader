@@ -223,10 +223,12 @@
 {/if}
 
 <style>
+  /* Inherit font-size + line-height from the reader's content rule
+     so page mode and scroll mode look identical (T-5.29 fixed an
+     earlier mismatch where this paragraph rule shadowed the parent
+     at 1.05rem). */
   .body {
     margin: 0 0 1rem;
-    line-height: 1.85;
-    font-size: 1.05rem;
   }
   .word {
     cursor: pointer;
