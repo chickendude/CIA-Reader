@@ -16,6 +16,7 @@ export type TabIcon =
   | 'home'
   | 'library'
   | 'upload'
+  | 'words'
   | 'profile'
   | 'signin';
 
@@ -56,6 +57,15 @@ export const TABS: readonly Tab[] = [
     match: ['/upload'],
     icon: 'upload',
     section: 'Read',
+  },
+  {
+    id: 'words',
+    label: 'Words',
+    href: '/words',
+    auth: 'authenticated',
+    match: ['/words'],
+    icon: 'words',
+    section: 'Track',
   },
   {
     id: 'profile',
