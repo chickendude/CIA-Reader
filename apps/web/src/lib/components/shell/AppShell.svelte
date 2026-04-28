@@ -9,6 +9,7 @@
 -->
 <script lang="ts">
   import { page } from '$app/stores';
+  import { invalidateAll } from '$app/navigation';
   import { onMount } from 'svelte';
   import {
     TABS,
@@ -24,14 +25,73 @@
     setImmersiveAttribute,
     writePersistedImmersive,
   } from '../reader/immersive.js';
+  import Sheet from '../overlay/Sheet.svelte';
   import type { Snippet } from 'svelte';
+
+  interface LanguageOption {
+    code: string;
+    displayName: string;
+    nativeName: string;
+    glyph: string;
+  }
 
   interface Props {
     user: { id: string; displayName: string | null; email: string } | null;
+    /** Active language for the current visit. Drives the rail indicator
+     *  + per-screen filters (T-5.25). Null when the user has no
+     *  language data yet (anonymous fresh visitor). */
+    currentLanguage?: string | null;
+    /** Languages the signed-in user has a `user_languages` row for —
+     *  the picker's options. Empty for anonymous visitors. */
+    availableLanguages?: LanguageOption[];
     children: Snippet;
   }
 
-  let { user, children }: Props = $props();
+  let {
+    user,
+    currentLanguage = null,
+    availableLanguages = [],
+    children,
+  }: Props = $props();
+
+  const currentOption = $derived<LanguageOption | null>(
+    availableLanguages.find((l) => l.code === currentLanguage) ?? null,
+  );
+
+  // T-5.25: language picker. Click the indicator → sheet listing
+  // every active language. Selecting one PUTs the cookie + reloads
+  // layout data so the rail + every loader picks up the new pick.
+  let langPickerOpen = $state(false);
+  let switching = $state(false);
+  let switchError = $state<string | null>(null);
+
+  async function pickLanguage(code: string) {
+    if (switching) return;
+    if (code === currentLanguage) {
+      langPickerOpen = false;
+      return;
+    }
+    switching = true;
+    switchError = null;
+    try {
+      const res = await fetch('/api/v1/me/current-language', {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ code }),
+      });
+      if (!res.ok) {
+        throw new Error(`PUT failed: ${res.status}`);
+      }
+      langPickerOpen = false;
+      // Re-run every loader so the new currentLanguage is picked up
+      // (rail indicator, home grid, library filter, words filter…).
+      await invalidateAll();
+    } catch (e) {
+      switchError = (e as Error).message;
+    } finally {
+      switching = false;
+    }
+  }
 
   const tabs = $derived<Tab[]>(visibleTabs(TABS, user !== null));
   const activeId = $derived(getActiveTabId($page.url.pathname, tabs));
@@ -124,6 +184,22 @@
       </span>
     </a>
 
+    {#if currentOption}
+      <button
+        type="button"
+        class="lang-indicator"
+        aria-label="Change current language ({currentOption.displayName})"
+        title="Switch language"
+        onclick={() => (langPickerOpen = true)}
+      >
+        <span class="lang-glyph" aria-hidden="true">{currentOption.glyph}</span>
+        <span class="lang-text">
+          <span class="lang-native">{currentOption.nativeName}</span>
+          <span class="lang-en">{currentOption.displayName}</span>
+        </span>
+      </button>
+    {/if}
+
     <nav class="nav" aria-label="Sections">
       {#each groups as group (group.section ?? '_')}
         {#if group.section}
@@ -165,6 +241,17 @@
     <a class="brand-strip" href="/" aria-label="CIA Reader home">
       <span class="brand-mark" aria-hidden="true">अ</span>
     </a>
+    {#if currentOption}
+      <button
+        type="button"
+        class="lang-indicator-compact"
+        aria-label="Change current language ({currentOption.displayName})"
+        title="Switch language"
+        onclick={() => (langPickerOpen = true)}
+      >
+        <span aria-hidden="true">{currentOption.glyph}</span>
+      </button>
+    {/if}
     {#if user}
       <span class="who" aria-label="Signed-in user">
         {user.displayName ?? user.email}
@@ -201,6 +288,49 @@
     {/each}
   </nav>
 </div>
+
+<!-- T-5.25: language picker. Lists every active user_languages row.
+     Manage / add / remove languages still happens on /profile — the
+     picker is just the runtime switcher. -->
+{#if langPickerOpen}
+  <Sheet open={langPickerOpen} onClose={() => (langPickerOpen = false)} title="Switch language">
+    <div class="lang-picker">
+      {#if availableLanguages.length === 0}
+        <p class="lang-empty">
+          You haven't added any languages yet. <a href="/profile">Open settings</a>
+          to pick one.
+        </p>
+      {:else}
+        <ul class="lang-list">
+          {#each availableLanguages as opt (opt.code)}
+            <li>
+              <button
+                type="button"
+                class="lang-row"
+                data-active={opt.code === currentLanguage ? '1' : '0'}
+                disabled={switching}
+                onclick={() => pickLanguage(opt.code)}
+              >
+                <span class="lang-row-glyph" aria-hidden="true">{opt.glyph}</span>
+                <span class="lang-row-text">
+                  <span class="lang-row-native">{opt.nativeName}</span>
+                  <span class="lang-row-en">{opt.displayName}</span>
+                </span>
+                {#if opt.code === currentLanguage}
+                  <span class="lang-row-current" aria-label="Current">●</span>
+                {/if}
+              </button>
+            </li>
+          {/each}
+        </ul>
+      {/if}
+      {#if switchError}
+        <p class="lang-err" role="alert">Could not switch: {switchError}</p>
+      {/if}
+      <a class="lang-manage" href="/profile">Manage languages →</a>
+    </div>
+  </Sheet>
+{/if}
 
 <style>
   /* Desktop: rail + content. Mobile: top-strip + content + bottom-nav.
@@ -513,6 +643,185 @@
   .rail-toggle:hover {
     background: var(--accent-soft, var(--color-accent));
     color: var(--accent-ink, var(--color-accent-fg, #fff));
+  }
+
+  /* —— Language indicator + picker (T-5.25) ————————————————————
+   * The pill in the rail shows the current language at a glance and
+   * opens a Sheet picker on click. Also exists as a compact glyph in
+   * the mobile top-strip so the same affordance is reachable without
+   * the rail being visible. */
+  .lang-indicator {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    padding: 0.55rem 0.65rem;
+    background: var(--card, var(--color-bg));
+    border: 1px solid var(--card-edge, var(--color-border));
+    border-radius: 9px;
+    cursor: pointer;
+    text-align: left;
+    color: inherit;
+    font: inherit;
+    transition: border-color 150ms ease;
+  }
+  .lang-indicator:hover {
+    border-color: color-mix(
+      in oklch,
+      var(--accent, var(--color-accent)) 60%,
+      var(--card-edge, var(--color-border))
+    );
+  }
+  .lang-glyph {
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    background: var(--ink, var(--color-fg));
+    color: var(--paper, var(--color-bg));
+    display: grid;
+    place-items: center;
+    font-family: var(--font-serif-dev, var(--font-serif));
+    font-size: 1rem;
+    line-height: 1;
+    flex-shrink: 0;
+  }
+  .lang-text {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+    line-height: 1.1;
+    min-width: 0;
+  }
+  .lang-native {
+    font-family: var(--font-serif-dev, var(--font-serif));
+    font-size: 0.95rem;
+    color: var(--ink, var(--color-fg));
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .lang-en {
+    font-family: var(--font-sans, var(--font-ui));
+    font-size: 0.6rem;
+    color: var(--ink-3, var(--color-fg-muted));
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+
+  .lang-indicator-compact {
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    border: 1px solid var(--card-edge, var(--color-border));
+    background: var(--card, var(--color-bg));
+    color: var(--ink, var(--color-fg));
+    cursor: pointer;
+    font-family: var(--font-serif-dev, var(--font-serif));
+    font-size: 1rem;
+    display: grid;
+    place-items: center;
+  }
+
+  /* Picker sheet contents. */
+  .lang-picker {
+    display: flex;
+    flex-direction: column;
+    gap: 0.85rem;
+  }
+  .lang-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+  }
+  .lang-row {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 0.7rem;
+    padding: 0.6rem 0.75rem;
+    border: 1px solid var(--rule, var(--color-border));
+    border-radius: 9px;
+    background: var(--card, var(--color-bg));
+    color: var(--ink, var(--color-fg));
+    cursor: pointer;
+    font: inherit;
+    text-align: left;
+    transition:
+      border-color 150ms ease,
+      background 150ms ease;
+  }
+  .lang-row:hover:not(:disabled) {
+    border-color: color-mix(
+      in oklch,
+      var(--accent, var(--color-accent)) 50%,
+      var(--card-edge, var(--color-border))
+    );
+  }
+  .lang-row[data-active='1'] {
+    border-color: var(--accent, var(--color-accent));
+    background: var(--accent-soft, var(--color-accent));
+  }
+  .lang-row:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+  .lang-row-glyph {
+    width: 32px;
+    height: 32px;
+    border-radius: 7px;
+    background: var(--ink, var(--color-fg));
+    color: var(--paper, var(--color-bg));
+    display: grid;
+    place-items: center;
+    font-family: var(--font-serif-dev, var(--font-serif));
+    font-size: 1.1rem;
+    flex-shrink: 0;
+  }
+  .lang-row-text {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+    flex: 1;
+    min-width: 0;
+  }
+  .lang-row-native {
+    font-family: var(--font-serif-dev, var(--font-serif));
+    font-size: 1rem;
+    color: var(--ink, var(--color-fg));
+  }
+  .lang-row-en {
+    font-family: var(--font-sans, var(--font-ui));
+    font-size: 0.7rem;
+    color: var(--ink-3, var(--color-fg-muted));
+  }
+  .lang-row-current {
+    color: var(--accent-ink, var(--color-accent));
+    font-size: 0.85rem;
+  }
+  .lang-empty {
+    color: var(--ink-3, var(--color-fg-muted));
+    font-size: 0.85rem;
+    margin: 0;
+  }
+  .lang-empty a {
+    color: var(--accent-ink, var(--color-accent));
+  }
+  .lang-err {
+    color: var(--rose, var(--color-danger));
+    font-size: 0.78rem;
+    margin: 0;
+  }
+  .lang-manage {
+    align-self: flex-start;
+    color: var(--accent-ink, var(--color-accent));
+    text-decoration: none;
+    font-size: 0.85rem;
+    padding: 0.4rem 0;
+  }
+  .lang-manage:hover {
+    text-decoration: underline;
   }
 
   /* —— Immersive mode (T-5.16, retriggered by T-5.26) ——————————
