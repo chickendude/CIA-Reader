@@ -161,15 +161,36 @@ export function bucketTranslations(
   const byCreatedAtDesc = (a: Translation, b: Translation) =>
     b.createdAt.getTime() - a.createdAt.getTime();
 
+  // T-3.13: a curator-set `displayRank` overrides the bucket's default
+  // tiebreaker. NULL ranks sort after any non-NULL rank within the same
+  // bucket, then fall through to the bucket-specific secondary sort.
+  // The personal bucket doesn't accept curator reordering — it's
+  // viewer-private — so it ignores displayRank entirely.
+  const byDisplayRankThen =
+    (fallback: (a: Translation, b: Translation) => number) =>
+    (a: Translation, b: Translation): number => {
+      const ar = a.displayRank;
+      const br = b.displayRank;
+      if (ar !== null && br !== null) {
+        if (ar !== br) return ar - br;
+        return fallback(a, b);
+      }
+      if (ar !== null) return -1;
+      if (br !== null) return 1;
+      return fallback(a, b);
+    };
+
   personal.sort(byCreatedAtAsc);
-  official.sort((a, b) => {
-    // Curator edits sort ahead of raw imports; within each tier,
-    // oldest-first keeps the reader pop-up stable across renders.
-    const sourceRank = (s: Translation['source']) => (s === 'curator' ? 0 : 1);
-    const diff = sourceRank(a.source) - sourceRank(b.source);
-    return diff !== 0 ? diff : byCreatedAtAsc(a, b);
-  });
-  community.sort(byCreatedAtDesc);
+  official.sort(
+    byDisplayRankThen((a, b) => {
+      // Curator edits sort ahead of raw imports; within each tier,
+      // oldest-first keeps the reader pop-up stable across renders.
+      const sourceRank = (s: Translation['source']) => (s === 'curator' ? 0 : 1);
+      const diff = sourceRank(a.source) - sourceRank(b.source);
+      return diff !== 0 ? diff : byCreatedAtAsc(a, b);
+    }),
+  );
+  community.sort(byDisplayRankThen(byCreatedAtDesc));
 
   return {
     personal: personal.map((r) => toPublicTranslation(r, viewer)),

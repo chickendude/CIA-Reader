@@ -22,6 +22,7 @@ import {
   CuratorValidationError,
   getLemmaEditorView,
   mergeLemmas,
+  reorderTranslations,
   setLemmaLock,
   setTranslationHidden,
   splitLemma,
@@ -63,6 +64,9 @@ type MergeFormResult =
 type SplitFormResult =
   | { ok: true; section: 'split'; newLemmaId: string }
   | { ok: false; section: 'split'; message: string };
+type ReorderFormResult =
+  | { ok: true; section: 'reorder' }
+  | { ok: false; section: 'reorder'; message: string };
 
 export const load: PageServerLoad = async ({ params, locals }) => {
   if (!locals.user) throw redirect(303, '/login');
@@ -139,6 +143,14 @@ const hideSchema = z.object({
 
 const mergeSchema = z.object({
   loserId: z.string().regex(UUID_RE),
+  reason: z.string().min(3).max(500),
+});
+
+const reorderSchema = z.object({
+  // Comma- or whitespace-separated UUIDs. The form ships a hidden input
+  // with the canonical order; we parse, dedupe, and validate the count
+  // server-side via the service.
+  orderedTranslationIds: z.string().min(1),
   reason: z.string().min(3).max(500),
 });
 
@@ -317,6 +329,48 @@ export const actions: Actions = {
         section: 'merge',
         message: mapped.message,
       } satisfies MergeFormResult);
+    }
+  },
+
+  reorderTranslations: async ({ params, request, locals }) => {
+    const editor = editorFromLocals(locals);
+    const form = Object.fromEntries(await request.formData());
+    const parsed = reorderSchema.safeParse(form);
+    if (!parsed.success) {
+      return fail(400, {
+        ok: false,
+        section: 'reorder',
+        message: parsed.error.issues
+          .map((i) => `${i.path.join('.')}: ${i.message}`)
+          .join('; '),
+      } satisfies ReorderFormResult);
+    }
+    const orderedIds = parsed.data.orderedTranslationIds
+      .split(/[\s,]+/)
+      .map((s) => s.trim())
+      .filter((s) => UUID_RE.test(s));
+    if (orderedIds.length === 0) {
+      return fail(400, {
+        ok: false,
+        section: 'reorder',
+        message: 'No valid translation ids in orderedTranslationIds',
+      } satisfies ReorderFormResult);
+    }
+    try {
+      await reorderTranslations(
+        editor,
+        params.id,
+        orderedIds,
+        parsed.data.reason,
+      );
+      return { ok: true, section: 'reorder' } satisfies ReorderFormResult;
+    } catch (e) {
+      const mapped = mapError(e);
+      return fail(mapped.status, {
+        ok: false,
+        section: 'reorder',
+        message: mapped.message,
+      } satisfies ReorderFormResult);
     }
   },
 

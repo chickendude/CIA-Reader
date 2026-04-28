@@ -26,6 +26,7 @@ function row(overrides: Partial<Translation>): Translation {
     sourceAttribution: null,
     sourceId: null,
     hidden: false,
+    displayRank: null,
     createdAt: new Date('2026-01-01T00:00:00Z'),
     updatedAt: new Date('2026-01-01T00:00:00Z'),
     ...overrides,
@@ -92,6 +93,89 @@ describe('bucketTranslations — ordering', () => {
     ];
     const out = bucketTranslations(rows, null);
     expect(out.community.map((t) => t.body)).toEqual(['new', 'old']);
+  });
+
+  it('honors curator-set displayRank ahead of source-rank within officials (T-3.13)', () => {
+    const rows: Translation[] = [
+      row({
+        source: 'curator',
+        body: 'cur-second',
+        displayRank: 1,
+        createdAt: new Date('2026-01-01'),
+      }),
+      row({
+        source: 'official_dictionary',
+        body: 'imp-first',
+        displayRank: 0,
+        createdAt: new Date('2025-12-01'),
+      }),
+    ];
+    const out = bucketTranslations(rows, null);
+    // Without ranks the curator row would sort first; ranks override.
+    expect(out.official.map((t) => t.body)).toEqual(['imp-first', 'cur-second']);
+  });
+
+  it('falls back to source-rank when displayRank is null (T-3.13)', () => {
+    // Same setup as the non-rank test above but with all ranks null —
+    // proves the displayRank path doesn't disturb existing behavior.
+    const rows: Translation[] = [
+      row({
+        source: 'official_dictionary',
+        body: 'imp',
+        displayRank: null,
+        createdAt: new Date('2025-12-01'),
+      }),
+      row({
+        source: 'curator',
+        body: 'cur',
+        displayRank: null,
+        createdAt: new Date('2026-03-01'),
+      }),
+    ];
+    const out = bucketTranslations(rows, null);
+    expect(out.official.map((t) => t.body)).toEqual(['cur', 'imp']);
+  });
+
+  it('places null-rank rows after non-null within the same bucket (T-3.13)', () => {
+    const rows: Translation[] = [
+      row({
+        source: 'official_dictionary',
+        body: 'unranked',
+        displayRank: null,
+        createdAt: new Date('2025-12-01'),
+      }),
+      row({
+        source: 'official_dictionary',
+        body: 'ranked',
+        displayRank: 5,
+        createdAt: new Date('2026-04-01'),
+      }),
+    ];
+    const out = bucketTranslations(rows, null);
+    expect(out.official.map((t) => t.body)).toEqual(['ranked', 'unranked']);
+  });
+
+  it('honors displayRank within the community bucket too (T-3.13)', () => {
+    const rows: Translation[] = [
+      row({
+        source: 'user',
+        submittedBy: 'u2',
+        body: 'pinned',
+        displayRank: 0,
+        createdAt: new Date('2026-01-01'),
+      }),
+      row({
+        source: 'user',
+        submittedBy: 'u3',
+        body: 'newer',
+        displayRank: null,
+        createdAt: new Date('2026-04-01'),
+      }),
+    ];
+    const out = bucketTranslations(rows, null);
+    // The community bucket would normally put the newer row first; the
+    // curator's pin overrides.
+    expect(out.community.map((t) => t.body)).toEqual(['pinned', 'newer']);
   });
 
   it('orders personal translations oldest-first (stable across renders)', () => {

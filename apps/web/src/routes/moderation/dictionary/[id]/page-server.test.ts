@@ -16,6 +16,7 @@ const updateTranslation = vi.fn();
 const setTranslationHidden = vi.fn();
 const mergeLemmas = vi.fn();
 const splitLemma = vi.fn();
+const reorderTranslations = vi.fn();
 
 vi.mock('$lib/server/dictionary/curator.js', async () => {
   const actual = await vi.importActual<
@@ -30,6 +31,7 @@ vi.mock('$lib/server/dictionary/curator.js', async () => {
     setTranslationHidden: (...a: unknown[]) => setTranslationHidden(...a),
     mergeLemmas: (...a: unknown[]) => mergeLemmas(...a),
     splitLemma: (...a: unknown[]) => splitLemma(...a),
+    reorderTranslations: (...a: unknown[]) => reorderTranslations(...a),
   };
 });
 
@@ -76,6 +78,7 @@ beforeEach(() => {
   setTranslationHidden.mockReset();
   mergeLemmas.mockReset();
   splitLemma.mockReset();
+  reorderTranslations.mockReset();
 });
 
 afterEach(() => {
@@ -216,5 +219,31 @@ describe('moderation lemma editor actions', () => {
       true,
       'spam submission',
     );
+  });
+
+  it('reorderTranslations parses the comma-separated id list and forwards in order (T-3.13)', async () => {
+    reorderTranslations.mockResolvedValueOnce([]);
+    const a = 'cccccccc-cccc-cccc-cccc-cccccccccccc';
+    const b = 'dddddddd-dddd-dddd-dddd-dddddddddddd';
+    const res = await callAction('reorderTranslations', {
+      orderedTranslationIds: `${a}, ${b}`,
+      reason: 'pin curated above import',
+    });
+    expect(res).toEqual({ ok: true, section: 'reorder' });
+    expect(reorderTranslations).toHaveBeenCalledWith(
+      USER,
+      LEMMA_ID,
+      [a, b],
+      'pin curated above import',
+    );
+  });
+
+  it('reorderTranslations rejects when no valid UUIDs survive parsing (T-3.13)', async () => {
+    const res = await callAction('reorderTranslations', {
+      orderedTranslationIds: 'not-a-uuid, also-bad',
+      reason: 'malformed payload',
+    });
+    expect((res as { status?: number }).status ?? 200).toBe(400);
+    expect(reorderTranslations).not.toHaveBeenCalled();
   });
 });

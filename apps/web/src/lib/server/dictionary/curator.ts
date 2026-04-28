@@ -21,7 +21,7 @@
  * split moves selected `translations` + `lemma_forms`. The future
  * tickets that introduce those tables will extend these functions.
  */
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, asc, eq, inArray } from 'drizzle-orm';
 
 import { db, schema } from '../db/index.js';
 import { recordLemmaEdit, MissingReasonError } from './audit.js';
@@ -387,6 +387,109 @@ export async function setTranslationHidden(
 }
 
 // -----------------------------------------------------------------------
+// reorderTranslations (T-3.13)
+// -----------------------------------------------------------------------
+
+/**
+ * Set the curator-controlled `display_rank` on every translation of a
+ * lemma. Caller passes the canonical, complete order — the function
+ * rejects partial orders so the UI can't accidentally orphan rows or
+ * race with a concurrent insert. Rank N is assigned by index (0-based);
+ * `bucketTranslations` honors it ahead of the existing tiebreakers.
+ *
+ * Audits a single `translation_reorder` row carrying before/after
+ * snapshots of `(translationId, displayRank)` pairs so the history view
+ * can render either side as a list.
+ */
+export async function reorderTranslations(
+  editor: Editor,
+  lemmaId: string,
+  orderedTranslationIds: string[],
+  reason: string,
+  now: Date = new Date(),
+): Promise<Translation[]> {
+  if (!reason || reason.trim().length < 3) throw new MissingReasonError();
+  if (orderedTranslationIds.length === 0) {
+    throw new CuratorValidationError(
+      'Reorder requires at least one translation id',
+    );
+  }
+  const seen = new Set<string>();
+  for (const id of orderedTranslationIds) {
+    if (seen.has(id)) {
+      throw new CuratorValidationError(
+        `Duplicate translation id in order: ${id}`,
+      );
+    }
+    seen.add(id);
+  }
+
+  const lemma = await loadLemma(lemmaId);
+  await requireCanEditDictionary(editor, lemma.language);
+
+  const existing = (await db
+    .select()
+    .from(schema.translations)
+    .where(eq(schema.translations.lemmaId, lemmaId))) as Translation[];
+
+  if (existing.length !== orderedTranslationIds.length) {
+    throw new CuratorValidationError(
+      'orderedTranslationIds must contain exactly the translations on this lemma — re-fetch and try again',
+      409,
+    );
+  }
+  const existingIds = new Set(existing.map((t) => t.id));
+  for (const id of orderedTranslationIds) {
+    if (!existingIds.has(id)) {
+      throw new CuratorValidationError(
+        `Translation ${id} does not belong to lemma ${lemmaId}`,
+        404,
+      );
+    }
+  }
+
+  const before = existing.map((t) => ({
+    translationId: t.id,
+    displayRank: t.displayRank,
+  }));
+
+  // No transaction wrapper to match the existing merge/split pattern in
+  // this file. A crash mid-loop leaves display_rank values arbitrary,
+  // which a re-run corrects; there's no uniqueness constraint to violate.
+  for (let i = 0; i < orderedTranslationIds.length; i += 1) {
+    const id = orderedTranslationIds[i] as string;
+    await db
+      .update(schema.translations)
+      .set({ displayRank: i, updatedAt: now })
+      .where(eq(schema.translations.id, id));
+  }
+
+  const after = orderedTranslationIds.map((id, i) => ({
+    translationId: id,
+    displayRank: i,
+  }));
+
+  await recordLemmaEdit({
+    lemmaId,
+    editorId: editor.id,
+    changeType: 'translation_reorder',
+    change: {
+      translationOrderBefore: before,
+      translationOrderAfter: after,
+    },
+    reason,
+  });
+
+  // Return rows in the new order so the caller (form action / API) can
+  // render the post-write state without a second select.
+  const byId = new Map(existing.map((t) => [t.id, t]));
+  return orderedTranslationIds.map((id, i) => {
+    const row = byId.get(id) as Translation;
+    return { ...row, displayRank: i, updatedAt: now };
+  });
+}
+
+// -----------------------------------------------------------------------
 // mergeLemmas
 // -----------------------------------------------------------------------
 
@@ -709,10 +812,18 @@ export async function getLemmaEditorView(
 }> {
   const lemma = await loadLemma(lemmaId);
   await requireCanEditDictionary(editor, lemma.language);
+  // Editor view sorts by curator-set rank ascending (Postgres default
+  // is NULLS LAST for ASC, so unranked rows fall to the end), then by
+  // createdAt for stability within ties. Reorder UI relies on this
+  // canonical order matching what the reader will see (T-3.13).
   const translations = (await db
     .select()
     .from(schema.translations)
-    .where(eq(schema.translations.lemmaId, lemmaId))) as Translation[];
+    .where(eq(schema.translations.lemmaId, lemmaId))
+    .orderBy(
+      asc(schema.translations.displayRank),
+      asc(schema.translations.createdAt),
+    )) as Translation[];
   const forms = (await db
     .select()
     .from(schema.lemmaForms)
