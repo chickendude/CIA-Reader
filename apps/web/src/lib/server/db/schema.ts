@@ -232,7 +232,18 @@ export const lemmas = pgTable(
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({
-    headwordKey: unique('lemmas_language_headword_pos_uq').on(t.language, t.headword, t.pos),
+    // T-3.10: per-source duplication is allowed by design — Kaikki and
+    // IndoWordNet may both ship "किताब/NOUN" and we keep both rows so a
+    // curator can reconcile via the existing T-3.7 merge UI. The
+    // formerly-unique `lemmas_language_headword_pos_uq` is replaced
+    // with a non-unique index of the same shape so the merge-candidate
+    // lookup ("show me other lemmas with this headword + POS") stays
+    // cheap.
+    headwordIdx: index('lemmas_language_headword_pos_idx').on(
+      t.language,
+      t.headword,
+      t.pos,
+    ),
     languageIdx: index('lemmas_language_idx').on(t.language),
     frequencyIdx: index('lemmas_language_frequency_idx').on(t.language, t.frequencyRank),
     // Lookup by (language, source, source_id) is the idempotent-upsert key

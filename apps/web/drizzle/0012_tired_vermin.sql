@@ -1,0 +1,2 @@
+ALTER TABLE "lemmas" DROP CONSTRAINT "lemmas_language_headword_pos_uq";--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "lemmas_language_headword_pos_idx" ON "lemmas" USING btree ("language","headword","pos");
