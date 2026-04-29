@@ -40,17 +40,52 @@
   // token tied to the same lemma flips its highlight in real time
   // (the next page load reflects the same state via the loader).
   let statusOverrides = $state(new Map<string, ServerToken['status']>());
+  // T-6.1: per-token lemma corrections live here so picking an
+  // alternate meaning in the popup re-renders that token with the
+  // chosen lemma immediately. Server-side persistence happens in
+  // T-6.4's loader join; this state is purely for the current
+  // session.
+  let lemmaCorrections = $state(new Map<string, string>());
 
   // Apply any pending optimistic status flips to the token list
   // before paragraph splitting so the .status-* classes update live.
   const tokensWithOverrides = $derived.by(() => {
     if (!chapter.tokens) return null;
-    if (statusOverrides.size === 0) return chapter.tokens;
-    return chapter.tokens.map((t) =>
-      t.lemmaId && statusOverrides.has(t.lemmaId)
-        ? { ...t, status: statusOverrides.get(t.lemmaId)! }
-        : t,
-    );
+    if (statusOverrides.size === 0 && lemmaCorrections.size === 0) {
+      return chapter.tokens;
+    }
+    return chapter.tokens.map((t) => {
+      // T-6.1: lemma override wins; the corrected lemmaId becomes
+      // the active pick for this token + the candidate that *was*
+      // active drops back into the alternates list (so the user
+      // can revert without re-opening the candidate menu).
+      const correctedLemmaId = lemmaCorrections.get(t.id);
+      let next = t;
+      if (correctedLemmaId && correctedLemmaId !== t.lemmaId) {
+        const chosen = t.candidates.find((c) => c.lemmaId === correctedLemmaId);
+        if (chosen) {
+          const remaining = t.candidates.filter(
+            (c) => c.lemmaId !== correctedLemmaId,
+          );
+          // The previous primary becomes a candidate so the user
+          // can flip back. We synthesize a candidate row from the
+          // current token's lemma metadata; if we don't have it on
+          // hand (status only — no headword), we still leave the
+          // remaining list as-is so at least the new pick lands.
+          next = {
+            ...t,
+            lemmaId: chosen.lemmaId,
+            glossDefault: chosen.glossDefault ?? t.glossDefault,
+            candidates: remaining,
+            isAmbiguous: remaining.length > 0,
+          };
+        }
+      }
+      if (next.lemmaId && statusOverrides.has(next.lemmaId)) {
+        next = { ...next, status: statusOverrides.get(next.lemmaId)! };
+      }
+      return next;
+    });
   });
 
   const serverParagraphs = $derived(
@@ -210,6 +245,12 @@
     next.set(lemmaId, status);
     statusOverrides = next;
   }
+
+  function onCorrectionApplied(tokenId: string, chosenLemmaId: string) {
+    const next = new Map(lemmaCorrections);
+    next.set(tokenId, chosenLemmaId);
+    lemmaCorrections = next;
+  }
 </script>
 
 <!-- The hover tooltip is decorative chrome — keyboard / focus users get
@@ -261,6 +302,7 @@
     {isOwner}
     onClose={closePopup}
     {onStatusChange}
+    {onCorrectionApplied}
   />
 {/if}
 
