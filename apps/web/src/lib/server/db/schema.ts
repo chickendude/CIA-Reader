@@ -1440,7 +1440,10 @@ export const audioAlignments = pgTable(
       .defaultNow(),
   },
   (t) => ({
-    pk: primaryKey({ columns: [t.audioFileId, t.tokenId] }),
+    audioFileTokenUq: unique('audio_alignments_audio_file_id_token_id_uq').on(
+      t.audioFileId,
+      t.tokenId,
+    ),
     timelineIdx: index('audio_alignments_timeline_idx').on(
       t.audioFileId,
       t.startMs,

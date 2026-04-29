@@ -7,7 +7,7 @@ CREATE TABLE IF NOT EXISTS "audio_alignments" (
 	"end_ms" integer NOT NULL,
 	"source" "alignment_source" DEFAULT 'manual' NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
-	CONSTRAINT "audio_alignments_audio_file_id_token_id_pk" PRIMARY KEY("audio_file_id","token_id")
+	CONSTRAINT "audio_alignments_audio_file_id_token_id_uq" UNIQUE("audio_file_id","token_id")
 );
 --> statement-breakpoint
 CREATE TABLE IF NOT EXISTS "audio_files" (
