@@ -71,6 +71,8 @@ export default [
         // ScriptAwareInput (T-6.2a) — IME composition + paste handlers.
         CompositionEvent: 'readonly',
         ClipboardEvent: 'readonly',
+        // Audio player (T-9.2).
+        HTMLAudioElement: 'readonly',
       },
     },
   },

@@ -50,6 +50,12 @@ vi.mock('$lib/server/collections.js', () => ({
   readerCollectionContext: async () => null,
 }));
 
+// T-9.1: the loader pulls audio for the active text + chapter.
+// Default to "no audio" so existing tests don't have to care.
+vi.mock('$lib/server/audio/audio.js', () => ({
+  listAudioForText: async () => [],
+}));
+
 vi.mock('$lib/server/db/index.js', () => {
   type ChainShape = {
     from: ReturnType<typeof vi.fn>;
