@@ -68,6 +68,9 @@ export default [
         IntersectionObserver: 'readonly',
         // Mobile reader gestures (T-5.1c).
         TouchEvent: 'readonly',
+        // ScriptAwareInput (T-6.2a) — IME composition + paste handlers.
+        CompositionEvent: 'readonly',
+        ClipboardEvent: 'readonly',
       },
     },
   },
