@@ -160,16 +160,12 @@
 
   // Accepts both MouseEvent (mouseover) and FocusEvent (focusin) so
   // the tooltip surfaces for pointer hovers AND keyboard tabbing.
+  // We deliberately keep showing the tooltip for the locked word —
+  // the user might want a quick re-read of the gloss without taking
+  // their eyes off the chapter to read the side panel.
   function showHoverTooltip(event: Event) {
     const found = findToken(event.target as HTMLElement);
     if (!found) {
-      hoverToken = null;
-      hoverRect = null;
-      return;
-    }
-    // Skip the tooltip when the side panel is locked on the same
-    // word — redundant.
-    if (activeToken && activeToken.id === found.token.id) {
       hoverToken = null;
       hoverRect = null;
       return;
@@ -305,6 +301,7 @@
         {#each paragraph as token (token.id)}<TokenSpan
             {token}
             {showRomanization}
+            isAnchor={activeToken?.id === token.id}
           />{/each}
       </p>
     {/each}
@@ -323,17 +320,19 @@
   <WordTooltip token={hoverToken} anchorRect={hoverRect} />
 {/if}
 
-{#if activeToken && activeRect}
-  <WordPopup
-    token={activeToken}
-    anchorRect={activeRect}
-    {language}
-    {isOwner}
-    onClose={closePopup}
-    {onStatusChange}
-    {onCorrectionApplied}
-  />
-{/if}
+<!-- WordPopup mounts unconditionally so the side panel can stay
+     visible on desktop even before the user picks a word. The popup
+     itself decides whether to render its full body or an empty-state
+     prompt based on whether `token` is null. -->
+<WordPopup
+  token={activeToken}
+  anchorRect={activeRect ?? undefined}
+  {language}
+  {isOwner}
+  onClose={closePopup}
+  {onStatusChange}
+  {onCorrectionApplied}
+/>
 
 <CorrectionToast
   open={toastTokenId !== null}
