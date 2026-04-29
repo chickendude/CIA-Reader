@@ -120,6 +120,13 @@
       "when": 1777427948215,
       "tag": "0016_friendly_tarot",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1777460293199,
+      "tag": "0017_cooing_black_bolt",
+      "breakpoints": true
     }
   ]
 }
