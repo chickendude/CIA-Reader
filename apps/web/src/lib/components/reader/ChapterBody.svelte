@@ -16,6 +16,7 @@
   import TokenSpan from './TokenSpan.svelte';
   import WordPopup from './WordPopup.svelte';
   import WordTooltip from './WordTooltip.svelte';
+  import { LongPressDetector } from './touch-gestures.js';
   import {
     paragraphsOfServerTokens,
     paragraphsOfTokens,
@@ -162,6 +163,43 @@
     activeRect = null;
   }
 
+  // T-5.1c: long-press as a tap alternative on touch devices. A
+  // 500ms hold over a word fires the same WordPopup the click
+  // handler does. The detector cancels on movement so a scroll-y
+  // touch never triggers a spurious popup.
+  const longPress = new LongPressDetector((point) => {
+    const target = document.elementFromPoint(point.x, point.y);
+    const found = findToken(target as HTMLElement | null);
+    if (!found) return;
+    const rect = found.el.getBoundingClientRect();
+    activeToken = found.token;
+    activeRect = {
+      top: rect.top,
+      left: rect.left,
+      bottom: rect.bottom,
+      right: rect.right,
+    };
+    hoverToken = null;
+    hoverRect = null;
+  });
+
+  function onTouchStart(e: TouchEvent) {
+    if (e.touches.length !== 1) {
+      longPress.cancel();
+      return;
+    }
+    const t = e.touches[0]!;
+    longPress.begin({ x: t.clientX, y: t.clientY });
+  }
+  function onTouchMove(e: TouchEvent) {
+    const t = e.touches[0];
+    if (!t) return;
+    longPress.move({ x: t.clientX, y: t.clientY });
+  }
+  function onTouchEnd() {
+    longPress.release();
+  }
+
   function onStatusChange(
     lemmaId: string,
     status: ServerToken['status'],
@@ -187,6 +225,10 @@
   onmouseout={hideHoverTooltip}
   onfocusin={showHoverTooltip}
   onfocusout={hideHoverTooltip}
+  ontouchstart={onTouchStart}
+  ontouchmove={onTouchMove}
+  ontouchend={onTouchEnd}
+  ontouchcancel={onTouchEnd}
 >
   {#if serverParagraphs}
     {#each serverParagraphs as paragraph, pIdx (pIdx)}
