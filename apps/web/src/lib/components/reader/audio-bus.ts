@@ -51,6 +51,8 @@ export function subscribeAudio(fn: Listener): () => void {
 export function _resetAudioBus(): void {
   state = { currentTimeMs: 0, isPlaying: false, audioFileId: null };
   listeners.clear();
+  alignmentByTokenId = new Map();
+  controller = null;
 }
 
 /**
@@ -73,4 +75,24 @@ export function setAudioController(c: AudioController | null): void {
 
 export function getAudioController(): AudioController | null {
   return controller;
+}
+
+// ---------------------------------------------------------------
+// Alignment cache (T-9.4)
+// ---------------------------------------------------------------
+
+/**
+ * The active audio file's tokenId → startMs map. Populated by
+ * AlignmentHighlighter (which already loads the timeline) and
+ * consumed by ChapterBody's click handler to seek the player to
+ * the tapped word.
+ */
+let alignmentByTokenId = new Map<string, number>();
+
+export function setAlignmentMap(map: Map<string, number>): void {
+  alignmentByTokenId = map;
+}
+
+export function getAlignmentStartMs(tokenId: string): number | null {
+  return alignmentByTokenId.get(tokenId) ?? null;
 }

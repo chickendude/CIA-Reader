@@ -125,6 +125,7 @@ describe('uploadAudio', () => {
         body: smallBody(),
         mime: 'audio/mpeg',
         originalName: 'x.mp3',
+        acknowledgedRedistribution: true,
         uploader: OWNER,
       }),
     ).rejects.toMatchObject({ status: 404 });
@@ -138,6 +139,7 @@ describe('uploadAudio', () => {
         body: smallBody(),
         mime: 'audio/mpeg',
         originalName: 'x.mp3',
+        acknowledgedRedistribution: true,
         uploader: STRANGER,
       }),
     ).rejects.toMatchObject({ status: 403 });
@@ -153,6 +155,7 @@ describe('uploadAudio', () => {
         body: smallBody(),
         mime: 'audio/mpeg',
         originalName: 'x.mp3',
+        acknowledgedRedistribution: true,
         uploader: OWNER,
       }),
     ).rejects.toMatchObject({ status: 404 });
@@ -168,6 +171,7 @@ describe('uploadAudio', () => {
         body: smallBody(),
         mime: 'audio/mpeg',
         originalName: 'x.mp3',
+        acknowledgedRedistribution: true,
         uploader: OWNER,
       }),
     ).rejects.toThrow(/chapter does not belong/);
@@ -198,6 +202,7 @@ describe('uploadAudio', () => {
       attribution: 'CC-BY narrator',
       license: 'CC-BY-4.0',
       durationMs: 90_000,
+      acknowledgedRedistribution: true,
       uploader: OWNER,
     });
     expect(out.id).toBe('audio-1');
@@ -227,6 +232,8 @@ describe('uploadAudio', () => {
         createdAt: new Date(),
       },
     ]);
+    // T-9.7: admins skip the redistribution-rights gate, so we
+    // intentionally omit the flag here to exercise that branch.
     const out = await uploadAudio({
       textId: 'text-1',
       body: smallBody(),
@@ -235,6 +242,21 @@ describe('uploadAudio', () => {
       uploader: ADMIN,
     });
     expect(out.id).toBe('audio-2');
+  });
+
+  it('blocks a non-admin owner who skips the redistribution checkbox (T-9.7)', async () => {
+    await expect(
+      uploadAudio({
+        textId: 'text-1',
+        body: smallBody(),
+        mime: 'audio/mpeg',
+        originalName: 'x.mp3',
+        // No acknowledgedRedistribution → 400.
+        uploader: OWNER,
+      }),
+    ).rejects.toMatchObject({ status: 400 });
+    // The gate runs BEFORE size / mime checks pass through to the DB.
+    expect(fakeDb.select).not.toHaveBeenCalled();
   });
 
   it('throws when the insert returns no row', async () => {
@@ -246,6 +268,7 @@ describe('uploadAudio', () => {
         body: smallBody(),
         mime: 'audio/mpeg',
         originalName: 'x.mp3',
+        acknowledgedRedistribution: true,
         uploader: OWNER,
       }),
     ).rejects.toThrow(/insert returned no row/);

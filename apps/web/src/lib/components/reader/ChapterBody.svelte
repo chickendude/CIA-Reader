@@ -156,6 +156,27 @@
     // Hide the hover tooltip so it doesn't double up with the panel.
     hoverToken = null;
     hoverRect = null;
+    // T-9.4: tap-to-seek. If audio is loaded for this text and the
+    // tapped token has an alignment row, seek the player to that
+    // word's startMs and pause so the user can read at their own
+    // pace. The popup stays open (it auto-pauses by definition —
+    // the user is interacting with the side panel).
+    seekAudioForToken(found.token.id);
+  }
+
+  function seekAudioForToken(tokenId: string) {
+    if (typeof window === 'undefined') return;
+    void (async () => {
+      const { getAlignmentStartMs, getAudioController } = await import(
+        './audio-bus.js'
+      );
+      const startMs = getAlignmentStartMs(tokenId);
+      if (startMs == null) return;
+      const ctrl = getAudioController();
+      if (!ctrl) return;
+      ctrl.pause();
+      ctrl.seekMs(startMs);
+    })();
   }
 
   // Accepts both MouseEvent (mouseover) and FocusEvent (focusin) so
