@@ -286,12 +286,21 @@
               >‹ prev</a>
             {/if}
             {#if data.collectionContext.nextTextId}
-              <a
-                href={`/reader/${data.collectionContext.nextTextId}`}
-                class="reader-coll-arrow"
-                title="Next text"
-                aria-label="Next text in collection"
-              >next ›</a>
+              {#if data.collectionContext.nextLocked}
+                <a
+                  href={`/reader/${data.collectionContext.nextTextId}?skipLock=1`}
+                  class="reader-coll-arrow reader-coll-locked"
+                  title="Course gate — finish this text or click to skip"
+                  aria-label="Next text (locked — finish to advance, or click to skip)"
+                >next 🔒</a>
+              {:else}
+                <a
+                  href={`/reader/${data.collectionContext.nextTextId}`}
+                  class="reader-coll-arrow"
+                  title="Next text"
+                  aria-label="Next text in collection"
+                >next ›</a>
+              {/if}
             {/if}
           </span>
         </p>
@@ -521,6 +530,10 @@
   }
   .reader-coll-arrow:hover {
     text-decoration: underline;
+  }
+  .reader-coll-locked {
+    color: var(--ink-3, var(--color-fg-muted));
+    opacity: 0.7;
   }
   .reader-meta .t {
     margin: 0;
