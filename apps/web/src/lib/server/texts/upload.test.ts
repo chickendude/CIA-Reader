@@ -87,6 +87,10 @@ vi.mock('../db/index.js', () => ({
 vi.mock('./sharing.js', () => ({
   viewerHasDirectShare: async () => false,
 }));
+// T-7.4: same treatment for the groups module.
+vi.mock('../groups.js', () => ({
+  viewerHasGroupShare: async () => false,
+}));
 
 const {
   TextValidationError,

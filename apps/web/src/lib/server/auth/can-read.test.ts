@@ -6,6 +6,10 @@ import { describe, expect, it, vi } from 'vitest';
 vi.mock('../texts/sharing.js', () => ({
   viewerHasDirectShare: async () => false,
 }));
+// T-7.4: same treatment for the groups module.
+vi.mock('../groups.js', () => ({
+  viewerHasGroupShare: async () => false,
+}));
 
 import { ForbiddenError } from '../dictionary/permissions.js';
 import { assertCanReadText, canReadText } from './can-read.js';

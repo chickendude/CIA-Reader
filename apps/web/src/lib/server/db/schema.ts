@@ -604,6 +604,86 @@ export const textShares = pgTable(
   }),
 );
 
+/**
+ * User groups (T-7.3) — classroom rosters, study clubs, etc.
+ *
+ * `owner_id` is the group's admin (creator + manager). M7 keeps
+ * groups simple: no role hierarchy beyond owner / member, no
+ * invitations workflow (the owner adds members directly by email
+ * resolution). T-7.8's classroom dashboard surfaces aggregate stats
+ * for the owner.
+ */
+export const groups = pgTable(
+  'groups',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    ownerId: uuid('owner_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    description: text('description'),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    ownerIdx: index('groups_owner_idx').on(t.ownerId, t.createdAt),
+  }),
+);
+
+export const groupMemberships = pgTable(
+  'group_memberships',
+  {
+    groupId: uuid('group_id')
+      .notNull()
+      .references(() => groups.id, { onDelete: 'cascade' }),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    addedById: uuid('added_by_id').references(() => users.id, {
+      onDelete: 'set null',
+    }),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.groupId, t.userId] }),
+    userIdx: index('group_memberships_user_idx').on(t.userId),
+  }),
+);
+
+/**
+ * Per-group text shares (T-7.4). Sibling of `text_shares` —
+ * granting at the group level extends read access to every
+ * member of the group at the time canReadText runs (memberships
+ * checked dynamically so adds / removes take effect immediately).
+ */
+export const textGroupShares = pgTable(
+  'text_group_shares',
+  {
+    textId: uuid('text_id')
+      .notNull()
+      .references(() => texts.id, { onDelete: 'cascade' }),
+    groupId: uuid('group_id')
+      .notNull()
+      .references(() => groups.id, { onDelete: 'cascade' }),
+    grantedById: uuid('granted_by_id').references(() => users.id, {
+      onDelete: 'set null',
+    }),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.textId, t.groupId] }),
+    groupIdx: index('text_group_shares_group_idx').on(t.groupId),
+  }),
+);
+
 export const textChapters = pgTable(
   'text_chapters',
   {
@@ -1120,3 +1200,6 @@ export type TokenCorrection = InferSelectModel<typeof tokenCorrections>;
 export type ParseReport = InferSelectModel<typeof parseReports>;
 export type LemmaProposal = InferSelectModel<typeof lemmaProposals>;
 export type TextShare = InferSelectModel<typeof textShares>;
+export type Group = InferSelectModel<typeof groups>;
+export type GroupMembership = InferSelectModel<typeof groupMemberships>;
+export type TextGroupShare = InferSelectModel<typeof textGroupShares>;
