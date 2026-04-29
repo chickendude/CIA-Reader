@@ -13,7 +13,12 @@
 import { and, eq } from 'drizzle-orm';
 
 import { db, schema } from '../db/index.js';
-import type { Text, TextShare, User } from '../db/schema.js';
+import type {
+  Text,
+  TextGroupShare,
+  TextShare,
+  User,
+} from '../db/schema.js';
 
 export class TextShareError extends Error {
   constructor(
@@ -129,6 +134,96 @@ export async function listTextShares(
     .select()
     .from(schema.textShares)
     .where(eq(schema.textShares.textId, textId))) as TextShare[];
+  return rows;
+}
+
+export type GroupShareInput = {
+  textId: string;
+  groupId: string;
+  actor: Pick<User, 'id' | 'role'>;
+};
+
+/**
+ * T-7.4: grant a group access to a text. Owner-or-admin only on
+ * the text. We don't require the actor to be a member of the
+ * target group — sharing TO a group is a one-way grant; they
+ * don't need to be inside the group to share with it.
+ */
+export async function grantTextGroupShare(
+  input: GroupShareInput,
+): Promise<TextGroupShare> {
+  const text = await loadText(input.textId);
+  if (!text) throw new TextShareError('text not found', 404);
+  if (!canManageShares(text, input.actor)) {
+    throw new TextShareError('only the owner can share', 403);
+  }
+  // Verify the group exists.
+  const [group] = (await db
+    .select({ id: schema.groups.id })
+    .from(schema.groups)
+    .where(eq(schema.groups.id, input.groupId))
+    .limit(1)) as Array<{ id: string }>;
+  if (!group) throw new TextShareError('group not found', 404);
+
+  const now = new Date();
+  const [row] = await db
+    .insert(schema.textGroupShares)
+    .values({
+      textId: input.textId,
+      groupId: input.groupId,
+      grantedById: input.actor.id,
+      createdAt: now,
+    })
+    .onConflictDoUpdate({
+      target: [
+        schema.textGroupShares.textId,
+        schema.textGroupShares.groupId,
+      ],
+      set: { grantedById: input.actor.id },
+    })
+    .returning();
+  if (!row) throw new TextShareError('insert returned no row');
+
+  if (text.visibility === 'private') {
+    await db
+      .update(schema.texts)
+      .set({ visibility: 'shared', updatedAt: now })
+      .where(eq(schema.texts.id, input.textId));
+  }
+  return row as TextGroupShare;
+}
+
+export async function revokeTextGroupShare(
+  input: GroupShareInput,
+): Promise<void> {
+  const text = await loadText(input.textId);
+  if (!text) throw new TextShareError('text not found', 404);
+  if (!canManageShares(text, input.actor)) {
+    throw new TextShareError('only the owner can revoke', 403);
+  }
+  await db
+    .delete(schema.textGroupShares)
+    .where(
+      and(
+        eq(schema.textGroupShares.textId, input.textId),
+        eq(schema.textGroupShares.groupId, input.groupId),
+      ),
+    );
+}
+
+export async function listTextGroupShares(
+  textId: string,
+  actor: Pick<User, 'id' | 'role'>,
+): Promise<TextGroupShare[]> {
+  const text = await loadText(textId);
+  if (!text) throw new TextShareError('text not found', 404);
+  if (!canManageShares(text, actor)) {
+    throw new TextShareError('only the owner can list group shares', 403);
+  }
+  const rows = (await db
+    .select()
+    .from(schema.textGroupShares)
+    .where(eq(schema.textGroupShares.textId, textId))) as TextGroupShare[];
   return rows;
 }
 
