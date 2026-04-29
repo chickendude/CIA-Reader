@@ -116,7 +116,7 @@
   }
 </script>
 
-<Sheet {open} {onClose} title="Reader settings" width={400}>
+<Sheet {open} {onClose} title="Reader settings" width={400} dimmed={false}>
   <div class="rs" data-testid="reader-settings">
     <section>
       <h3>Layout</h3>

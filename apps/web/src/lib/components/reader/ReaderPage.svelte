@@ -28,12 +28,20 @@
     textId,
     showRomanization = false,
     isOwner = false,
+    fontSize,
+    lineSpacing,
+    fontFamily,
+    readingWidth,
   }: {
     chapters: ChapterView[];
     chapterIdx: number;
     textId: string;
     showRomanization?: boolean;
     isOwner?: boolean;
+    fontSize?: number;
+    lineSpacing?: number;
+    fontFamily?: string | null;
+    readingWidth?: string;
   } = $props();
 
   const current = $derived(
@@ -177,11 +185,18 @@
     return () => ro.disconnect();
   });
 
-  // Re-measure when the chapter or romanization toggle changes — both
-  // mutate the content's natural size and we want pageCount to track.
+  // Re-measure when anything that mutates the content's natural size
+  // changes — chapter, romanization toggle, or any of the typography
+  // settings driven by CSS vars on the .reader root. ResizeObserver
+  // fires on box-size changes only, so font-size / line-height swaps
+  // (which only change scrollWidth) need an explicit nudge.
   $effect(() => {
     void chapterIdx;
     void showRomanization;
+    void fontSize;
+    void lineSpacing;
+    void fontFamily;
+    void readingWidth;
     measure();
   });
 </script>
@@ -282,6 +297,7 @@
   .reader-page-window {
     flex: 1;
     width: 100%;
+    max-width: var(--reader-col-width, 40rem);
     height: 100%;
     overflow: hidden;
     position: relative;
@@ -307,9 +323,9 @@
      the next — without it the browser tries to balance columns, which
      short-circuits the pagination. */
   .reader-page-content {
-    font-family: var(--font-serif-dev, var(--font-serif));
-    font-size: 1.1rem;
-    line-height: 2;
+    font-family: var(--reader-font-family, var(--font-serif-dev, var(--font-serif)));
+    font-size: var(--reader-font-size, 1.1rem);
+    line-height: var(--reader-line-height, 2);
     color: var(--ink, var(--color-fg));
     width: 100%;
     height: 100%;
@@ -317,11 +333,6 @@
     column-fill: auto;
     word-spacing: 0.03em;
     text-wrap: pretty;
-  }
-  @media (min-width: 768px) {
-    .reader-page-content {
-      font-size: 1.25rem;
-    }
   }
 
   .chapter-h {

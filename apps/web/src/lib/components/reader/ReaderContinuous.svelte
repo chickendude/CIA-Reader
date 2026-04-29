@@ -139,9 +139,13 @@
 
 <style>
   .reader-continuous {
-    max-width: 38rem;
+    max-width: var(--reader-col-width, 38rem);
     margin: 0 auto;
     padding: 1rem 1.25rem 4rem;
+    font-family: var(--reader-font-family, var(--font-serif-dev, var(--font-serif)));
+    font-size: var(--reader-font-size, 1.1rem);
+    line-height: var(--reader-line-height, 2);
+    color: var(--ink, var(--color-fg));
   }
   section {
     margin: 1.5rem 0;
