@@ -87,7 +87,6 @@
   --w-l3-bg: oklch(0.8 0.12 70);
   --w-known-bg: transparent;
   --w-ignored-bg: transparent;
-  --w-known-ink: var(--ink-3);
   --w-ignored-ink: var(--ink-4);
 
   --shadow-1:
@@ -340,7 +339,7 @@ html[data-hl='background'] .word[data-s='3'] {
   background: var(--w-l3-bg);
 }
 html[data-hl='background'] .word[data-s='4'] {
-  color: var(--w-known-ink);
+  background: var(--w-known-bg);
 }
 html[data-hl='background'] .word[data-s='5'] {
   color: var(--w-ignored-ink);
@@ -367,7 +366,6 @@ html[data-hl='underline'] .word[data-s='3'] {
 }
 html[data-hl='underline'] .word[data-s='4'] {
   box-shadow: none;
-  color: var(--w-known-ink);
 }
 html[data-hl='underline'] .word[data-s='5'] {
   box-shadow: none;
