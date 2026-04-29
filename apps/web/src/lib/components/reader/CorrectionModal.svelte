@@ -28,6 +28,7 @@
   import { LANGUAGES, type LanguageCode } from '@ciareader/shared-types';
   import Modal from '$lib/components/overlay/Modal.svelte';
   import ScriptAwareInput from '$lib/components/input/ScriptAwareInput.svelte';
+  import NewLemmaForm from './NewLemmaForm.svelte';
   import type { ServerToken } from './types.js';
 
   type CorrectionType =
@@ -51,8 +52,6 @@
     onClose: () => void;
     /** Parent applies the correction so the reader re-renders. */
     onApplied: (lemmaId: string | null) => void;
-    /** Opens T-6.3's new-lemma form; modal closes itself first. */
-    onAddNewWord?: () => void;
     /** Test seam. */
     fetcher?: typeof fetch;
   }
@@ -63,9 +62,12 @@
     language,
     onClose,
     onApplied,
-    onAddNewWord,
     fetcher = fetch,
   }: Props = $props();
+
+  // T-6.3: opens NewLemmaForm on top of this modal when the user
+  // taps "Add new word" from the empty search-state.
+  let showNewLemma = $state(false);
 
   let searchQuery = $state('');
   let searchHits = $state<DictionaryHit[]>([]);
@@ -273,18 +275,24 @@
       {:else if searchQuery}
         <p class="cm-muted">
           No matches.
-          {#if onAddNewWord}
-            <button
-              type="button"
-              class="cm-link"
-              onclick={() => {
-                onClose();
-                onAddNewWord?.();
-              }}
-            >
-              Add new word
-            </button>
-          {/if}
+          <button
+            type="button"
+            class="cm-link"
+            onclick={() => (showNewLemma = true)}
+          >
+            Add new word
+          </button>
+        </p>
+      {:else}
+        <p class="cm-muted-soft">
+          Don't see it?
+          <button
+            type="button"
+            class="cm-link"
+            onclick={() => (showNewLemma = true)}
+          >
+            Add a new word
+          </button>
         </p>
       {/if}
     </section>
@@ -330,6 +338,17 @@
     </footer>
   </div>
 </Modal>
+
+<NewLemmaForm
+  open={showNewLemma}
+  {token}
+  {language}
+  onClose={() => (showNewLemma = false)}
+  onApplied={(lemmaId) => {
+    onApplied(lemmaId);
+    onClose();
+  }}
+/>
 
 <style>
   .cm {
@@ -459,6 +478,12 @@
     color: var(--ink-3, var(--color-fg-muted));
     font-size: 0.85rem;
     margin: 0.4rem 0 0;
+  }
+  .cm-muted-soft {
+    color: var(--ink-3, var(--color-fg-muted));
+    font-size: 0.78rem;
+    margin: 0.4rem 0 0;
+    font-style: italic;
   }
   .cm-err {
     color: var(--err, #b94545);

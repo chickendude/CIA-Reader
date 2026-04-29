@@ -902,6 +902,72 @@ export const tokenCorrections = pgTable(
 );
 
 /**
+ * User-submitted new-lemma proposals (T-6.3).
+ *
+ * When the correction modal's dictionary search comes up empty, the
+ * user can propose a new lemma via the new-lemma form. We don't
+ * write directly to `lemmas` — that table is the curator-validated
+ * dictionary and bulk-imports / promotions go through the
+ * dictionary editor — but the proposer needs to see the entry
+ * immediately on the page they're reading. So we:
+ *
+ *   1. Insert a `lemma_proposals` row with status='pending'.
+ *   2. Insert a `token_corrections` row (type=new_lemma, chosen_lemma_id=null).
+ *   3. File a `parse_reports` row so the curator dashboard surfaces it.
+ *
+ * Curator acceptance in T-6.6 copies the proposal into `lemmas` and
+ * back-fills `token_corrections.chosen_lemma_id` on every row that
+ * was created against this proposal. Rejection just flips the
+ * proposal status — the user's per-token correction stays as a
+ * 'new_lemma' marker so the surface remains uncoloured.
+ */
+export const lemmaProposalStatus = pgEnum('lemma_proposal_status', [
+  'pending',
+  'accepted',
+  'rejected',
+]);
+
+export const lemmaProposals = pgTable(
+  'lemma_proposals',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    proposerId: uuid('proposer_id').references(() => users.id, {
+      onDelete: 'set null',
+    }),
+    language: language('language').notNull(),
+    headword: text('headword').notNull(),
+    pos: text('pos').notNull(),
+    glossDefault: text('gloss_default'),
+    notes: text('notes'),
+    status: lemmaProposalStatus('status').notNull().default('pending'),
+    // When the curator accepts a proposal we copy it into `lemmas`
+    // and link the resulting lemma id here so the audit trail is
+    // legible from either side.
+    promotedLemmaId: uuid('promoted_lemma_id').references(() => lemmas.id, {
+      onDelete: 'set null',
+    }),
+    reviewerId: uuid('reviewer_id').references(() => users.id, {
+      onDelete: 'set null',
+    }),
+    reviewerNote: text('reviewer_note'),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    statusIdx: index('lemma_proposals_lang_status_idx').on(t.language, t.status),
+    headwordIdx: index('lemma_proposals_headword_idx').on(
+      t.language,
+      t.headword,
+      t.pos,
+    ),
+  }),
+);
+
+/**
  * Curator moderation queue for parse / lemma errors (T-6.5).
  *
  * Distinct from `token_corrections`: corrections are *per-user*
@@ -1013,3 +1079,4 @@ export type UserTextProgress = InferSelectModel<typeof userTextProgress>;
 export type FormLemmaOverride = InferSelectModel<typeof formLemmaOverrides>;
 export type TokenCorrection = InferSelectModel<typeof tokenCorrections>;
 export type ParseReport = InferSelectModel<typeof parseReports>;
+export type LemmaProposal = InferSelectModel<typeof lemmaProposals>;
