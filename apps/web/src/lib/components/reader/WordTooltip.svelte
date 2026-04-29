@@ -95,7 +95,10 @@
 <style>
   .tip {
     position: fixed;
-    z-index: 30;
+    /* Above the side panel (z-index 40) so the tooltip shows even when
+     * the user is hovering a word that lives under where the panel
+     * sits — which is most of the right half of the reader. */
+    z-index: 50;
     background: var(--ink, #1f1a14);
     color: var(--paper, #fdfaf3);
     border-radius: 8px;
