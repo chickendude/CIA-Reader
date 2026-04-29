@@ -66,11 +66,8 @@
     saveOk = false;
     try {
       const { interpolateSentenceMarks } = await import(
-        '$lib/server/audio/sentence-tokens.js'
+        '$lib/audio/sentence-tokens.js'
       );
-      // Browser-side import works because the helper is pure (no
-      // server-only deps). We pass the loader-provided sentences +
-      // the user's marks straight through.
       const flat = Array.from(marks.entries()).map(([sentenceIdx, m]) => ({
         sentenceIdx,
         startMs: m.startMs,
