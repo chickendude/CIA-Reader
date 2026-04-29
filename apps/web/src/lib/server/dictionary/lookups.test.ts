@@ -76,20 +76,44 @@ describe('bucketTranslations — ordering', () => {
     expect(out.official.map((t) => t.body)).toEqual(['cur', 'imp']);
   });
 
-  it('orders community translations newest-first as a temporary stand-in for vote order', () => {
+  it('orders community translations by vote score, then newest-first (T-10.4)', () => {
+    const rows: Translation[] = [
+      row({
+        source: 'user',
+        submittedBy: 'u2',
+        body: 'top',
+        createdAt: new Date('2026-01-01'),
+        voteScore: 3,
+      } as Partial<Translation>),
+      row({
+        source: 'user',
+        submittedBy: 'u3',
+        body: 'newer',
+        createdAt: new Date('2026-04-01'),
+        voteScore: 0,
+      } as Partial<Translation>),
+    ];
+    const out = bucketTranslations(rows, null);
+    expect(out.community.map((t) => t.body)).toEqual(['top', 'newer']);
+    expect(out.community.map((t) => t.voteScore)).toEqual([3, 0]);
+  });
+
+  it('uses newest-first as the community tiebreaker when vote scores match', () => {
     const rows: Translation[] = [
       row({
         source: 'user',
         submittedBy: 'u2',
         body: 'old',
         createdAt: new Date('2026-01-01'),
-      }),
+        voteScore: 0,
+      } as Partial<Translation>),
       row({
         source: 'user',
         submittedBy: 'u3',
         body: 'new',
         createdAt: new Date('2026-04-01'),
-      }),
+        voteScore: 0,
+      } as Partial<Translation>),
     ];
     const out = bucketTranslations(rows, null);
     expect(out.community.map((t) => t.body)).toEqual(['new', 'old']);

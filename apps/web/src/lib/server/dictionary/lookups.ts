@@ -22,10 +22,11 @@
  *                     lands. Hidden rows excluded for anonymous + non-
  *                     curator viewers.
  */
-import { and, eq, ne } from 'drizzle-orm';
+import { and, eq, ne, sql } from 'drizzle-orm';
 
 import { db, schema } from '../db/index.js';
 import type { Lemma, Translation, User } from '../db/schema.js';
+import type { TranslationVoteValue } from './votes.js';
 
 /**
  * Viewer-relative provenance category (T-3.8). The reader pop-up renders
@@ -60,6 +61,8 @@ export type PublicTranslation = {
   sourceAttribution: string | null;
   provenance: TranslationProvenance;
   hidden: boolean;
+  voteScore: number;
+  viewerVote: TranslationVoteValue | null;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -112,7 +115,7 @@ export function deriveProvenance(
 }
 
 function toPublicTranslation(
-  row: Translation,
+  row: TranslationWithVotes,
   viewer: { id: string } | null,
 ): PublicTranslation {
   return {
@@ -125,10 +128,17 @@ function toPublicTranslation(
     sourceAttribution: row.sourceAttribution,
     provenance: deriveProvenance(row, viewer),
     hidden: row.hidden,
+    voteScore: row.voteScore ?? 0,
+    viewerVote: row.viewerVote ?? null,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
 }
+
+type TranslationWithVotes = Translation & {
+  voteScore?: number;
+  viewerVote?: TranslationVoteValue | null;
+};
 
 /**
  * Bucket + sort translations for a single lemma under the rules
@@ -136,15 +146,15 @@ function toPublicTranslation(
  * has unit tests that don't need to wire the DB mock.
  */
 export function bucketTranslations(
-  rows: Translation[],
+  rows: TranslationWithVotes[],
   viewer: { id: string; role: User['role'] } | null,
 ): LemmaTranslationBuckets['translations'] {
   const canSeeHidden = viewer?.role === 'curator' || viewer?.role === 'admin';
   const visible = rows.filter((r) => !r.hidden || canSeeHidden);
 
-  const personal: Translation[] = [];
-  const official: Translation[] = [];
-  const community: Translation[] = [];
+  const personal: TranslationWithVotes[] = [];
+  const official: TranslationWithVotes[] = [];
+  const community: TranslationWithVotes[] = [];
 
   for (const row of visible) {
     if (viewer && row.source === 'user' && row.submittedBy === viewer.id) {
@@ -156,9 +166,9 @@ export function bucketTranslations(
     }
   }
 
-  const byCreatedAtAsc = (a: Translation, b: Translation) =>
+  const byCreatedAtAsc = (a: TranslationWithVotes, b: TranslationWithVotes) =>
     a.createdAt.getTime() - b.createdAt.getTime();
-  const byCreatedAtDesc = (a: Translation, b: Translation) =>
+  const byCreatedAtDesc = (a: TranslationWithVotes, b: TranslationWithVotes) =>
     b.createdAt.getTime() - a.createdAt.getTime();
 
   // T-3.13: a curator-set `displayRank` overrides the bucket's default
@@ -167,8 +177,8 @@ export function bucketTranslations(
   // The personal bucket doesn't accept curator reordering — it's
   // viewer-private — so it ignores displayRank entirely.
   const byDisplayRankThen =
-    (fallback: (a: Translation, b: Translation) => number) =>
-    (a: Translation, b: Translation): number => {
+    (fallback: (a: TranslationWithVotes, b: TranslationWithVotes) => number) =>
+    (a: TranslationWithVotes, b: TranslationWithVotes): number => {
       const ar = a.displayRank;
       const br = b.displayRank;
       if (ar !== null && br !== null) {
@@ -190,13 +200,90 @@ export function bucketTranslations(
       return diff !== 0 ? diff : byCreatedAtAsc(a, b);
     }),
   );
-  community.sort(byDisplayRankThen(byCreatedAtDesc));
+  community.sort(
+    byDisplayRankThen((a, b) => {
+      const scoreDiff = (b.voteScore ?? 0) - (a.voteScore ?? 0);
+      return scoreDiff !== 0 ? scoreDiff : byCreatedAtDesc(a, b);
+    }),
+  );
 
   return {
     personal: personal.map((r) => toPublicTranslation(r, viewer)),
     official: official.map((r) => toPublicTranslation(r, viewer)),
     community: community.map((r) => toPublicTranslation(r, viewer)),
   };
+}
+
+function unwrapRows<T>(out: unknown): T[] {
+  if (Array.isArray(out)) return out as T[];
+  if (out && typeof out === 'object' && 'rows' in out) {
+    const rows = (out as { rows?: T[] }).rows;
+    if (Array.isArray(rows)) return rows;
+  }
+  return [];
+}
+
+async function attachVoteData(
+  rows: Translation[],
+  viewer: { id: string } | null,
+): Promise<TranslationWithVotes[]> {
+  const communityIds = rows
+    .filter((r) => r.source === 'user')
+    .map((r) => r.id);
+  if (communityIds.length === 0) return rows;
+
+  const scoreRows = unwrapRows<{
+    translation_id: string;
+    score: number | string | null;
+  }>(
+    await db.execute(sql`
+      SELECT
+        translation_id,
+        COALESCE(
+          SUM(CASE WHEN value = 'up' THEN 1 WHEN value = 'down' THEN -1 ELSE 0 END),
+          0
+        )::int AS score
+      FROM translation_votes
+      WHERE translation_id IN (${sql.join(
+        communityIds.map((id) => sql`${id}`),
+        sql`, `,
+      )})
+      GROUP BY translation_id
+    `),
+  );
+  const scores = new Map(
+    scoreRows.map((r) => [r.translation_id, Number(r.score ?? 0)]),
+  );
+
+  const viewerVotes = new Map<string, TranslationVoteValue>();
+  if (viewer) {
+    const voteRows = await db
+      .select({
+        translationId: schema.translationVotes.translationId,
+        value: schema.translationVotes.value,
+      })
+      .from(schema.translationVotes)
+      .where(
+        and(
+          eq(schema.translationVotes.userId, viewer.id),
+          sql`${schema.translationVotes.translationId} IN (${sql.join(
+            communityIds.map((id) => sql`${id}`),
+            sql`, `,
+          )})`,
+        ),
+      );
+    for (const row of voteRows) {
+      viewerVotes.set(row.translationId, row.value as TranslationVoteValue);
+    }
+  }
+
+  return rows.map((row) => ({
+    ...row,
+    voteScore: row.source === 'user' ? (scores.get(row.id) ?? 0) : 0,
+    viewerVote: row.source === 'user'
+      ? (viewerVotes.get(row.id) ?? null)
+      : null,
+  }));
 }
 
 export class LemmaNotFoundError extends Error {
@@ -259,8 +346,10 @@ export async function getLemmaTranslations(
     rows = joined.map((r) => r.translation as Translation);
   }
 
+  const rowsWithVotes = await attachVoteData(rows, viewer);
+
   return {
     lemma: toPublicLemma(lemmaTyped),
-    translations: bucketTranslations(rows, viewer),
+    translations: bucketTranslations(rowsWithVotes, viewer),
   };
 }

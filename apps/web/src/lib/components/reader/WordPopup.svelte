@@ -33,11 +33,15 @@
 
   type PublicTranslation = {
     id: string;
+    source: 'official_dictionary' | 'curator' | 'user';
+    submittedBy: string | null;
     body: string;
     targetLanguage: string;
     sourceAttribution: string | null;
     parentTranslationId: string | null;
     provenance: Provenance;
+    voteScore: number;
+    viewerVote: 'up' | 'down' | null;
   };
 
   type LemmaPayload = {
@@ -211,6 +215,8 @@
   let customizeBody = $state('');
   let savingCustomize = $state(false);
   let customizeError = $state<string | null>(null);
+  let votingTranslationId = $state<string | null>(null);
+  let voteError = $state<string | null>(null);
 
   const customizableIds = $derived(() =>
     customizableOfficialIds(
@@ -382,6 +388,32 @@
       customizeError = (e as PostError).message ?? (e as Error).message;
     } finally {
       savingCustomize = false;
+    }
+  }
+
+  async function voteTranslation(
+    translation: PublicTranslation,
+    vote: 'up' | 'down',
+  ) {
+    if (!token?.lemmaId) return;
+    const nextVote = translation.viewerVote === vote ? null : vote;
+    votingTranslationId = translation.id;
+    voteError = null;
+    try {
+      const res = await fetch(`/api/v1/translations/${translation.id}/vote`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ vote: nextVote }),
+      });
+      if (!res.ok) {
+        const text = await res.text().catch(() => '');
+        throw new Error(text || `PATCH failed: ${res.status}`);
+      }
+      await refetchPayload(token.lemmaId);
+    } catch (e) {
+      voteError = (e as Error).message;
+    } finally {
+      votingTranslationId = null;
     }
   }
 
@@ -614,15 +646,47 @@
           </li>
         {/each}
         {#each payload.translations.community as t (t.id)}
-          <li>
-            <span class="badge tone-community">community</span>
-            {t.body}
+          <li class="community-row">
+            <div class="community-body">
+              <span class="badge tone-community">community</span>
+              {t.body}
+            </div>
+            {#if isOwner}
+              <div class="vote-controls" aria-label="Community translation votes">
+                <button
+                  type="button"
+                  class="vote-button"
+                  data-active={t.viewerVote === 'up' ? '1' : '0'}
+                  disabled={votingTranslationId === t.id}
+                  aria-label="Upvote translation"
+                  title="Upvote translation"
+                  onclick={() => voteTranslation(t, 'up')}
+                >
+                  ↑
+                </button>
+                <span class="vote-score" aria-label="Vote score">{t.voteScore}</span>
+                <button
+                  type="button"
+                  class="vote-button"
+                  data-active={t.viewerVote === 'down' ? '1' : '0'}
+                  disabled={votingTranslationId === t.id}
+                  aria-label="Downvote translation"
+                  title="Downvote translation"
+                  onclick={() => voteTranslation(t, 'down')}
+                >
+                  ↓
+                </button>
+              </div>
+            {/if}
           </li>
         {/each}
         {#if allTranslations().length === 0}
           <li class="muted">No translations yet.</li>
         {/if}
       </ul>
+      {#if voteError}
+        <p class="err small">Could not save vote: {voteError}</p>
+      {/if}
 
       {#if isOwner}
         {#if showAddForm}
@@ -874,6 +938,56 @@
     font-size: 0.88rem;
     line-height: 1.4;
     color: var(--ink, var(--color-fg));
+  }
+  .community-row {
+    display: flex;
+    gap: 0.75rem;
+    align-items: flex-start;
+    justify-content: space-between;
+  }
+  .community-body {
+    min-width: 0;
+  }
+  .vote-controls {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+  }
+  .vote-button {
+    width: 28px;
+    height: 28px;
+    border-radius: 7px;
+    border: 1px solid var(--rule, var(--color-border));
+    background: var(--paper, var(--color-bg));
+    color: var(--ink-3, var(--color-fg-muted));
+    cursor: pointer;
+    font: inherit;
+    line-height: 1;
+  }
+  .vote-button[data-active='1'] {
+    color: var(--ink, var(--color-fg));
+    border-color: color-mix(
+      in oklch,
+      var(--ink, var(--color-fg)) 22%,
+      var(--rule, var(--color-border))
+    );
+    background: color-mix(
+      in oklch,
+      var(--ink, var(--color-fg)) 7%,
+      var(--paper, var(--color-bg))
+    );
+  }
+  .vote-button:disabled {
+    opacity: 0.55;
+    cursor: wait;
+  }
+  .vote-score {
+    min-width: 1.4rem;
+    text-align: center;
+    font-family: var(--font-mono-display, var(--font-mono));
+    font-size: 0.76rem;
+    color: var(--ink-2, var(--color-fg));
   }
   .badge {
     display: inline-block;

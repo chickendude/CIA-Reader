@@ -211,6 +211,11 @@ export const translationSource = pgEnum('translation_source', [
   'user',
 ]);
 
+export const translationVoteValue = pgEnum('translation_vote_value', [
+  'up',
+  'down',
+]);
+
 /**
  * Dictionary headwords (T-3.1). A lemma is identified by (language, headword,
  * pos) — the same surface may be multiple lemmas across POS (e.g. Hindi "सोना"
@@ -335,6 +340,39 @@ export const translations = pgTable(
     // The (lemma, source, source_id) triple is how a re-import finds its
     // own previously-written row to update.
     sourceLookupIdx: index('translations_source_lookup_idx').on(t.lemmaId, t.source, t.sourceId),
+  }),
+);
+
+/**
+ * Per-user votes on community translations (T-10.4).
+ *
+ * Official and curator translations are not reordered by votes; this table is
+ * read only for `source='user'` rows in the community bucket. One user gets one
+ * current vote per translation, and clearing a vote deletes the row.
+ */
+export const translationVotes = pgTable(
+  'translation_votes',
+  {
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    translationId: uuid('translation_id')
+      .notNull()
+      .references(() => translations.id, { onDelete: 'cascade' }),
+    value: translationVoteValue('value').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.userId, t.translationId] }),
+    translationIdx: index('translation_votes_translation_idx').on(
+      t.translationId,
+    ),
+    userIdx: index('translation_votes_user_idx').on(t.userId),
   }),
 );
 
@@ -713,6 +751,7 @@ export type UserLanguage = InferSelectModel<typeof userLanguages>;
 export type Lemma = InferSelectModel<typeof lemmas>;
 export type LemmaForm = InferSelectModel<typeof lemmaForms>;
 export type Translation = InferSelectModel<typeof translations>;
+export type TranslationVote = InferSelectModel<typeof translationVotes>;
 export type DictionaryImport = InferSelectModel<typeof dictionaryImports>;
 export type CuratorLanguage = InferSelectModel<typeof curatorLanguages>;
 export type LemmaEditHistoryEntry = InferSelectModel<typeof lemmaEditHistory>;
