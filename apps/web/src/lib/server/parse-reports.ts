@@ -20,7 +20,11 @@
 import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 
 import { db, schema } from './db/index.js';
-import type { ParseReport, TokenCorrection } from './db/schema.js';
+import type {
+  FormLemmaOverride,
+  ParseReport,
+  TokenCorrection,
+} from './db/schema.js';
 import type { LanguageCode } from '@ciareader/shared-types';
 
 export type FileParseReportInput = {
@@ -120,6 +124,148 @@ export type ListParseReportsFilter = {
   limit?: number;
   offset?: number;
 };
+
+/**
+ * Update a report's status. Resolution / rejection / defer all
+ * route through here; `acceptParseReport` is the special branch
+ * that ALSO writes a `form_lemma_overrides` row before updating.
+ */
+export type ResolveParseReportInput = {
+  reportId: string;
+  reviewerId: string;
+  status: 'resolved' | 'rejected' | 'duplicate' | 'deferred' | 'triaged' | 'open';
+  resolutionNote?: string | null;
+  duplicateOfReportId?: string | null;
+};
+
+export class ParseReportValidationError extends Error {
+  constructor(
+    message: string,
+    public readonly status: 400 | 404 = 400,
+  ) {
+    super(message);
+    this.name = 'ParseReportValidationError';
+  }
+}
+
+export async function resolveParseReport(
+  input: ResolveParseReportInput,
+): Promise<ParseReport> {
+  if (
+    (input.status === 'resolved' ||
+      input.status === 'rejected' ||
+      input.status === 'duplicate') &&
+    !input.resolutionNote?.trim()
+  ) {
+    throw new ParseReportValidationError(
+      'resolutionNote required for terminal statuses',
+    );
+  }
+  const now = new Date();
+  const isTerminal =
+    input.status === 'resolved' ||
+    input.status === 'rejected' ||
+    input.status === 'duplicate';
+  const [updated] = await db
+    .update(schema.parseReports)
+    .set({
+      status: input.status,
+      assignedReviewerId: input.reviewerId,
+      resolutionNote: input.resolutionNote?.trim() || null,
+      resolvedAt: isTerminal ? now : null,
+      updatedAt: now,
+    })
+    .where(eq(schema.parseReports.id, input.reportId))
+    .returning();
+  if (!updated) {
+    throw new ParseReportValidationError('report not found', 404);
+  }
+  return updated as ParseReport;
+}
+
+export type AcceptParseReportInput = {
+  reportId: string;
+  reviewerId: string;
+  resolutionNote?: string | null;
+};
+
+export type AcceptParseReportResult = {
+  report: ParseReport;
+  override: FormLemmaOverride;
+};
+
+/**
+ * "Accept for everyone" — promotes the report's correction into
+ * `form_lemma_overrides` so the worker (and the reader fallback)
+ * apply the chosen lemma to every future token matching
+ * `(language, surface_nfc, context_signature)` AND flips the
+ * report status to resolved.
+ */
+export async function acceptParseReport(
+  input: AcceptParseReportInput,
+): Promise<AcceptParseReportResult> {
+  const [report] = (await db
+    .select()
+    .from(schema.parseReports)
+    .where(eq(schema.parseReports.id, input.reportId))
+    .limit(1)) as ParseReport[];
+  if (!report) {
+    throw new ParseReportValidationError('report not found', 404);
+  }
+  if (!report.correctedLemmaId) {
+    throw new ParseReportValidationError(
+      'report has no correctedLemmaId — accept is only valid for pick_candidate / manual_lemma reports',
+    );
+  }
+  const now = new Date();
+
+  // Upsert the form_lemma_override.
+  const [override] = await db
+    .insert(schema.formLemmaOverrides)
+    .values({
+      language: report.language,
+      surfaceNfc: report.surfaceNfc,
+      contextSignature: report.contextSignature,
+      chosenLemmaId: report.correctedLemmaId,
+      voteCount: report.duplicateCount,
+      promotedAt: now,
+      promotedBy: input.reviewerId,
+      note: input.resolutionNote ?? null,
+    })
+    .onConflictDoUpdate({
+      target: [
+        schema.formLemmaOverrides.language,
+        schema.formLemmaOverrides.surfaceNfc,
+        schema.formLemmaOverrides.contextSignature,
+      ],
+      set: {
+        chosenLemmaId: report.correctedLemmaId,
+        voteCount: report.duplicateCount,
+        promotedAt: now,
+        promotedBy: input.reviewerId,
+        note: input.resolutionNote ?? null,
+      },
+    })
+    .returning();
+  if (!override) throw new Error('form_lemma_overrides upsert returned no row');
+
+  const [updated] = await db
+    .update(schema.parseReports)
+    .set({
+      status: 'resolved',
+      assignedReviewerId: input.reviewerId,
+      resolvedAt: now,
+      resolutionNote: input.resolutionNote ?? 'Accepted for everyone',
+      updatedAt: now,
+    })
+    .where(eq(schema.parseReports.id, input.reportId))
+    .returning();
+  if (!updated) throw new Error('parse_reports update returned no row');
+  return {
+    report: updated as ParseReport,
+    override: override as FormLemmaOverride,
+  };
+}
 
 /**
  * Paged list for the curator moderation UI (T-6.6). Sorted by

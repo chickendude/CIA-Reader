@@ -134,6 +134,49 @@ describe('fileParseReport', () => {
   });
 });
 
+const { resolveParseReport, ParseReportValidationError } = await import(
+  './parse-reports.js'
+);
+
+describe('resolveParseReport', () => {
+  it('rejects a terminal status without a resolution note', async () => {
+    await expect(
+      resolveParseReport({
+        reportId: 'pr-1',
+        reviewerId: 'u1',
+        status: 'resolved',
+      }),
+    ).rejects.toBeInstanceOf(ParseReportValidationError);
+  });
+
+  it('returns the updated row on a happy path', async () => {
+    chain.returning.mockReturnValueOnce([
+      { id: 'pr-1', status: 'resolved' },
+    ]);
+    const r = await resolveParseReport({
+      reportId: 'pr-1',
+      reviewerId: 'u1',
+      status: 'resolved',
+      resolutionNote: 'fixed',
+    });
+    expect(r.status).toBe('resolved');
+    const setArg = chain.set.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(setArg.resolvedAt).toBeInstanceOf(Date);
+    expect(setArg.resolutionNote).toBe('fixed');
+  });
+
+  it('returns 404 when the report is missing', async () => {
+    chain.returning.mockReturnValueOnce([]);
+    await expect(
+      resolveParseReport({
+        reportId: 'pr-x',
+        reviewerId: 'u1',
+        status: 'deferred',
+      }),
+    ).rejects.toMatchObject({ status: 404 });
+  });
+});
+
 describe('listParseReports', () => {
   it('runs an unfiltered list against the table when filter is empty', async () => {
     chain.offset.mockReturnValueOnce([{ id: 'pr-1' }, { id: 'pr-2' }]);
