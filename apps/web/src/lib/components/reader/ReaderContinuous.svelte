@@ -16,28 +16,40 @@
   readable.
 -->
 <script lang="ts">
-  import { onMount, untrack } from 'svelte';
+  import { onMount, tick, untrack } from 'svelte';
 
   import ChapterBody from './ChapterBody.svelte';
   import { LazyTokenLoader, type ChapterTokenFetcher } from './lazy-tokens.js';
+  import type { ProgressAnchor } from './progress-client.js';
+  import {
+    computePctRead,
+    findFirstVisibleWordAnchor,
+    findTokenElementAtOrAfter,
+    readableRect,
+    readerTopInset,
+  } from './reader-progress.js';
   import type { ChapterView, ServerToken } from './types.js';
 
   let {
     chapters,
     initialChapterIdx = 0,
+    initialTokenIdx = 0,
     showRomanization = false,
     isOwner = false,
     textId,
     language,
+    onProgress,
     /** Override hook for tests — defaults to a real fetch when omitted. */
     fetcher,
   }: {
     chapters: ChapterView[];
     initialChapterIdx?: number;
+    initialTokenIdx?: number;
     showRomanization?: boolean;
     isOwner?: boolean;
     textId: string;
     language: import('@ciareader/shared-types').LanguageCode;
+    onProgress?: (anchor: ProgressAnchor) => void;
     fetcher?: ChapterTokenFetcher;
   } = $props();
 
@@ -47,9 +59,7 @@
   // unnecessary network round-trip for the chapter we already have.
   let lazyTokens = $state(new Map<number, ServerToken[] | null>());
 
-  const loader = $derived(
-    new LazyTokenLoader(textId, fetcher),
-  );
+  const loader = $derived(new LazyTokenLoader(textId, fetcher));
 
   // The chapter views handed to ChapterBody — sibling chapters get
   // their tokens patched in once the lazy loader resolves them.
@@ -84,6 +94,10 @@
   }
 
   let sectionRefs: Map<number, HTMLElement> = new Map();
+  let rootEl: HTMLElement | null = $state(null);
+  let lastReportedKey = '';
+  let reportRaf = 0;
+
   function bindSection(node: HTMLElement, idx: number) {
     sectionRefs.set(idx, node);
     return {
@@ -93,14 +107,67 @@
     };
   }
 
+  function scrollToInitialAnchor() {
+    const section = sectionRefs.get(initialChapterIdx);
+    if (!section) return;
+    const tokenEl =
+      initialTokenIdx > 0 ? findTokenElementAtOrAfter(section, initialTokenIdx) : null;
+    const target = tokenEl ?? section;
+    const rect = target.getBoundingClientRect();
+    window.scrollTo({
+      top: Math.max(0, window.scrollY + rect.top - readerTopInset()),
+      behavior: 'auto',
+    });
+  }
+
+  function isAtDocumentEnd(): boolean {
+    const doc = document.documentElement;
+    return window.scrollY + window.innerHeight >= doc.scrollHeight - 2;
+  }
+
+  function reportProgress() {
+    reportRaf = 0;
+    if (!onProgress || !rootEl) return;
+    const anchor = findFirstVisibleWordAnchor(rootEl, {
+      clip: readableRect(rootEl),
+    });
+    if (!anchor) return;
+    const next: ProgressAnchor = {
+      ...anchor,
+      pctRead: computePctRead(chapters, anchor.chapterIdx, anchor.tokenIdx, {
+        completedText: isAtDocumentEnd(),
+      }),
+    };
+    const key = `${next.chapterIdx}:${next.tokenIdx}:${next.pctRead}`;
+    if (key === lastReportedKey) return;
+    lastReportedKey = key;
+    onProgress(next);
+  }
+
+  function queueProgressReport() {
+    if (reportRaf) return;
+    reportRaf = window.requestAnimationFrame(reportProgress);
+  }
+
   onMount(() => {
+    void tick().then(() => {
+      scrollToInitialAnchor();
+      queueProgressReport();
+    });
+    window.addEventListener('scroll', queueProgressReport, { passive: true });
+    window.addEventListener('resize', queueProgressReport);
+
     if (typeof IntersectionObserver === 'undefined') {
       // jsdom / SSR fallback: prefetch every chapter eagerly so the
       // experience degrades gracefully (still better than the old
       // load-everything-server-side behavior because each chapter
       // ships in its own JSON response and Postgres roundtrip).
       for (const c of chapters) ensureChapter(c.idx);
-      return;
+      return () => {
+        window.removeEventListener('scroll', queueProgressReport);
+        window.removeEventListener('resize', queueProgressReport);
+        if (reportRaf) window.cancelAnimationFrame(reportRaf);
+      };
     }
     const io = new IntersectionObserver(
       (entries) => {
@@ -115,18 +182,33 @@
       { rootMargin: '600px 0px' },
     );
     for (const node of sectionRefs.values()) io.observe(node);
-    return () => io.disconnect();
+    return () => {
+      io.disconnect();
+      window.removeEventListener('scroll', queueProgressReport);
+      window.removeEventListener('resize', queueProgressReport);
+      if (reportRaf) window.cancelAnimationFrame(reportRaf);
+    };
+  });
+
+  $effect(() => {
+    void renderedChapters;
+    void showRomanization;
+    void tick().then(queueProgressReport);
   });
 </script>
 
-<div class="reader-continuous" data-mode="continuous" data-initial-chapter={initialChapterIdx}>
+<div
+  class="reader-continuous"
+  data-mode="continuous"
+  data-initial-chapter={initialChapterIdx}
+  bind:this={rootEl}
+>
   {#each renderedChapters as chapter (chapter.id)}
     <section
       id={`chapter-${chapter.idx}`}
       data-chapter-idx={chapter.idx}
       class:active={chapter.idx === initialChapterIdx}
       use:bindSection={chapter.idx}
-
     >
       {#if chapter.title || renderedChapters.length > 1}
         <h2>

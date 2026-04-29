@@ -8,7 +8,8 @@
   import ReaderPage from '$lib/components/reader/ReaderPage.svelte';
   import ReaderScroll from '$lib/components/reader/ReaderScroll.svelte';
   import ReaderSettings from '$lib/components/reader/ReaderSettings.svelte';
-  import { ProgressWriter } from '$lib/components/reader/progress-client.js';
+  import { ProgressWriter, type ProgressAnchor } from '$lib/components/reader/progress-client.js';
+  import { computePctRead } from '$lib/components/reader/reader-progress.js';
   import {
     isImmersiveAttributeSet,
     setImmersiveAttribute,
@@ -50,9 +51,7 @@
   // T-5.1b: live reader settings. Seeded from the server-loaded
   // user_languages row; the popover updates this state on every
   // interaction (live preview) and PATCHes the row in the background.
-  let readerSettings = $state<ReaderSettingsT>(
-    untrack(() => data.readerSettings),
-  );
+  let readerSettings = $state<ReaderSettingsT>(untrack(() => data.readerSettings));
   $effect(() => {
     readerSettings = data.readerSettings;
   });
@@ -105,10 +104,30 @@
     }[liveStatus] ?? liveStatus,
   );
 
-  function setMode(mode: 'page' | 'paged_scroll' | 'continuous') {
+  function anchorFromData(): ProgressAnchor {
+    return {
+      chapterIdx: data.anchor.chapterIdx,
+      tokenIdx: data.anchor.tokenIdx,
+      pctRead: computePctRead(data.chapters, data.anchor.chapterIdx, data.anchor.tokenIdx),
+    };
+  }
+
+  let currentProgressAnchor = $state<ProgressAnchor>(untrack(anchorFromData));
+
+  function onReaderProgress(anchor: ProgressAnchor) {
+    currentProgressAnchor = anchor;
+    progressWriter?.schedule(anchor);
+  }
+
+  async function setMode(mode: 'page' | 'paged_scroll' | 'continuous') {
+    if (progressWriter) {
+      progressWriter.schedule(currentProgressAnchor);
+      await progressWriter.flush();
+    }
     const params = new URLSearchParams();
     params.set('mode', mode);
-    if (data.anchor.chapterIdx) params.set('chapter', String(data.anchor.chapterIdx));
+    params.set('chapter', String(currentProgressAnchor.chapterIdx));
+    params.set('token', String(currentProgressAnchor.tokenIdx));
     if (showRomanization) params.set('roman', '1');
     void goto(`/reader/${data.text.id}?${params.toString()}`, {
       keepFocus: true,
@@ -128,8 +147,8 @@
     window.history.replaceState(window.history.state, '', url.toString());
   }
 
-  // T-5.6 progress writer. Only owners get one — anonymous viewers
-  // of an official text don't have a row to write against.
+  // T-5.6 progress writer. Signed-in readers get one; anonymous
+  // viewers of an official text don't have a row to write against.
   let progressWriter: ProgressWriter | null = null;
   let beforeUnloadHandler: (() => void) | null = null;
 
@@ -190,16 +209,8 @@
       progressWriter = new ProgressWriter(data.text.id);
       // Schedule an initial write so reopening immediately at the
       // current chapter persists even without scrolling.
-      const totalChapters = data.chapters.length;
-      const pctRead =
-        totalChapters > 0
-          ? Math.round(((data.anchor.chapterIdx + 1) / totalChapters) * 100)
-          : 0;
-      progressWriter.schedule({
-        chapterIdx: data.anchor.chapterIdx,
-        tokenIdx: data.anchor.tokenIdx,
-        pctRead,
-      });
+      currentProgressAnchor = anchorFromData();
+      progressWriter.schedule(currentProgressAnchor);
       // Flush on tab close so the user resumes near where they were
       // even if their last action was scrolling and they didn't trip
       // the debounce timer.
@@ -225,8 +236,7 @@
     return () => {
       cleanupPoll?.();
       window.removeEventListener('keydown', onKey);
-      if (beforeUnloadHandler)
-        window.removeEventListener('beforeunload', beforeUnloadHandler);
+      if (beforeUnloadHandler) window.removeEventListener('beforeunload', beforeUnloadHandler);
       void progressWriter?.flush();
       topRO?.disconnect();
       document.documentElement.style.removeProperty('--reader-top-h');
@@ -239,17 +249,10 @@
   // sending here keeps a fresh row even if the user navigates by
   // URL without scrolling.
   $effect(() => {
+    const anchor = anchorFromData();
+    currentProgressAnchor = anchor;
     if (!progressWriter) return;
-    const totalChapters = data.chapters.length;
-    const pctRead =
-      totalChapters > 0
-        ? Math.round(((data.anchor.chapterIdx + 1) / totalChapters) * 100)
-        : 0;
-    progressWriter.schedule({
-      chapterIdx: data.anchor.chapterIdx,
-      tokenIdx: data.anchor.tokenIdx,
-      pctRead,
-    });
+    progressWriter.schedule(anchor);
   });
 </script>
 
@@ -257,14 +260,19 @@
   <title>{data.text.title} — CIA Reader</title>
 </svelte:head>
 
-<div
-  class="reader"
-  data-mode={data.mode}
-  style={readerStyle}
->
+<div class="reader" data-mode={data.mode} style={readerStyle}>
   <header class="reader-top" bind:this={readerTopEl}>
     <a class="reader-close" href="/library" aria-label="Close reader" title="Close reader">
-      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true">
+      <svg
+        viewBox="0 0 24 24"
+        width="14"
+        height="14"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="1.8"
+        stroke-linecap="round"
+        aria-hidden="true"
+      >
         <path d="M6 6l12 12" />
         <path d="M18 6L6 18" />
       </svg>
@@ -284,8 +292,8 @@
                 href={`/reader/${data.collectionContext.prevTextId}`}
                 class="reader-coll-arrow"
                 title="Previous text"
-                aria-label="Previous text in collection"
-              >‹ prev</a>
+                aria-label="Previous text in collection">‹ prev</a
+              >
             {/if}
             {#if data.collectionContext.nextTextId}
               {#if data.collectionContext.nextLocked}
@@ -293,15 +301,15 @@
                   href={`/reader/${data.collectionContext.nextTextId}?skipLock=1`}
                   class="reader-coll-arrow reader-coll-locked"
                   title="Course gate — finish this text or click to skip"
-                  aria-label="Next text (locked — finish to advance, or click to skip)"
-                >next 🔒</a>
+                  aria-label="Next text (locked — finish to advance, or click to skip)">next 🔒</a
+                >
               {:else}
                 <a
                   href={`/reader/${data.collectionContext.nextTextId}`}
                   class="reader-coll-arrow"
                   title="Next text"
-                  aria-label="Next text in collection"
-                >next ›</a>
+                  aria-label="Next text in collection">next ›</a
+                >
               {/if}
             {/if}
           </span>
@@ -359,16 +367,27 @@
         aria-expanded={settingsOpen}
         title="Reader settings"
       >
-        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <svg
+          viewBox="0 0 24 24"
+          width="16"
+          height="16"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.6"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true"
+        >
           <circle cx="12" cy="12" r="3" />
-          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33 1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82 1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+          <path
+            d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33 1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82 1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"
+          />
         </svg>
       </button>
 
       <!-- T-5.26 moved the immersive / hide-chrome toggle to the
            AppShell rail (a hamburger glyph) — it's globally available
            now, not just from the reader top bar. -->
-
     </div>
   </header>
 
@@ -380,10 +399,12 @@
     <ReaderPage
       chapters={data.chapters}
       chapterIdx={data.anchor.chapterIdx}
+      initialTokenIdx={data.anchor.tokenIdx}
       textId={data.text.id}
       language={data.text.language as LanguageCode}
       {showRomanization}
       isOwner={data.isOwner}
+      onProgress={onReaderProgress}
       fontSize={readerSettings.fontSize}
       lineSpacing={readerSettings.lineSpacing}
       fontFamily={readerSettings.fontFamily}
@@ -393,19 +414,23 @@
     <ReaderScroll
       chapters={data.chapters}
       chapterIdx={data.anchor.chapterIdx}
+      initialTokenIdx={data.anchor.tokenIdx}
       wordsPerPage={readerSettings.wordsPerPage}
       language={data.text.language as LanguageCode}
       {showRomanization}
       isOwner={data.isOwner}
+      onProgress={onReaderProgress}
     />
   {:else}
     <ReaderContinuous
       chapters={data.chapters}
       initialChapterIdx={data.anchor.chapterIdx}
+      initialTokenIdx={data.anchor.tokenIdx}
       textId={data.text.id}
       language={data.text.language as LanguageCode}
       {showRomanization}
       isOwner={data.isOwner}
+      onProgress={onReaderProgress}
     />
   {/if}
 
@@ -492,11 +517,7 @@
   }
   .reader-close:hover {
     color: var(--ink, var(--color-fg));
-    background: color-mix(
-      in oklch,
-      var(--ink, var(--color-fg)) 6%,
-      transparent
-    );
+    background: color-mix(in oklch, var(--ink, var(--color-fg)) 6%, transparent);
     border-color: var(--rule, var(--color-border));
   }
   .reader-meta {

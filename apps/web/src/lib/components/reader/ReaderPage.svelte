@@ -16,20 +16,28 @@
 -->
 <script lang="ts">
   import { goto } from '$app/navigation';
-  import { onMount } from 'svelte';
+  import { onMount, tick } from 'svelte';
 
   import ChapterBody from './ChapterBody.svelte';
   import { clampPage, pageCountFor, pageOffset } from './paginate.js';
+  import type { ProgressAnchor } from './progress-client.js';
+  import {
+    computePctRead,
+    findFirstVisibleWordAnchor,
+    findTokenElementAtOrAfter,
+  } from './reader-progress.js';
   import { classifySwipe } from './touch-gestures.js';
   import type { ChapterView } from './types.js';
 
   let {
     chapters,
     chapterIdx,
+    initialTokenIdx = 0,
     textId,
     language,
     showRomanization = false,
     isOwner = false,
+    onProgress,
     fontSize,
     lineSpacing,
     fontFamily,
@@ -37,19 +45,19 @@
   }: {
     chapters: ChapterView[];
     chapterIdx: number;
+    initialTokenIdx?: number;
     textId: string;
     language: import('@ciareader/shared-types').LanguageCode;
     showRomanization?: boolean;
     isOwner?: boolean;
+    onProgress?: (anchor: ProgressAnchor) => void;
     fontSize?: number;
     lineSpacing?: number;
     fontFamily?: string | null;
     readingWidth?: string;
   } = $props();
 
-  const current = $derived(
-    chapters[Math.max(0, Math.min(chapterIdx, chapters.length - 1))],
-  );
+  const current = $derived(chapters[Math.max(0, Math.min(chapterIdx, chapters.length - 1))]);
   const hasPrevChapter = $derived(chapterIdx > 0);
   const hasNextChapter = $derived(chapterIdx < chapters.length - 1);
 
@@ -63,6 +71,8 @@
   let pageW = $state(0);
   let contentW = $state(0);
   let pageInChapter = $state(0);
+  let initialTokenApplied = $state(false);
+  let lastReportedKey = '';
 
   const pageCount = $derived(pageCountFor(contentW, pageW));
   const offset = $derived(pageOffset(pageInChapter, pageW));
@@ -71,7 +81,10 @@
   // shouldn't see "stuck" mid-page state when they navigate.
   $effect(() => {
     void chapterIdx;
+    void initialTokenIdx;
     pageInChapter = 0;
+    initialTokenApplied = false;
+    lastReportedKey = '';
   });
 
   // Keep pageInChapter in range when pageCount shrinks (e.g. window
@@ -91,8 +104,7 @@
   const progressPct = $derived(
     chapters.length > 0
       ? Math.round(
-          ((chapterIdx + (pageCount > 0 ? (pageInChapter + 1) / pageCount : 0)) /
-            chapters.length) *
+          ((chapterIdx + (pageCount > 0 ? (pageInChapter + 1) / pageCount : 0)) / chapters.length) *
             100,
         )
       : 0,
@@ -224,6 +236,59 @@
     void fontFamily;
     void readingWidth;
     measure();
+  });
+
+  function applyInitialTokenPage() {
+    if (initialTokenApplied || !contentEl || pageW <= 0 || pageCount <= 0) return;
+    initialTokenApplied = true;
+    if (initialTokenIdx <= 0) return;
+    const tokenEl = findTokenElementAtOrAfter(contentEl, initialTokenIdx);
+    if (!tokenEl) return;
+    const tokenRect = tokenEl.getBoundingClientRect();
+    const contentRect = contentEl.getBoundingClientRect();
+    const page = Math.floor(Math.max(0, tokenRect.left - contentRect.left) / pageW);
+    pageInChapter = clampPage(page, pageCount);
+  }
+
+  function reportProgress() {
+    if (!onProgress || !viewportEl) return;
+    const anchor = findFirstVisibleWordAnchor(viewportEl, {
+      clip: viewportEl.getBoundingClientRect(),
+      fallbackChapterIdx: chapterIdx,
+    });
+    if (!anchor) return;
+    const next: ProgressAnchor = {
+      ...anchor,
+      pctRead: computePctRead(chapters, anchor.chapterIdx, anchor.tokenIdx, {
+        completedText: anchor.chapterIdx >= chapters.length - 1 && pageInChapter >= pageCount - 1,
+      }),
+    };
+    const key = `${next.chapterIdx}:${next.tokenIdx}:${next.pctRead}`;
+    if (key === lastReportedKey) return;
+    lastReportedKey = key;
+    onProgress(next);
+  }
+
+  $effect(() => {
+    void initialTokenIdx;
+    void pageCount;
+    void pageW;
+    void contentW;
+    applyInitialTokenPage();
+  });
+
+  $effect(() => {
+    void chapterIdx;
+    void pageInChapter;
+    void pageCount;
+    void contentW;
+    void pageW;
+    void showRomanization;
+    void fontSize;
+    void lineSpacing;
+    void fontFamily;
+    void readingWidth;
+    void tick().then(reportProgress);
   });
 </script>
 
@@ -450,11 +515,7 @@
 
   .reader-foot {
     border-top: 1px solid var(--rule, var(--color-border));
-    background: color-mix(
-      in oklch,
-      var(--paper, var(--color-bg)) 88%,
-      var(--paper-2, transparent)
-    );
+    background: color-mix(in oklch, var(--paper, var(--color-bg)) 88%, var(--paper-2, transparent));
     padding: 0.6rem 1.25rem 0.75rem;
     position: sticky;
     bottom: 0;

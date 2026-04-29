@@ -8,7 +8,16 @@
   per-paragraph TokenSpan render so all three modes share styles.
 -->
 <script lang="ts">
+  import { onMount, tick } from 'svelte';
+
   import TokenSpan from './TokenSpan.svelte';
+  import type { ProgressAnchor } from './progress-client.js';
+  import {
+    computePctRead,
+    findFirstVisibleWordAnchor,
+    firstTokenPage,
+    readableRect,
+  } from './reader-progress.js';
   import {
     paragraphsOfServerTokens,
     paragraphsOfTokens,
@@ -24,24 +33,30 @@
   let {
     chapters,
     chapterIdx,
+    initialTokenIdx = 0,
     wordsPerPage = 250,
     showRomanization = false,
     isOwner = false,
     language,
+    onProgress,
   }: {
     chapters: ChapterView[];
     chapterIdx: number;
+    initialTokenIdx?: number;
     wordsPerPage?: number;
     showRomanization?: boolean;
     isOwner?: boolean;
     language: import('@ciareader/shared-types').LanguageCode;
+    onProgress?: (anchor: ProgressAnchor) => void;
   } = $props();
 
   let page = $state(0);
+  let articleEl: HTMLElement | null = $state(null);
+  let initialTokenApplied = $state(false);
+  let lastReportedKey = '';
+  let reportRaf = 0;
 
-  const current = $derived(
-    chapters[Math.max(0, Math.min(chapterIdx, chapters.length - 1))],
-  );
+  const current = $derived(chapters[Math.max(0, Math.min(chapterIdx, chapters.length - 1))]);
 
   // Source-of-tokens decision happens once per chapter — server
   // tokens beat the client fallback.
@@ -61,9 +76,7 @@
       if (correctedLemmaId && correctedLemmaId !== t.lemmaId) {
         const chosen = t.candidates.find((c) => c.lemmaId === correctedLemmaId);
         if (chosen) {
-          const remaining = t.candidates.filter(
-            (c) => c.lemmaId !== correctedLemmaId,
-          );
+          const remaining = t.candidates.filter((c) => c.lemmaId !== correctedLemmaId);
           next = {
             ...t,
             lemmaId: chosen.lemmaId,
@@ -125,16 +138,13 @@
   }
 
   const serverPages = $derived(serverParagraphs ? packServer(serverParagraphs) : null);
-  const fallbackPages = $derived(
-    fallbackParagraphs ? packFallback(fallbackParagraphs) : null,
-  );
+  const fallbackPages = $derived(fallbackParagraphs ? packFallback(fallbackParagraphs) : null);
+  const activePages = $derived(serverPages ?? fallbackPages);
   const pageCount = $derived(serverPages?.length ?? fallbackPages?.length ?? 1);
 
   const clampedPage = $derived(Math.max(0, Math.min(page, pageCount - 1)));
-  const visibleServer = $derived(serverPages ? serverPages[clampedPage] ?? [] : null);
-  const visibleFallback = $derived(
-    fallbackPages ? fallbackPages[clampedPage] ?? [] : null,
-  );
+  const visibleServer = $derived(serverPages ? (serverPages[clampedPage] ?? []) : null);
+  const visibleFallback = $derived(fallbackPages ? (fallbackPages[clampedPage] ?? []) : null);
   const hasPrev = $derived(clampedPage > 0);
   const hasNext = $derived(clampedPage < pageCount - 1);
 
@@ -144,6 +154,68 @@
   function next() {
     if (hasNext) page = clampedPage + 1;
   }
+
+  $effect(() => {
+    void chapterIdx;
+    void initialTokenIdx;
+    page = 0;
+    initialTokenApplied = false;
+    lastReportedKey = '';
+  });
+
+  $effect(() => {
+    void initialTokenIdx;
+    void pageCount;
+    void activePages;
+    if (initialTokenApplied) return;
+    initialTokenApplied = true;
+    page = firstTokenPage(activePages, initialTokenIdx);
+  });
+
+  function reportProgress() {
+    reportRaf = 0;
+    if (!onProgress || !articleEl) return;
+    const anchor = findFirstVisibleWordAnchor(articleEl, {
+      clip: readableRect(articleEl),
+      fallbackChapterIdx: chapterIdx,
+    });
+    if (!anchor) return;
+    const next: ProgressAnchor = {
+      ...anchor,
+      pctRead: computePctRead(chapters, anchor.chapterIdx, anchor.tokenIdx, {
+        completedText: anchor.chapterIdx >= chapters.length - 1 && clampedPage >= pageCount - 1,
+      }),
+    };
+    const key = `${next.chapterIdx}:${next.tokenIdx}:${next.pctRead}`;
+    if (key === lastReportedKey) return;
+    lastReportedKey = key;
+    onProgress(next);
+  }
+
+  function queueProgressReport() {
+    if (reportRaf) return;
+    reportRaf = window.requestAnimationFrame(reportProgress);
+  }
+
+  onMount(() => {
+    window.addEventListener('scroll', queueProgressReport, { passive: true });
+    window.addEventListener('resize', queueProgressReport);
+    void tick().then(queueProgressReport);
+    return () => {
+      window.removeEventListener('scroll', queueProgressReport);
+      window.removeEventListener('resize', queueProgressReport);
+      if (reportRaf) window.cancelAnimationFrame(reportRaf);
+    };
+  });
+
+  $effect(() => {
+    void clampedPage;
+    void pageCount;
+    void visibleServer;
+    void visibleFallback;
+    void showRomanization;
+    void tick().then(queueProgressReport);
+  });
 
   // Same click → popup pattern as ChapterBody — duplicated rather
   // than refactored because ReaderScroll also slices by paragraph
@@ -204,9 +276,7 @@
     // T-9.4: tap-to-seek. Same flow as ChapterBody — audio
     // alignment + player handle, no-op when neither is present.
     void (async () => {
-      const { getAlignmentStartMs, getAudioController } = await import(
-        './audio-bus.js'
-      );
+      const { getAlignmentStartMs, getAudioController } = await import('./audio-bus.js');
       const startMs = getAlignmentStartMs(found.token.id);
       if (startMs == null) return;
       const ctrl = getAudioController();
@@ -241,8 +311,7 @@
   }
 
   function hideHoverTooltip(event: Event) {
-    const related =
-      'relatedTarget' in event ? (event.relatedTarget as HTMLElement | null) : null;
+    const related = 'relatedTarget' in event ? (event.relatedTarget as HTMLElement | null) : null;
     if (related && (event.currentTarget as HTMLElement).contains(related)) {
       return;
     }
@@ -329,6 +398,7 @@
     <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
     <!-- svelte-ignore a11y_mouse_events_have_key_events -->
     <article
+      bind:this={articleEl}
       onclick={onArticleClick}
       onmouseover={showHoverTooltip}
       onmouseout={hideHoverTooltip}
@@ -338,10 +408,7 @@
       {#if visibleServer}
         {#each visibleServer as paragraph, pIdx (pIdx)}
           <p class="body">
-            {#each paragraph as token (token.id)}<TokenSpan
-                {token}
-                {showRomanization}
-              />{/each}
+            {#each paragraph as token (token.id)}<TokenSpan {token} {showRomanization} />{/each}
           </p>
         {/each}
       {:else if visibleFallback}
@@ -349,7 +416,8 @@
           <p class="body">
             {#each paragraph as token (token.idx)}<span
                 class:word={token.isWord}
-                data-token-idx={token.idx}>{token.surface}</span>{/each}
+                data-token-idx={token.idx}>{token.surface}</span
+              >{/each}
           </p>
         {/each}
       {/if}
