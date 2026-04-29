@@ -118,7 +118,6 @@ async function main() {
     const inserted = await sql.unsafe(
       `INSERT INTO lemmas (language, headword, pos, script, source, source_attribution, curator_locked, created_at, updated_at)
        VALUES ($1, $2, $3, $4, 'official_dictionary', 'Stanza UD', false, NOW(), NOW())
-       ON CONFLICT (language, headword, pos) DO NOTHING
        RETURNING id`,
       [language, headword, pos, SCRIPT_FOR[language]],
     );
@@ -209,6 +208,7 @@ async function main() {
         isWord: t.is_word,
         sentenceIdx: 0,
         romanization: t.romanization,
+        numberForms: t.number_forms ?? null,
         };
       });
 
