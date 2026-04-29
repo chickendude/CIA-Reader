@@ -1,14 +1,17 @@
 import { describe, expect, it, vi } from 'vitest';
 
-// T-7.2: canReadText now consults the sharing module via a dynamic
-// import. Mock it here so this unit test stays focused on the
+// canReadText consults three sharing modules via dynamic imports:
+// T-7.2 direct shares, T-7.4 group shares, T-8.4 collection shares.
+// Mock all three to "no share" so this unit test stays focused on
 // visibility / owner branches without hitting the DB.
 vi.mock('../texts/sharing.js', () => ({
   viewerHasDirectShare: async () => false,
 }));
-// T-7.4: same treatment for the groups module.
 vi.mock('../groups.js', () => ({
   viewerHasGroupShare: async () => false,
+}));
+vi.mock('../collections.js', () => ({
+  viewerHasCollectionShareForText: async () => false,
 }));
 
 import { ForbiddenError } from '../dictionary/permissions.js';

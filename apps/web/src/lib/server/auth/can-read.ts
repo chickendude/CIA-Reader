@@ -44,17 +44,23 @@ export async function canReadText(
   if (text.visibility === 'official') return true;
   // 2. The owner can always read their own text.
   if (viewer && text.ownerId && text.ownerId === viewer.id) return true;
-  // 3. T-7.2: direct shares. A row in `text_shares` keyed on
-  //    (text_id, viewer.id) grants read access regardless of the
-  //    text's visibility. Imported lazily so unit tests of pure
-  //    visibility logic don't need to mock the sharing module.
+  // 3+. Share-based read access. Each branch is a separate allow
+  //     path; the imports stay lazy so unit tests of pure visibility
+  //     logic don't need to mock every sharing module.
   if (viewer && viewer.id) {
+    // 3. T-7.2: direct shares — row in `text_shares` for this viewer.
     const { viewerHasDirectShare } = await import('../texts/sharing.js');
     if (await viewerHasDirectShare(viewer.id, text.id)) return true;
-    // 4. T-7.4: group shares — viewer is a member of a group
-    //    that's been granted access to this text.
+    // 4. T-7.4: group shares — viewer is a member of a group granted
+    //    access to this text.
     const { viewerHasGroupShare } = await import('../groups.js');
     if (await viewerHasGroupShare(viewer.id, text.id)) return true;
+    // 5. T-8.4: collection-level shares — the text inherits read
+    //    access from any collection-share the viewer holds.
+    const { viewerHasCollectionShareForText } = await import(
+      '../collections.js'
+    );
+    if (await viewerHasCollectionShareForText(viewer.id, text.id)) return true;
   }
   return false;
 }

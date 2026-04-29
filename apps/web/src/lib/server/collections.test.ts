@@ -63,7 +63,12 @@ vi.mock('./db/index.js', () => ({
       textId: 'ci.text_id',
       position: 'ci.position',
     },
+    collectionShares: {
+      collectionId: 'cs.collection_id',
+      sharedWithUserId: 'cs.shared_with_user_id',
+    },
     texts: { id: 't.id', language: 't.language' },
+    users: { id: 'u.id' },
   },
 }));
 
@@ -79,6 +84,10 @@ const {
   listOfficialCollections,
   loadCollectionDetail,
   readerCollectionContext,
+  grantCollectionShare,
+  revokeCollectionShare,
+  listCollectionShares,
+  viewerHasCollectionShareForText,
 } = await import('./collections.js');
 
 function resetAll() {
@@ -565,5 +574,213 @@ describe('readerCollectionContext', () => {
     const last = await readerCollectionContext('b');
     expect(last?.prevTextId).toBe('a');
     expect(last?.nextTextId).toBeNull();
+  });
+});
+
+describe('grantCollectionShare', () => {
+  it('404s when the collection is missing', async () => {
+    queue.push([]);
+    await expect(
+      grantCollectionShare({
+        collectionId: 'missing',
+        actor: OWNER,
+        recipientUserId: 'u-recipient',
+      }),
+    ).rejects.toMatchObject({ status: 404 });
+  });
+
+  it('403s a non-owner', async () => {
+    queue.push([baseCollection]);
+    await expect(
+      grantCollectionShare({
+        collectionId: 'col-1',
+        actor: STRANGER,
+        recipientUserId: 'u-recipient',
+      }),
+    ).rejects.toMatchObject({ status: 403 });
+  });
+
+  it('rejects sharing with the owner themselves', async () => {
+    queue.push([baseCollection]);
+    await expect(
+      grantCollectionShare({
+        collectionId: 'col-1',
+        actor: OWNER,
+        recipientUserId: OWNER.id,
+      }),
+    ).rejects.toThrow(/cannot share .* with its owner/);
+  });
+
+  it('404s when the recipient user does not exist', async () => {
+    queue.push([baseCollection]);
+    queue.push([]); // recipient lookup empty
+    await expect(
+      grantCollectionShare({
+        collectionId: 'col-1',
+        actor: OWNER,
+        recipientUserId: 'u-ghost',
+      }),
+    ).rejects.toMatchObject({ status: 404 });
+  });
+
+  it('inserts the share and promotes private → shared', async () => {
+    queue.push([baseCollection]); // loadCollection (visibility: private)
+    queue.push([{ id: 'u-recipient' }]); // recipient lookup
+    queue.push([
+      {
+        collectionId: 'col-1',
+        sharedWithUserId: 'u-recipient',
+        grantedById: OWNER.id,
+        createdAt: new Date(),
+      },
+    ]); // returning
+    queue.push([]); // visibility update (no-await result)
+    const share = await grantCollectionShare({
+      collectionId: 'col-1',
+      actor: OWNER,
+      recipientUserId: 'u-recipient',
+    });
+    expect(share.sharedWithUserId).toBe('u-recipient');
+    // Two write paths: insert (share) + update (visibility promotion).
+    expect(fakeDb.insert).toHaveBeenCalledOnce();
+    expect(fakeDb.update).toHaveBeenCalledOnce();
+    const setArg = chain.set.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(setArg.visibility).toBe('shared');
+  });
+
+  it('skips the visibility update when already shared', async () => {
+    queue.push([{ ...baseCollection, visibility: 'shared' }]);
+    queue.push([{ id: 'u-recipient' }]);
+    queue.push([
+      {
+        collectionId: 'col-1',
+        sharedWithUserId: 'u-recipient',
+        grantedById: OWNER.id,
+        createdAt: new Date(),
+      },
+    ]);
+    await grantCollectionShare({
+      collectionId: 'col-1',
+      actor: OWNER,
+      recipientUserId: 'u-recipient',
+    });
+    expect(fakeDb.update).not.toHaveBeenCalled();
+  });
+
+  it('throws when the insert returns no row', async () => {
+    queue.push([baseCollection]);
+    queue.push([{ id: 'u-recipient' }]);
+    queue.push([]); // insert returning empty
+    await expect(
+      grantCollectionShare({
+        collectionId: 'col-1',
+        actor: OWNER,
+        recipientUserId: 'u-recipient',
+      }),
+    ).rejects.toThrow(/insert returned no row/);
+  });
+
+  it('lets an admin grant on behalf of an arbitrary owner', async () => {
+    queue.push([baseCollection]);
+    queue.push([{ id: 'u-recipient' }]);
+    queue.push([
+      {
+        collectionId: 'col-1',
+        sharedWithUserId: 'u-recipient',
+        grantedById: ADMIN.id,
+        createdAt: new Date(),
+      },
+    ]);
+    queue.push([]);
+    const share = await grantCollectionShare({
+      collectionId: 'col-1',
+      actor: ADMIN,
+      recipientUserId: 'u-recipient',
+    });
+    expect(share.grantedById).toBe(ADMIN.id);
+  });
+});
+
+describe('revokeCollectionShare', () => {
+  it('404s when the collection is missing', async () => {
+    queue.push([]);
+    await expect(
+      revokeCollectionShare({
+        collectionId: 'missing',
+        actor: OWNER,
+        recipientUserId: 'u-recipient',
+      }),
+    ).rejects.toMatchObject({ status: 404 });
+  });
+
+  it('403s a non-owner', async () => {
+    queue.push([baseCollection]);
+    await expect(
+      revokeCollectionShare({
+        collectionId: 'col-1',
+        actor: STRANGER,
+        recipientUserId: 'u-recipient',
+      }),
+    ).rejects.toMatchObject({ status: 403 });
+  });
+
+  it('issues a delete for the owner', async () => {
+    queue.push([baseCollection]);
+    queue.push([]); // delete().where() resolution
+    await revokeCollectionShare({
+      collectionId: 'col-1',
+      actor: OWNER,
+      recipientUserId: 'u-recipient',
+    });
+    expect(fakeDb.delete).toHaveBeenCalledOnce();
+  });
+});
+
+describe('listCollectionShares', () => {
+  it('404s when the collection is missing', async () => {
+    queue.push([]);
+    await expect(
+      listCollectionShares('missing', OWNER),
+    ).rejects.toMatchObject({ status: 404 });
+  });
+
+  it('403s a non-owner', async () => {
+    queue.push([baseCollection]);
+    await expect(
+      listCollectionShares('col-1', STRANGER),
+    ).rejects.toMatchObject({ status: 403 });
+  });
+
+  it('returns the share rows for the owner', async () => {
+    queue.push([baseCollection]);
+    queue.push([
+      {
+        collectionId: 'col-1',
+        sharedWithUserId: 'u2',
+        grantedById: OWNER.id,
+        createdAt: new Date(),
+      },
+      {
+        collectionId: 'col-1',
+        sharedWithUserId: 'u3',
+        grantedById: OWNER.id,
+        createdAt: new Date(),
+      },
+    ]);
+    const out = await listCollectionShares('col-1', OWNER);
+    expect(out).toHaveLength(2);
+    expect(out.map((s) => s.sharedWithUserId)).toEqual(['u2', 'u3']);
+  });
+});
+
+describe('viewerHasCollectionShareForText', () => {
+  it('returns true when a join row matches', async () => {
+    queue.push([{ collectionId: 'col-1' }]);
+    expect(await viewerHasCollectionShareForText('viewer', 't1')).toBe(true);
+  });
+
+  it('returns false when no row matches', async () => {
+    queue.push([]);
+    expect(await viewerHasCollectionShareForText('viewer', 't-orphan')).toBe(false);
   });
 });
