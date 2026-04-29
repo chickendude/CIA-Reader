@@ -106,16 +106,17 @@
           "onUpdate": "no action"
         }
       },
-      "compositePrimaryKeys": {
-        "audio_alignments_audio_file_id_token_id_pk": {
-          "name": "audio_alignments_audio_file_id_token_id_pk",
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "audio_alignments_audio_file_id_token_id_uq": {
+          "name": "audio_alignments_audio_file_id_token_id_uq",
+          "nullsNotDistinct": false,
           "columns": [
             "audio_file_id",
             "token_id"
           ]
         }
       },
-      "uniqueConstraints": {},
       "checkConstraints": {}
     },
     "public.audio_files": {
