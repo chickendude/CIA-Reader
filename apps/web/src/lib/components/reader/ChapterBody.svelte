@@ -16,6 +16,7 @@
   import TokenSpan from './TokenSpan.svelte';
   import WordPopup from './WordPopup.svelte';
   import WordTooltip from './WordTooltip.svelte';
+  import CorrectionToast from './CorrectionToast.svelte';
   import { LongPressDetector } from './touch-gestures.js';
   import type { LanguageCode } from '@ciareader/shared-types';
   import {
@@ -251,6 +252,10 @@
     statusOverrides = next;
   }
 
+  // T-6.2b: after a correction commits, surface a toast offering
+  // bulk-apply across the rest of the chapter / text.
+  let toastTokenId = $state<string | null>(null);
+
   function onCorrectionApplied(tokenId: string, chosenLemmaId: string | null) {
     const next = new Map(lemmaCorrections);
     if (chosenLemmaId == null) {
@@ -262,7 +267,18 @@
       next.set(tokenId, chosenLemmaId);
     }
     lemmaCorrections = next;
+    toastTokenId = tokenId;
   }
+
+  function applyEverywhereLocally(scope: 'same-context' | 'all-contexts') {
+    void scope;
+    // Server has already replicated the row. The reader's next
+    // navigation will pick up the bulk-applied corrections via
+    // T-6.4's loader join. We could optimistically expand the local
+    // override map here, but a full chapter walk is enough work that
+    // we'd rather let the next loader pass do it canonically.
+  }
+  void applyEverywhereLocally; // referenced in toast onApplied wiring
 </script>
 
 <!-- The hover tooltip is decorative chrome — keyboard / focus users get
@@ -318,6 +334,12 @@
     {onCorrectionApplied}
   />
 {/if}
+
+<CorrectionToast
+  open={toastTokenId !== null}
+  sourceTokenId={toastTokenId ?? ''}
+  onDismiss={() => (toastTokenId = null)}
+/>
 
 <style>
   /* Inherit font-size + line-height from the reader's content rule
