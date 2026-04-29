@@ -225,6 +225,32 @@ def test_process_marks_punctuation_as_non_word():
     assert tokens[1].is_word is False
 
 
+def test_process_marks_coordinate_fragments_as_non_words():
+    # Stanza may split a DMS coordinate like "113°43′6″W" into
+    # "113°43" + "′6″W" and tag the first chunk as PROPN. The reader
+    # must still render both as plain text, not as underlined/clickable
+    # dictionary words. Plain digit-only numbers remain handled by the
+    # number popup; coordinate fragments do not get number_forms.
+    doc = FakeDoc(
+        sentences=[
+            FakeSentence(
+                words=[
+                    FakeWord(text="48°41′48″N", lemma="48°41′48″N", upos="PROPN"),
+                    FakeWord(text="113°43", lemma="113°43", upos="PROPN"),
+                    FakeWord(text="′6″W", lemma="′6″W", upos="PROPN"),
+                    FakeWord(text="2024", lemma="2024", upos="NUM"),
+                ]
+            )
+        ]
+    )
+    pipe, _ = _pipe(doc)
+    tokens = pipe.process("x").tokens
+    assert [t.is_word for t in tokens] == [False, False, False, True]
+    assert [t.romanization for t in tokens[:3]] == [None, None, None]
+    assert [t.number_forms for t in tokens[:3]] == [None, None, None]
+    assert tokens[3].number_forms is not None
+
+
 def test_process_indexes_tokens_contiguously_across_sentences():
     doc = FakeDoc(
         sentences=[

@@ -50,6 +50,8 @@ _SCRIPT_RANGES: dict[str, tuple[tuple[int, int], ...]] = {
     "Orya": ((0x0B00, 0x0B7F),),
 }
 
+_COORDINATE_MARKS: frozenset[str] = frozenset({"°", "′", "″"})
+
 
 def _has_target_script(surface: str, script: str | None) -> bool:
     if not script:
@@ -68,6 +70,18 @@ def _has_letter(surface: str) -> bool:
     return any(unicodedata.category(ch).startswith("L") for ch in surface)
 
 
+def _looks_like_coordinate_part(surface: str) -> bool:
+    """Return True for coordinate / measurement fragments such as
+    ``113°43`` or ``′6″W``.
+
+    Stanza can split DMS coordinates in the middle and tag the numeric
+    chunk as ``PROPN``. Those surfaces are not dictionary words and
+    should not become clickable reader tokens; digit-only numbers still
+    pass through so the number popup can handle them.
+    """
+    return any(mark in surface for mark in _COORDINATE_MARKS)
+
+
 def should_treat_as_word(surface: str, upos: str, *, script: str | None) -> bool:
     """Return whether a token should participate in reader word UX.
 
@@ -78,6 +92,8 @@ def should_treat_as_word(surface: str, upos: str, *, script: str | None) -> bool
     the existing number-form popover still works for Latin or native digits.
     """
     if upos in NON_WORD_UPOS:
+        return False
+    if _looks_like_coordinate_part(surface):
         return False
     if upos == "NUM":
         return True
