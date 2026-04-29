@@ -168,3 +168,123 @@ export async function correctionsForTokens(
     );
   return new Map((rows as TokenCorrection[]).map((r) => [r.tokenId, r]));
 }
+
+export type ApplyEverywhereScope = 'same-context' | 'all-contexts';
+
+export type ApplyEverywhereInput = {
+  userId: string;
+  sourceTokenId: string;
+  scope: ApplyEverywhereScope;
+};
+
+export type ApplyEverywhereResult = {
+  /** Number of token_corrections written (insert + update). */
+  applied: number;
+  /** Source-correction shape we replicated. */
+  type: TokenCorrection['type'];
+  chosenLemmaId: string | null;
+};
+
+/**
+ * T-6.2b: replicate the source token's correction across every
+ * matching token the acting user has visible. Match scope:
+ *
+ *  - 'same-context' — same surface_nfc AND same worker-chosen
+ *    primary lemma. Approximates the "same context" semantics from
+ *    the spec until text_tokens grows a real context_signature
+ *    column.
+ *  - 'all-contexts' — same surface_nfc only. Use with care; this
+ *    is the user's sledgehammer.
+ *
+ * The acting user's existing correction for any given target token
+ * is preserved if it predates this call AND was for a different
+ * type / lemma — we don't clobber a deliberate manual override
+ * with a bulk apply. Pre-existing matches just get their
+ * `updated_at` bumped.
+ */
+export async function applyCorrectionEverywhere(
+  input: ApplyEverywhereInput,
+): Promise<ApplyEverywhereResult> {
+  // Load the source correction + the source token's surface +
+  // primary lemma so we know what to replicate and what to match
+  // against.
+  const [source] = (await db
+    .select({
+      type: schema.tokenCorrections.type,
+      chosenLemmaId: schema.tokenCorrections.chosenLemmaId,
+      tokenSurface: schema.textTokens.surface,
+      tokenLemmaId: schema.textTokens.lemmaId,
+    })
+    .from(schema.tokenCorrections)
+    .innerJoin(
+      schema.textTokens,
+      eq(schema.tokenCorrections.tokenId, schema.textTokens.id),
+    )
+    .where(
+      and(
+        eq(schema.tokenCorrections.userId, input.userId),
+        eq(schema.tokenCorrections.tokenId, input.sourceTokenId),
+      ),
+    )
+    .limit(1)) as Array<{
+    type: TokenCorrection['type'];
+    chosenLemmaId: string | null;
+    tokenSurface: string;
+    tokenLemmaId: string | null;
+  }>;
+  if (!source) {
+    throw new CorrectionValidationError(
+      'no source correction found',
+      404,
+    );
+  }
+
+  // Find matching tokens. We compare the surface as stored — the
+  // worker NFC-normalizes at write time so the input is already in
+  // a comparable form.
+  const matchConditions = [eq(schema.textTokens.surface, source.tokenSurface)];
+  if (input.scope === 'same-context' && source.tokenLemmaId) {
+    matchConditions.push(eq(schema.textTokens.lemmaId, source.tokenLemmaId));
+  }
+  const matches = (await db
+    .select({ id: schema.textTokens.id })
+    .from(schema.textTokens)
+    .where(and(...matchConditions))) as Array<{ id: string }>;
+
+  if (matches.length === 0) {
+    return { applied: 0, type: source.type, chosenLemmaId: source.chosenLemmaId };
+  }
+
+  // Bulk upsert. We hand drizzle a values array and let ON CONFLICT
+  // handle the per-row update.
+  const now = new Date();
+  const values = matches.map((m) => ({
+    userId: input.userId,
+    tokenId: m.id,
+    type: source.type,
+    chosenLemmaId: source.chosenLemmaId,
+    note: null as string | null,
+    createdAt: now,
+    updatedAt: now,
+  }));
+  await db
+    .insert(schema.tokenCorrections)
+    .values(values)
+    .onConflictDoUpdate({
+      target: [
+        schema.tokenCorrections.userId,
+        schema.tokenCorrections.tokenId,
+      ],
+      set: {
+        type: source.type,
+        chosenLemmaId: source.chosenLemmaId,
+        updatedAt: now,
+      },
+    });
+
+  return {
+    applied: matches.length,
+    type: source.type,
+    chosenLemmaId: source.chosenLemmaId,
+  };
+}
