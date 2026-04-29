@@ -10,11 +10,11 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const staged: Array<unknown[]> = [];
-function stage(rows: unknown[]) {
+const staged: Array<unknown[] | { rows: unknown[] }> = [];
+function stage(rows: unknown[] | { rows: unknown[] }) {
   staged.push(rows);
 }
-function nextStaged(): unknown[] {
+function nextStaged(): unknown[] | { rows: unknown[] } {
   const v = staged.shift();
   if (!v) throw new Error('Test bug: no staged result available');
   return v;
@@ -31,10 +31,15 @@ function makeSelectChain() {
 }
 
 const selectFn = vi.fn(() => makeSelectChain());
+const executeFn = vi.fn((query?: unknown) => {
+  void query;
+  return nextStaged();
+});
 
 vi.mock('../db/index.js', () => ({
   db: {
     select: () => selectFn(),
+    execute: (query: unknown) => executeFn(query),
   },
   schema: {
     lemmas: {
@@ -45,6 +50,11 @@ vi.mock('../db/index.js', () => ({
     translations: {
       id: 'translations.id',
       lemmaId: 'translations.lemma_id',
+    },
+    translationVotes: {
+      userId: 'translation_votes.user_id',
+      translationId: 'translation_votes.translation_id',
+      value: 'translation_votes.value',
     },
   },
 }));
@@ -92,6 +102,7 @@ function translationRow(overrides: Record<string, unknown> = {}) {
 beforeEach(() => {
   staged.length = 0;
   selectFn.mockClear();
+  executeFn.mockClear();
 });
 
 afterEach(() => {
@@ -167,6 +178,8 @@ describe('getLemmaTranslations (T-3.14 sibling fallback)', () => {
         }),
       },
     ]);
+    stage({ rows: [] }); // vote score lookup
+    stage([]); // viewer vote lookup
     const out = await getLemmaTranslations('lemma-1', { id: 'u1', role: 'user' });
     expect(out.translations.personal.map((t) => t.body)).toEqual(['my fork']);
     expect(out.translations.community).toEqual([]);
