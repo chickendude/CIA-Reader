@@ -25,7 +25,6 @@
     setImmersiveAttribute,
     writePersistedImmersive,
   } from '../reader/immersive.js';
-  import Sheet from '../overlay/Sheet.svelte';
   import type { Snippet } from 'svelte';
 
   interface LanguageOption {
@@ -58,12 +57,36 @@
     availableLanguages.find((l) => l.code === currentLanguage) ?? null,
   );
 
-  // T-5.25: language picker. Click the indicator → sheet listing
-  // every active language. Selecting one PUTs the cookie + reloads
-  // layout data so the rail + every loader picks up the new pick.
+  // T-5.25: language picker. Click the top-left brand icon → custom
+  // dropdown anchored beneath it, listing every active language.
+  // Selecting one PUTs the cookie + reloads layout data so every
+  // loader picks up the new pick.
   let langPickerOpen = $state(false);
   let switching = $state(false);
   let switchError = $state<string | null>(null);
+
+  // Close on outside-click / Escape while the dropdown is open. Two
+  // dropdowns can be in the DOM at once (rail + mobile top-strip), so
+  // we match by class rather than a single bind:this.
+  $effect(() => {
+    if (!langPickerOpen) return;
+    function onPointer(e: MouseEvent) {
+      const t = e.target as HTMLElement | null;
+      if (!t) return;
+      if (t.closest('.lang-dropdown')) return;
+      if (t.closest('.lang-trigger')) return;
+      langPickerOpen = false;
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') langPickerOpen = false;
+    }
+    document.addEventListener('mousedown', onPointer);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onPointer);
+      document.removeEventListener('keydown', onKey);
+    };
+  });
 
   async function pickLanguage(code: string) {
     if (switching) return;
@@ -176,29 +199,36 @@
 
 <div class="shell">
   <aside class="rail" aria-label="Primary navigation">
-    <a class="brand" href="/" aria-label="CIA Reader home">
-      <span class="brand-mark" aria-hidden="true">अ</span>
-      <span class="brand-text">
-        <span class="brand-name">CIAR</span>
-        <span class="brand-sub">Indo-Aryan Reader</span>
-      </span>
-    </a>
-
-    {#if currentOption}
-      <button
-        type="button"
-        class="lang-indicator"
-        aria-label="Change current language ({currentOption.displayName})"
-        title="Switch language"
-        onclick={() => (langPickerOpen = true)}
-      >
-        <span class="lang-glyph" aria-hidden="true">{currentOption.glyph}</span>
-        <span class="lang-text">
-          <span class="lang-native">{currentOption.nativeName}</span>
-          <span class="lang-en">{currentOption.displayName}</span>
-        </span>
-      </button>
-    {/if}
+    <div class="lang-wrap">
+      {#if currentOption}
+        <button
+          type="button"
+          class="brand brand-trigger lang-trigger"
+          aria-haspopup="menu"
+          aria-expanded={langPickerOpen}
+          aria-label="Switch language (currently {currentOption.displayName})"
+          title="Switch language"
+          onclick={() => (langPickerOpen = !langPickerOpen)}
+        >
+          <span class="brand-mark" aria-hidden="true">{currentOption.glyph}</span>
+          <span class="brand-text">
+            <span class="brand-name">CIAR</span>
+            <span class="brand-sub">Indo-Aryan Reader</span>
+          </span>
+        </button>
+      {:else}
+        <a class="brand" href="/" aria-label="CIA Reader home">
+          <span class="brand-mark" aria-hidden="true">अ</span>
+          <span class="brand-text">
+            <span class="brand-name">CIAR</span>
+            <span class="brand-sub">Indo-Aryan Reader</span>
+          </span>
+        </a>
+      {/if}
+      {#if langPickerOpen && currentOption}
+        {@render langDropdown()}
+      {/if}
+    </div>
 
     <nav class="nav" aria-label="Sections">
       {#each groups as group (group.section ?? '_')}
@@ -238,20 +268,28 @@
   </aside>
 
   <header class="top-strip" aria-label="Account">
-    <a class="brand-strip" href="/" aria-label="CIA Reader home">
-      <span class="brand-mark" aria-hidden="true">अ</span>
-    </a>
-    {#if currentOption}
-      <button
-        type="button"
-        class="lang-indicator-compact"
-        aria-label="Change current language ({currentOption.displayName})"
-        title="Switch language"
-        onclick={() => (langPickerOpen = true)}
-      >
-        <span aria-hidden="true">{currentOption.glyph}</span>
-      </button>
-    {/if}
+    <div class="lang-wrap-compact">
+      {#if currentOption}
+        <button
+          type="button"
+          class="brand-strip brand-trigger lang-trigger"
+          aria-haspopup="menu"
+          aria-expanded={langPickerOpen}
+          aria-label="Switch language (currently {currentOption.displayName})"
+          title="Switch language"
+          onclick={() => (langPickerOpen = !langPickerOpen)}
+        >
+          <span class="brand-mark" aria-hidden="true">{currentOption.glyph}</span>
+        </button>
+      {:else}
+        <a class="brand-strip" href="/" aria-label="CIA Reader home">
+          <span class="brand-mark" aria-hidden="true">अ</span>
+        </a>
+      {/if}
+      {#if langPickerOpen && currentOption}
+        {@render langDropdown()}
+      {/if}
+    </div>
     {#if user}
       <span class="who" aria-label="Signed-in user">
         {user.displayName ?? user.email}
@@ -289,48 +327,48 @@
   </nav>
 </div>
 
-<!-- T-5.25: language picker. Lists every active user_languages row.
-     Manage / add / remove languages still happens on /profile — the
-     picker is just the runtime switcher. -->
-{#if langPickerOpen}
-  <Sheet open={langPickerOpen} onClose={() => (langPickerOpen = false)} title="Switch language">
-    <div class="lang-picker">
-      {#if availableLanguages.length === 0}
-        <p class="lang-empty">
-          You haven't added any languages yet. <a href="/profile">Open settings</a>
-          to pick one.
-        </p>
-      {:else}
-        <ul class="lang-list">
-          {#each availableLanguages as opt (opt.code)}
-            <li>
-              <button
-                type="button"
-                class="lang-row"
-                data-active={opt.code === currentLanguage ? '1' : '0'}
-                disabled={switching}
-                onclick={() => pickLanguage(opt.code)}
-              >
-                <span class="lang-row-glyph" aria-hidden="true">{opt.glyph}</span>
-                <span class="lang-row-text">
-                  <span class="lang-row-native">{opt.nativeName}</span>
-                  <span class="lang-row-en">{opt.displayName}</span>
-                </span>
-                {#if opt.code === currentLanguage}
-                  <span class="lang-row-current" aria-label="Current">●</span>
-                {/if}
-              </button>
-            </li>
-          {/each}
-        </ul>
-      {/if}
-      {#if switchError}
-        <p class="lang-err" role="alert">Could not switch: {switchError}</p>
-      {/if}
-      <a class="lang-manage" href="/profile">Manage languages →</a>
-    </div>
-  </Sheet>
-{/if}
+<!-- T-5.25: language picker. Anchored under the top-left brand icon.
+     Manage / add / remove languages still happens on /profile — this
+     dropdown is just the runtime switcher. -->
+{#snippet langDropdown()}
+  <div class="lang-dropdown" role="menu" aria-label="Languages">
+    {#if availableLanguages.length === 0}
+      <p class="lang-empty">
+        You haven't added any languages yet. <a href="/profile">Open settings</a>
+        to pick one.
+      </p>
+    {:else}
+      <ul class="lang-list">
+        {#each availableLanguages as opt (opt.code)}
+          <li>
+            <button
+              type="button"
+              class="lang-row"
+              role="menuitemradio"
+              aria-checked={opt.code === currentLanguage}
+              data-active={opt.code === currentLanguage ? '1' : '0'}
+              disabled={switching}
+              onclick={() => pickLanguage(opt.code)}
+            >
+              <span class="lang-row-glyph" aria-hidden="true">{opt.glyph}</span>
+              <span class="lang-row-text">
+                <span class="lang-row-native">{opt.nativeName}</span>
+                <span class="lang-row-en">{opt.displayName}</span>
+              </span>
+              {#if opt.code === currentLanguage}
+                <span class="lang-row-current" aria-label="Current">●</span>
+              {/if}
+            </button>
+          </li>
+        {/each}
+      </ul>
+    {/if}
+    {#if switchError}
+      <p class="lang-err" role="alert">Could not switch: {switchError}</p>
+    {/if}
+    <a class="lang-manage" href="/profile">Manage languages →</a>
+  </div>
+{/snippet}
 
 <style>
   /* Desktop: rail + content. Mobile: top-strip + content + bottom-nav.
@@ -645,88 +683,60 @@
     color: var(--accent-ink, var(--color-accent-fg, #fff));
   }
 
-  /* —— Language indicator + picker (T-5.25) ————————————————————
-   * The pill in the rail shows the current language at a glance and
-   * opens a Sheet picker on click. Also exists as a compact glyph in
-   * the mobile top-strip so the same affordance is reachable without
-   * the rail being visible. */
-  .lang-indicator {
-    display: flex;
-    align-items: center;
-    gap: 0.55rem;
-    padding: 0.55rem 0.65rem;
-    background: var(--card, var(--color-bg));
-    border: 1px solid var(--card-edge, var(--color-border));
-    border-radius: 9px;
-    cursor: pointer;
-    text-align: left;
-    color: inherit;
+  /* —— Language picker dropdown (T-5.25) ————————————————————————
+   * Anchored to the top-left brand icon (rail on desktop, top-strip
+   * on mobile). The brand-mark glyph reflects the current language so
+   * the trigger doubles as a status indicator. */
+  .brand-trigger {
+    background: transparent;
+    border: 0;
+    padding: 0 0.25rem;
+    margin: 0;
     font: inherit;
-    transition: border-color 150ms ease;
+    color: inherit;
+    cursor: pointer;
+    border-radius: 8px;
+    transition: background 150ms ease;
   }
-  .lang-indicator:hover {
-    border-color: color-mix(
-      in oklch,
-      var(--accent, var(--color-accent)) 60%,
-      var(--card-edge, var(--color-border))
-    );
+  .brand-trigger:hover {
+    background: color-mix(in oklch, var(--ink, var(--color-fg)) 5%, transparent);
   }
-  .lang-glyph {
-    width: 28px;
-    height: 28px;
-    border-radius: 6px;
-    background: var(--ink, var(--color-fg));
-    color: var(--paper, var(--color-bg));
-    display: grid;
-    place-items: center;
-    font-family: var(--font-serif-dev, var(--font-serif));
-    font-size: 1rem;
-    line-height: 1;
+  .brand-trigger[aria-expanded='true'] {
+    background: color-mix(in oklch, var(--ink, var(--color-fg)) 8%, transparent);
+  }
+  .brand-trigger:focus-visible {
+    outline: 2px solid var(--accent, var(--color-accent));
+    outline-offset: 2px;
+  }
+
+  .lang-wrap {
+    position: relative;
+  }
+  .lang-wrap-compact {
+    position: relative;
     flex-shrink: 0;
   }
-  .lang-text {
-    display: flex;
-    flex-direction: column;
-    gap: 0.1rem;
-    line-height: 1.1;
-    min-width: 0;
-  }
-  .lang-native {
-    font-family: var(--font-serif-dev, var(--font-serif));
-    font-size: 0.95rem;
-    color: var(--ink, var(--color-fg));
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-  .lang-en {
-    font-family: var(--font-sans, var(--font-ui));
-    font-size: 0.6rem;
-    color: var(--ink-3, var(--color-fg-muted));
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-  }
 
-  .lang-indicator-compact {
-    width: 32px;
-    height: 32px;
-    border-radius: 8px;
+  .lang-dropdown {
+    position: absolute;
+    top: calc(100% + 8px);
+    left: 0;
+    z-index: 50;
+    min-width: 240px;
+    max-width: min(90vw, 320px);
+    max-height: min(70dvh, 480px);
+    overflow-y: auto;
+    background: var(--paper, var(--color-bg));
+    color: var(--ink, var(--color-fg));
     border: 1px solid var(--card-edge, var(--color-border));
-    background: var(--card, var(--color-bg));
-    color: var(--ink, var(--color-fg));
-    cursor: pointer;
-    font-family: var(--font-serif-dev, var(--font-serif));
-    font-size: 1rem;
-    display: grid;
-    place-items: center;
-  }
-
-  /* Picker sheet contents. */
-  .lang-picker {
+    border-radius: 10px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+    padding: 0.55rem;
     display: flex;
     flex-direction: column;
-    gap: 0.85rem;
+    gap: 0.55rem;
   }
+
   .lang-list {
     list-style: none;
     margin: 0;
