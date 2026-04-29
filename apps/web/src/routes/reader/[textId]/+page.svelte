@@ -2,6 +2,7 @@
   import { goto, invalidateAll } from '$app/navigation';
   import { onMount, untrack } from 'svelte';
 
+  import AlignmentHighlighter from '$lib/components/reader/AlignmentHighlighter.svelte';
   import AudioPlayer from '$lib/components/reader/AudioPlayer.svelte';
   import ReaderContinuous from '$lib/components/reader/ReaderContinuous.svelte';
   import ReaderPage from '$lib/components/reader/ReaderPage.svelte';
@@ -406,6 +407,7 @@
 
   {#if data.audio}
     <AudioPlayer audio={data.audio} />
+    <AlignmentHighlighter />
   {/if}
 </div>
 

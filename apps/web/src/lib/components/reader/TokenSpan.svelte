@@ -99,6 +99,15 @@
     vertical-align: super;
     font-size: 0.7em;
   }
+  /* T-9.3: karaoke-style highlight on the word currently being
+     spoken in the audio. Higher contrast than hover/anchor so the
+     reader can track the playhead at a glance. */
+  :global(.playing) {
+    background: var(--accent, var(--color-accent));
+    color: var(--accent-ink, var(--color-bg, #fff));
+    border-radius: 3px;
+    transition: background 80ms ease;
+  }
   /* Anchor: the word currently locked in the side panel. Outline
      instead of fill so the user can still see the underlying status
      tint underneath. */
