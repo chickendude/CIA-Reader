@@ -804,6 +804,21 @@ export const textTokens = pgTable(
     isWord: boolean('is_word').notNull().default(true),
     sentenceIdx: integer('sentence_idx').notNull().default(0),
     romanization: text('romanization'),
+    /** T-2.8: digit-only NUM tokens carry a per-language spelled-out
+     *  + ISO-15919 romanization payload so the reader pop-up can show
+     *  e.g. "123 → एक सौ तेईस / ek sau teīs" without re-deriving on
+     *  the client. Null on every other token. The shape mirrors
+     *  `NumberForms` in the Python NLP service (services/nlp/app/numbers.py)
+     *  and is delivered verbatim by the in-process dispatcher. */
+    numberForms: jsonb('number_forms').$type<{
+      value: number;
+      digits_latin: string;
+      digits_deva: string;
+      digits_orya: string;
+      hi: { spelled: string; romanized: string };
+      mr: { spelled: string; romanized: string };
+      odia: { spelled: string; romanized: string };
+    } | null>(),
   },
   (t) => ({
     chapterIdx: unique('text_tokens_chapter_idx_uq').on(t.chapterId, t.idx),

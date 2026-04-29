@@ -331,6 +331,8 @@ describe('/reader/[textId] loader', () => {
       lemmaId: 'lem-1',
       romanization: null,
       glossDefault: null,
+      candidates: [],
+      numberForms: null,
       status: 'unknown' as const,
     });
     loadChapterTokens.mockResolvedValueOnce([tokenRow('t0', 0)]);

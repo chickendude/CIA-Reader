@@ -7,6 +7,26 @@ export interface LemmaCandidate {
   features: Record<string, string>;
 }
 
+export interface NumberLanguageForm {
+  spelled: string;
+  romanized: string;
+}
+
+/** Per-token number-form payload populated by the NLP service for
+ *  digit-only NUM tokens (T-2.8). Null on every other token. */
+export interface NumberForms {
+  value: number;
+  digits_latin: string;
+  digits_deva: string;
+  digits_orya: string;
+  hi: NumberLanguageForm;
+  mr: NumberLanguageForm;
+  // Wire field is `odia`, not the ISO 639-1 `or`, because `or` is a
+  // reserved Python keyword and can't be an attribute name on the
+  // server-side Pydantic model. The TypeScript mirror matches.
+  odia: NumberLanguageForm;
+}
+
 export interface NlpToken {
   idx: number;
   surface: string;
@@ -15,6 +35,7 @@ export interface NlpToken {
   is_ambiguous: boolean;
   is_oov: boolean;
   romanization: string | null;
+  number_forms: NumberForms | null;
 }
 
 export interface ProcessResponse {

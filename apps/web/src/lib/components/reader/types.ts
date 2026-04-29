@@ -21,6 +21,26 @@ export type ServerCandidate = {
   features: Record<string, string>;
 };
 
+/** T-2.8: per-language spelled-out + ISO 15919 romanization for a
+ *  digit-only NUM token. Mirrors `RenderedNumberForms` in
+ *  `$lib/server/texts/tokens.ts`. */
+export type ServerNumberLanguageForm = {
+  spelled: string;
+  romanized: string;
+};
+
+export type ServerNumberForms = {
+  value: number;
+  digitsLatin: string;
+  digitsDeva: string;
+  digitsOrya: string;
+  hi: ServerNumberLanguageForm;
+  mr: ServerNumberLanguageForm;
+  /** Odia rendering. Field is `odia`, not ISO 639-1 `or`, because
+   *  `or` is a reserved keyword on the Python side. */
+  odia: ServerNumberLanguageForm;
+};
+
 /** Per-token row from the NLP worker (T-5.2). When present, the
  *  component renders these spans directly; when null, it falls back
  *  to client-side whitespace tokenization. */
@@ -40,6 +60,11 @@ export type ServerToken = {
    *  Empty array when the worker scored only one viable candidate
    *  or hasn't run yet. */
   candidates: ServerCandidate[];
+  /** T-2.8: digit-only NUM tokens (e.g. "123" / "१२३" / "୧୨୩")
+   *  carry a per-language spelled-out form + ISO-15919 romanization.
+   *  Null on every other token. The popup uses this to replace the
+   *  lemma/translation block with the three written-out renderings. */
+  numberForms: ServerNumberForms | null;
   status: 'known' | 'learning' | 'ignored' | 'unknown';
 };
 

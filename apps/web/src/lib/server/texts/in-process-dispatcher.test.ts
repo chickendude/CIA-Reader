@@ -163,6 +163,7 @@ describe('processTextNow', () => {
           is_oov: true,
           romanization: null,
           candidates: [],
+          number_forms: null,
         },
       ],
     });

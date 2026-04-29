@@ -36,6 +36,7 @@ describe('GET /api/v1/smoke', () => {
           is_ambiguous: false,
           is_oov: false,
           romanization: null,
+          number_forms: null,
         },
       ],
     });
