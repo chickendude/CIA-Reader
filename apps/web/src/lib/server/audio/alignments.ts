@@ -6,8 +6,11 @@
  */
 import { asc, eq, inArray } from 'drizzle-orm';
 
+import type { AlignmentListItem } from '../../audio/alignments.js';
 import { db, schema } from '../db/index.js';
 import type { AudioAlignment, User } from '../db/schema.js';
+export { findAlignmentAt } from '../../audio/alignments.js';
+export type { AlignmentListItem } from '../../audio/alignments.js';
 
 export class AlignmentError extends Error {
   constructor(
@@ -18,12 +21,6 @@ export class AlignmentError extends Error {
     this.name = 'AlignmentError';
   }
 }
-
-export type AlignmentListItem = {
-  tokenId: string;
-  startMs: number;
-  endMs: number;
-};
 
 export async function listAlignments(
   audioFileId: string,
@@ -106,38 +103,4 @@ export async function replaceAlignments(
     }
   });
   return input.alignments.length;
-}
-
-/**
- * Pure binary search over a startMs-sorted alignment list — used
- * by the reader's playing-word lookup. Returns the index of the
- * alignment containing `currentMs`, or null when no alignment
- * covers that timestamp.
- *
- * Exported here so unit tests don't need the DOM; callers in the
- * UI re-import from the same module.
- */
-export function findAlignmentAt(
-  alignments: AlignmentListItem[],
-  currentMs: number,
-): number | null {
-  let lo = 0;
-  let hi = alignments.length - 1;
-  while (lo <= hi) {
-    const mid = (lo + hi) >>> 1;
-    const a = alignments[mid]!;
-    if (currentMs < a.startMs) hi = mid - 1;
-    else if (currentMs > a.endMs) lo = mid + 1;
-    else return mid;
-  }
-  // Not inside any range — but the reader still wants to highlight
-  // the *most recent* word so a small gap between alignments
-  // doesn't blink the highlight off. Find the last alignment whose
-  // startMs <= currentMs; null if none.
-  let best: number | null = null;
-  for (let i = 0; i < alignments.length; i++) {
-    if (alignments[i]!.startMs <= currentMs) best = i;
-    else break;
-  }
-  return best;
 }

@@ -17,7 +17,7 @@
   import {
     findAlignmentAt,
     type AlignmentListItem,
-  } from '$lib/server/audio/alignments.js';
+  } from '$lib/audio/alignments.js';
   import {
     setAlignmentMap,
     subscribeAudio,
