@@ -53,6 +53,13 @@ const selectFn = vi.fn(() => {
 });
 const insertFn = vi.fn(() => makeInsertChain());
 
+// T-8.4: canReadText consults collections.js for collection-share
+// access. Mock to "no share" so existing tests stay focused on
+// visibility / owner branches.
+vi.mock('../collections.js', () => ({
+  viewerHasCollectionShareForText: async () => false,
+}));
+
 vi.mock('../db/index.js', () => ({
   db: {
     select: () => selectFn(),

@@ -1,4 +1,12 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+
+// T-8.4: canReadText now consults the collections module via a
+// dynamic import for collection-share grants. Mock to "no share"
+// so this unit test stays focused on visibility / owner branches
+// without hitting the DB.
+vi.mock('../collections.js', () => ({
+  viewerHasCollectionShareForText: async () => false,
+}));
 
 import { ForbiddenError } from '../dictionary/permissions.js';
 import { assertCanReadText, canReadText } from './can-read.js';

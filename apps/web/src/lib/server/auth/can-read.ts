@@ -44,9 +44,18 @@ export async function canReadText(
   if (text.visibility === 'official') return true;
   // 2. The owner can always read their own text.
   if (viewer && text.ownerId && text.ownerId === viewer.id) return true;
-  // 3. Direct + group shares (M7) — placeholder for the M7 ticket to
-  //    fill in. Falling through to false here is the deny-by-default
-  //    policy.
+  // 3. T-8.4: collection-level shares. The text inherits read
+  //    access from any collection the viewer's been granted that
+  //    contains this text. Direct/group text shares (M7) hook in
+  //    here too once that lands.
+  if (viewer && viewer.id) {
+    const { viewerHasCollectionShareForText } = await import(
+      '../collections.js'
+    );
+    if (await viewerHasCollectionShareForText(viewer.id, text.id)) {
+      return true;
+    }
+  }
   return false;
 }
 

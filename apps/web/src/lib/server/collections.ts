@@ -14,6 +14,7 @@ import { db, schema } from './db/index.js';
 import type {
   Collection,
   CollectionItem,
+  CollectionShare,
   Text,
   User,
 } from './db/schema.js';
@@ -368,6 +369,129 @@ export async function loadCollectionDetail(
   }>;
   return { collection: c, items: rows };
 }
+
+// ---------------------------------------------------------------
+// Collection shares (T-8.4)
+// ---------------------------------------------------------------
+
+export type CollectionShareInput = {
+  collectionId: string;
+  recipientUserId: string;
+  actor: Pick<User, 'id' | 'role'>;
+};
+
+export async function grantCollectionShare(
+  input: CollectionShareInput,
+): Promise<CollectionShare> {
+  const c = await loadCollection(input.collectionId);
+  if (!c) throw new CollectionError('collection not found', 404);
+  if (!canManage(c, input.actor)) {
+    throw new CollectionError('only the owner can share', 403);
+  }
+  if (c.ownerId === input.recipientUserId) {
+    throw new CollectionError('cannot share a collection with its owner');
+  }
+  const [recipient] = (await db
+    .select({ id: schema.users.id })
+    .from(schema.users)
+    .where(eq(schema.users.id, input.recipientUserId))
+    .limit(1)) as Array<{ id: string }>;
+  if (!recipient) throw new CollectionError('recipient not found', 404);
+
+  const now = new Date();
+  const [row] = await db
+    .insert(schema.collectionShares)
+    .values({
+      collectionId: input.collectionId,
+      sharedWithUserId: input.recipientUserId,
+      grantedById: input.actor.id,
+      createdAt: now,
+    })
+    .onConflictDoUpdate({
+      target: [
+        schema.collectionShares.collectionId,
+        schema.collectionShares.sharedWithUserId,
+      ],
+      set: { grantedById: input.actor.id },
+    })
+    .returning();
+  if (!row) throw new CollectionError('insert returned no row');
+
+  // Promote private → shared so canReadText accepts the recipient.
+  if (c.visibility === 'private') {
+    await db
+      .update(schema.collections)
+      .set({ visibility: 'shared', updatedAt: now })
+      .where(eq(schema.collections.id, input.collectionId));
+  }
+  return row as CollectionShare;
+}
+
+export async function revokeCollectionShare(
+  input: CollectionShareInput,
+): Promise<void> {
+  const c = await loadCollection(input.collectionId);
+  if (!c) throw new CollectionError('collection not found', 404);
+  if (!canManage(c, input.actor)) {
+    throw new CollectionError('only the owner can revoke', 403);
+  }
+  await db
+    .delete(schema.collectionShares)
+    .where(
+      and(
+        eq(schema.collectionShares.collectionId, input.collectionId),
+        eq(schema.collectionShares.sharedWithUserId, input.recipientUserId),
+      ),
+    );
+}
+
+export async function listCollectionShares(
+  collectionId: string,
+  actor: Pick<User, 'id' | 'role'>,
+): Promise<CollectionShare[]> {
+  const c = await loadCollection(collectionId);
+  if (!c) throw new CollectionError('collection not found', 404);
+  if (!canManage(c, actor)) {
+    throw new CollectionError('only the owner can list shares', 403);
+  }
+  return (await db
+    .select()
+    .from(schema.collectionShares)
+    .where(
+      eq(schema.collectionShares.collectionId, collectionId),
+    )) as CollectionShare[];
+}
+
+/**
+ * Used by canReadText: does the viewer have access to `textId` via
+ * a collection share? The text is shared if it's a member of any
+ * collection the viewer has been granted access to.
+ */
+export async function viewerHasCollectionShareForText(
+  viewerId: string,
+  textId: string,
+): Promise<boolean> {
+  const [row] = (await db
+    .select({ collectionId: schema.collectionShares.collectionId })
+    .from(schema.collectionShares)
+    .innerJoin(
+      schema.collectionItems,
+      eq(
+        schema.collectionItems.collectionId,
+        schema.collectionShares.collectionId,
+      ),
+    )
+    .where(
+      and(
+        eq(schema.collectionShares.sharedWithUserId, viewerId),
+        eq(schema.collectionItems.textId, textId),
+      ),
+    )
+    .limit(1)) as Array<{ collectionId: string }>;
+  return Boolean(row);
+}
+
+// ---------------------------------------------------------------
 
 /**
  * For T-8.3: when the reader is on a text that belongs to a

@@ -1172,5 +1172,44 @@ export const collectionItems = pgTable(
   }),
 );
 
+/**
+ * Per-recipient share grant on a collection (T-8.4). The owner
+ * grants a single user read access to the whole collection;
+ * canReadText extends to allow any (text_id, viewer.id) pair where
+ * the text is a member of a collection the viewer has been granted.
+ *
+ * Adding a text to a collection propagates the grant automatically
+ * — the share row is on the COLLECTION, not on individual member
+ * texts, so the join is computed at read time instead of expanded
+ * at grant time.
+ *
+ * MVP only models 'read' permission. Reserved for read/write
+ * distinctions later.
+ */
+export const collectionShares = pgTable(
+  'collection_shares',
+  {
+    collectionId: uuid('collection_id')
+      .notNull()
+      .references(() => collections.id, { onDelete: 'cascade' }),
+    sharedWithUserId: uuid('shared_with_user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    grantedById: uuid('granted_by_id').references(() => users.id, {
+      onDelete: 'set null',
+    }),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.collectionId, t.sharedWithUserId] }),
+    recipientIdx: index('collection_shares_recipient_idx').on(
+      t.sharedWithUserId,
+    ),
+  }),
+);
+
 export type Collection = InferSelectModel<typeof collections>;
 export type CollectionItem = InferSelectModel<typeof collectionItems>;
+export type CollectionShare = InferSelectModel<typeof collectionShares>;
