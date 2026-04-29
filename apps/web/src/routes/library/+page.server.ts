@@ -22,14 +22,25 @@ import {
   listSharedTexts,
   type ListPage,
 } from '$lib/server/texts/library.js';
+import {
+  listCollectionsForUser,
+  listOfficialCollections,
+} from '$lib/server/collections.js';
 import { LANGUAGES, isSupportedLanguage } from '@ciareader/shared-types';
 import type { LanguageCode } from '@ciareader/shared-types';
 import type { PageServerLoad } from './$types';
 
-type Tab = 'your' | 'shared' | 'official';
+type Tab = 'your' | 'shared' | 'official' | 'collections';
 
 function readTab(raw: string | null, hasUser: boolean): Tab {
-  if (raw === 'your' || raw === 'shared' || raw === 'official') return raw;
+  if (
+    raw === 'your' ||
+    raw === 'shared' ||
+    raw === 'official' ||
+    raw === 'collections'
+  ) {
+    return raw;
+  }
   return hasUser ? 'your' : 'official';
 }
 
@@ -65,7 +76,22 @@ export const load: PageServerLoad = async ({ url, locals }) => {
   );
   const offset = Math.max(readInt(url, 'offset', 0), 0);
 
-  let page: ListPage;
+  let page: ListPage = {
+    cards: [],
+    totalCount: 0,
+    limit,
+    offset,
+  };
+  let collections: Array<{
+    id: string;
+    title: string;
+    kind: string;
+    language: string;
+    visibility: string;
+    coverUrl: string | null;
+    textCount: number;
+  }> = [];
+
   if (tab === 'your') {
     page = await listOwnedTexts(
       { id: locals.user!.id },
@@ -73,6 +99,33 @@ export const load: PageServerLoad = async ({ url, locals }) => {
     );
   } else if (tab === 'shared') {
     page = await listSharedTexts({ id: locals.user!.id }, { limit, offset });
+  } else if (tab === 'collections') {
+    // T-8.5: collections tab. Signed-in users see their own + the
+    // official catalog; anonymous see only the official catalog.
+    const ownItems = locals.user
+      ? await listCollectionsForUser(locals.user.id)
+      : [];
+    const officialItems = await listOfficialCollections(
+      language ?? undefined,
+    );
+    // Merge by id so a collection that's both owned and official
+    // doesn't appear twice. Owner-side row wins because it carries
+    // the most-current edit state.
+    const seen = new Set<string>();
+    const merged = [...ownItems, ...officialItems].filter((row) => {
+      if (seen.has(row.collection.id)) return false;
+      seen.add(row.collection.id);
+      return true;
+    });
+    collections = merged.map((row) => ({
+      id: row.collection.id,
+      title: row.collection.title,
+      kind: row.collection.kind,
+      language: row.collection.language,
+      visibility: row.collection.visibility,
+      coverUrl: row.collection.coverUrl,
+      textCount: row.textCount,
+    }));
   } else {
     page = await listOfficialTexts({
       limit,
@@ -84,6 +137,7 @@ export const load: PageServerLoad = async ({ url, locals }) => {
   return {
     tab,
     page,
+    collections,
     language,
     languages: Object.values(LANGUAGES).map((d) => ({
       code: d.code,
