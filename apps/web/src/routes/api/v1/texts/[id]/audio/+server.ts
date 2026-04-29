@@ -49,6 +49,11 @@ export const POST: RequestHandler = async (event) => {
     typeof durationRaw === 'string' && durationRaw
       ? Number.parseInt(durationRaw, 10)
       : null;
+  // T-9.7: redistribution-rights checkbox. Form fields can come
+  // through as 'on' (checked checkbox), 'true', or '1'.
+  const ackRaw = form.get('acknowledgedRedistribution');
+  const acknowledgedRedistribution =
+    ackRaw === 'on' || ackRaw === 'true' || ackRaw === '1';
   try {
     const buf = new Uint8Array(await file.arrayBuffer());
     const audio = await uploadAudio({
@@ -67,6 +72,7 @@ export const POST: RequestHandler = async (event) => {
           ? durationMs
           : null,
       uploader: { id: user.id, role: user.role },
+      acknowledgedRedistribution,
     });
     return json({ audio }, { status: 201 });
   } catch (e) {

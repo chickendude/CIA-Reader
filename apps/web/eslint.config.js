@@ -73,6 +73,8 @@ export default [
         ClipboardEvent: 'readonly',
         // Audio player (T-9.2).
         HTMLAudioElement: 'readonly',
+        // Alignment highlighter (T-9.3) — uses CSS.escape.
+        CSS: 'readonly',
       },
     },
   },
