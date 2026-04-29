@@ -65,43 +65,41 @@ function makeToken(overrides: Partial<ServerToken> = {}): ServerToken {
 }
 
 describe('WordPopup — number-only token block (T-2.8)', () => {
-  it('renders all three native-script digit forms', () => {
-    render(WordPopup, {
-      token: makeToken({ numberForms: makeNumberForms() }),
-      language: 'hi',
-      isOwner: true,
-      onClose: vi.fn(),
-    });
-    // Sheet portals to <body>, so query document.body rather than the
-    // testing-library container.
-    const block = document.body.querySelector('[data-testid="number-forms"]');
-    expect(block).not.toBeNull();
-    const digits = block!.querySelector('.num-digits')!.textContent ?? '';
-    expect(digits).toContain('123');
-    expect(digits).toContain('१२३');
-    expect(digits).toContain('୧୨୩');
-  });
+  it.each([
+    ['hi', 'Hindi', '१२३', 'एक सौ तेईस', 'ek sau teīs'],
+    ['mr', 'Marathi', '१२३', 'एकशे तेवीस', 'ēkaśē tēvīsa'],
+    ['or', 'Odia', '୧୨୩', 'ଏକ ଶହ ତେଇଶ', 'ēka śaha tēiśa'],
+  ] as const)(
+    'renders only the %s number forms with Latin + native digits',
+    (language, label, nativeDigits, spelled, romanized) => {
+      render(WordPopup, {
+        token: makeToken({ numberForms: makeNumberForms() }),
+        language,
+        isOwner: true,
+        onClose: vi.fn(),
+      });
+      // Sheet portals to <body>, so query document.body rather than the
+      // testing-library container.
+      const heading = document.body.querySelector('.num-title');
+      expect(heading?.textContent).toContain('123');
+      expect(heading?.textContent).toContain(nativeDigits);
+      expect(heading?.textContent).not.toContain(
+        language === 'or' ? '१२३' : '୧୨୩',
+      );
 
-  it('renders the spelled-out form + romanization for each MVP language', () => {
-    render(WordPopup, {
-      token: makeToken({ numberForms: makeNumberForms() }),
-      language: 'hi',
-      isOwner: true,
-      onClose: vi.fn(),
-    });
-    const langs = Array.from(
-      document.body.querySelectorAll('.num-langs li'),
-    ) as HTMLLIElement[];
-    expect(langs).toHaveLength(3);
-    const text = langs.map((li) => li.textContent ?? '').join('|');
-    expect(text).toContain('Hindi');
-    expect(text).toContain('एक सौ तेईस');
-    expect(text).toContain('ek sau teīs');
-    expect(text).toContain('Marathi');
-    expect(text).toContain('एकशे तेवीस');
-    expect(text).toContain('Odia');
-    expect(text).toContain('ଏକ ଶହ ତେଇଶ');
-  });
+      const block = document.body.querySelector('[data-testid="number-forms"]');
+      expect(block).not.toBeNull();
+      const entries = document.body.querySelectorAll('.num-entry');
+      expect(entries).toHaveLength(1);
+      const text = block!.textContent ?? '';
+      expect(text).toContain(label);
+      expect(text).toContain(spelled);
+      expect(text).toContain(romanized);
+      if (language !== 'hi') expect(text).not.toContain('एक सौ तेईस');
+      if (language !== 'mr') expect(text).not.toContain('एकशे तेवीस');
+      if (language !== 'or') expect(text).not.toContain('ଏକ ଶହ ତେଇଶ');
+    },
+  );
 
   it('hides the status / translations / fix affordances for number tokens', () => {
     // Pass a non-null lemmaId to force the number branch to suppress
