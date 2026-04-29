@@ -1,238 +1,9 @@
 {
-  "id": "a12e1194-c542-4064-b865-ec53f88cca67",
+  "id": "4bc0447b-eef9-4946-930c-550970f40e41",
   "prevId": "2e778904-dd7b-4d03-8ec9-82a97e0a22cc",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
-    "public.collection_items": {
-      "name": "collection_items",
-      "schema": "",
-      "columns": {
-        "collection_id": {
-          "name": "collection_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "text_id": {
-          "name": "text_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "position": {
-          "name": "position",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "collection_items_order_idx": {
-          "name": "collection_items_order_idx",
-          "columns": [
-            {
-              "expression": "collection_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "position",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "collection_items_collection_id_collections_id_fk": {
-          "name": "collection_items_collection_id_collections_id_fk",
-          "tableFrom": "collection_items",
-          "tableTo": "collections",
-          "columnsFrom": [
-            "collection_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "collection_items_text_id_texts_id_fk": {
-          "name": "collection_items_text_id_texts_id_fk",
-          "tableFrom": "collection_items",
-          "tableTo": "texts",
-          "columnsFrom": [
-            "text_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "collection_items_collection_id_text_id_pk": {
-          "name": "collection_items_collection_id_text_id_pk",
-          "columns": [
-            "collection_id",
-            "text_id"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "checkConstraints": {}
-    },
-    "public.collections": {
-      "name": "collections",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "owner_id": {
-          "name": "owner_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "language": {
-          "name": "language",
-          "type": "language",
-          "typeSchema": "public",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "kind": {
-          "name": "kind",
-          "type": "collection_kind",
-          "typeSchema": "public",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'chapter_book'"
-        },
-        "title": {
-          "name": "title",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "description": {
-          "name": "description",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "cover_url": {
-          "name": "cover_url",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "visibility": {
-          "name": "visibility",
-          "type": "collection_visibility",
-          "typeSchema": "public",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'private'"
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "collections_owner_idx": {
-          "name": "collections_owner_idx",
-          "columns": [
-            {
-              "expression": "owner_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "created_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "collections_visibility_idx": {
-          "name": "collections_visibility_idx",
-          "columns": [
-            {
-              "expression": "visibility",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "language",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "collections_owner_id_users_id_fk": {
-          "name": "collections_owner_id_users_id_fk",
-          "tableFrom": "collections",
-          "tableTo": "users",
-          "columnsFrom": [
-            "owner_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "checkConstraints": {}
-    },
     "public.curator_languages": {
       "name": "curator_languages",
       "schema": "",
@@ -1837,6 +1608,114 @@
       },
       "checkConstraints": {}
     },
+    "public.text_shares": {
+      "name": "text_shares",
+      "schema": "",
+      "columns": {
+        "text_id": {
+          "name": "text_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "shared_with_user_id": {
+          "name": "shared_with_user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "permission": {
+          "name": "permission",
+          "type": "text_share_permission",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'read'"
+        },
+        "granted_by_id": {
+          "name": "granted_by_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "text_shares_recipient_idx": {
+          "name": "text_shares_recipient_idx",
+          "columns": [
+            {
+              "expression": "shared_with_user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "text_shares_text_id_texts_id_fk": {
+          "name": "text_shares_text_id_texts_id_fk",
+          "tableFrom": "text_shares",
+          "tableTo": "texts",
+          "columnsFrom": [
+            "text_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "text_shares_shared_with_user_id_users_id_fk": {
+          "name": "text_shares_shared_with_user_id_users_id_fk",
+          "tableFrom": "text_shares",
+          "tableTo": "users",
+          "columnsFrom": [
+            "shared_with_user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "text_shares_granted_by_id_users_id_fk": {
+          "name": "text_shares_granted_by_id_users_id_fk",
+          "tableFrom": "text_shares",
+          "tableTo": "users",
+          "columnsFrom": [
+            "granted_by_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "text_shares_text_id_shared_with_user_id_pk": {
+          "name": "text_shares_text_id_shared_with_user_id_pk",
+          "columns": [
+            "text_id",
+            "shared_with_user_id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
     "public.text_tokens": {
       "name": "text_tokens",
       "schema": "",
@@ -2920,24 +2799,6 @@
     }
   },
   "enums": {
-    "public.collection_kind": {
-      "name": "collection_kind",
-      "schema": "public",
-      "values": [
-        "chapter_book",
-        "course",
-        "anthology"
-      ]
-    },
-    "public.collection_visibility": {
-      "name": "collection_visibility",
-      "schema": "public",
-      "values": [
-        "private",
-        "shared",
-        "official"
-      ]
-    },
     "public.highlight_style": {
       "name": "highlight_style",
       "schema": "public",
@@ -3059,6 +2920,13 @@
         "native",
         "native_with_romanization",
         "romanization_only"
+      ]
+    },
+    "public.text_share_permission": {
+      "name": "text_share_permission",
+      "schema": "public",
+      "values": [
+        "read"
       ]
     },
     "public.text_source_type": {
