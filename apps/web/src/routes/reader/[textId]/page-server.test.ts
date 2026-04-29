@@ -39,6 +39,32 @@ vi.mock('$lib/server/texts/progress.js', async () => {
   };
 });
 
+// T-5.1b: the loader looks up user_languages directly. Mock the
+// drizzle query chain to return whatever the test stages in
+// `userLanguagesRow`.
+let userLanguagesRow: Record<string, unknown> | null = null;
+vi.mock('$lib/server/db/index.js', () => {
+  type ChainShape = {
+    from: ReturnType<typeof vi.fn>;
+    where: ReturnType<typeof vi.fn>;
+    limit: ReturnType<typeof vi.fn>;
+  };
+  const chain: ChainShape = {
+    from: vi.fn(() => chain),
+    where: vi.fn(() => chain),
+    limit: vi.fn(() => (userLanguagesRow ? [userLanguagesRow] : [])),
+  };
+  return {
+    db: { select: vi.fn(() => chain) },
+    schema: {
+      userLanguages: {
+        userId: 'ul.user_id',
+        language: 'ul.language',
+      },
+    },
+  };
+});
+
 type LoadFn = (typeof import('./+page.server.js'))['load'];
 
 const VALID_ID = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
@@ -95,6 +121,8 @@ beforeEach(() => {
   loadChapterTokens.mockResolvedValue(null);
   // No saved progress unless a test stages it.
   getTextProgress.mockResolvedValue(null);
+  // No persisted reader settings unless a test stages a row.
+  userLanguagesRow = null;
 });
 
 afterEach(() => {
@@ -110,7 +138,9 @@ describe('/reader/[textId] loader', () => {
       isOwner: boolean;
     };
     expect(data.anchor).toEqual({ chapterIdx: 0, tokenIdx: 0 });
-    expect(data.mode).toBe('continuous');
+    // Default reader_layout_mode is 'page' (matches the user_languages
+    // column default — T-5.1b's loader reads through to that default).
+    expect(data.mode).toBe('page');
     expect(data.isOwner).toBe(true);
   });
 
@@ -143,7 +173,57 @@ describe('/reader/[textId] loader', () => {
     const data = (await callLoad(
       `http://x/reader/${VALID_ID}?mode=garbage`,
     )) as { mode: string };
+    expect(data.mode).toBe('page');
+  });
+
+  it('uses the saved reader_layout_mode from user_languages when no ?mode is given (T-5.1b)', async () => {
+    getReadableText.mockResolvedValueOnce(ownedTextWithChapters(1));
+    userLanguagesRow = {
+      readerLayoutMode: 'continuous',
+      wordsPerPage: 250,
+      fontFamily: null,
+      fontSize: 18,
+      lineSpacing: 1.6,
+      highlightStyle: 'background',
+      readingWidth: 'medium',
+      scriptPreference: 'native',
+      romanizationScheme: 'iso15919',
+    };
+    const data = (await callLoad(`http://x/reader/${VALID_ID}`)) as {
+      mode: string;
+      readerSettings: { readerLayoutMode: string; readingWidth: string };
+    };
     expect(data.mode).toBe('continuous');
+    expect(data.readerSettings.readerLayoutMode).toBe('continuous');
+  });
+
+  it('exposes a default readerSettings when the user has no user_languages row (T-5.1b)', async () => {
+    getReadableText.mockResolvedValueOnce(ownedTextWithChapters(1));
+    const data = (await callLoad(`http://x/reader/${VALID_ID}`)) as {
+      readerSettings: { fontSize: number; readingWidth: string };
+    };
+    expect(data.readerSettings.fontSize).toBe(18);
+    expect(data.readerSettings.readingWidth).toBe('medium');
+  });
+
+  it('marks canPersistSettings true for signed-in users and false for anon (T-5.1b)', async () => {
+    getReadableText.mockResolvedValueOnce(ownedTextWithChapters(1));
+    const signedIn = (await callLoad(`http://x/reader/${VALID_ID}`)) as {
+      canPersistSettings: boolean;
+    };
+    expect(signedIn.canPersistSettings).toBe(true);
+
+    const fixture = ownedTextWithChapters(1);
+    getReadableText.mockResolvedValueOnce({
+      ...fixture,
+      text: { ...fixture.text, ownerId: null, visibility: 'official' },
+    });
+    const anon = (await callLoad(
+      `http://x/reader/${VALID_ID}`,
+      VALID_ID,
+      null,
+    )) as { canPersistSettings: boolean };
+    expect(anon.canPersistSettings).toBe(false);
   });
 
   it('rejects an invalid uuid with 400 before calling the service', async () => {

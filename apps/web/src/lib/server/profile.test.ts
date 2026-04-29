@@ -159,4 +159,49 @@ describe('upsertUserLanguage', () => {
     expect(row).toBe(existing);
     expect(fakeDb.update).not.toHaveBeenCalled();
   });
+
+  it('writes T-5.1b reader-popover columns when supplied', async () => {
+    chain.limit.mockReturnValueOnce([{ userId: 'u1', language: 'hi' }]);
+    const updated = {
+      userId: 'u1',
+      language: 'hi',
+      readerLayoutMode: 'page',
+      fontSize: 22,
+      readingWidth: 'wide',
+    };
+    chain.returning.mockReturnValueOnce([updated]);
+    await upsertUserLanguage('u1', 'hi', {
+      readerLayoutMode: 'page',
+      fontSize: 22,
+      readingWidth: 'wide',
+      fontFamily: 'Mukta',
+    });
+    const setArg = chain.set.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(setArg.readerLayoutMode).toBe('page');
+    expect(setArg.fontSize).toBe(22);
+    expect(setArg.readingWidth).toBe('wide');
+    expect(setArg.fontFamily).toBe('Mukta');
+    // Untouched fields stay out of the SET clause so we don't keep
+    // bumping defaults for no reason.
+    expect('lineSpacing' in setArg).toBe(false);
+  });
+
+  it('inserts T-5.1b reader-popover columns on first save', async () => {
+    chain.limit.mockReturnValueOnce([]);
+    chain.returning.mockReturnValueOnce([
+      {
+        userId: 'u1',
+        language: 'hi',
+        fontSize: 24,
+        readingWidth: 'narrow',
+      },
+    ]);
+    await upsertUserLanguage('u1', 'hi', {
+      fontSize: 24,
+      readingWidth: 'narrow',
+    });
+    const insertArg = chain.values.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(insertArg.fontSize).toBe(24);
+    expect(insertArg.readingWidth).toBe('narrow');
+  });
 });

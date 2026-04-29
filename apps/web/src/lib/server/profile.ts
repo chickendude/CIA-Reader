@@ -14,6 +14,17 @@ export type ProfileUserPatch = {
 export type UserLanguagePatch = {
   scriptPreference?: UserLanguage['scriptPreference'];
   romanizationScheme?: UserLanguage['romanizationScheme'];
+  // T-5.1b reader settings — every reader-popover field writes back
+  // here. None are required; absent keys leave the existing column
+  // untouched so partial updates from the popover work without
+  // re-stating untouched values.
+  readerLayoutMode?: UserLanguage['readerLayoutMode'];
+  wordsPerPage?: UserLanguage['wordsPerPage'];
+  fontFamily?: UserLanguage['fontFamily'];
+  fontSize?: UserLanguage['fontSize'];
+  lineSpacing?: UserLanguage['lineSpacing'];
+  highlightStyle?: UserLanguage['highlightStyle'];
+  readingWidth?: UserLanguage['readingWidth'];
 };
 
 export async function updateUserProfile(
@@ -74,14 +85,25 @@ export async function upsertUserLanguage(
     .limit(1);
 
   if (existing.length === 0) {
+    type InsertValues = typeof schema.userLanguages.$inferInsert;
+    const insertValues: InsertValues = {
+      userId,
+      language: languageCode,
+      scriptPreference: patch.scriptPreference ?? 'native',
+      romanizationScheme: patch.romanizationScheme ?? 'iso15919',
+    };
+    // Reader settings (T-5.1b) — only set when the patch explicitly
+    // provided one; otherwise let the column default kick in.
+    if (patch.readerLayoutMode !== undefined) insertValues.readerLayoutMode = patch.readerLayoutMode;
+    if (patch.wordsPerPage !== undefined) insertValues.wordsPerPage = patch.wordsPerPage;
+    if (patch.fontFamily !== undefined) insertValues.fontFamily = patch.fontFamily;
+    if (patch.fontSize !== undefined) insertValues.fontSize = patch.fontSize;
+    if (patch.lineSpacing !== undefined) insertValues.lineSpacing = patch.lineSpacing;
+    if (patch.highlightStyle !== undefined) insertValues.highlightStyle = patch.highlightStyle;
+    if (patch.readingWidth !== undefined) insertValues.readingWidth = patch.readingWidth;
     const [row] = await db
       .insert(schema.userLanguages)
-      .values({
-        userId,
-        language: languageCode,
-        scriptPreference: patch.scriptPreference ?? 'native',
-        romanizationScheme: patch.romanizationScheme ?? 'iso15919',
-      })
+      .values(insertValues)
       .returning();
     if (!row) throw new Error('insert returned no row');
     return row;
@@ -94,6 +116,13 @@ export async function upsertUserLanguage(
   if (patch.romanizationScheme !== undefined) {
     setClause.romanizationScheme = patch.romanizationScheme;
   }
+  if (patch.readerLayoutMode !== undefined) setClause.readerLayoutMode = patch.readerLayoutMode;
+  if (patch.wordsPerPage !== undefined) setClause.wordsPerPage = patch.wordsPerPage;
+  if (patch.fontFamily !== undefined) setClause.fontFamily = patch.fontFamily;
+  if (patch.fontSize !== undefined) setClause.fontSize = patch.fontSize;
+  if (patch.lineSpacing !== undefined) setClause.lineSpacing = patch.lineSpacing;
+  if (patch.highlightStyle !== undefined) setClause.highlightStyle = patch.highlightStyle;
+  if (patch.readingWidth !== undefined) setClause.readingWidth = patch.readingWidth;
   if (Object.keys(setClause).length === 1) return existingRow; // only updatedAt — no-op
 
   const [updated] = await db

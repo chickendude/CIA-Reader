@@ -19,10 +19,17 @@
  * known-words affordances (T-5.5).
  */
 import { error } from '@sveltejs/kit';
+import { and, eq } from 'drizzle-orm';
 
 import { getReadableText } from '$lib/server/texts/upload.js';
 import { loadChapterTokens } from '$lib/server/texts/tokens.js';
 import { getTextProgress } from '$lib/server/texts/progress.js';
+import { db, schema } from '$lib/server/db/index.js';
+import type { LanguageCode } from '@ciareader/shared-types';
+import {
+  DEFAULT_READER_SETTINGS,
+  type ReaderSettings,
+} from '$lib/components/reader/reader-settings.js';
 import type { PageServerLoad } from './$types';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -92,12 +99,45 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
     ),
   );
 
-  // Mode preference: URL > user pref > default. user_languages.reader_layout_mode
-  // is per-user/per-language; the per-user pref read lands when M5
-  // wires user-pref persistence (T-5.1b). For the skeleton the URL is
-  // the only source.
-  const mode = readMode(url, 'continuous');
-  const showRomanization = readBool(url, 'roman');
+  // T-5.1b: per-language reader settings are persisted in
+  // user_languages. Anonymous viewers don't have a row, so they get
+  // the defaults. Owners + signed-in readers get their saved popover
+  // values; the popover writes through PATCH /api/v1/me/languages/:code.
+  let readerSettings: ReaderSettings = { ...DEFAULT_READER_SETTINGS };
+  if (locals.user) {
+    const lang = result.text.language as LanguageCode;
+    const [row] = await db
+      .select()
+      .from(schema.userLanguages)
+      .where(
+        and(
+          eq(schema.userLanguages.userId, locals.user.id),
+          eq(schema.userLanguages.language, lang),
+        ),
+      )
+      .limit(1);
+    if (row) {
+      readerSettings = {
+        readerLayoutMode: row.readerLayoutMode,
+        wordsPerPage: row.wordsPerPage,
+        fontFamily: row.fontFamily,
+        fontSize: row.fontSize,
+        lineSpacing: row.lineSpacing,
+        highlightStyle: row.highlightStyle,
+        readingWidth: row.readingWidth,
+        scriptPreference: row.scriptPreference,
+        romanizationScheme: row.romanizationScheme,
+      };
+    }
+  }
+
+  // Mode preference: URL > user pref > default. URL still wins so a
+  // shareable `?mode=page` link works regardless of the recipient's
+  // saved preference. Romanization toggle: URL > scriptPreference.
+  const mode = readMode(url, readerSettings.readerLayoutMode);
+  const showRomanization = url.searchParams.has('roman')
+    ? readBool(url, 'roman')
+    : readerSettings.scriptPreference !== 'native';
 
   // T-5.1a: lazy chapter loading. Only the active chapter is
   // pre-fetched server-side — a 50-chapter novel was previously
@@ -143,6 +183,11 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
     },
     mode,
     showRomanization,
+    readerSettings,
+    // Persist the popover's per-language state for any signed-in
+    // reader; anonymous viewers (anon reads of an official text) get
+    // a session-only live preview.
+    canPersistSettings: locals.user != null,
     isOwner: Boolean(locals.user && locals.user.id === result.text.ownerId),
   };
 };
