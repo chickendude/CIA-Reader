@@ -38,6 +38,10 @@ export type UploadAudioInput = {
   license?: string | null;
   durationMs?: number | null;
   uploader: Pick<User, 'id' | 'role'>;
+  /** T-9.7: redistribution-rights checkbox from the upload form.
+   *  Required for non-admin uploads — admins skip the check on
+   *  the assumption they're handling curator-vetted assets. */
+  acknowledgedRedistribution?: boolean;
 };
 
 export async function uploadAudio(
@@ -53,6 +57,17 @@ export async function uploadAudio(
   }
   if (!isAllowedAudioMime(input.mime)) {
     throw new AudioError(`Unsupported audio type ${input.mime}`, 415);
+  }
+  // T-9.7: redistribution-rights gate. Owner uploads must
+  // acknowledge the rights checkbox; admins bypass.
+  if (
+    input.uploader.role !== 'admin' &&
+    !input.acknowledgedRedistribution
+  ) {
+    throw new AudioError(
+      'You must confirm redistribution rights for this audio',
+      400,
+    );
   }
 
   // Verify the parent text exists and the uploader is the owner /
