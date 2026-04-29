@@ -26,6 +26,10 @@ import {
   listCollectionsForUser,
   listOfficialCollections,
 } from '$lib/server/collections.js';
+import {
+  estimatedComprehensionForCollections,
+  estimatedComprehensionForTexts,
+} from '$lib/server/learning-stats.js';
 import { LANGUAGES, isSupportedLanguage } from '@ciareader/shared-types';
 import type { LanguageCode } from '@ciareader/shared-types';
 import type { PageServerLoad } from './$types';
@@ -90,7 +94,12 @@ export const load: PageServerLoad = async ({ url, locals }) => {
     visibility: string;
     coverUrl: string | null;
     textCount: number;
+    estimatedComprehensionPct: number | null;
   }> = [];
+  // T-10.2: per-card known% badge. Decorated after the page is
+  // fetched so we don't push a JOIN into every list query — the
+  // batch helper does one round trip regardless of card count.
+  let textComprehension = new Map<string, number | null>();
 
   if (tab === 'your') {
     page = await listOwnedTexts(
@@ -117,6 +126,15 @@ export const load: PageServerLoad = async ({ url, locals }) => {
       seen.add(row.collection.id);
       return true;
     });
+    // T-10.2 collection-card badge: bulk-fetch comprehension for
+    // every collection on the page. Anonymous viewers can't have
+    // any known lemmas yet, so we skip the lookup for them.
+    const compMap = locals.user
+      ? await estimatedComprehensionForCollections(
+          locals.user.id,
+          merged.map((m) => m.collection.id),
+        )
+      : new Map<string, number | null>();
     collections = merged.map((row) => ({
       id: row.collection.id,
       title: row.collection.title,
@@ -125,6 +143,7 @@ export const load: PageServerLoad = async ({ url, locals }) => {
       visibility: row.collection.visibility,
       coverUrl: row.collection.coverUrl,
       textCount: row.textCount,
+      estimatedComprehensionPct: compMap.get(row.collection.id) ?? null,
     }));
   } else {
     page = await listOfficialTexts({
@@ -134,9 +153,20 @@ export const load: PageServerLoad = async ({ url, locals }) => {
     });
   }
 
+  // T-10.2 text-card badge — same flow for the your / shared /
+  // official tabs. We only call when the viewer is signed in;
+  // anonymous browsers of the official catalog see no badge.
+  if (locals.user && page.cards.length > 0) {
+    textComprehension = await estimatedComprehensionForTexts(
+      locals.user.id,
+      page.cards.map((c) => c.id),
+    );
+  }
+
   return {
     tab,
     page,
+    textComprehension: Object.fromEntries(textComprehension),
     collections,
     language,
     languages: Object.values(LANGUAGES).map((d) => ({

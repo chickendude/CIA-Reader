@@ -151,6 +151,59 @@ export async function listTextStats(
 }
 
 /**
+ * Bulk version of `estimatedComprehensionForText` for the library
+ * grid (T-10.2). Returns a map keyed by textId so the loader can
+ * decorate each card with one query instead of N. Texts in the
+ * input set that have no tokens (worker hasn't run) are mapped
+ * to null; the UI shows a dash rather than a 0%.
+ */
+export async function estimatedComprehensionForTexts(
+  userId: string,
+  textIds: string[],
+): Promise<Map<string, number | null>> {
+  const out = new Map<string, number | null>();
+  if (textIds.length === 0) return out;
+  const list = unwrapRows<{
+    text_id: string;
+    total: number;
+    known: number;
+  }>(
+    await db.execute(sql`
+      SELECT
+        ch.text_id AS text_id,
+        COUNT(*) FILTER (WHERE tt.is_word = true)::int AS total,
+        COUNT(*) FILTER (
+          WHERE tt.is_word = true
+            AND tt.lemma_id IS NOT NULL
+            AND ukl.status = 'known'
+        )::int AS known
+      FROM text_chapters ch
+      INNER JOIN text_tokens tt ON tt.chapter_id = ch.id
+      LEFT JOIN user_known_lemmas ukl
+        ON ukl.lemma_id = tt.lemma_id AND ukl.user_id = ${userId}
+      WHERE ch.text_id IN (${sql.join(
+        textIds.map((id) => sql`${id}`),
+        sql`, `,
+      )})
+      GROUP BY ch.text_id
+    `),
+  );
+  for (const r of list) {
+    out.set(
+      r.text_id,
+      r.total === 0 ? null : Math.round((r.known / r.total) * 100),
+    );
+  }
+  // Texts without text_chapters / text_tokens (pre-worker uploads)
+  // simply don't appear in `list` — record null so the UI can
+  // distinguish "not processed yet" from 0%.
+  for (const id of textIds) {
+    if (!out.has(id)) out.set(id, null);
+  }
+  return out;
+}
+
+/**
  * Single-text comprehension lookup for the library card badge
  * (T-10.2). Cheap — same shape as one row of listTextStats but
  * scoped to a single textId so the library grid can fan out one
@@ -187,6 +240,51 @@ export type CollectionStats = {
   textCount: number;
   estimatedComprehensionPct: number;
 };
+
+/** Bulk comprehension for the collections grid (T-10.2). */
+export async function estimatedComprehensionForCollections(
+  userId: string,
+  collectionIds: string[],
+): Promise<Map<string, number | null>> {
+  const out = new Map<string, number | null>();
+  if (collectionIds.length === 0) return out;
+  const list = unwrapRows<{
+    collection_id: string;
+    total: number;
+    known: number;
+  }>(
+    await db.execute(sql`
+      SELECT
+        ci.collection_id AS collection_id,
+        COUNT(*) FILTER (WHERE tt.is_word = true)::int AS total,
+        COUNT(*) FILTER (
+          WHERE tt.is_word = true
+            AND tt.lemma_id IS NOT NULL
+            AND ukl.status = 'known'
+        )::int AS known
+      FROM collection_items ci
+      INNER JOIN text_chapters ch ON ch.text_id = ci.text_id
+      INNER JOIN text_tokens tt ON tt.chapter_id = ch.id
+      LEFT JOIN user_known_lemmas ukl
+        ON ukl.lemma_id = tt.lemma_id AND ukl.user_id = ${userId}
+      WHERE ci.collection_id IN (${sql.join(
+        collectionIds.map((id) => sql`${id}`),
+        sql`, `,
+      )})
+      GROUP BY ci.collection_id
+    `),
+  );
+  for (const r of list) {
+    out.set(
+      r.collection_id,
+      r.total === 0 ? null : Math.round((r.known / r.total) * 100),
+    );
+  }
+  for (const id of collectionIds) {
+    if (!out.has(id)) out.set(id, null);
+  }
+  return out;
+}
 
 /**
  * Per-collection breakdown for the user. Aggregates over every
