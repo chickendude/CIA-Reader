@@ -183,6 +183,42 @@ def test_hindi_nukta_final_in_phrase_with_punctuation():
     assert "barfa" not in out
 
 
+# ---- Hindi-specific: aksharamukha recomposes nukta atomic codepoints ----
+#
+# aksharamukha's RemoveSchwaHindi pass leaves the input as decomposed
+# (base + U+093C nukta) on the way IN but recomposes the result back to
+# the precomposed atomic codepoints (U+0958–U+095F + U+0931) on the way
+# OUT. sanscript's Devanagari→ISO table doesn't include those atomic
+# letters, so without a fix the romanizer leaves them untouched in the
+# middle of an otherwise romanized word ("paढ़ēṁ" instead of "paṛhēṁ"
+# for पढ़ें). The romanize module re-applies NFD after aksharamukha to
+# restore the decomposed form sanscript understands. These tests pin
+# the fix and the surrounding nukta-letter coverage.
+
+
+@pytest.mark.parametrize(
+    "native,expected_iso",
+    [
+        ("पढ़ें", "paṛheṁ"),  # the canonical bug — medial ढ़, vowel sign + anusvara
+        ("पढ़ाई", "paṛhāī"),  # ढ़ + long ā + ī, multi-syllable
+        ("बड़ा", "baṛā"),  # ड़ (U+095C) — different nukta letter, same recompose
+        ("ज़माना", "zamānā"),  # ज़ (U+095B) at word start
+        ("ख़ुश", "k͟huś"),  # ख़ (U+0959), sanscript ISO uses k + combining double macron-below
+        ("दर्ज़ी", "darzī"),  # medial ज़; regression guard for the existing fix
+    ],
+)
+def test_hindi_nukta_atomic_codepoints_decompose_for_sanscript(
+    native: str, expected_iso: str
+):
+    out = romanize.to_roman(native, from_script="Deva", to_scheme="iso15919", language="hi")
+    assert out == expected_iso, (
+        f"{native} romanized to {out!r}; expected {expected_iso!r}. "
+        f"Likely cause: aksharamukha's recomposition of nukta letters "
+        f"(U+0958-U+095F + U+0931) reached sanscript's Devanagari table "
+        f"which doesn't know those codepoints."
+    )
+
+
 def test_hindi_language_hint_is_noop_for_orya():
     # The schwa-deletion path is gated on ``from_script="Deva"`` —
     # Odia text with a stray ``language="hi"`` (a caller bug) must
