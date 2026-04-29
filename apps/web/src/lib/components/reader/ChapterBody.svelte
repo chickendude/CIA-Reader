@@ -17,6 +17,7 @@
   import WordPopup from './WordPopup.svelte';
   import WordTooltip from './WordTooltip.svelte';
   import { LongPressDetector } from './touch-gestures.js';
+  import type { LanguageCode } from '@ciareader/shared-types';
   import {
     paragraphsOfServerTokens,
     paragraphsOfTokens,
@@ -27,10 +28,14 @@
 
   let {
     chapter,
+    language,
     showRomanization = false,
     isOwner = false,
   }: {
     chapter: ChapterView;
+    /** T-6.2: drives the CorrectionModal's dictionary-search
+     *  language + script. */
+    language: LanguageCode;
     showRomanization?: boolean;
     isOwner?: boolean;
   } = $props();
@@ -246,9 +251,16 @@
     statusOverrides = next;
   }
 
-  function onCorrectionApplied(tokenId: string, chosenLemmaId: string) {
+  function onCorrectionApplied(tokenId: string, chosenLemmaId: string | null) {
     const next = new Map(lemmaCorrections);
-    next.set(tokenId, chosenLemmaId);
+    if (chosenLemmaId == null) {
+      // T-6.2 mark_* path: the user declared this surface isn't a
+      // learnable word. Clear any prior pick so the next render
+      // falls through to the worker's (now cleared) primary.
+      next.delete(tokenId);
+    } else {
+      next.set(tokenId, chosenLemmaId);
+    }
     lemmaCorrections = next;
   }
 </script>
@@ -299,6 +311,7 @@
   <WordPopup
     token={activeToken}
     anchorRect={activeRect}
+    {language}
     {isOwner}
     onClose={closePopup}
     {onStatusChange}

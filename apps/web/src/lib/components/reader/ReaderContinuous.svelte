@@ -28,6 +28,7 @@
     showRomanization = false,
     isOwner = false,
     textId,
+    language,
     /** Override hook for tests — defaults to a real fetch when omitted. */
     fetcher,
   }: {
@@ -36,6 +37,7 @@
     showRomanization?: boolean;
     isOwner?: boolean;
     textId: string;
+    language: import('@ciareader/shared-types').LanguageCode;
     fetcher?: ChapterTokenFetcher;
   } = $props();
 
@@ -132,7 +134,7 @@
           <span class="muted">({chapter.tokenCount.toLocaleString()} tokens)</span>
         </h2>
       {/if}
-      <ChapterBody {chapter} {showRomanization} {isOwner} />
+      <ChapterBody {chapter} {language} {showRomanization} {isOwner} />
     </section>
   {/each}
 </div>

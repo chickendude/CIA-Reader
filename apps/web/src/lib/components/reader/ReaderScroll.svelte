@@ -27,12 +27,14 @@
     wordsPerPage = 250,
     showRomanization = false,
     isOwner = false,
+    language,
   }: {
     chapters: ChapterView[];
     chapterIdx: number;
     wordsPerPage?: number;
     showRomanization?: boolean;
     isOwner?: boolean;
+    language: import('@ciareader/shared-types').LanguageCode;
   } = $props();
 
   let page = $state(0);
@@ -251,9 +253,13 @@
   // with ChapterBody so picking an alternate lemma in the popup
   // re-renders the corrected token on the current page immediately.
   let lemmaCorrections = $state(new Map<string, string>());
-  function onCorrectionApplied(tokenId: string, chosenLemmaId: string) {
+  function onCorrectionApplied(tokenId: string, chosenLemmaId: string | null) {
     const next = new Map(lemmaCorrections);
-    next.set(tokenId, chosenLemmaId);
+    if (chosenLemmaId == null) {
+      next.delete(tokenId);
+    } else {
+      next.set(tokenId, chosenLemmaId);
+    }
     lemmaCorrections = next;
   }
 
@@ -356,6 +362,7 @@
   <WordPopup
     token={activeToken}
     anchorRect={activeRect}
+    {language}
     {isOwner}
     onClose={closePopup}
     {onStatusChange}

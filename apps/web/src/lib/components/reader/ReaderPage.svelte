@@ -27,12 +27,14 @@
     chapters,
     chapterIdx,
     textId,
+    language,
     showRomanization = false,
     isOwner = false,
   }: {
     chapters: ChapterView[];
     chapterIdx: number;
     textId: string;
+    language: import('@ciareader/shared-types').LanguageCode;
     showRomanization?: boolean;
     isOwner?: boolean;
   } = $props();
@@ -246,7 +248,7 @@
               </span>
             </header>
             <article>
-              <ChapterBody chapter={current} {showRomanization} {isOwner} />
+              <ChapterBody chapter={current} {language} {showRomanization} {isOwner} />
             </article>
           {/if}
         </div>

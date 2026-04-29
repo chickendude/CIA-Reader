@@ -20,7 +20,9 @@
 <script lang="ts">
   import { untrack } from 'svelte';
   import Sheet from '../overlay/Sheet.svelte';
+  import CorrectionModal from './CorrectionModal.svelte';
   import { customizableOfficialIds } from './customize-eligibility.js';
+  import type { LanguageCode } from '@ciareader/shared-types';
   import type { ServerToken } from './types.js';
 
   type Provenance =
@@ -57,12 +59,16 @@
   // backward compat with callers that still pass it.
   let {
     token,
+    language,
     isOwner,
     onClose,
     onStatusChange,
     onCorrectionApplied,
   }: {
     token: ServerToken;
+    /** Drives the CorrectionModal's dictionary search + script
+     *  selection. Required from T-6.2 forward. */
+    language: LanguageCode;
     anchorRect?: { top: number; left: number; bottom: number; right: number };
     isOwner: boolean;
     onClose: () => void;
@@ -72,12 +78,14 @@
     ) => void;
     /** T-6.1: parent applies the new lemma to the token's render so
      *  the reader reflects the correction without a page reload. */
-    onCorrectionApplied?: (tokenId: string, chosenLemmaId: string) => void;
+    onCorrectionApplied?: (tokenId: string, chosenLemmaId: string | null) => void;
   } = $props();
 
   let payload = $state<LemmaPayload | null>(null);
   let loadError = $state<string | null>(null);
   let showAlternates = $state(false);
+  // T-6.2: opens the CorrectionModal layered on top of the popup.
+  let showCorrectionModal = $state(false);
   let optimisticStatus = $state<'unknown' | 'learning' | 'known' | 'ignored'>(
     untrack(() => token.status),
   );
@@ -572,6 +580,20 @@
       {/if}
     {/if}
 
+    <!-- T-6.2: "Fix" affordance — every popup gets it, even the
+         non-ambiguous ones (a learner may know the worker got the
+         lemma wrong on a token where the model wasn't unsure). -->
+    {#if isOwner}
+      <button
+        type="button"
+        class="fix-toggle"
+        onclick={() => (showCorrectionModal = true)}
+        title="Search the dictionary or mark this surface"
+      >
+        Fix this word
+      </button>
+    {/if}
+
     {#if token.isAmbiguous && token.candidates.length > 0}
       <button
         type="button"
@@ -611,6 +633,17 @@
     {/if}
   </div>
 </Sheet>
+
+<CorrectionModal
+  open={showCorrectionModal}
+  {token}
+  {language}
+  onClose={() => (showCorrectionModal = false)}
+  onApplied={(lemmaId) => {
+    onCorrectionApplied?.(token.id, lemmaId);
+    onClose();
+  }}
+/>
 
 <style>
   .sp-head {
@@ -878,6 +911,21 @@
     resize: vertical;
   }
 
+  .fix-toggle {
+    margin-top: 0.85rem;
+    margin-right: 0.4rem;
+    background: transparent;
+    border: 1px solid var(--rule, var(--color-border));
+    border-radius: 999px;
+    padding: 0.4rem 0.85rem;
+    font: inherit;
+    font-size: 0.78rem;
+    color: var(--ink-2, var(--color-fg));
+    cursor: pointer;
+  }
+  .fix-toggle:hover {
+    background: color-mix(in oklch, var(--ink, var(--color-fg)) 5%, transparent);
+  }
   .alt-toggle {
     margin-top: 0.85rem;
     background: transparent;
