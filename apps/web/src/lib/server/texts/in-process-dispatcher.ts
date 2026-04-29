@@ -270,6 +270,7 @@ async function processChapter(
       isWord: t.is_word,
       sentenceIdx: 0,
       romanization: t.romanization,
+      numberForms: t.number_forms,
     };
   }) satisfies Array<Omit<TextToken, 'id'>>;
   if (rows.length === 0) return 0;

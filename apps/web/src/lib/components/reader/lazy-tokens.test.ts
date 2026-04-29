@@ -19,6 +19,7 @@ function fakeTokens(n: number): ServerToken[] {
     romanization: null,
     glossDefault: null,
     candidates: [],
+    numberForms: null,
     status: 'unknown',
   }));
 }

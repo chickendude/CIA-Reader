@@ -26,6 +26,7 @@ function makeToken(overrides: Partial<ServerToken> = {}): ServerToken {
     romanization: 'prabhāt',
     glossDefault: null,
     candidates: [],
+    numberForms: null,
     status: 'unknown',
     ...overrides,
   };

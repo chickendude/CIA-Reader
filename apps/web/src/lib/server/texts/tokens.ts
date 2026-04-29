@@ -39,6 +39,27 @@ export type RenderedCandidate = {
   features: Record<string, string>;
 };
 
+/** T-2.8: per-language spelled-out + ISO 15919 romanization for a
+ *  digit-only NUM token. Keyed on language for symmetry with the wire
+ *  shape; `or` is the ISO 639-1 code for Odia. */
+export type RenderedNumberLanguageForm = {
+  spelled: string;
+  romanized: string;
+};
+
+export type RenderedNumberForms = {
+  value: number;
+  digitsLatin: string;
+  digitsDeva: string;
+  digitsOrya: string;
+  hi: RenderedNumberLanguageForm;
+  mr: RenderedNumberLanguageForm;
+  /** Odia rendering. Field is `odia` rather than the ISO 639-1 `or`
+   *  because `or` is a reserved Python keyword on the server-side
+   *  Pydantic model that emits this payload. */
+  odia: RenderedNumberLanguageForm;
+};
+
 export type RenderedToken = {
   id: string;
   idx: number;
@@ -58,6 +79,9 @@ export type RenderedToken = {
    *  (or when the worker hasn't run). The popup hides the
    *  alternate-meanings affordance when this is empty. */
   candidates: RenderedCandidate[];
+  /** T-2.8: digit-only NUM tokens carry a per-language spelled-out
+   *  form + romanization. Null on every other token. */
+  numberForms: RenderedNumberForms | null;
   status: 'known' | 'learning' | 'ignored' | 'unknown';
 };
 
@@ -325,6 +349,19 @@ export async function loadChapterTokens(
     }
     candidates.sort((a, b) => b.score - a.score);
 
+    const nf = t.numberForms;
+    const renderedNumberForms: RenderedNumberForms | null = nf
+      ? {
+          value: nf.value,
+          digitsLatin: nf.digits_latin,
+          digitsDeva: nf.digits_deva,
+          digitsOrya: nf.digits_orya,
+          hi: nf.hi,
+          mr: nf.mr,
+          odia: nf.odia,
+        }
+      : null;
+
     return {
       id: t.id,
       idx: t.idx,
@@ -341,6 +378,7 @@ export async function loadChapterTokens(
         ? glossByLemma.get(effectiveLemmaId) ?? null
         : null,
       candidates,
+      numberForms: renderedNumberForms,
       status,
     };
   });

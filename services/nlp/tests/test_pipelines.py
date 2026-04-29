@@ -108,3 +108,63 @@ def test_custom_factory_override_via_registry(monkeypatch):
     monkeypatch.setitem(pipelines._PIPELINE_FACTORIES, "stanza-hi", MarkerPipeline)
     pipelines.reset_pipeline_cache()
     assert isinstance(get_pipeline("hi"), MarkerPipeline)
+
+
+# ----------------------------------------------------------------
+# T-2.8: digit-only NUM tokens carry number_forms across all three
+# pipelines, regardless of source script.
+# ----------------------------------------------------------------
+
+
+def _find_number_token(tokens: list[Token], surface: str) -> Token | None:
+    for t in tokens:
+        if t.surface == surface:
+            return t
+    return None
+
+
+@pytest.mark.parametrize(
+    "language,text,number_surface",
+    [
+        ("hi", "वर्ष 2024 में", "2024"),
+        ("hi", "साल १२३ का", "१२३"),
+        ("mr", "वर्ष 2024 ला", "2024"),
+        ("or", "ବର୍ଷ 2024 ରେ", "2024"),
+        ("or", "ବର୍ଷ ୧୨୩ ରେ", "୧୨୩"),
+    ],
+)
+def test_pipeline_attaches_number_forms_for_digit_tokens(
+    language: str, text: str, number_surface: str
+) -> None:
+    pipe = get_pipeline(language)
+    out = pipe.process(text)
+    tok = _find_number_token(out.tokens, number_surface)
+    assert tok is not None, f"no token with surface {number_surface!r} in {out.tokens}"
+    assert tok.number_forms is not None
+    # value matches the digit run regardless of source script
+    expected_value = int(number_surface) if number_surface.isascii() else None
+    if expected_value is not None:
+        assert tok.number_forms.value == expected_value
+    # All three language renderings populated.
+    assert tok.number_forms.hi.spelled
+    assert tok.number_forms.hi.romanized
+    assert tok.number_forms.mr.spelled
+    assert tok.number_forms.odia.spelled
+
+
+def test_pipeline_no_number_forms_on_mixed_script_digits() -> None:
+    """A surface like ``१2३`` (Devanagari + Latin mix) parses to a
+    single token under the whitespace fake but is not a single-script
+    digit run, so number_forms must be None."""
+    pipe = get_pipeline("hi")
+    out = pipe.process("कुछ १2३ है")
+    tok = _find_number_token(out.tokens, "१2३")
+    assert tok is not None
+    assert tok.number_forms is None
+
+
+def test_pipeline_no_number_forms_on_words() -> None:
+    pipe = get_pipeline("hi")
+    out = pipe.process("नमस्ते दुनिया")
+    for t in out.tokens:
+        assert t.number_forms is None

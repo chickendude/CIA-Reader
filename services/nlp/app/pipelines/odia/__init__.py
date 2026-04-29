@@ -28,6 +28,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
+from app.numbers import number_forms as _compute_number_forms
 from app.schemas import LemmaCandidate, Token
 
 from ..base import Pipeline, PipelineResult
@@ -129,6 +130,7 @@ class OdiaPipeline(Pipeline):
             is_ambiguous=len(analyses) >= 2,
             is_oov=is_oov,
             romanization=None,
+            number_forms=_compute_number_forms(surface),
         )
 
 
