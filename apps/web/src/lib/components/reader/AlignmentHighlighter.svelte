@@ -19,6 +19,7 @@
     type AlignmentListItem,
   } from '$lib/server/audio/alignments.js';
   import {
+    setAlignmentMap,
     subscribeAudio,
     type AudioState,
   } from './audio-bus.js';
@@ -52,6 +53,11 @@
       if (!res.ok) return;
       const data = (await res.json()) as { alignments: AlignmentListItem[] };
       alignments = data.alignments ?? [];
+      // T-9.4: publish a tokenId → startMs map so ChapterBody's
+      // click handler can seek the player without re-fetching.
+      const m = new Map<string, number>();
+      for (const a of alignments) m.set(a.tokenId, a.startMs);
+      setAlignmentMap(m);
     } catch {
       // Quiet — the reader still works without alignment, just no
       // karaoke highlight.
