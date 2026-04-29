@@ -145,6 +145,15 @@ describe('processTextNow', () => {
           is_ambiguous: false,
           is_oov: false,
           romanization: 'bolnā',
+          number_forms: {
+            value: 123,
+            digits_latin: '123',
+            digits_deva: '१२३',
+            digits_orya: '୧୨୩',
+            hi: { spelled: 'एक सौ तेईस', romanized: 'ek sau teīs' },
+            mr: { spelled: 'एकशे तेवीस', romanized: 'ēkaśē tēvīsa' },
+            odia: { spelled: 'ଏକ ଶହ ତେଇଶ', romanized: 'ēka śaha tēiśa' },
+          },
           candidates: [
             { lemma: 'बोलना', pos: 'verb', score: 0.9, features: { Tense: 'Pres' } },
           ],
@@ -178,16 +187,20 @@ describe('processTextNow', () => {
       lemmaId: string | null;
       surface: string;
       romanization: string | null;
+      numberForms: { value: number } | null;
     }>;
     expect(firstInsert[0]!.lemmaId).toBe('lemma-bolnaa');
     expect(firstInsert[0]!.romanization).toBe('bolnā');
+    expect(firstInsert[0]!.numberForms?.value).toBe(123);
 
     const secondInsert = (inserts[1] as Extract<Call, { kind: 'insert' }>).values as Array<{
       lemmaId: string | null;
       isOov: boolean;
+      numberForms: unknown;
     }>;
     expect(secondInsert[0]!.lemmaId).toBeNull();
     expect(secondInsert[0]!.isOov).toBe(true);
+    expect(secondInsert[0]!.numberForms).toBeNull();
 
     // Two delete calls (one per chapter, idempotency clear before insert).
     expect(calls.filter((c) => c.kind === 'delete')).toHaveLength(2);

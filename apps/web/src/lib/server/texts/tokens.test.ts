@@ -85,6 +85,36 @@ describe('loadChapterTokens', () => {
     expect(result).toBeNull();
   });
 
+  it('maps stored number_forms onto the reader numberForms payload (T-2.8)', async () => {
+    stage([
+      tokenRow({
+        id: 'num-1',
+        surface: '123',
+        lemmaId: null,
+        numberForms: {
+          value: 123,
+          digits_latin: '123',
+          digits_deva: '१२३',
+          digits_orya: '୧୨୩',
+          hi: { spelled: 'एक सौ तेईस', romanized: 'ek sau teīs' },
+          mr: { spelled: 'एकशे तेवीस', romanized: 'ēkaśē tēvīsa' },
+          odia: { spelled: 'ଏକ ଶହ ତେଇଶ', romanized: 'ēka śaha tēiśa' },
+        },
+      }),
+    ]);
+    const result = await loadChapterTokens('chap-1', null);
+    expect(result![0]).toMatchObject({
+      id: 'num-1',
+      numberForms: {
+        value: 123,
+        digitsLatin: '123',
+        digitsDeva: '१२३',
+        digitsOrya: '୧୨୩',
+        hi: { spelled: 'एक सौ तेईस', romanized: 'ek sau teīs' },
+      },
+    });
+  });
+
   it('returns tokens with status=unknown when the viewer has no known-lemma rows', async () => {
     stage([tokenRow({ id: 't1', idx: 0 }), tokenRow({ id: 't2', idx: 1 })]);
     stage([]); // token_corrections (T-6.4) — none

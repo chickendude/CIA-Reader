@@ -160,9 +160,6 @@ async function ensureLemma(
       source: 'official_dictionary',
       sourceAttribution: 'Stanza UD',
     })
-    .onConflictDoNothing({
-      target: [schema.lemmas.language, schema.lemmas.headword, schema.lemmas.pos],
-    })
     .returning()) as Lemma[];
 
   if (row) {
@@ -270,7 +267,7 @@ async function processChapter(
       isWord: t.is_word,
       sentenceIdx: 0,
       romanization: t.romanization,
-      numberForms: t.number_forms,
+      numberForms: t.number_forms ?? null,
     };
   }) satisfies Array<Omit<TextToken, 'id'>>;
   if (rows.length === 0) return 0;
