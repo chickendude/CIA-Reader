@@ -51,8 +51,11 @@ export async function canReadText(
   if (viewer && viewer.id) {
     const { viewerHasDirectShare } = await import('../texts/sharing.js');
     if (await viewerHasDirectShare(viewer.id, text.id)) return true;
+    // 4. T-7.4: group shares — viewer is a member of a group
+    //    that's been granted access to this text.
+    const { viewerHasGroupShare } = await import('../groups.js');
+    if (await viewerHasGroupShare(viewer.id, text.id)) return true;
   }
-  // 4. Group shares (T-7.4) plug in here.
   return false;
 }
 
