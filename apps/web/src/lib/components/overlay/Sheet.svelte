@@ -51,8 +51,13 @@
   // 0 on desktop / when no keyboard is visible.
   let kbInsetPx = $state(0);
 
+  // Modal-ish behaviour (focus trap + body-scroll lock) only kicks in
+  // for dimmed sheets. Undimmed sheets are contextual side panels —
+  // the page behind stays interactive, so trapping focus inside the
+  // sheet or freezing the scroll position would actively get in the
+  // user's way.
   $effect(() => {
-    if (!open) {
+    if (!open || !dimmed) {
       trap?.deactivate();
       trap = null;
       releaseScroll?.();
@@ -172,15 +177,22 @@
       transition: bottom 180ms ease-out;
     }
   }
-  /* Side-sheet layout (desktop / wide). */
+  /* Side-sheet layout (desktop / wide). The reader's word panel sits
+     below the page's top bar via `--reader-top-h`; pages without a
+     top bar leave the variable unset and the sheet hugs the top. */
   @media (min-width: 960px) {
     .sheet {
-      top: 0;
+      top: var(--reader-top-h, 0px);
       right: 0;
       bottom: 0;
       width: var(--sheet-width);
       box-shadow: -8px 0 32px rgba(0, 0, 0, 0.18);
       border-radius: 0;
+    }
+    /* Slide-in only animates for modal-style (dimmed) sheets. The
+       static word panel just appears in place — animating an
+       always-on column would feel jittery on every reload. */
+    .sheet-back.dimmed .sheet {
       animation: slide-in-right 220ms cubic-bezier(0.2, 0, 0, 1);
     }
   }

@@ -19,7 +19,15 @@
   let {
     token,
     showRomanization = false,
-  }: { token: ServerToken; showRomanization?: boolean } = $props();
+    isAnchor = false,
+  }: {
+    token: ServerToken;
+    showRomanization?: boolean;
+    /** True when this token is the one currently locked in the side
+     *  panel — gets an outline so the user remembers which word the
+     *  panel is bound to. */
+    isAnchor?: boolean;
+  } = $props();
 
   // OOV tokens get a distinct visual state (T-5.4a) — dashed
   // underline rather than the known/unknown highlight, so the user
@@ -30,6 +38,7 @@
     const classes: string[] = ['word'];
     if (token.isOov) classes.push('oov');
     if (token.isAmbiguous) classes.push('ambiguous');
+    if (isAnchor) classes.push('anchor');
     return classes.join(' ');
   });
 
@@ -89,5 +98,13 @@
     margin-left: 0.05em;
     vertical-align: super;
     font-size: 0.7em;
+  }
+  /* Anchor: the word currently locked in the side panel. Outline
+     instead of fill so the user can still see the underlying status
+     tint underneath. */
+  .word.anchor {
+    outline: 2px solid var(--accent, var(--color-accent));
+    outline-offset: 1px;
+    border-radius: 3px;
   }
 </style>
