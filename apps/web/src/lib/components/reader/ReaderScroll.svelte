@@ -201,6 +201,19 @@
     };
     hoverToken = null;
     hoverRect = null;
+    // T-9.4: tap-to-seek. Same flow as ChapterBody — audio
+    // alignment + player handle, no-op when neither is present.
+    void (async () => {
+      const { getAlignmentStartMs, getAudioController } = await import(
+        './audio-bus.js'
+      );
+      const startMs = getAlignmentStartMs(found.token.id);
+      if (startMs == null) return;
+      const ctrl = getAudioController();
+      if (!ctrl) return;
+      ctrl.pause();
+      ctrl.seekMs(startMs);
+    })();
   }
 
   function showHoverTooltip(event: Event) {
