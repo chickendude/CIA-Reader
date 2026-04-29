@@ -382,7 +382,7 @@
     padding: 0;
   }
   .reader-scroll-inner {
-    max-width: 40rem;
+    max-width: var(--reader-col-width, 40rem);
     margin: 0 auto;
     padding: 1.25rem 3rem 2rem;
   }
@@ -412,17 +412,12 @@
   }
   article {
     min-height: 50vh;
-    font-family: var(--font-serif-dev, var(--font-serif));
-    font-size: 1.1rem;
-    line-height: 2;
+    font-family: var(--reader-font-family, var(--font-serif-dev, var(--font-serif)));
+    font-size: var(--reader-font-size, 1.1rem);
+    line-height: var(--reader-line-height, 2);
     color: var(--ink, var(--color-fg));
     word-spacing: 0.03em;
     text-wrap: pretty;
-  }
-  @media (min-width: 768px) {
-    article {
-      font-size: 1.25rem;
-    }
   }
   .body {
     margin: 0 0 1rem;

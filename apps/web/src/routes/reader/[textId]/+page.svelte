@@ -73,6 +73,23 @@
       .join('; '),
   );
 
+  // tokens.css scopes the word-status highlight rules to
+  // `html[data-hl='…']` (set up-front by app.html so first paint is
+  // correct). Mirror the popover's choice onto <html> so a live change
+  // flips the rules immediately. The previous value is restored on
+  // unmount so the attribute reflects this language's setting only
+  // while the reader is on screen.
+  $effect(() => {
+    if (typeof document === 'undefined') return;
+    const html = document.documentElement;
+    const previous = html.getAttribute('data-hl');
+    html.setAttribute('data-hl', readerSettings.highlightStyle);
+    return () => {
+      if (previous == null) html.removeAttribute('data-hl');
+      else html.setAttribute('data-hl', previous);
+    };
+  });
+
   function shouldPoll(s: typeof data.text.status): boolean {
     return s === 'pending' || s === 'processing';
   }
@@ -237,7 +254,6 @@
 <div
   class="reader"
   data-mode={data.mode}
-  data-hl={readerSettings.highlightStyle}
   style={readerStyle}
 >
   <header class="reader-top" bind:this={readerTopEl}>
@@ -325,6 +341,10 @@
       language={data.text.language as LanguageCode}
       {showRomanization}
       isOwner={data.isOwner}
+      fontSize={readerSettings.fontSize}
+      lineSpacing={readerSettings.lineSpacing}
+      fontFamily={readerSettings.fontFamily}
+      readingWidth={readerSettings.readingWidth}
     />
   {:else if data.mode === 'paged_scroll'}
     <ReaderScroll

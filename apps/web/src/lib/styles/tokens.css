@@ -374,3 +374,29 @@ html[data-hl='underline'] .word[data-s='5'] {
   text-decoration-color: var(--ink-4);
   text-decoration-thickness: 0.5px;
 }
+
+html[data-hl='colored_text'] .word[data-s='0'] {
+  background: transparent;
+  color: var(--accent);
+}
+html[data-hl='colored_text'] .word[data-s='1'] {
+  background: transparent;
+  color: oklch(0.55 0.11 80);
+}
+html[data-hl='colored_text'] .word[data-s='2'] {
+  background: transparent;
+  color: oklch(0.5 0.13 75);
+}
+html[data-hl='colored_text'] .word[data-s='3'] {
+  background: transparent;
+  color: oklch(0.45 0.15 70);
+}
+html[data-hl='colored_text'] .word[data-s='4'] {
+  color: var(--w-known-ink);
+}
+html[data-hl='colored_text'] .word[data-s='5'] {
+  color: var(--w-ignored-ink);
+  text-decoration: line-through;
+  text-decoration-color: var(--ink-4);
+  text-decoration-thickness: 0.5px;
+}
