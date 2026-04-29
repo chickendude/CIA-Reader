@@ -38,6 +38,7 @@
   const TABS = [
     { id: 'your', label: 'Yours', requiresAuth: true },
     { id: 'shared', label: 'Shared', requiresAuth: true },
+    { id: 'collections', label: 'Collections', requiresAuth: false },
     { id: 'official', label: 'Official', requiresAuth: false },
   ] as const;
 </script>
@@ -102,36 +103,73 @@
         </div>
       </a>
     {/if}
-
-    {#each data.page.cards as card (card.id)}
-      <a class="card lib-card" href={`/reader/${card.id}`}>
-        <div class={`lib-cover cover-${coverForId(card.id)}`}>
-          <div class="cover-title">{card.title}</div>
-          <div class="cover-chips">
-            <span class="chip status-{card.status}">{card.status}</span>
-            {#if card.visibility !== 'private'}
-              <span class="chip">{card.visibility}</span>
-            {/if}
-          </div>
-        </div>
-        <div class="body">
-          <div class="kind-row">
-            <span class="kind-tag">{card.sourceType}</span>
-            <span class="kind-meta">{card.language}</span>
-          </div>
-          <div class="title-dev">{card.title}</div>
+    {#if data.tab === 'collections' && data.isAuthenticated}
+      <a class="card upload-card" href="/collections/new">
+        <div class="upload-card-body">
+          <div class="big" aria-hidden="true">+</div>
+          <div class="label">New collection</div>
+          <div class="sub">Chapter book, course, or anthology</div>
         </div>
       </a>
-    {/each}
+    {/if}
+
+    {#if data.tab === 'collections'}
+      {#each data.collections as col (col.id)}
+        <a class="card lib-card" href={`/collections/${col.id}`}>
+          <div class={`lib-cover cover-${coverForId(col.id)}`}>
+            <div class="cover-title">{col.title}</div>
+            <div class="cover-chips">
+              <span class="chip">{col.kind}</span>
+              {#if col.visibility !== 'private'}
+                <span class="chip">{col.visibility}</span>
+              {/if}
+            </div>
+          </div>
+          <div class="body">
+            <div class="kind-row">
+              <span class="kind-tag">collection</span>
+              <span class="kind-meta">{col.textCount} {col.textCount === 1 ? 'text' : 'texts'}</span>
+            </div>
+            <div class="title-dev">{col.title}</div>
+          </div>
+        </a>
+      {/each}
+    {:else}
+      {#each data.page.cards as card (card.id)}
+        <a class="card lib-card" href={`/reader/${card.id}`}>
+          <div class={`lib-cover cover-${coverForId(card.id)}`}>
+            <div class="cover-title">{card.title}</div>
+            <div class="cover-chips">
+              <span class="chip status-{card.status}">{card.status}</span>
+              {#if card.visibility !== 'private'}
+                <span class="chip">{card.visibility}</span>
+              {/if}
+            </div>
+          </div>
+          <div class="body">
+            <div class="kind-row">
+              <span class="kind-tag">{card.sourceType}</span>
+              <span class="kind-meta">{card.language}</span>
+            </div>
+            <div class="title-dev">{card.title}</div>
+          </div>
+        </a>
+      {/each}
+    {/if}
   </div>
 
-  {#if data.page.cards.length === 0}
+  {#if data.tab === 'collections' ? data.collections.length === 0 : data.page.cards.length === 0}
     <p class="empty">
       {#if data.tab === 'your'}
         You haven't uploaded any texts yet — try the
         <a href="/upload">+ Add a text</a> tile above.
       {:else if data.tab === 'shared'}
         No shared texts yet. Sharing lands in a future ticket.
+      {:else if data.tab === 'collections'}
+        No collections yet.
+        {#if data.isAuthenticated}
+          Try the <a href="/collections/new">+ New collection</a> tile above.
+        {/if}
       {:else}
         No official texts yet. Curators are working on it.
       {/if}
