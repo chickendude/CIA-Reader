@@ -123,6 +123,11 @@
               {#if col.visibility !== 'private'}
                 <span class="chip">{col.visibility}</span>
               {/if}
+              {#if col.estimatedComprehensionPct !== null}
+                <span class="chip chip-pct" title="Estimated comprehension">
+                  {col.estimatedComprehensionPct}% known
+                </span>
+              {/if}
             </div>
           </div>
           <div class="body">
@@ -136,6 +141,7 @@
       {/each}
     {:else}
       {#each data.page.cards as card (card.id)}
+        {@const pct = data.textComprehension?.[card.id] ?? null}
         <a class="card lib-card" href={`/reader/${card.id}`}>
           <div class={`lib-cover cover-${coverForId(card.id)}`}>
             <div class="cover-title">{card.title}</div>
@@ -143,6 +149,11 @@
               <span class="chip status-{card.status}">{card.status}</span>
               {#if card.visibility !== 'private'}
                 <span class="chip">{card.visibility}</span>
+              {/if}
+              {#if pct !== null}
+                <span class="chip chip-pct" title="Estimated comprehension">
+                  {pct}% known
+                </span>
               {/if}
             </div>
           </div>
@@ -369,6 +380,15 @@
       var(--paper, var(--color-bg)) 80%,
       transparent
     );
+  }
+  .chip-pct {
+    background: color-mix(
+      in oklch,
+      var(--accent, var(--color-accent)) 22%,
+      var(--paper, var(--color-bg))
+    );
+    color: var(--accent-ink, var(--ink, var(--color-fg)));
+    font-feature-settings: 'tnum';
     color: var(--ink-2, var(--color-fg));
     backdrop-filter: blur(4px);
   }

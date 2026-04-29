@@ -17,6 +17,21 @@ vi.mock('$lib/server/texts/library.js', async () => {
   };
 });
 
+// T-10.2: loader now decorates each card with comprehension; mock
+// the bulk helpers to "no data" so existing test fixtures don't
+// have to mock the DB. Tests that care can override the resolved
+// value.
+vi.mock('$lib/server/learning-stats.js', () => ({
+  estimatedComprehensionForTexts: async () => new Map(),
+  estimatedComprehensionForCollections: async () => new Map(),
+}));
+
+// T-8.5: collections tab calls into collections.js; mock to empty.
+vi.mock('$lib/server/collections.js', () => ({
+  listCollectionsForUser: async () => [],
+  listOfficialCollections: async () => [],
+}));
+
 type LoadFn = (typeof import('./+page.server.js'))['load'];
 const USER = { id: 'user-1', role: 'user' as const };
 
