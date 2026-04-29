@@ -80,6 +80,12 @@
   let progressWriter: ProgressWriter | null = null;
   let beforeUnloadHandler: (() => void) | null = null;
 
+  // The reader's top bar is a full-width fixed element. We measure
+  // its height into a `--reader-top-h` CSS variable so the AppShell
+  // rail and the reader body can both leave room for it without
+  // baking a fixed pixel value into either component.
+  let readerTopEl: HTMLElement | null = $state(null);
+
   onMount(() => {
     liveStatus = data.text.status;
 
@@ -146,12 +152,27 @@
       window.addEventListener('beforeunload', beforeUnloadHandler);
     }
 
+    // Track the .reader-top height so the rail can sit below it.
+    let topRO: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== 'undefined' && readerTopEl) {
+      const apply = () => {
+        if (!readerTopEl) return;
+        const h = readerTopEl.getBoundingClientRect().height;
+        document.documentElement.style.setProperty('--reader-top-h', `${h}px`);
+      };
+      topRO = new ResizeObserver(apply);
+      topRO.observe(readerTopEl);
+      apply();
+    }
+
     return () => {
       cleanupPoll?.();
       window.removeEventListener('keydown', onKey);
       if (beforeUnloadHandler)
         window.removeEventListener('beforeunload', beforeUnloadHandler);
       void progressWriter?.flush();
+      topRO?.disconnect();
+      document.documentElement.style.removeProperty('--reader-top-h');
     };
   });
 
@@ -180,7 +201,7 @@
 </svelte:head>
 
 <div class="reader" data-mode={data.mode}>
-  <header class="reader-top">
+  <header class="reader-top" bind:this={readerTopEl}>
     <a class="reader-close" href="/library" aria-label="Close reader" title="Close reader">
       <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true">
         <path d="M6 6l12 12" />
@@ -277,10 +298,12 @@
     color: var(--ink, var(--color-fg));
     /* Fill the AppShell's content track so page mode can occupy the
        full vertical space (T-5.23). Children flex-stack vertically:
-       sticky top bar, fluid body, and progress foot. */
+       fluid body and progress foot — the top bar is fixed across the
+       whole viewport, so the body just needs the matching padding. */
     min-height: 100dvh;
     display: flex;
     flex-direction: column;
+    padding-top: var(--reader-top-h, 0px);
   }
   /* Page mode is meant to behave like a book — no vertical scroll;
      overflow stays inside the viewport, page arrows step through it.
@@ -292,10 +315,14 @@
     min-height: 0;
     overflow: hidden;
   }
+  /* Full-viewport top bar so the rail sits below it (rail reads the
+     same `--reader-top-h` variable to know how much room to leave). */
   .reader-top {
-    position: sticky;
+    position: fixed;
     top: 0;
-    z-index: 5;
+    left: 0;
+    right: 0;
+    z-index: 20;
     display: grid;
     grid-template-columns: 1fr;
     gap: 0.5rem 1rem;
