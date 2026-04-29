@@ -80,6 +80,18 @@ def test_unknown_surface_is_oov_with_fallback_candidate():
     assert tok.is_word is True
 
 
+def test_latin_only_surface_is_plain_text_not_oov_word():
+    lemmas = _table(ଘର=OdiaLemma(headword="ଘର", pos="NOUN", gloss="house"))
+    result = _pipe(lemmas).process("Edit ଘର")
+    english, odia = result.tokens
+    assert english.surface == "Edit"
+    assert english.is_word is False
+    assert english.is_oov is False
+    assert english.candidates[0].pos == "X"
+    assert odia.is_word is True
+    assert odia.is_oov is False
+
+
 def test_inflected_noun_strips_to_known_stem():
     # Locative suffix "ରେ" on ଘର → lemma ଘର with Case=Loc.
     lemmas = _table(ଘର=OdiaLemma(headword="ଘର", pos="NOUN"))

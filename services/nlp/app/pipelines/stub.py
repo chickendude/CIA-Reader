@@ -24,6 +24,7 @@ from app.romanize import UnsupportedScriptError, to_roman
 from app.schemas import LemmaCandidate, Token
 
 from .base import Pipeline, PipelineResult
+from .stanza_ud import should_treat_as_word
 
 
 def _is_word_char(ch: str) -> bool:
@@ -106,7 +107,12 @@ class StubPipeline(Pipeline):
             return None
 
     def _make_token(self, idx: int, surface: str, is_word: bool) -> Token:
-        if is_word:
+        token_is_word = is_word and should_treat_as_word(
+            surface,
+            "X",
+            script=self._script,
+        )
+        if token_is_word:
             return Token(
                 idx=idx,
                 surface=surface,

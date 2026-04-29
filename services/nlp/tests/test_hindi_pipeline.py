@@ -180,6 +180,34 @@ def test_process_does_not_flag_oov_for_numbers_punctuation_symbols():
     assert [t.is_oov for t in tokens] == [False, False, False, False]
 
 
+def test_process_ignores_latin_only_words_when_script_known():
+    doc = FakeDoc(
+        sentences=[
+            FakeSentence(
+                words=[
+                    FakeWord(text="Edit", lemma="Edit", upos="X"),
+                    FakeWord(text="this", lemma="this", upos="X"),
+                    FakeWord(text="बोलता", lemma="बोलना", upos="VERB"),
+                ]
+            )
+        ]
+    )
+    pipe = HindiPipeline(nlp=FakeStanza(doc), script="Deva")
+    tokens = pipe.process("Edit this बोलता").tokens
+    assert [t.is_word for t in tokens] == [False, False, True]
+    assert [t.is_oov for t in tokens] == [False, False, False]
+
+
+def test_process_keeps_numeric_tokens_even_when_script_known():
+    doc = FakeDoc(
+        sentences=[FakeSentence(words=[FakeWord(text="1910", lemma="1910", upos="NUM")])]
+    )
+    pipe = HindiPipeline(nlp=FakeStanza(doc), script="Deva")
+    tok = pipe.process("1910").tokens[0]
+    assert tok.is_word is True
+    assert tok.is_oov is False
+
+
 def test_process_marks_punctuation_as_non_word():
     doc = FakeDoc(
         sentences=[

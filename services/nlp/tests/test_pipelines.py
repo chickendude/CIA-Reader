@@ -90,6 +90,13 @@ def test_stub_pipeline_emits_romanization_when_script_known():
     assert space_tokens[0].romanization is None
 
 
+def test_stub_pipeline_ignores_latin_only_words_when_script_known():
+    out = StubPipeline(script="Deva", roman_scheme="iso15919").process("Edit this नमस्ते")
+    assert [t.surface for t in out.tokens] == ["Edit", " ", "this", " ", "नमस्ते"]
+    assert [t.is_word for t in out.tokens] == [False, False, False, False, True]
+    assert [t.is_oov for t in out.tokens] == [False, False, False, False, True]
+
+
 def test_stub_pipeline_returns_valid_token_shape():
     out = StubPipeline().process("one two")
     tok: Token = out.tokens[0]
