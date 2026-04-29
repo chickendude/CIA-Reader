@@ -54,6 +54,13 @@
     };
   };
 
+  type NumberDisplay = {
+    label: string;
+    nativeDigits: string;
+    spelled: string;
+    romanized: string;
+  };
+
   // anchorRect is accepted but unused — anchor positioning was used
   // before T-5.10 switched to Sheet. Kept on the prop signature for
   // backward compat with callers that still pass it.
@@ -212,6 +219,32 @@
       payload?.translations.personal ?? [],
     ),
   );
+
+  const numberDisplay = $derived((): NumberDisplay | null => {
+    if (!token?.numberForms) return null;
+    if (language === 'or') {
+      return {
+        label: 'Odia',
+        nativeDigits: token.numberForms.digitsOrya,
+        spelled: token.numberForms.odia.spelled,
+        romanized: token.numberForms.odia.romanized,
+      };
+    }
+    if (language === 'mr') {
+      return {
+        label: 'Marathi',
+        nativeDigits: token.numberForms.digitsDeva,
+        spelled: token.numberForms.mr.spelled,
+        romanized: token.numberForms.mr.romanized,
+      };
+    }
+    return {
+      label: 'Hindi',
+      nativeDigits: token.numberForms.digitsDeva,
+      spelled: token.numberForms.hi.spelled,
+      romanized: token.numberForms.hi.romanized,
+    };
+  });
 
   function startCustomize(t: PublicTranslation) {
     customizingId = t.id;
@@ -436,35 +469,26 @@
         >
           ×
         </button>
-        <h2 class="sp-word">{token.surface}</h2>
-      {#if token.numberForms}
-        <!-- T-2.8: digit-only NUM token. Show all three native-script
-             digit renderings, then the spelled-out form + ISO 15919
-             romanization for each MVP language. The lemma / translation
-             / status panes are skipped — numbers aren't lemmas to learn. -->
-        <div class="num-block" data-testid="number-forms">
-          <div class="num-digits">
+        {#if token.numberForms && numberDisplay()}
+          <h2 class="sp-word num-title">
             <span>{token.numberForms.digitsLatin}</span>
-            <span>{token.numberForms.digitsDeva}</span>
-            <span>{token.numberForms.digitsOrya}</span>
+            <span class="num-native">{numberDisplay()?.nativeDigits}</span>
+          </h2>
+        {:else}
+          <h2 class="sp-word">{token.surface}</h2>
+        {/if}
+      {#if token.numberForms}
+        <!-- T-2.8: digit-only NUM token. Show the Latin digits beside
+             the text language's native-script digits, then the
+             language-specific spelled-out form + ISO 15919 romanization.
+             The lemma / translation / status panes are skipped —
+             numbers aren't lemmas to learn. -->
+        <div class="num-block" data-testid="number-forms">
+          <div class="num-entry">
+            <span class="num-lang">{numberDisplay()?.label}</span>
+            <span class="num-spelled">{numberDisplay()?.spelled}</span>
+            <span class="num-roman">{numberDisplay()?.romanized}</span>
           </div>
-          <ul class="num-langs">
-            <li>
-              <span class="num-lang">Hindi</span>
-              <span class="num-spelled">{token.numberForms.hi.spelled}</span>
-              <span class="num-roman">{token.numberForms.hi.romanized}</span>
-            </li>
-            <li>
-              <span class="num-lang">Marathi</span>
-              <span class="num-spelled">{token.numberForms.mr.spelled}</span>
-              <span class="num-roman">{token.numberForms.mr.romanized}</span>
-            </li>
-            <li>
-              <span class="num-lang">Odia</span>
-              <span class="num-spelled">{token.numberForms.odia.spelled}</span>
-              <span class="num-roman">{token.numberForms.odia.romanized}</span>
-            </li>
-          </ul>
         </div>
       {:else}
         {#if token.romanization}
@@ -1106,30 +1130,26 @@
   }
 
   /* T-2.8: number-only token block. */
+  .num-title {
+    display: flex;
+    align-items: baseline;
+    gap: 0.65rem;
+  }
+  .num-native {
+    color: var(--ink-3, var(--color-fg-muted));
+    font-size: 0.62em;
+  }
   .num-block {
     display: flex;
     flex-direction: column;
-    gap: 0.7rem;
-    margin-top: 0.4rem;
-  }
-  .num-digits {
-    display: flex;
-    align-items: baseline;
-    gap: 0.85rem;
-    font-family: var(--font-serif-dev, var(--font-serif));
-    font-size: 1.25rem;
-    color: var(--ink-2, var(--color-fg));
-    padding-bottom: 0.55rem;
+    gap: 0.55rem;
+    margin-top: 0.75rem;
+    padding-top: 0.7rem;
     border-bottom: 1px solid var(--rule-2, var(--color-border));
+    border-top: 1px solid var(--rule-2, var(--color-border));
+    padding-bottom: 0.75rem;
   }
-  .num-langs {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    display: grid;
-    gap: 0.5rem;
-  }
-  .num-langs li {
+  .num-entry {
     display: grid;
     grid-template-columns: 4.5rem 1fr;
     grid-template-rows: auto auto;
