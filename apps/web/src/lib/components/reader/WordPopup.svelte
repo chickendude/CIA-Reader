@@ -20,7 +20,9 @@
 <script lang="ts">
   import { untrack } from 'svelte';
   import Sheet from '../overlay/Sheet.svelte';
+  import CorrectionModal from './CorrectionModal.svelte';
   import { customizableOfficialIds } from './customize-eligibility.js';
+  import type { LanguageCode } from '@ciareader/shared-types';
   import type { ServerToken } from './types.js';
 
   type Provenance =
@@ -57,11 +59,16 @@
   // backward compat with callers that still pass it.
   let {
     token,
+    language,
     isOwner,
     onClose,
     onStatusChange,
+    onCorrectionApplied,
   }: {
     token: ServerToken;
+    /** Drives the CorrectionModal's dictionary search + script
+     *  selection. Required from T-6.2 forward. */
+    language: LanguageCode;
     anchorRect?: { top: number; left: number; bottom: number; right: number };
     isOwner: boolean;
     onClose: () => void;
@@ -69,15 +76,25 @@
       lemmaId: string,
       status: 'unknown' | 'learning' | 'known' | 'ignored',
     ) => void;
+    /** T-6.1: parent applies the new lemma to the token's render so
+     *  the reader reflects the correction without a page reload. */
+    onCorrectionApplied?: (tokenId: string, chosenLemmaId: string | null) => void;
   } = $props();
 
   let payload = $state<LemmaPayload | null>(null);
   let loadError = $state<string | null>(null);
   let showAlternates = $state(false);
+  // T-6.2: opens the CorrectionModal layered on top of the popup.
+  let showCorrectionModal = $state(false);
   let optimisticStatus = $state<'unknown' | 'learning' | 'known' | 'ignored'>(
     untrack(() => token.status),
   );
   let writeError = $state<string | null>(null);
+  // T-6.1: tracks the in-flight candidate pick so the "This one"
+  // button can disable itself while the POST resolves and so the
+  // user sees a visible "saving" state.
+  let pickingLemmaId = $state<string | null>(null);
+  let pickError = $state<string | null>(null);
 
   // Re-fetch translations whenever the token prop changes. `$effect`
   // runs the body each time `token` (and thus `token.id` / `lemmaId`)
@@ -313,6 +330,40 @@
     }
   }
 
+  // T-6.1: write a `pick_candidate` correction. The reader's
+  // colour rendering for this token is updated optimistically via
+  // the `onCorrectionApplied` callback so the user sees the new
+  // lemma immediately; the server row backs the change for next
+  // read (handled by T-6.4's loader join).
+  async function pickCandidate(lemmaId: string) {
+    pickingLemmaId = lemmaId;
+    pickError = null;
+    try {
+      const res = await fetch('/api/v1/me/token-corrections', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          tokenId: token.id,
+          type: 'pick_candidate',
+          chosenLemmaId: lemmaId,
+        }),
+      });
+      if (!res.ok) {
+        const text = await res.text().catch(() => '');
+        throw new Error(text || `HTTP ${res.status}`);
+      }
+      onCorrectionApplied?.(token.id, lemmaId);
+      // Close the popup after a successful pick so the user lands
+      // back on the reader; the parent's reactive state has already
+      // re-rendered the token with the new lemma.
+      onClose();
+    } catch (e) {
+      pickError = (e as Error).message;
+    } finally {
+      pickingLemmaId = null;
+    }
+  }
+
   async function markStatus(
     status: 'unknown' | 'learning' | 'known' | 'ignored',
   ) {
@@ -538,24 +589,70 @@
       {/if}
     {/if}
 
-    {#if token.isAmbiguous}
+    <!-- T-6.2: "Fix" affordance — every popup gets it, even the
+         non-ambiguous ones (a learner may know the worker got the
+         lemma wrong on a token where the model wasn't unsure). -->
+    {#if isOwner}
+      <button
+        type="button"
+        class="fix-toggle"
+        onclick={() => (showCorrectionModal = true)}
+        title="Search the dictionary or mark this surface"
+      >
+        Fix this word
+      </button>
+    {/if}
+
+    {#if token.isAmbiguous && token.candidates.length > 0}
       <button
         type="button"
         class="alt-toggle"
         onclick={() => (showAlternates = !showAlternates)}
         aria-expanded={showAlternates}
       >
-        {showAlternates ? 'Hide' : 'Show'} alternate meanings
+        <span class="chev" aria-hidden="true" data-open={showAlternates ? '1' : '0'}>›</span>
+        {token.candidates.length} alternate {token.candidates.length === 1 ? 'meaning' : 'meanings'}
       </button>
       {#if showAlternates}
-        <p class="muted small">
-          Alternate-candidate selection lands in T-6.1. The reader knows
-          this token has more than one plausible parse.
-        </p>
+        <ul class="alt-list" data-testid="alt-candidates">
+          {#each token.candidates as cand (cand.lemmaId)}
+            <li class="alt" data-lemma-id={cand.lemmaId}>
+              <div class="alt-head">
+                <span class="alt-h">{cand.headword}</span>
+                <span class="alt-pos">{cand.pos}</span>
+              </div>
+              {#if cand.glossDefault}
+                <p class="alt-gloss">{cand.glossDefault}</p>
+              {/if}
+              <button
+                type="button"
+                class="alt-pick"
+                disabled={pickingLemmaId === cand.lemmaId}
+                onclick={() => pickCandidate(cand.lemmaId)}
+              >
+                {pickingLemmaId === cand.lemmaId ? 'Saving…' : 'This one'}
+              </button>
+            </li>
+          {/each}
+        </ul>
+        {#if pickError}
+          <p class="err small" role="alert">{pickError}</p>
+        {/if}
       {/if}
     {/if}
   </div>
 </Sheet>
+
+<CorrectionModal
+  open={showCorrectionModal}
+  {token}
+  {language}
+  onClose={() => (showCorrectionModal = false)}
+  onApplied={(lemmaId) => {
+    onCorrectionApplied?.(token.id, lemmaId);
+    onClose();
+  }}
+/>
 
 <style>
   .sp-head {
@@ -844,6 +941,21 @@
     resize: vertical;
   }
 
+  .fix-toggle {
+    margin-top: 0.85rem;
+    margin-right: 0.4rem;
+    background: transparent;
+    border: 1px solid var(--rule, var(--color-border));
+    border-radius: 999px;
+    padding: 0.4rem 0.85rem;
+    font: inherit;
+    font-size: 0.78rem;
+    color: var(--ink-2, var(--color-fg));
+    cursor: pointer;
+  }
+  .fix-toggle:hover {
+    background: color-mix(in oklch, var(--ink, var(--color-fg)) 5%, transparent);
+  }
   .alt-toggle {
     margin-top: 0.85rem;
     background: transparent;
@@ -854,5 +966,68 @@
     font-size: 0.78rem;
     color: var(--ink-3, var(--color-fg-muted));
     cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+  }
+  .alt-toggle .chev {
+    display: inline-block;
+    transition: transform 140ms ease;
+    font-size: 0.95rem;
+    line-height: 0.8;
+  }
+  .alt-toggle .chev[data-open='1'] {
+    transform: rotate(90deg);
+  }
+  .alt-list {
+    list-style: none;
+    margin: 0.6rem 0 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.55rem;
+  }
+  .alt {
+    border: 1px solid var(--rule, var(--color-border));
+    border-radius: 8px;
+    padding: 0.55rem 0.7rem;
+    background: var(--card, var(--color-bg));
+  }
+  .alt-head {
+    display: flex;
+    align-items: baseline;
+    gap: 0.55rem;
+    margin-bottom: 0.2rem;
+  }
+  .alt-h {
+    font-family: var(--font-serif-dev, var(--font-serif));
+    font-size: 1.05rem;
+    color: var(--ink, var(--color-fg));
+  }
+  .alt-pos {
+    font-size: 0.66rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--ink-3, var(--color-fg-muted));
+  }
+  .alt-gloss {
+    margin: 0 0 0.45rem;
+    font-size: 0.82rem;
+    color: var(--ink-2, var(--color-fg));
+    line-height: 1.35;
+  }
+  .alt-pick {
+    background: var(--accent, var(--color-accent));
+    color: var(--accent-ink, var(--color-bg));
+    border: 0;
+    border-radius: 6px;
+    padding: 0.35rem 0.7rem;
+    font: inherit;
+    font-size: 0.78rem;
+    cursor: pointer;
+  }
+  .alt-pick:disabled {
+    opacity: 0.6;
+    cursor: progress;
   }
 </style>

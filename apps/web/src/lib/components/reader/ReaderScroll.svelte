@@ -27,12 +27,14 @@
     wordsPerPage = 250,
     showRomanization = false,
     isOwner = false,
+    language,
   }: {
     chapters: ChapterView[];
     chapterIdx: number;
     wordsPerPage?: number;
     showRomanization?: boolean;
     isOwner?: boolean;
+    language: import('@ciareader/shared-types').LanguageCode;
   } = $props();
 
   let page = $state(0);
@@ -45,10 +47,40 @@
   // tokens beat the client fallback.
   type ParaServer = ServerToken[];
   type ParaFallback = RenderToken[];
+  // T-6.1: apply per-token lemma corrections + per-lemma status
+  // overrides before paragraph splitting so the new picks colour
+  // the rendered tokens immediately.
+  const correctedTokens = $derived.by(() => {
+    if (!current?.tokens) return null;
+    if (statusOverrides.size === 0 && lemmaCorrections.size === 0) {
+      return current.tokens;
+    }
+    return current.tokens.map((t) => {
+      const correctedLemmaId = lemmaCorrections.get(t.id);
+      let next = t;
+      if (correctedLemmaId && correctedLemmaId !== t.lemmaId) {
+        const chosen = t.candidates.find((c) => c.lemmaId === correctedLemmaId);
+        if (chosen) {
+          const remaining = t.candidates.filter(
+            (c) => c.lemmaId !== correctedLemmaId,
+          );
+          next = {
+            ...t,
+            lemmaId: chosen.lemmaId,
+            glossDefault: chosen.glossDefault ?? t.glossDefault,
+            candidates: remaining,
+            isAmbiguous: remaining.length > 0,
+          };
+        }
+      }
+      if (next.lemmaId && statusOverrides.has(next.lemmaId)) {
+        next = { ...next, status: statusOverrides.get(next.lemmaId)! };
+      }
+      return next;
+    });
+  });
   const serverParagraphs = $derived(
-    current && current.tokens
-      ? paragraphsOfServerTokens(current.tokens)
-      : null,
+    correctedTokens ? paragraphsOfServerTokens(correctedTokens) : null,
   );
   const fallbackParagraphs = $derived(
     current && !current.tokens ? paragraphsOfTokens(tokenize(current.body)) : null,
@@ -217,6 +249,20 @@
     statusOverrides = next;
   }
 
+  // T-6.1: scroll mode shares the per-token correction state pattern
+  // with ChapterBody so picking an alternate lemma in the popup
+  // re-renders the corrected token on the current page immediately.
+  let lemmaCorrections = $state(new Map<string, string>());
+  function onCorrectionApplied(tokenId: string, chosenLemmaId: string | null) {
+    const next = new Map(lemmaCorrections);
+    if (chosenLemmaId == null) {
+      next.delete(tokenId);
+    } else {
+      next.set(tokenId, chosenLemmaId);
+    }
+    lemmaCorrections = next;
+  }
+
   // T-5.7: ←/→ flip pages within the chapter.
   function isTypingInsideElement(target: EventTarget | null): boolean {
     if (!(target instanceof HTMLElement)) return false;
@@ -316,9 +362,11 @@
   <WordPopup
     token={activeToken}
     anchorRect={activeRect}
+    {language}
     {isOwner}
     onClose={closePopup}
     {onStatusChange}
+    {onCorrectionApplied}
   />
 {/if}
 

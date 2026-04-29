@@ -829,6 +829,247 @@ export const formLemmaOverrides = pgTable(
   }),
 );
 
+/**
+ * Per-user lemma corrections on a specific token (T-6.1 + onwards).
+ *
+ * The reader's WordPopup shows the NLP worker's top guess; when the
+ * user knows it's wrong they can:
+ *
+ *  - pick_candidate     — select one of the top-K lemma_candidates
+ *                         the worker returned (T-6.1 — the cheapest
+ *                         flow; data already on-row).
+ *  - manual_lemma       — search the dictionary and pick a lemma
+ *                         that wasn't in the candidate list (T-6.2).
+ *  - new_lemma          — propose a new lemma that doesn't exist
+ *                         yet (T-6.3 — also creates a lemma_proposal).
+ *  - mark_proper_noun / — soft "this surface isn't a learnable word"
+ *    mark_foreign /       flags. They suppress the OOV / unknown
+ *    mark_not_a_word      colouring without surfacing a lemma at all.
+ *
+ * Primary-keyed on (user, token) so re-correcting overwrites — a
+ * user changes their mind, the reader reflects the new pick. The
+ * crowdsourced aggregation worker (T-6.7) reads this table to
+ * promote consensus picks into `form_lemma_overrides`.
+ */
+export const tokenCorrectionType = pgEnum('token_correction_type', [
+  'pick_candidate',
+  'manual_lemma',
+  'new_lemma',
+  'mark_proper_noun',
+  'mark_foreign',
+  'mark_not_a_word',
+]);
+
+export const tokenCorrections = pgTable(
+  'token_corrections',
+  {
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    tokenId: uuid('token_id')
+      .notNull()
+      .references(() => textTokens.id, { onDelete: 'cascade' }),
+    type: tokenCorrectionType('type').notNull(),
+    // Set for `pick_candidate` / `manual_lemma`. NULL for the
+    // mark_* and new_lemma branches (new_lemma also writes a
+    // lemma_proposals row that carries the proposed entry —
+    // landing in T-6.3). On lemma deletion the row is kept (set
+    // null) so the audit trail isn't lost; the reader treats a
+    // null chosen_lemma_id like any other absent correction.
+    chosenLemmaId: uuid('chosen_lemma_id').references(() => lemmas.id, {
+      onDelete: 'set null',
+    }),
+    // Free-form reporter note. Optional today; T-6.5 surfaces it on
+    // the moderation dashboard.
+    note: text('note'),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.userId, t.tokenId] }),
+    tokenIdx: index('token_corrections_token_idx').on(t.tokenId),
+    // Aggregation worker (T-6.7) groups by (lemma, type) — index
+    // matches that lookup so the cron stays cheap.
+    lemmaIdx: index('token_corrections_chosen_lemma_idx').on(
+      t.chosenLemmaId,
+      t.type,
+    ),
+  }),
+);
+
+/**
+ * User-submitted new-lemma proposals (T-6.3).
+ *
+ * When the correction modal's dictionary search comes up empty, the
+ * user can propose a new lemma via the new-lemma form. We don't
+ * write directly to `lemmas` — that table is the curator-validated
+ * dictionary and bulk-imports / promotions go through the
+ * dictionary editor — but the proposer needs to see the entry
+ * immediately on the page they're reading. So we:
+ *
+ *   1. Insert a `lemma_proposals` row with status='pending'.
+ *   2. Insert a `token_corrections` row (type=new_lemma, chosen_lemma_id=null).
+ *   3. File a `parse_reports` row so the curator dashboard surfaces it.
+ *
+ * Curator acceptance in T-6.6 copies the proposal into `lemmas` and
+ * back-fills `token_corrections.chosen_lemma_id` on every row that
+ * was created against this proposal. Rejection just flips the
+ * proposal status — the user's per-token correction stays as a
+ * 'new_lemma' marker so the surface remains uncoloured.
+ */
+export const lemmaProposalStatus = pgEnum('lemma_proposal_status', [
+  'pending',
+  'accepted',
+  'rejected',
+]);
+
+export const lemmaProposals = pgTable(
+  'lemma_proposals',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    proposerId: uuid('proposer_id').references(() => users.id, {
+      onDelete: 'set null',
+    }),
+    language: language('language').notNull(),
+    headword: text('headword').notNull(),
+    pos: text('pos').notNull(),
+    glossDefault: text('gloss_default'),
+    notes: text('notes'),
+    status: lemmaProposalStatus('status').notNull().default('pending'),
+    // When the curator accepts a proposal we copy it into `lemmas`
+    // and link the resulting lemma id here so the audit trail is
+    // legible from either side.
+    promotedLemmaId: uuid('promoted_lemma_id').references(() => lemmas.id, {
+      onDelete: 'set null',
+    }),
+    reviewerId: uuid('reviewer_id').references(() => users.id, {
+      onDelete: 'set null',
+    }),
+    reviewerNote: text('reviewer_note'),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    statusIdx: index('lemma_proposals_lang_status_idx').on(t.language, t.status),
+    headwordIdx: index('lemma_proposals_headword_idx').on(
+      t.language,
+      t.headword,
+      t.pos,
+    ),
+  }),
+);
+
+/**
+ * Curator moderation queue for parse / lemma errors (T-6.5).
+ *
+ * Distinct from `token_corrections`: corrections are *per-user*
+ * picks the reader applies to their own view. A `parse_report` is
+ * a *site-wide* claim that the worker (or the dictionary) is
+ * mis-modeling a specific surface — surfaced to curators on T-6.6's
+ * moderation page, who promote accepted reports to
+ * `form_lemma_overrides` (the global override table) and/or fix
+ * the dictionary itself.
+ *
+ * Two routes file rows here:
+ *
+ *  - User-initiated: T-6.2's correction modal optionally checks
+ *    "Also report to moderators" when the user picks a manual
+ *    lemma / proposes a new one. (Default OFF for `pick_candidate`,
+ *    ON for `manual_lemma` / `new_lemma`.)
+ *
+ *  - System-initiated: T-6.7's aggregation worker auto-files a
+ *    `triaged`-status report when ≥K users converge on the same
+ *    correction. The curator's choice in T-6.6 promotes or vetoes.
+ *
+ * Duplicate merging: a new report whose
+ * `(language, surface_nfc, context_signature, corrected_lemma_id)`
+ * matches an existing open / triaged row increments that row's
+ * `duplicate_count` instead of creating a new row. Resolved /
+ * rejected rows do NOT collide — re-files after a curator
+ * resolution start a new conversation.
+ */
+export const parseReportStatus = pgEnum('parse_report_status', [
+  'open',
+  'triaged',
+  'resolved',
+  'rejected',
+  'duplicate',
+  'deferred',
+]);
+
+export const parseReports = pgTable(
+  'parse_reports',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    tokenId: uuid('token_id').references(() => textTokens.id, {
+      onDelete: 'set null',
+    }),
+    language: language('language').notNull(),
+    surfaceNfc: text('surface_nfc').notNull(),
+    // sha1-16 of (prev_pos, cur_pos, next_pos) — same shape as
+    // form_lemma_overrides.context_signature so the dedup math
+    // matches what T-6.7's aggregation worker writes downstream.
+    contextSignature: text('context_signature').notNull().default(''),
+    // Snapshot of the worker's top-K candidate list at report time —
+    // useful for the moderation UI even when the underlying token
+    // has since been re-processed.
+    originalCandidates: jsonb('original_candidates')
+      .$type<
+        Array<{
+          lemmaId: string | null;
+          score: number;
+          features: Record<string, string>;
+        }>
+      >()
+      .notNull()
+      .default([]),
+    correctedLemmaId: uuid('corrected_lemma_id').references(() => lemmas.id, {
+      onDelete: 'set null',
+    }),
+    correctionType: tokenCorrectionType('correction_type').notNull(),
+    reporterId: uuid('reporter_id').references(() => users.id, {
+      onDelete: 'set null',
+    }),
+    note: text('note'),
+    status: parseReportStatus('status').notNull().default('open'),
+    assignedReviewerId: uuid('assigned_reviewer_id').references(
+      () => users.id,
+      {
+        onDelete: 'set null',
+      },
+    ),
+    resolvedAt: timestamp('resolved_at', { withTimezone: true }),
+    resolutionNote: text('resolution_note'),
+    duplicateCount: integer('duplicate_count').notNull().default(1),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    languageStatusIdx: index('parse_reports_lang_status_idx').on(
+      t.language,
+      t.status,
+    ),
+    dedupIdx: index('parse_reports_dedup_idx').on(
+      t.language,
+      t.surfaceNfc,
+      t.contextSignature,
+      t.correctedLemmaId,
+    ),
+  }),
+);
+
 export type Text = InferSelectModel<typeof texts>;
 export type TextChapter = InferSelectModel<typeof textChapters>;
 export type NlpJob = InferSelectModel<typeof nlpJobs>;
@@ -836,3 +1077,6 @@ export type TextToken = InferSelectModel<typeof textTokens>;
 export type UserKnownLemma = InferSelectModel<typeof userKnownLemmas>;
 export type UserTextProgress = InferSelectModel<typeof userTextProgress>;
 export type FormLemmaOverride = InferSelectModel<typeof formLemmaOverrides>;
+export type TokenCorrection = InferSelectModel<typeof tokenCorrections>;
+export type ParseReport = InferSelectModel<typeof parseReports>;
+export type LemmaProposal = InferSelectModel<typeof lemmaProposals>;

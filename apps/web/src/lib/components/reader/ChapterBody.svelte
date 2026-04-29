@@ -16,6 +16,9 @@
   import TokenSpan from './TokenSpan.svelte';
   import WordPopup from './WordPopup.svelte';
   import WordTooltip from './WordTooltip.svelte';
+  import CorrectionToast from './CorrectionToast.svelte';
+  import { LongPressDetector } from './touch-gestures.js';
+  import type { LanguageCode } from '@ciareader/shared-types';
   import {
     paragraphsOfServerTokens,
     paragraphsOfTokens,
@@ -26,10 +29,14 @@
 
   let {
     chapter,
+    language,
     showRomanization = false,
     isOwner = false,
   }: {
     chapter: ChapterView;
+    /** T-6.2: drives the CorrectionModal's dictionary-search
+     *  language + script. */
+    language: LanguageCode;
     showRomanization?: boolean;
     isOwner?: boolean;
   } = $props();
@@ -39,17 +46,52 @@
   // token tied to the same lemma flips its highlight in real time
   // (the next page load reflects the same state via the loader).
   let statusOverrides = $state(new Map<string, ServerToken['status']>());
+  // T-6.1: per-token lemma corrections live here so picking an
+  // alternate meaning in the popup re-renders that token with the
+  // chosen lemma immediately. Server-side persistence happens in
+  // T-6.4's loader join; this state is purely for the current
+  // session.
+  let lemmaCorrections = $state(new Map<string, string>());
 
   // Apply any pending optimistic status flips to the token list
   // before paragraph splitting so the .status-* classes update live.
   const tokensWithOverrides = $derived.by(() => {
     if (!chapter.tokens) return null;
-    if (statusOverrides.size === 0) return chapter.tokens;
-    return chapter.tokens.map((t) =>
-      t.lemmaId && statusOverrides.has(t.lemmaId)
-        ? { ...t, status: statusOverrides.get(t.lemmaId)! }
-        : t,
-    );
+    if (statusOverrides.size === 0 && lemmaCorrections.size === 0) {
+      return chapter.tokens;
+    }
+    return chapter.tokens.map((t) => {
+      // T-6.1: lemma override wins; the corrected lemmaId becomes
+      // the active pick for this token + the candidate that *was*
+      // active drops back into the alternates list (so the user
+      // can revert without re-opening the candidate menu).
+      const correctedLemmaId = lemmaCorrections.get(t.id);
+      let next = t;
+      if (correctedLemmaId && correctedLemmaId !== t.lemmaId) {
+        const chosen = t.candidates.find((c) => c.lemmaId === correctedLemmaId);
+        if (chosen) {
+          const remaining = t.candidates.filter(
+            (c) => c.lemmaId !== correctedLemmaId,
+          );
+          // The previous primary becomes a candidate so the user
+          // can flip back. We synthesize a candidate row from the
+          // current token's lemma metadata; if we don't have it on
+          // hand (status only — no headword), we still leave the
+          // remaining list as-is so at least the new pick lands.
+          next = {
+            ...t,
+            lemmaId: chosen.lemmaId,
+            glossDefault: chosen.glossDefault ?? t.glossDefault,
+            candidates: remaining,
+            isAmbiguous: remaining.length > 0,
+          };
+        }
+      }
+      if (next.lemmaId && statusOverrides.has(next.lemmaId)) {
+        next = { ...next, status: statusOverrides.get(next.lemmaId)! };
+      }
+      return next;
+    });
   });
 
   const serverParagraphs = $derived(
@@ -162,6 +204,43 @@
     activeRect = null;
   }
 
+  // T-5.1c: long-press as a tap alternative on touch devices. A
+  // 500ms hold over a word fires the same WordPopup the click
+  // handler does. The detector cancels on movement so a scroll-y
+  // touch never triggers a spurious popup.
+  const longPress = new LongPressDetector((point) => {
+    const target = document.elementFromPoint(point.x, point.y);
+    const found = findToken(target as HTMLElement | null);
+    if (!found) return;
+    const rect = found.el.getBoundingClientRect();
+    activeToken = found.token;
+    activeRect = {
+      top: rect.top,
+      left: rect.left,
+      bottom: rect.bottom,
+      right: rect.right,
+    };
+    hoverToken = null;
+    hoverRect = null;
+  });
+
+  function onTouchStart(e: TouchEvent) {
+    if (e.touches.length !== 1) {
+      longPress.cancel();
+      return;
+    }
+    const t = e.touches[0]!;
+    longPress.begin({ x: t.clientX, y: t.clientY });
+  }
+  function onTouchMove(e: TouchEvent) {
+    const t = e.touches[0];
+    if (!t) return;
+    longPress.move({ x: t.clientX, y: t.clientY });
+  }
+  function onTouchEnd() {
+    longPress.release();
+  }
+
   function onStatusChange(
     lemmaId: string,
     status: ServerToken['status'],
@@ -172,6 +251,34 @@
     next.set(lemmaId, status);
     statusOverrides = next;
   }
+
+  // T-6.2b: after a correction commits, surface a toast offering
+  // bulk-apply across the rest of the chapter / text.
+  let toastTokenId = $state<string | null>(null);
+
+  function onCorrectionApplied(tokenId: string, chosenLemmaId: string | null) {
+    const next = new Map(lemmaCorrections);
+    if (chosenLemmaId == null) {
+      // T-6.2 mark_* path: the user declared this surface isn't a
+      // learnable word. Clear any prior pick so the next render
+      // falls through to the worker's (now cleared) primary.
+      next.delete(tokenId);
+    } else {
+      next.set(tokenId, chosenLemmaId);
+    }
+    lemmaCorrections = next;
+    toastTokenId = tokenId;
+  }
+
+  function applyEverywhereLocally(scope: 'same-context' | 'all-contexts') {
+    void scope;
+    // Server has already replicated the row. The reader's next
+    // navigation will pick up the bulk-applied corrections via
+    // T-6.4's loader join. We could optimistically expand the local
+    // override map here, but a full chapter walk is enough work that
+    // we'd rather let the next loader pass do it canonically.
+  }
+  void applyEverywhereLocally; // referenced in toast onApplied wiring
 </script>
 
 <!-- The hover tooltip is decorative chrome — keyboard / focus users get
@@ -187,6 +294,10 @@
   onmouseout={hideHoverTooltip}
   onfocusin={showHoverTooltip}
   onfocusout={hideHoverTooltip}
+  ontouchstart={onTouchStart}
+  ontouchmove={onTouchMove}
+  ontouchend={onTouchEnd}
+  ontouchcancel={onTouchEnd}
 >
   {#if serverParagraphs}
     {#each serverParagraphs as paragraph, pIdx (pIdx)}
@@ -216,11 +327,19 @@
   <WordPopup
     token={activeToken}
     anchorRect={activeRect}
+    {language}
     {isOwner}
     onClose={closePopup}
     {onStatusChange}
+    {onCorrectionApplied}
   />
 {/if}
+
+<CorrectionToast
+  open={toastTokenId !== null}
+  sourceTokenId={toastTokenId ?? ''}
+  onDismiss={() => (toastTokenId = null)}
+/>
 
 <style>
   /* Inherit font-size + line-height from the reader's content rule

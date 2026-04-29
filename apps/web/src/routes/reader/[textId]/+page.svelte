@@ -322,6 +322,7 @@
       chapters={data.chapters}
       chapterIdx={data.anchor.chapterIdx}
       textId={data.text.id}
+      language={data.text.language as LanguageCode}
       {showRomanization}
       isOwner={data.isOwner}
     />
@@ -330,6 +331,7 @@
       chapters={data.chapters}
       chapterIdx={data.anchor.chapterIdx}
       wordsPerPage={readerSettings.wordsPerPage}
+      language={data.text.language as LanguageCode}
       {showRomanization}
       isOwner={data.isOwner}
     />
@@ -338,6 +340,7 @@
       chapters={data.chapters}
       initialChapterIdx={data.anchor.chapterIdx}
       textId={data.text.id}
+      language={data.text.language as LanguageCode}
       {showRomanization}
       isOwner={data.isOwner}
     />
