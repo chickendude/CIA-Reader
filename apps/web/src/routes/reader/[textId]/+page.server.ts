@@ -243,6 +243,7 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
           mime: activeAudio.mime,
           durationMs: activeAudio.durationMs,
           attribution: activeAudio.attribution,
+          license: activeAudio.license,
         }
       : null,
   };

@@ -23,6 +23,7 @@
     mime: string;
     durationMs: number | null;
     attribution: string | null;
+    license: string | null;
   }
 
   import { untrack } from 'svelte';
@@ -171,8 +172,13 @@
     </select>
   </label>
 
-  {#if audio.attribution}
-    <span class="ap-attr" title="Audio source">{audio.attribution}</span>
+  {#if audio.attribution || audio.license}
+    <p class="ap-attr">
+      {#if audio.attribution}<span class="ap-attr-text">{audio.attribution}</span>{/if}
+      {#if audio.license}
+        <span class="ap-license" title="Audio license">{audio.license}</span>
+      {/if}
+    </p>
   {/if}
 </aside>
 
@@ -232,8 +238,21 @@
   }
   .ap-attr {
     grid-column: 1 / -1;
+    margin: 0;
     font-size: 0.66rem;
     color: var(--ink-4, var(--color-fg-subtle));
     text-align: center;
+    display: flex;
+    gap: 0.45rem;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+  .ap-license {
+    background: color-mix(in oklch, var(--ink, var(--color-fg)) 6%, transparent);
+    border-radius: 999px;
+    padding: 0.05rem 0.4rem;
+    font-family: var(--font-mono-display, var(--font-mono));
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
   }
 </style>
