@@ -117,6 +117,15 @@
         <span class="cd-progress-pct">{data.aggregatedPctRead}%</span>
       </div>
     {/if}
+    {#if data.collection.kind === 'course'}
+      <p class="cd-completion">
+        <strong>{data.completedCount}</strong>
+        of {data.items.length} {data.items.length === 1 ? 'text' : 'texts'} completed
+        {#if data.completedCount === data.items.length && data.items.length > 0}
+          · 🏁 course finished
+        {/if}
+      </p>
+    {/if}
   </header>
 
   <ol class="cd-list">
@@ -246,6 +255,15 @@
     font-feature-settings: 'tnum';
     font-family: var(--font-mono-display, var(--font-mono));
     font-size: 0.85rem;
+  }
+  .cd-completion {
+    margin: 0.4rem 0 1rem;
+    font-size: 0.85rem;
+    color: var(--ink-2, var(--color-fg));
+    background: color-mix(in oklch, var(--accent, var(--color-accent)) 6%, var(--card, var(--color-bg)));
+    border: 1px solid var(--rule, var(--color-border));
+    border-radius: 8px;
+    padding: 0.5rem 0.75rem;
   }
   .cd-list {
     list-style: none;

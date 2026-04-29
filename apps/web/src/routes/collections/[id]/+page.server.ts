@@ -83,6 +83,11 @@ export const load: PageServerLoad = async ({ params, locals }) => {
         progressByTextId[i.text.id]?.lastChapterIdx ?? 0,
     })),
     aggregatedPctRead,
+    // T-8.6: completion stats badge — number of finished texts on
+    // course-kind collections. Counts pctRead >= 100.
+    completedCount: detail.items.filter(
+      (i) => (progressByTextId[i.text.id]?.pctRead ?? 0) >= 100,
+    ).length,
     isOwner,
   };
 };

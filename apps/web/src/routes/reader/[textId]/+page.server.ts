@@ -160,6 +160,21 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
   // multiple (collections.updatedAt DESC).
   const collectionContext = await readerCollectionContext(params.textId);
 
+  // T-8.6: course-kind collections gate "next" until the active
+  // text is finished (pctRead >= 100). The reader UI grays out the
+  // next link unless ?skipLock=1 is set on the URL — a deliberate
+  // escape hatch for self-paced learners who want to skip ahead.
+  const COURSE_COMPLETION_THRESHOLD = 100;
+  let nextLocked = false;
+  if (
+    collectionContext &&
+    collectionContext.collection.kind === 'course' &&
+    collectionContext.nextTextId
+  ) {
+    const pct = savedProgress?.pctRead ?? 0;
+    nextLocked = pct < COURSE_COMPLETION_THRESHOLD;
+  }
+
   return {
     text: {
       id: result.text.id,
@@ -205,6 +220,9 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
           totalCount: collectionContext.totalCount,
           prevTextId: collectionContext.prevTextId,
           nextTextId: collectionContext.nextTextId,
+          // T-8.6: course-kind gate. UI flips the next link to a
+          // disabled state with a tooltip; ?skipLock=1 overrides.
+          nextLocked,
         }
       : null,
   };
