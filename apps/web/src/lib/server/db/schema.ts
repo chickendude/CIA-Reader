@@ -1203,3 +1203,97 @@ export type TextShare = InferSelectModel<typeof textShares>;
 export type Group = InferSelectModel<typeof groups>;
 export type GroupMembership = InferSelectModel<typeof groupMemberships>;
 export type TextGroupShare = InferSelectModel<typeof textGroupShares>;
+
+/**
+ * Collections — chapter books, courses, anthologies (T-8.1).
+ *
+ * A collection is an ordered group of texts that share a language.
+ * `kind` drives the per-item behaviour:
+ *
+ *   - `chapter_book`: the standard ordered grouping (e.g. a novel
+ *     split into chapter-per-text imports).
+ *   - `course`: stricter ordering (T-8.6 — the next item is gated
+ *     until the prior is finished, overridable).
+ *   - `anthology`: order is curatorial but not enforced; the reader
+ *     surfaces "next" but doesn't gate it.
+ *
+ * Visibility mirrors `texts.visibility`. An admin can promote a
+ * collection to `official` for the public-library path (T-7.6
+ * surfaces texts; T-8.5 surfaces collections in the same library
+ * tab).
+ */
+export const collectionKind = pgEnum('collection_kind', [
+  'chapter_book',
+  'course',
+  'anthology',
+]);
+
+export const collectionVisibility = pgEnum('collection_visibility', [
+  'private',
+  'shared',
+  'official',
+]);
+
+export const collections = pgTable(
+  'collections',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    ownerId: uuid('owner_id').references(() => users.id, {
+      onDelete: 'cascade',
+    }),
+    language: language('language').notNull(),
+    kind: collectionKind('kind').notNull().default('chapter_book'),
+    title: text('title').notNull(),
+    description: text('description'),
+    coverUrl: text('cover_url'),
+    visibility: collectionVisibility('visibility').notNull().default('private'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    ownerIdx: index('collections_owner_idx').on(t.ownerId, t.createdAt),
+    visibilityIdx: index('collections_visibility_idx').on(
+      t.visibility,
+      t.language,
+    ),
+  }),
+);
+
+/**
+ * Ordered membership of a text in a collection. A text can belong
+ * to multiple collections (an excerpt that's part of both a
+ * chapter book AND a course); `position` carries the curator's
+ * intended order WITHIN the collection. The (collection_id, text_id)
+ * primary key + the (collection_id, position) index covers the
+ * "show me this collection's items in order" lookup that the detail
+ * page hits.
+ *
+ * Reorder is by rewriting `position` on every member — O(n) but n
+ * is small (a chapter book of 100+ items is unusual). T-8.1's drag-
+ * and-drop UI calls a single PATCH that hands back the new order.
+ */
+export const collectionItems = pgTable(
+  'collection_items',
+  {
+    collectionId: uuid('collection_id')
+      .notNull()
+      .references(() => collections.id, { onDelete: 'cascade' }),
+    textId: uuid('text_id')
+      .notNull()
+      .references(() => texts.id, { onDelete: 'cascade' }),
+    position: integer('position').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.collectionId, t.textId] }),
+    orderIdx: index('collection_items_order_idx').on(
+      t.collectionId,
+      t.position,
+    ),
+  }),
+);
+
+export type Collection = InferSelectModel<typeof collections>;
+export type CollectionItem = InferSelectModel<typeof collectionItems>;
