@@ -427,7 +427,10 @@
     text-overflow: ellipsis;
   }
 
-  /* —— Rail (desktop only) —— */
+  /* —— Rail (desktop only) ——
+     The rail sits below any page-level top bar via `--reader-top-h`,
+     a CSS var the reader sets to its top-bar height. Pages that don't
+     have a top bar leave the var unset and the rail goes top:0. */
   .rail {
     grid-area: rail;
     display: none;
@@ -441,8 +444,8 @@
       var(--paper-2, transparent)
     );
     position: sticky;
-    top: 0;
-    height: 100dvh;
+    top: var(--reader-top-h, 0px);
+    height: calc(100dvh - var(--reader-top-h, 0px));
   }
   @media (min-width: 960px) {
     .rail {
@@ -638,14 +641,10 @@
   }
 
   /* —— Chevron / rail-toggle button (T-5.26) ————————————————
-   * Fixed-position so it stays clickable in both states. When the
-   * rail is open it sits flush inside the rail's right border (chevron
-   * points left, "collapse"); when the rail is hidden it snaps to the
-   * viewport's left edge (chevron points right, "expand"). High
-   * z-index so it floats over everything except the word side-panel.
-   *
-   * Mobile (<960px) doesn't have a rail to toggle into — keep the
-   * button at the top-left as a simple immersive-toggle there. */
+   * Mobile-only now. The rail is static on desktop, so there's
+   * nothing to expand/collapse there; on mobile we keep the toggle as
+   * an immersive-mode affordance (hides top-strip + bottom-nav for
+   * full-screen reading). Vertical tab on the viewport's left edge. */
   .rail-toggle {
     position: fixed;
     top: 1rem;
@@ -663,18 +662,12 @@
     z-index: 30;
     box-shadow: 2px 0 8px rgba(0, 0, 0, 0.08);
     transition:
-      left 200ms cubic-bezier(0.2, 0, 0, 1),
       background 150ms ease,
       color 150ms ease;
   }
-  /* Expanded: dock against the rail's right border (rail is 232px). */
   @media (min-width: 960px) {
-    .rail-toggle[data-collapsed='0'] {
-      left: calc(232px - 22px);
-      border-radius: 8px 0 0 8px;
-      border-left: 1px solid var(--card-edge, var(--color-border));
-      border-right: 0;
-      box-shadow: -2px 0 8px rgba(0, 0, 0, 0.08);
+    .rail-toggle {
+      display: none;
     }
   }
   .rail-toggle:hover {
@@ -833,19 +826,13 @@
     text-decoration: underline;
   }
 
-  /* —— Immersive mode (T-5.16, retriggered by T-5.26) ——————————
-   * `data-reader-immersive="1"` on <html> hides the rail / top-strip
-   * / bottom-nav so the screen content occupies the whole viewport.
-   * Originally a reader-specific affordance; T-5.26 generalised it
-   * via a hamburger button on the shell. */
-  :global(html[data-reader-immersive='1']) .rail,
+  /* —— Immersive mode (mobile-only) ————————————————————————————
+   * `data-reader-immersive="1"` on <html> hides the mobile chrome
+   * (top-strip + bottom-nav) so the screen content occupies the
+   * whole viewport. Desktop's rail stays static regardless. */
   :global(html[data-reader-immersive='1']) .top-strip,
   :global(html[data-reader-immersive='1']) .bottom-nav {
     display: none;
-  }
-  :global(html[data-reader-immersive='1']) .shell {
-    grid-template-columns: 1fr;
-    grid-template-areas: 'content';
   }
   :global(html[data-reader-immersive='1']) .content {
     /* Bottom nav is gone — drop the safe-area padding too. */
