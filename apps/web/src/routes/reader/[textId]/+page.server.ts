@@ -24,6 +24,7 @@ import { and, eq } from 'drizzle-orm';
 import { getReadableText } from '$lib/server/texts/upload.js';
 import { loadChapterTokens } from '$lib/server/texts/tokens.js';
 import { getTextProgress } from '$lib/server/texts/progress.js';
+import { readerCollectionContext } from '$lib/server/collections.js';
 import { db, schema } from '$lib/server/db/index.js';
 import type { LanguageCode } from '@ciareader/shared-types';
 import {
@@ -153,6 +154,12 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
     ? await loadChapterTokens(activeChapter.id, viewerId)
     : null;
 
+  // T-8.3: if this text is a member of a collection, surface the
+  // collection title + prev / next text ids in the reader chrome.
+  // Picks one collection deterministically when the text is in
+  // multiple (collections.updatedAt DESC).
+  const collectionContext = await readerCollectionContext(params.textId);
+
   return {
     text: {
       id: result.text.id,
@@ -189,5 +196,16 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
     // a session-only live preview.
     canPersistSettings: locals.user != null,
     isOwner: Boolean(locals.user && locals.user.id === result.text.ownerId),
+    collectionContext: collectionContext
+      ? {
+          collectionId: collectionContext.collection.id,
+          collectionTitle: collectionContext.collection.title,
+          collectionKind: collectionContext.collection.kind,
+          position: collectionContext.position,
+          totalCount: collectionContext.totalCount,
+          prevTextId: collectionContext.prevTextId,
+          nextTextId: collectionContext.nextTextId,
+        }
+      : null,
   };
 };

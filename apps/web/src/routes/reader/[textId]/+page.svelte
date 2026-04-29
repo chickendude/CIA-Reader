@@ -268,6 +268,34 @@
       </svg>
     </a>
     <div class="reader-meta">
+      {#if data.collectionContext}
+        <p class="reader-coll-strip">
+          <a class="reader-coll-link" href={`/collections/${data.collectionContext.collectionId}`}>
+            {data.collectionContext.collectionTitle}
+          </a>
+          <span class="reader-coll-pos">
+            {data.collectionContext.position + 1}/{data.collectionContext.totalCount}
+          </span>
+          <span class="reader-coll-nav">
+            {#if data.collectionContext.prevTextId}
+              <a
+                href={`/reader/${data.collectionContext.prevTextId}`}
+                class="reader-coll-arrow"
+                title="Previous text"
+                aria-label="Previous text in collection"
+              >‹ prev</a>
+            {/if}
+            {#if data.collectionContext.nextTextId}
+              <a
+                href={`/reader/${data.collectionContext.nextTextId}`}
+                class="reader-coll-arrow"
+                title="Next text"
+                aria-label="Next text in collection"
+              >next ›</a>
+            {/if}
+          </span>
+        </p>
+      {/if}
       <h1 class="t">{data.text.title}</h1>
       <p class="a">
         <span class="badge">{data.text.language}</span>
@@ -457,6 +485,42 @@
   }
   .reader-meta {
     min-width: 0;
+  }
+  .reader-coll-strip {
+    margin: 0 0 0.25rem;
+    display: flex;
+    align-items: baseline;
+    gap: 0.55rem;
+    font-size: 0.7rem;
+    color: var(--ink-3, var(--color-fg-muted));
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    flex-wrap: wrap;
+  }
+  .reader-coll-link {
+    color: var(--ink-2, var(--color-fg));
+    text-decoration: none;
+    font-weight: 500;
+  }
+  .reader-coll-link:hover {
+    text-decoration: underline;
+  }
+  .reader-coll-pos {
+    font-family: var(--font-mono-display, var(--font-mono));
+    font-feature-settings: 'tnum';
+  }
+  .reader-coll-nav {
+    display: flex;
+    gap: 0.5rem;
+    margin-left: auto;
+  }
+  .reader-coll-arrow {
+    color: var(--accent, var(--color-accent));
+    text-decoration: none;
+    font-weight: 500;
+  }
+  .reader-coll-arrow:hover {
+    text-decoration: underline;
   }
   .reader-meta .t {
     margin: 0;

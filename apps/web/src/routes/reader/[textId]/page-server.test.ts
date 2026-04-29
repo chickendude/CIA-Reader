@@ -43,6 +43,13 @@ vi.mock('$lib/server/texts/progress.js', async () => {
 // drizzle query chain to return whatever the test stages in
 // `userLanguagesRow`.
 let userLanguagesRow: Record<string, unknown> | null = null;
+// T-8.3: the loader now calls readerCollectionContext. Mock to
+// "no collection" so existing tests stay focused on the reader
+// surface; tests that care can override.
+vi.mock('$lib/server/collections.js', () => ({
+  readerCollectionContext: async () => null,
+}));
+
 vi.mock('$lib/server/db/index.js', () => {
   type ChainShape = {
     from: ReturnType<typeof vi.fn>;
