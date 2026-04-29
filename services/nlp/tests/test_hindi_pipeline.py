@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from app.pipelines.hindi import HindiPipeline
+from app.pipelines.hindi import HindiPipeline, _restore_nukta_in_lemma
 from app.pipelines.stanza_ud import parse_feats
 
 
@@ -235,3 +235,122 @@ def test_process_passes_input_text_through_to_stanza():
     pipe, fake = _pipe(FakeDoc(sentences=[]))
     pipe.process("the quick brown fox")
     assert fake.calls == ["the quick brown fox"]
+
+
+# --- nukta restoration -------------------------------------------------
+#
+# Stanza's hi_hdtb model returns lemmas with the U+093C nukta stripped
+# for nukta-bearing verbs (पढ़ता → पढना instead of पढ़ना). The pipeline
+# patches this by lifting any nuktas surviving in the surface back into
+# the aligned lemma position. These tests pin the rule independently of
+# the real Stanza model so the fix can't silently regress.
+
+
+def test_restore_nukta_basic_present_tense():
+    # पढ़ता (he reads) — the canonical bug. Stanza returns पढना.
+    assert _restore_nukta_in_lemma("पढ़ता", "पढना") == "पढ़ना"
+
+
+def test_restore_nukta_imperative_subjunctive():
+    # पढ़ें — the form the bug report cited. Same root, different inflection.
+    assert _restore_nukta_in_lemma("पढ़ें", "पढना") == "पढ़ना"
+
+
+def test_restore_nukta_future_feminine():
+    assert _restore_nukta_in_lemma("बढ़ेगी", "बढना") == "बढ़ना"
+
+
+def test_restore_nukta_multi_consonant_stem():
+    # पकड़ना (to catch) — nukta on the third consonant of the stem,
+    # not the second. The walker must align before deciding.
+    assert _restore_nukta_in_lemma("पकड़ता", "पकडना") == "पकड़ना"
+
+
+def test_restore_nukta_word_medial_nukta_in_noun():
+    # Loan-word noun with a word-medial nukta. If Stanza ever strips
+    # those for nominal lemmas the rule still recovers it.
+    assert _restore_nukta_in_lemma("ज़मीन", "जमीन") == "ज़मीन"
+
+
+def test_restore_nukta_idempotent_when_stanza_already_correct():
+    # If a future Stanza release stops stripping the nukta, the helper
+    # must not double-insert.
+    assert _restore_nukta_in_lemma("पढ़ता", "पढ़ना") == "पढ़ना"
+
+
+def test_restore_nukta_noop_when_surface_has_no_nukta():
+    assert _restore_nukta_in_lemma("कहता", "कहना") == "कहना"
+
+
+def test_restore_nukta_passes_through_suppletive_lemma():
+    # हूँ → होना diverges at the second character, so no nukta gets
+    # spliced and the suppletive lemma comes through untouched.
+    assert _restore_nukta_in_lemma("हूँ", "होना") == "होना"
+
+
+def test_restore_nukta_handles_atomic_precomposed_lemma():
+    # Stanza's internal lemma table can store the precomposed nukta
+    # consonant (U+095D) instead of the decomposed base+U+093C form.
+    # NFC keeps it precomposed (composition exclusion), so the helper
+    # must NFD-equivalent normalize internally — verified here by
+    # feeding an atomic-form lemma and expecting decomposed output.
+    surface = "पढ़ता"  # decomposed: ढ + U+093C
+    atomic_lemma = "पढ़ना"  # ढ़ as U+095D atomic
+    assert _restore_nukta_in_lemma(surface, atomic_lemma) == "पढ़ना"
+
+
+def test_process_restores_nukta_in_token_lemma():
+    # End-to-end: the pipeline patches Stanza's stripped lemma before
+    # emitting the token. is_oov stays False (lemma differed from
+    # surface in Stanza's raw output, which is what is_oov keys on).
+    doc = FakeDoc(
+        sentences=[
+            FakeSentence(
+                words=[
+                    FakeWord(
+                        text="पढ़ें",
+                        lemma="पढना",
+                        upos="VERB",
+                        feats="VerbForm=Fin|Mood=Sub",
+                    )
+                ]
+            )
+        ]
+    )
+    pipe, _ = _pipe(doc)
+    tok = pipe.process("x").tokens[0]
+    assert tok.candidates[0].lemma == "पढ़ना"
+    assert tok.is_oov is False
+
+
+def test_process_does_not_touch_lemma_without_nukta_in_surface():
+    doc = FakeDoc(
+        sentences=[
+            FakeSentence(
+                words=[FakeWord(text="कहता", lemma="कहना", upos="VERB")]
+            )
+        ]
+    )
+    pipe, _ = _pipe(doc)
+    assert pipe.process("x").tokens[0].candidates[0].lemma == "कहना"
+
+
+def test_process_leaves_punctuation_untouched_even_with_adjacent_nukta_word():
+    # Defensive: the post-processor must skip non-word tokens, not just
+    # leave their lemmas alone — a future Token revision that keys off
+    # candidates being rebuilt could regress this.
+    doc = FakeDoc(
+        sentences=[
+            FakeSentence(
+                words=[
+                    FakeWord(text="पढ़ता", lemma="पढना", upos="VERB"),
+                    FakeWord(text="।", lemma="।", upos="PUNCT"),
+                ]
+            )
+        ]
+    )
+    pipe, _ = _pipe(doc)
+    tokens = pipe.process("x").tokens
+    assert tokens[0].candidates[0].lemma == "पढ़ना"
+    assert tokens[1].is_word is False
+    assert tokens[1].candidates[0].lemma == "।"
