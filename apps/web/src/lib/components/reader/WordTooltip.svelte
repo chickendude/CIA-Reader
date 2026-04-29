@@ -44,13 +44,21 @@
   // re-runs whenever the parent rebinds the tooltip to a new word.
   // Defaults seed the first paint near the word; the $effect below
   // refines once we measure for real.
+  // T-5.1c: when the soft keyboard is up, `window.visualViewport.height`
+  // shrinks. Using it as the placement viewport keeps the tooltip
+  // visible above the keyboard instead of slipping behind it.
   const placement = $derived.by(() => {
     const w = measured?.w ?? 240;
     const h = measured?.h ?? 80;
-    return placeTooltip(anchorRect, w, h, {
-      width: typeof window !== 'undefined' ? window.innerWidth : 1024,
-      height: typeof window !== 'undefined' ? window.innerHeight : 768,
-    });
+    const vw =
+      typeof window !== 'undefined'
+        ? window.visualViewport?.width ?? window.innerWidth
+        : 1024;
+    const vh =
+      typeof window !== 'undefined'
+        ? window.visualViewport?.height ?? window.innerHeight
+        : 768;
+    return placeTooltip(anchorRect, w, h, { width: vw, height: vh });
   });
 
   $effect(() => {
@@ -95,7 +103,10 @@
 <style>
   .tip {
     position: fixed;
-    z-index: 30;
+    /* Above the side panel (z-index 40) so the tooltip shows even when
+     * the user is hovering a word that lives under where the panel
+     * sits — which is most of the right half of the reader. */
+    z-index: 50;
     background: var(--ink, #1f1a14);
     color: var(--paper, #fdfaf3);
     border-radius: 8px;

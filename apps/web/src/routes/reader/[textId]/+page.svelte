@@ -73,6 +73,23 @@
       .join('; '),
   );
 
+  // tokens.css scopes the word-status highlight rules to
+  // `html[data-hl='…']` (set up-front by app.html so first paint is
+  // correct). Mirror the popover's choice onto <html> so a live change
+  // flips the rules immediately. The previous value is restored on
+  // unmount so the attribute reflects this language's setting only
+  // while the reader is on screen.
+  $effect(() => {
+    if (typeof document === 'undefined') return;
+    const html = document.documentElement;
+    const previous = html.getAttribute('data-hl');
+    html.setAttribute('data-hl', readerSettings.highlightStyle);
+    return () => {
+      if (previous == null) html.removeAttribute('data-hl');
+      else html.setAttribute('data-hl', previous);
+    };
+  });
+
   function shouldPoll(s: typeof data.text.status): boolean {
     return s === 'pending' || s === 'processing';
   }
@@ -113,6 +130,12 @@
   // of an official text don't have a row to write against.
   let progressWriter: ProgressWriter | null = null;
   let beforeUnloadHandler: (() => void) | null = null;
+
+  // The reader's top bar is a full-width fixed element. We measure
+  // its height into a `--reader-top-h` CSS variable so the AppShell
+  // rail and the reader body can both leave room for it without
+  // baking a fixed pixel value into either component.
+  let readerTopEl: HTMLElement | null = $state(null);
 
   onMount(() => {
     liveStatus = data.text.status;
@@ -180,12 +203,27 @@
       window.addEventListener('beforeunload', beforeUnloadHandler);
     }
 
+    // Track the .reader-top height so the rail can sit below it.
+    let topRO: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== 'undefined' && readerTopEl) {
+      const apply = () => {
+        if (!readerTopEl) return;
+        const h = readerTopEl.getBoundingClientRect().height;
+        document.documentElement.style.setProperty('--reader-top-h', `${h}px`);
+      };
+      topRO = new ResizeObserver(apply);
+      topRO.observe(readerTopEl);
+      apply();
+    }
+
     return () => {
       cleanupPoll?.();
       window.removeEventListener('keydown', onKey);
       if (beforeUnloadHandler)
         window.removeEventListener('beforeunload', beforeUnloadHandler);
       void progressWriter?.flush();
+      topRO?.disconnect();
+      document.documentElement.style.removeProperty('--reader-top-h');
     };
   });
 
@@ -216,10 +254,9 @@
 <div
   class="reader"
   data-mode={data.mode}
-  data-hl={readerSettings.highlightStyle}
   style={readerStyle}
 >
-  <header class="reader-top">
+  <header class="reader-top" bind:this={readerTopEl}>
     <a class="reader-close" href="/library" aria-label="Close reader" title="Close reader">
       <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true">
         <path d="M6 6l12 12" />
@@ -301,14 +338,20 @@
       chapters={data.chapters}
       chapterIdx={data.anchor.chapterIdx}
       textId={data.text.id}
+      language={data.text.language as LanguageCode}
       {showRomanization}
       isOwner={data.isOwner}
+      fontSize={readerSettings.fontSize}
+      lineSpacing={readerSettings.lineSpacing}
+      fontFamily={readerSettings.fontFamily}
+      readingWidth={readerSettings.readingWidth}
     />
   {:else if data.mode === 'paged_scroll'}
     <ReaderScroll
       chapters={data.chapters}
       chapterIdx={data.anchor.chapterIdx}
       wordsPerPage={readerSettings.wordsPerPage}
+      language={data.text.language as LanguageCode}
       {showRomanization}
       isOwner={data.isOwner}
     />
@@ -317,6 +360,7 @@
       chapters={data.chapters}
       initialChapterIdx={data.anchor.chapterIdx}
       textId={data.text.id}
+      language={data.text.language as LanguageCode}
       {showRomanization}
       isOwner={data.isOwner}
     />
@@ -346,16 +390,25 @@
     display: flex;
     flex-direction: column;
   }
+  /* The word side-panel is a permanent right column on desktop. Pad
+     the reader so its chapter, header, and progress strip never run
+     behind it. The panel width comes from Sheet's --sheet-width
+     (default 380px). */
+  @media (min-width: 960px) {
+    .reader {
+      padding-right: 380px;
+    }
+  }
   /* Page mode is meant to behave like a book — no vertical scroll;
-     overflow stays inside the viewport, page arrows step through it.
-     Hard-cap the height so the inner flex chain (.reader-page-wrap →
-     .reader-page-viewport with overflow:hidden) actually constrains
-     the content, instead of letting min-height grow with it. */
+     overflow stays inside the viewport, page arrows step through it. */
   .reader[data-mode='page'] {
     height: 100dvh;
     min-height: 0;
     overflow: hidden;
   }
+  /* The top bar lives inside the reader's right column (sticky inside
+     the AppShell content track, not over the rail). The right side
+     panel reads `--reader-top-h` to anchor below it. */
   .reader-top {
     position: sticky;
     top: 0;

@@ -20,20 +20,31 @@
 
   import ChapterBody from './ChapterBody.svelte';
   import { clampPage, pageCountFor, pageOffset } from './paginate.js';
+  import { classifySwipe } from './touch-gestures.js';
   import type { ChapterView } from './types.js';
 
   let {
     chapters,
     chapterIdx,
     textId,
+    language,
     showRomanization = false,
     isOwner = false,
+    fontSize,
+    lineSpacing,
+    fontFamily,
+    readingWidth,
   }: {
     chapters: ChapterView[];
     chapterIdx: number;
     textId: string;
+    language: import('@ciareader/shared-types').LanguageCode;
     showRomanization?: boolean;
     isOwner?: boolean;
+    fontSize?: number;
+    lineSpacing?: number;
+    fontFamily?: string | null;
+    readingWidth?: string;
   } = $props();
 
   const current = $derived(
@@ -145,6 +156,29 @@
     }
   }
 
+  // T-5.1c: swipe to flip pages on touch devices. The page-flip
+  // arrows still work on mouse / keyboard / desktop touch; swipes
+  // are an additional input. We track only the first finger
+  // (`touches[0]`) so a pinch-zoom doesn't accidentally flip pages.
+  let touchStart: { x: number; y: number } | null = null;
+  function onTouchStart(e: TouchEvent) {
+    if (e.touches.length !== 1) {
+      touchStart = null;
+      return;
+    }
+    const t = e.touches[0]!;
+    touchStart = { x: t.clientX, y: t.clientY };
+  }
+  function onTouchEnd(e: TouchEvent) {
+    if (!touchStart) return;
+    const t = e.changedTouches[0];
+    if (!t) return;
+    const swipe = classifySwipe(touchStart, { x: t.clientX, y: t.clientY });
+    touchStart = null;
+    if (swipe.direction === -1 && hasNext) nextPage();
+    else if (swipe.direction === 1 && hasPrev) prevPage();
+  }
+
   // Measure on mount + on resize / content change. ResizeObserver on
   // both the viewport (window resize, font-size change) and the
   // content (chapter toggle, romanization toggle changing line
@@ -177,18 +211,35 @@
     return () => ro.disconnect();
   });
 
-  // Re-measure when the chapter or romanization toggle changes — both
-  // mutate the content's natural size and we want pageCount to track.
+  // Re-measure when anything that mutates the content's natural size
+  // changes — chapter, romanization toggle, or any of the typography
+  // settings driven by CSS vars on the .reader root. ResizeObserver
+  // fires on box-size changes only, so font-size / line-height swaps
+  // (which only change scrollWidth) need an explicit nudge.
   $effect(() => {
     void chapterIdx;
     void showRomanization;
+    void fontSize;
+    void lineSpacing;
+    void fontFamily;
+    void readingWidth;
     measure();
   });
 </script>
 
 <svelte:window onkeydown={onKeydown} />
 
-<div class="reader-page-wrap" data-mode="page">
+<!-- T-5.1c: swipe gestures supplement the visible arrows + keyboard
+     ←/→; role="region" appeases the static-element-interactions a11y
+     check without claiming this div is the primary control. -->
+<div
+  class="reader-page-wrap"
+  data-mode="page"
+  role="region"
+  aria-label="Reader pages"
+  ontouchstart={onTouchStart}
+  ontouchend={onTouchEnd}
+>
   <button
     type="button"
     class="page-arrow page-arrow-l"
@@ -212,7 +263,7 @@
               </span>
             </header>
             <article>
-              <ChapterBody chapter={current} {showRomanization} {isOwner} />
+              <ChapterBody chapter={current} {language} {showRomanization} {isOwner} />
             </article>
           {/if}
         </div>
@@ -272,15 +323,17 @@
     }
   }
 
-  /* The "window" is the clipping mask. It's exactly one column wide
-     (max 40rem so reading stays comfortable on big screens), and its
-     overflow:hidden is what hides the off-page columns sitting to its
-     right. The track inside (translateX target) carries the content,
-     and the content's overflow extends past the window horizontally. */
+  /* The "window" is the clipping mask. It fills the remaining width
+     of the reader chrome (the rail is static on desktop, so the
+     reader column already gets a sensible max width from the
+     viewport - rail). Its overflow:hidden is what hides the off-page
+     columns sitting to its right. The track inside (translateX
+     target) carries the content, and the content's overflow extends
+     past the window horizontally. */
   .reader-page-window {
     flex: 1;
     width: 100%;
-    max-width: 40rem;
+    max-width: var(--reader-col-width, 40rem);
     height: 100%;
     overflow: hidden;
     position: relative;
@@ -306,9 +359,9 @@
      the next — without it the browser tries to balance columns, which
      short-circuits the pagination. */
   .reader-page-content {
-    font-family: var(--font-serif-dev, var(--font-serif));
-    font-size: 1.1rem;
-    line-height: 2;
+    font-family: var(--reader-font-family, var(--font-serif-dev, var(--font-serif)));
+    font-size: var(--reader-font-size, 1.1rem);
+    line-height: var(--reader-line-height, 2);
     color: var(--ink, var(--color-fg));
     width: 100%;
     height: 100%;
@@ -316,11 +369,6 @@
     column-fill: auto;
     word-spacing: 0.03em;
     text-wrap: pretty;
-  }
-  @media (min-width: 768px) {
-    .reader-page-content {
-      font-size: 1.25rem;
-    }
   }
 
   .chapter-h {

@@ -15,6 +15,7 @@
   import { activateFocusTrap, type FocusTrap } from './focus-trap.js';
   import { portal } from './portal.js';
   import { lockScroll } from './scroll-lock.js';
+  import { attachKeyboardInsetTracker } from '$lib/components/reader/keyboard-inset.js';
 
   interface Props {
     open: boolean;
@@ -45,23 +46,35 @@
   let panelEl: HTMLDivElement | null = $state(null);
   let trap: FocusTrap | null = null;
   let releaseScroll: (() => void) | null = null;
+  // T-5.1c: track soft-keyboard inset so the bottom sheet on mobile
+  // lifts above the keyboard when an input inside it gains focus.
+  // 0 on desktop / when no keyboard is visible.
+  let kbInsetPx = $state(0);
 
+  // Modal-ish behaviour (focus trap + body-scroll lock) only kicks in
+  // for dimmed sheets. Undimmed sheets are contextual side panels —
+  // the page behind stays interactive, so trapping focus inside the
+  // sheet or freezing the scroll position would actively get in the
+  // user's way.
   $effect(() => {
-    if (!open) {
+    if (!open || !dimmed) {
       trap?.deactivate();
       trap = null;
       releaseScroll?.();
       releaseScroll = null;
+      kbInsetPx = 0;
       return;
     }
     if (!panelEl) return;
     trap = activateFocusTrap(panelEl);
     releaseScroll = lockScroll();
+    const detachKb = attachKeyboardInsetTracker((px) => (kbInsetPx = px));
     return () => {
       trap?.deactivate();
       trap = null;
       releaseScroll?.();
       releaseScroll = null;
+      detachKb();
     };
   });
 
@@ -94,6 +107,7 @@
       aria-labelledby={title ? 'sheet-title' : undefined}
       style:--sheet-width="{width}px"
       style:--sheet-max-height={maxHeight}
+      style:--sheet-kb-inset="{kbInsetPx}px"
     >
       {#if title}
         <header class="sheet-h">
@@ -120,12 +134,20 @@
     position: fixed;
     inset: 0;
     z-index: 40;
-    /* Default: transparent — only sheets that opt in via dimmed=true
-     * paint the scrim. Click capture works either way. */
+    /* Undimmed: events pass straight through to the page behind so
+     * hover tooltips on the reader still fire while the sheet is
+     * locked open. The .sheet itself opts back into pointer events.
+     * Dimmed sheets keep the modal contract (backdrop catches
+     * outside clicks → close). */
+    pointer-events: none;
   }
   .sheet-back.dimmed {
     background: rgba(20, 16, 10, 0.42);
     backdrop-filter: blur(4px);
+    pointer-events: auto;
+  }
+  .sheet {
+    pointer-events: auto;
   }
   /* The bottom sheet on narrow viewports occludes the lower part of
    * the page even when `dimmed=false`. We still want a subtle
@@ -141,26 +163,36 @@
     flex-direction: column;
     overflow: hidden;
   }
-  /* Bottom-sheet layout (mobile / narrow). */
+  /* Bottom-sheet layout (mobile / narrow). T-5.1c: --sheet-kb-inset
+   * lifts the sheet above the soft keyboard when an input inside it
+   * gets focus; 0 when no keyboard is visible. */
   @media (max-width: 959.98px) {
     .sheet {
       left: 0;
       right: 0;
-      bottom: 0;
+      bottom: var(--sheet-kb-inset, 0);
       max-height: var(--sheet-max-height);
       border-radius: 14px 14px 0 0;
       animation: slide-up 220ms cubic-bezier(0.2, 0, 0, 1);
+      transition: bottom 180ms ease-out;
     }
   }
-  /* Side-sheet layout (desktop / wide). */
+  /* Side-sheet layout (desktop / wide). The reader's word panel sits
+     below the page's top bar via `--reader-top-h`; pages without a
+     top bar leave the variable unset and the sheet hugs the top. */
   @media (min-width: 960px) {
     .sheet {
-      top: 0;
+      top: var(--reader-top-h, 0px);
       right: 0;
       bottom: 0;
       width: var(--sheet-width);
       box-shadow: -8px 0 32px rgba(0, 0, 0, 0.18);
       border-radius: 0;
+    }
+    /* Slide-in only animates for modal-style (dimmed) sheets. The
+       static word panel just appears in place — animating an
+       always-on column would feel jittery on every reload. */
+    .sheet-back.dimmed .sheet {
       animation: slide-in-right 220ms cubic-bezier(0.2, 0, 0, 1);
     }
   }

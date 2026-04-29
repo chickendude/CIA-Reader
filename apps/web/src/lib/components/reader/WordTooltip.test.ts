@@ -25,6 +25,7 @@ function makeToken(overrides: Partial<ServerToken> = {}): ServerToken {
     lemmaId: 'lem-1',
     romanization: 'prabhāt',
     glossDefault: null,
+    candidates: [],
     status: 'unknown',
     ...overrides,
   };
