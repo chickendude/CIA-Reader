@@ -437,27 +437,59 @@
           ×
         </button>
         <h2 class="sp-word">{token.surface}</h2>
-      {#if token.romanization}
-        <p class="sp-roman">{token.romanization}</p>
-      {/if}
-      {#if payload}
-        <p class="sp-row">
-          <span class="k">Lemma</span>
-          <span class="v">{payload.lemma.headword}</span>
-        </p>
-        <p class="sp-row">
-          <span class="k">Part of speech</span>
-          <span class="v">{payload.lemma.pos}</span>
-        </p>
-      {:else if token.isOov}
-        <p class="muted">No dictionary match</p>
-      {:else if loadError}
-        <p class="err">{loadError}</p>
-      {:else if token.lemmaId}
-        <p class="muted">Loading…</p>
+      {#if token.numberForms}
+        <!-- T-2.8: digit-only NUM token. Show all three native-script
+             digit renderings, then the spelled-out form + ISO 15919
+             romanization for each MVP language. The lemma / translation
+             / status panes are skipped — numbers aren't lemmas to learn. -->
+        <div class="num-block" data-testid="number-forms">
+          <div class="num-digits">
+            <span>{token.numberForms.digitsLatin}</span>
+            <span>{token.numberForms.digitsDeva}</span>
+            <span>{token.numberForms.digitsOrya}</span>
+          </div>
+          <ul class="num-langs">
+            <li>
+              <span class="num-lang">Hindi</span>
+              <span class="num-spelled">{token.numberForms.hi.spelled}</span>
+              <span class="num-roman">{token.numberForms.hi.romanized}</span>
+            </li>
+            <li>
+              <span class="num-lang">Marathi</span>
+              <span class="num-spelled">{token.numberForms.mr.spelled}</span>
+              <span class="num-roman">{token.numberForms.mr.romanized}</span>
+            </li>
+            <li>
+              <span class="num-lang">Odia</span>
+              <span class="num-spelled">{token.numberForms.odia.spelled}</span>
+              <span class="num-roman">{token.numberForms.odia.romanized}</span>
+            </li>
+          </ul>
+        </div>
+      {:else}
+        {#if token.romanization}
+          <p class="sp-roman">{token.romanization}</p>
+        {/if}
+        {#if payload}
+          <p class="sp-row">
+            <span class="k">Lemma</span>
+            <span class="v">{payload.lemma.headword}</span>
+          </p>
+          <p class="sp-row">
+            <span class="k">Part of speech</span>
+            <span class="v">{payload.lemma.pos}</span>
+          </p>
+        {:else if token.isOov}
+          <p class="muted">No dictionary match</p>
+        {:else if loadError}
+          <p class="err">{loadError}</p>
+        {:else if token.lemmaId}
+          <p class="muted">Loading…</p>
+        {/if}
       {/if}
     </header>
 
+    {#if !token.numberForms}
     {#if isOwner && token.lemmaId}
       <div class="sp-status" role="group" aria-label="Mark status">
         <button
@@ -670,6 +702,7 @@
           <p class="err small" role="alert">{pickError}</p>
         {/if}
       {/if}
+    {/if}
     {/if}
     </div>
   {/if}
@@ -1070,5 +1103,61 @@
   .alt-pick:disabled {
     opacity: 0.6;
     cursor: progress;
+  }
+
+  /* T-2.8: number-only token block. */
+  .num-block {
+    display: flex;
+    flex-direction: column;
+    gap: 0.7rem;
+    margin-top: 0.4rem;
+  }
+  .num-digits {
+    display: flex;
+    align-items: baseline;
+    gap: 0.85rem;
+    font-family: var(--font-serif-dev, var(--font-serif));
+    font-size: 1.25rem;
+    color: var(--ink-2, var(--color-fg));
+    padding-bottom: 0.55rem;
+    border-bottom: 1px solid var(--rule-2, var(--color-border));
+  }
+  .num-langs {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 0.5rem;
+  }
+  .num-langs li {
+    display: grid;
+    grid-template-columns: 4.5rem 1fr;
+    grid-template-rows: auto auto;
+    column-gap: 0.65rem;
+    row-gap: 0.1rem;
+    align-items: baseline;
+  }
+  .num-lang {
+    grid-column: 1;
+    grid-row: 1 / span 2;
+    font-size: 0.66rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--ink-3, var(--color-fg-muted));
+    align-self: center;
+  }
+  .num-spelled {
+    grid-column: 2;
+    grid-row: 1;
+    font-family: var(--font-serif-dev, var(--font-serif));
+    font-size: 1rem;
+    color: var(--ink, var(--color-fg));
+  }
+  .num-roman {
+    grid-column: 2;
+    grid-row: 2;
+    font-family: var(--font-mono-display, var(--font-mono));
+    font-size: 0.78rem;
+    color: var(--ink-3, var(--color-fg-muted));
   }
 </style>

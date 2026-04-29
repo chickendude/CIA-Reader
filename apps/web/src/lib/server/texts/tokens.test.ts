@@ -73,6 +73,7 @@ function tokenRow(overrides: Record<string, unknown> = {}) {
     isWord: true,
     sentenceIdx: 0,
     romanization: null,
+    numberForms: null,
     ...overrides,
   };
 }

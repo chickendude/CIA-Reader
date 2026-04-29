@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from typing import Any, Protocol
 
+from app.numbers import number_forms as _compute_number_forms
 from app.romanize import UnsupportedScriptError, to_roman
 from app.schemas import LemmaCandidate, Token
 
@@ -151,6 +152,7 @@ class StanzaUDPipeline(Pipeline):
                         is_ambiguous=False,
                         is_oov=is_oov,
                         romanization=self._romanize(surface) if is_word else None,
+                        number_forms=_compute_number_forms(surface),
                     )
                 )
                 idx += 1

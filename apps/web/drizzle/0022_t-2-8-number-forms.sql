@@ -1,0 +1,1 @@
+ALTER TABLE "text_tokens" ADD COLUMN "number_forms" jsonb;
