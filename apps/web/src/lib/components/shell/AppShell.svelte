@@ -610,7 +610,7 @@
    * button at the top-left as a simple immersive-toggle there. */
   .rail-toggle {
     position: fixed;
-    top: 50%;
+    top: 1rem;
     left: 0;
     width: 22px;
     height: 44px;
@@ -624,7 +624,6 @@
     cursor: pointer;
     z-index: 30;
     box-shadow: 2px 0 8px rgba(0, 0, 0, 0.08);
-    transform: translateY(-50%);
     transition:
       left 200ms cubic-bezier(0.2, 0, 0, 1),
       background 150ms ease,
