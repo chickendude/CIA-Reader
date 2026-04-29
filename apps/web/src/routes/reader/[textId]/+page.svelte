@@ -2,6 +2,7 @@
   import { goto, invalidateAll } from '$app/navigation';
   import { onMount, untrack } from 'svelte';
 
+  import AudioPlayer from '$lib/components/reader/AudioPlayer.svelte';
   import ReaderContinuous from '$lib/components/reader/ReaderContinuous.svelte';
   import ReaderPage from '$lib/components/reader/ReaderPage.svelte';
   import ReaderScroll from '$lib/components/reader/ReaderScroll.svelte';
@@ -405,6 +406,10 @@
       {showRomanization}
       isOwner={data.isOwner}
     />
+  {/if}
+
+  {#if data.audio}
+    <AudioPlayer audio={data.audio} />
   {/if}
 </div>
 

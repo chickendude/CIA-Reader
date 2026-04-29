@@ -25,6 +25,7 @@ import { getReadableText } from '$lib/server/texts/upload.js';
 import { loadChapterTokens } from '$lib/server/texts/tokens.js';
 import { getTextProgress } from '$lib/server/texts/progress.js';
 import { readerCollectionContext } from '$lib/server/collections.js';
+import { listAudioForText } from '$lib/server/audio/audio.js';
 import { db, schema } from '$lib/server/db/index.js';
 import type { LanguageCode } from '@ciareader/shared-types';
 import {
@@ -160,6 +161,16 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
   // multiple (collections.updatedAt DESC).
   const collectionContext = await readerCollectionContext(params.textId);
 
+  // T-9.1: pull audio attached to the text. Prefer chapter-specific
+  // audio when present; fall back to whole-text audio otherwise.
+  // The player only renders when a track exists.
+  const allAudio = await listAudioForText(params.textId);
+  const audioForChapter = activeChapter
+    ? allAudio.find((a) => a.chapterId === activeChapter.id) ?? null
+    : null;
+  const audioForText = allAudio.find((a) => a.chapterId === null) ?? null;
+  const activeAudio = audioForChapter ?? audioForText;
+
   // T-8.6: course-kind collections gate "next" until the active
   // text is finished (pctRead >= 100). The reader UI grays out the
   // next link unless ?skipLock=1 is set on the URL — a deliberate
@@ -223,6 +234,15 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
           // T-8.6: course-kind gate. UI flips the next link to a
           // disabled state with a tooltip; ?skipLock=1 overrides.
           nextLocked,
+        }
+      : null,
+    audio: activeAudio
+      ? {
+          id: activeAudio.id,
+          url: activeAudio.url,
+          mime: activeAudio.mime,
+          durationMs: activeAudio.durationMs,
+          attribution: activeAudio.attribution,
         }
       : null,
   };
