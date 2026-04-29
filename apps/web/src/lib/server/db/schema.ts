@@ -565,6 +565,125 @@ export const texts = pgTable(
   }),
 );
 
+/**
+ * Per-recipient text shares (T-7.2).
+ *
+ * The owner of a text can grant individual readers explicit access
+ * even when the text's visibility is 'private'. canReadText (T-4.6)
+ * extends to allow any (text_id, viewer.id) pair that has a row
+ * here. Group shares (T-7.4) live in a sibling `text_group_shares`
+ * table; the two are independent so a curator can share with a
+ * group AND specific extra individuals without juggling membership.
+ *
+ * Permission column reserved for future read/write distinctions —
+ * MVP only models 'read'.
+ */
+export const textSharePermission = pgEnum('text_share_permission', ['read']);
+
+export const textShares = pgTable(
+  'text_shares',
+  {
+    textId: uuid('text_id')
+      .notNull()
+      .references(() => texts.id, { onDelete: 'cascade' }),
+    sharedWithUserId: uuid('shared_with_user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    permission: textSharePermission('permission').notNull().default('read'),
+    grantedById: uuid('granted_by_id').references(() => users.id, {
+      onDelete: 'set null',
+    }),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.textId, t.sharedWithUserId] }),
+    // "What's shared with me?" lookup for the T-7.5 inbox.
+    recipientIdx: index('text_shares_recipient_idx').on(t.sharedWithUserId),
+  }),
+);
+
+/**
+ * User groups (T-7.3) — classroom rosters, study clubs, etc.
+ *
+ * `owner_id` is the group's admin (creator + manager). M7 keeps
+ * groups simple: no role hierarchy beyond owner / member, no
+ * invitations workflow (the owner adds members directly by email
+ * resolution). T-7.8's classroom dashboard surfaces aggregate stats
+ * for the owner.
+ */
+export const groups = pgTable(
+  'groups',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    ownerId: uuid('owner_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    description: text('description'),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    ownerIdx: index('groups_owner_idx').on(t.ownerId, t.createdAt),
+  }),
+);
+
+export const groupMemberships = pgTable(
+  'group_memberships',
+  {
+    groupId: uuid('group_id')
+      .notNull()
+      .references(() => groups.id, { onDelete: 'cascade' }),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    addedById: uuid('added_by_id').references(() => users.id, {
+      onDelete: 'set null',
+    }),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.groupId, t.userId] }),
+    userIdx: index('group_memberships_user_idx').on(t.userId),
+  }),
+);
+
+/**
+ * Per-group text shares (T-7.4). Sibling of `text_shares` —
+ * granting at the group level extends read access to every
+ * member of the group at the time canReadText runs (memberships
+ * checked dynamically so adds / removes take effect immediately).
+ */
+export const textGroupShares = pgTable(
+  'text_group_shares',
+  {
+    textId: uuid('text_id')
+      .notNull()
+      .references(() => texts.id, { onDelete: 'cascade' }),
+    groupId: uuid('group_id')
+      .notNull()
+      .references(() => groups.id, { onDelete: 'cascade' }),
+    grantedById: uuid('granted_by_id').references(() => users.id, {
+      onDelete: 'set null',
+    }),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.textId, t.groupId] }),
+    groupIdx: index('text_group_shares_group_idx').on(t.groupId),
+  }),
+);
+
 export const textChapters = pgTable(
   'text_chapters',
   {
@@ -1080,6 +1199,10 @@ export type FormLemmaOverride = InferSelectModel<typeof formLemmaOverrides>;
 export type TokenCorrection = InferSelectModel<typeof tokenCorrections>;
 export type ParseReport = InferSelectModel<typeof parseReports>;
 export type LemmaProposal = InferSelectModel<typeof lemmaProposals>;
+export type TextShare = InferSelectModel<typeof textShares>;
+export type Group = InferSelectModel<typeof groups>;
+export type GroupMembership = InferSelectModel<typeof groupMemberships>;
+export type TextGroupShare = InferSelectModel<typeof textGroupShares>;
 
 /**
  * Collections — chapter books, courses, anthologies (T-8.1).

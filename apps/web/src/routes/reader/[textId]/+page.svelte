@@ -181,8 +181,12 @@
       cleanupPoll = () => window.clearInterval(interval);
     }
 
-    // Progress writer — owners only.
-    if (data.isOwner) {
+    // T-7.7: progress writer for any signed-in reader, not just
+    // owners. user_text_progress is keyed on (user, text) so a
+    // recipient of a shared text or a signed-in reader of an
+    // official text gets their own resume-anchor row. Anonymous
+    // viewers (the only false branch of canPersistSettings) skip.
+    if (data.canPersistSettings) {
       progressWriter = new ProgressWriter(data.text.id);
       // Schedule an initial write so reopening immediately at the
       // current chapter persists even without scrolling.

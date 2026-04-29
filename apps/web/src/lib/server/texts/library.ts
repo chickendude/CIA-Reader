@@ -106,16 +106,71 @@ export async function listOwnedTexts(
 }
 
 /**
- * Texts shared with the viewer (T-7.x). Until those sharing tables
- * land, we return an empty page so the library tab renders without a
- * special-case "M7 not implemented yet" branch in the UI.
+ * Texts shared with the viewer (T-7.5). Combines direct shares
+ * (text_shares) with group shares (text_group_shares ↔
+ * group_memberships). Excludes texts the viewer owns themselves —
+ * those land in "Your texts."
+ *
+ * Implementation: a UNION inside a subquery that surfaces every
+ * text id the viewer can read via either path; the outer SELECT
+ * pulls the canonical text rows and counts.
  */
 export async function listSharedTexts(
-  _viewer: Pick<User, 'id'>,
-  opts: { limit?: number; offset?: number } = {},
+  viewer: Pick<User, 'id'>,
+  opts: { limit?: number; offset?: number; language?: LanguageCode } = {},
 ): Promise<ListPage> {
   const { limit, offset } = clampPage(opts);
-  return { cards: [], totalCount: 0, limit, offset };
+  // Find the set of text ids visible to the viewer through sharing.
+  const idsRows = (await db.execute(sql<{ id: string }>`
+    SELECT DISTINCT id FROM (
+      SELECT text_id AS id FROM text_shares
+       WHERE shared_with_user_id = ${viewer.id}
+      UNION
+      SELECT tgs.text_id AS id
+        FROM text_group_shares tgs
+        INNER JOIN group_memberships gm ON gm.group_id = tgs.group_id
+       WHERE gm.user_id = ${viewer.id}
+    ) AS shared_ids
+  `)) as unknown as Array<{ id: string }> | { rows: Array<{ id: string }> };
+  const ids = (Array.isArray(idsRows) ? idsRows : (idsRows.rows ?? [])).map(
+    (r) => r.id,
+  );
+  if (ids.length === 0) {
+    return { cards: [], totalCount: 0, limit, offset };
+  }
+
+  const conditions = [
+    sql`${schema.texts.id} IN (${sql.join(
+      ids.map((id) => sql`${id}`),
+      sql`, `,
+    )})`,
+    sql`${schema.texts.ownerId} IS DISTINCT FROM ${viewer.id}`,
+  ];
+  if (opts.language) {
+    conditions.push(eq(schema.texts.language, opts.language));
+  }
+  const where = and(...conditions);
+
+  const countRows = (await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(schema.texts)
+    .where(where)) as Array<{ count: number }>;
+  const count = countRows[0]?.count ?? 0;
+
+  const rows = (await db
+    .select()
+    .from(schema.texts)
+    .where(where)
+    .orderBy(desc(schema.texts.createdAt))
+    .limit(limit)
+    .offset(offset)) as Text[];
+
+  return {
+    cards: rows.map(projectCard),
+    totalCount: count,
+    limit,
+    offset,
+  };
 }
 
 /**
