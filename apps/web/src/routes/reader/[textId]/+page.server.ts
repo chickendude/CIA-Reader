@@ -99,19 +99,19 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
   const mode = readMode(url, 'continuous');
   const showRomanization = readBool(url, 'roman');
 
-  // Pre-fetch NLP tokens for every chapter that has them. Chapters
-  // without tokens fall back to client-side whitespace tokenization
-  // in the components — no NLP, no colouring, but still readable.
-  // We load all chapters here rather than just the active one
-  // because `continuous` mode renders every chapter; `page` and
-  // `paged_scroll` ignore the inactive ones, so the cost is wasted
-  // on those modes — we'll narrow it once the per-mode loader split
-  // (T-5.1a) lands.
+  // T-5.1a: lazy chapter loading. Only the active chapter is
+  // pre-fetched server-side — a 50-chapter novel was previously
+  // shipping every chapter's token rows on first paint, blowing up
+  // the SSR payload and stalling time-to-first-byte for long books.
+  // Other chapters get `tokens: null` here; the components fetch on
+  // demand via /api/v1/texts/:id/chapters/:idx/tokens (paged-mode
+  // navigation re-runs this loader; continuous mode prefetches the
+  // next chapter near the bottom of the visible one).
   const viewerId = locals.user?.id ?? null;
-  const tokenMap: Record<string, Awaited<ReturnType<typeof loadChapterTokens>>> = {};
-  for (const c of result.chapters) {
-    tokenMap[c.id] = await loadChapterTokens(c.id, viewerId);
-  }
+  const activeChapter = result.chapters[chapterIdx];
+  const activeTokens = activeChapter
+    ? await loadChapterTokens(activeChapter.id, viewerId)
+    : null;
 
   return {
     text: {
@@ -130,10 +130,12 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
       title: c.title,
       body: c.body,
       tokenCount: c.tokenCount,
-      // Server-rendered tokens (or null if the worker hasn't run for
-      // this chapter yet — the components fall back to a
-      // whitespace tokenizer in that case).
-      tokens: tokenMap[c.id] ?? null,
+      // Only the active chapter ships with server-rendered tokens;
+      // siblings carry `tokens: null` and are filled in client-side
+      // by the lazy-load endpoint. A null payload also still happens
+      // when the NLP worker hasn't run for this chapter — the reader
+      // components transparently fall back to whitespace tokenization.
+      tokens: c.idx === chapterIdx ? activeTokens : null,
     })),
     anchor: {
       chapterIdx,

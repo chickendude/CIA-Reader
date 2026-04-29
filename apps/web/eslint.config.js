@@ -64,6 +64,8 @@ export default [
         MutationObserver: 'readonly',
         // Page-mode pagination measurement (T-5.23).
         ResizeObserver: 'readonly',
+        // Continuous-mode lazy chapter loading (T-5.1a).
+        IntersectionObserver: 'readonly',
       },
     },
   },
