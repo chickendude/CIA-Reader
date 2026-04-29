@@ -78,7 +78,22 @@ vi.mock('../db/index.js', () => ({
       status: 'nlp_jobs.status',
       createdAt: 'nlp_jobs.created_at',
     },
+    textShares: {
+      textId: 'text_shares.text_id',
+      sharedWithUserId: 'text_shares.shared_with_user_id',
+    },
   },
+}));
+
+// T-7.2: getTextStatus' canReadText path now imports sharing.js
+// via a dynamic import. Mock to "no share" so existing tests keep
+// their semantics.
+vi.mock('./sharing.js', () => ({
+  viewerHasDirectShare: async () => false,
+}));
+// T-7.4: same treatment for the groups module.
+vi.mock('../groups.js', () => ({
+  viewerHasGroupShare: async () => false,
 }));
 
 const {
