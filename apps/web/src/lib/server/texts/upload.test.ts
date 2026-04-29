@@ -74,7 +74,18 @@ vi.mock('../db/index.js', () => ({
       status: 'nlp_jobs.status',
       createdAt: 'nlp_jobs.created_at',
     },
+    textShares: {
+      textId: 'text_shares.text_id',
+      sharedWithUserId: 'text_shares.shared_with_user_id',
+    },
   },
+}));
+
+// T-7.2: canReadText consults the sharing module via dynamic import.
+// Default to "no share" so the existing visibility / owner cases
+// keep their pre-T-7.2 outcomes; tests that care can override.
+vi.mock('./sharing.js', () => ({
+  viewerHasDirectShare: async () => false,
 }));
 
 const {

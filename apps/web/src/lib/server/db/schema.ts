@@ -565,6 +565,45 @@ export const texts = pgTable(
   }),
 );
 
+/**
+ * Per-recipient text shares (T-7.2).
+ *
+ * The owner of a text can grant individual readers explicit access
+ * even when the text's visibility is 'private'. canReadText (T-4.6)
+ * extends to allow any (text_id, viewer.id) pair that has a row
+ * here. Group shares (T-7.4) live in a sibling `text_group_shares`
+ * table; the two are independent so a curator can share with a
+ * group AND specific extra individuals without juggling membership.
+ *
+ * Permission column reserved for future read/write distinctions —
+ * MVP only models 'read'.
+ */
+export const textSharePermission = pgEnum('text_share_permission', ['read']);
+
+export const textShares = pgTable(
+  'text_shares',
+  {
+    textId: uuid('text_id')
+      .notNull()
+      .references(() => texts.id, { onDelete: 'cascade' }),
+    sharedWithUserId: uuid('shared_with_user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    permission: textSharePermission('permission').notNull().default('read'),
+    grantedById: uuid('granted_by_id').references(() => users.id, {
+      onDelete: 'set null',
+    }),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.textId, t.sharedWithUserId] }),
+    // "What's shared with me?" lookup for the T-7.5 inbox.
+    recipientIdx: index('text_shares_recipient_idx').on(t.sharedWithUserId),
+  }),
+);
+
 export const textChapters = pgTable(
   'text_chapters',
   {
@@ -1080,3 +1119,4 @@ export type FormLemmaOverride = InferSelectModel<typeof formLemmaOverrides>;
 export type TokenCorrection = InferSelectModel<typeof tokenCorrections>;
 export type ParseReport = InferSelectModel<typeof parseReports>;
 export type LemmaProposal = InferSelectModel<typeof lemmaProposals>;
+export type TextShare = InferSelectModel<typeof textShares>;
