@@ -15,6 +15,9 @@
 import type { DictionaryImportSource } from '../types.js';
 
 import { hindiSeedSource } from './hindi-seed.js';
+import { kaikkiEnTranslationsHindiSource } from './kaikki-en-translations-hindi.js';
+import { kaikkiEnTranslationsMarathiSource } from './kaikki-en-translations-marathi.js';
+import { kaikkiEnTranslationsOdiaSource } from './kaikki-en-translations-odia.js';
 import { kaikkiHindiSource } from './kaikki-hindi.js';
 import { kaikkiMarathiSource } from './kaikki-marathi.js';
 import { kaikkiOdiaSource } from './kaikki-odia.js';
@@ -29,6 +32,18 @@ export const dictionarySources: RegistryEntry[] = [
   { name: kaikkiHindiSource.name, source: kaikkiHindiSource },
   { name: kaikkiMarathiSource.name, source: kaikkiMarathiSource },
   { name: kaikkiOdiaSource.name, source: kaikkiOdiaSource },
+  {
+    name: kaikkiEnTranslationsHindiSource.name,
+    source: kaikkiEnTranslationsHindiSource,
+  },
+  {
+    name: kaikkiEnTranslationsMarathiSource.name,
+    source: kaikkiEnTranslationsMarathiSource,
+  },
+  {
+    name: kaikkiEnTranslationsOdiaSource.name,
+    source: kaikkiEnTranslationsOdiaSource,
+  },
 ];
 
 export function findSource(name: string): DictionaryImportSource | undefined {
