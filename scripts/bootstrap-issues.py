@@ -301,6 +301,11 @@ MILESTONES = [
              "known-count cache."),
             ("T-5.6", "Reading progress",
              "Debounced `PATCH /api/text-progress` as user scrolls/paginates."),
+            ("T-5.6a", "First-visible-word progress anchors",
+             "Persist progress as the first visible word in `page`, "
+             "`paged-scroll`, and `continuous` modes. Switching modes "
+             "flushes and carries the current `chapter` + `token` anchor "
+             "so readers resume at the same visible word."),
             ("T-5.7", "Keyboard shortcuts",
              "`k`=known, `l`=learning, `i`=ignore, `→/←`=next/prev word."),
         ],
