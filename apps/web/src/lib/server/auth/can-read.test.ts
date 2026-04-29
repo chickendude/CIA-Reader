@@ -1,4 +1,11 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+
+// T-7.2: canReadText now consults the sharing module via a dynamic
+// import. Mock it here so this unit test stays focused on the
+// visibility / owner branches without hitting the DB.
+vi.mock('../texts/sharing.js', () => ({
+  viewerHasDirectShare: async () => false,
+}));
 
 import { ForbiddenError } from '../dictionary/permissions.js';
 import { assertCanReadText, canReadText } from './can-read.js';
