@@ -1213,3 +1213,102 @@ export const collectionShares = pgTable(
 export type Collection = InferSelectModel<typeof collections>;
 export type CollectionItem = InferSelectModel<typeof collectionItems>;
 export type CollectionShare = InferSelectModel<typeof collectionShares>;
+
+/**
+ * Audio attached to texts / chapters (T-9.1).
+ *
+ * `audio_files` stores the metadata + storage location; the actual
+ * blob lives in object storage (local volume in dev; Hetzner Object
+ * Storage in prod). Each row binds an audio file to either a
+ * specific chapter (chapter_id set) or to a whole text
+ * (chapter_id=null, text_id set) — a single recording for an
+ * audiobook chapter, or a "whole text" stream where the worker /
+ * uploader chose not to chop per chapter.
+ *
+ * `mime` carries the Content-Type so the player can hand the
+ * <audio> element the right hint (mp3 / m4a / ogg are all in
+ * scope).
+ *
+ * `attribution` (T-9.7) is the human-readable credit shown in the
+ * player when present. `license` is the per-file license string;
+ * official audio uploads carry an explicit license. User-uploaded
+ * audio carries the redistribution-rights checkbox text from the
+ * upload form.
+ */
+export const audioFiles = pgTable(
+  'audio_files',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    textId: uuid('text_id')
+      .notNull()
+      .references(() => texts.id, { onDelete: 'cascade' }),
+    chapterId: uuid('chapter_id').references(() => textChapters.id, {
+      onDelete: 'cascade',
+    }),
+    storageKey: text('storage_key').notNull(),
+    mime: text('mime').notNull(),
+    sizeBytes: integer('size_bytes').notNull(),
+    durationMs: integer('duration_ms'),
+    attribution: text('attribution'),
+    license: text('license'),
+    uploadedById: uuid('uploaded_by_id').references(() => users.id, {
+      onDelete: 'set null',
+    }),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    textIdx: index('audio_files_text_idx').on(t.textId),
+    chapterIdx: index('audio_files_chapter_idx').on(t.chapterId),
+  }),
+);
+
+/**
+ * Per-token timing for an audio file (T-9.3 / T-9.5 / T-9.6).
+ *
+ * One row per (audio_file, token) pair. Optional — a chapter can
+ * have audio without alignments (the player still works, just no
+ * karaoke highlight). Times are stored in milliseconds from the
+ * start of the audio file. Indexed on (audio_file_id, start_ms)
+ * for the timeupdate-driven binary search the reader runs every
+ * frame while playback is active.
+ *
+ * Source: `manual` (T-9.5 editor) or `imported` (T-9.6 JSON / VTT
+ * import), with `whisper` reserved for the future ASR-aligned
+ * branch.
+ */
+export const alignmentSource = pgEnum('alignment_source', [
+  'manual',
+  'imported',
+  'whisper',
+]);
+
+export const audioAlignments = pgTable(
+  'audio_alignments',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    audioFileId: uuid('audio_file_id')
+      .notNull()
+      .references(() => audioFiles.id, { onDelete: 'cascade' }),
+    tokenId: uuid('token_id')
+      .notNull()
+      .references(() => textTokens.id, { onDelete: 'cascade' }),
+    startMs: integer('start_ms').notNull(),
+    endMs: integer('end_ms').notNull(),
+    source: alignmentSource('source').notNull().default('manual'),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.audioFileId, t.tokenId] }),
+    timelineIdx: index('audio_alignments_timeline_idx').on(
+      t.audioFileId,
+      t.startMs,
+    ),
+  }),
+);
+
+export type AudioFile = InferSelectModel<typeof audioFiles>;
+export type AudioAlignment = InferSelectModel<typeof audioAlignments>;
