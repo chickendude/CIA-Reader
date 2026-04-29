@@ -32,7 +32,7 @@ from app.numbers import number_forms as _compute_number_forms
 from app.schemas import LemmaCandidate, Token
 
 from ..base import Pipeline, PipelineResult
-from ..stanza_ud import NON_WORD_UPOS
+from ..stanza_ud import should_treat_as_word
 from .lemmas import OdiaLemmaTable, default_lemma_table
 from .morph import MorphAnalysis, analyze
 
@@ -120,15 +120,20 @@ class OdiaPipeline(Pipeline):
                 LemmaCandidate(lemma=surface, pos="X", score=1.0, features={}),
             ]
 
+        is_word = should_treat_as_word(
+            surface,
+            candidates[0].pos,
+            script="Orya",
+        )
         return Token(
             idx=idx,
             surface=surface,
-            is_word=candidates[0].pos not in NON_WORD_UPOS,
+            is_word=is_word,
             candidates=candidates,
             # Multiple morphological analyses means the reader should
             # surface the "N possible meanings" chevron (M6).
             is_ambiguous=len(analyses) >= 2,
-            is_oov=is_oov,
+            is_oov=is_word and is_oov,
             romanization=None,
             number_forms=_compute_number_forms(surface),
         )

@@ -27,7 +27,7 @@ from collections.abc import Callable
 from app.schemas import LemmaCandidate, Token
 
 from .base import PipelineResult
-from .stanza_ud import NON_WORD_UPOS, StanzaLike, StanzaUDPipeline
+from .stanza_ud import StanzaLike, StanzaUDPipeline, should_treat_as_word
 
 MarathiTokenizer = Callable[[str], list[str]]
 
@@ -46,21 +46,20 @@ def _is_fallback_punct(surface: str) -> bool:
     return bool(surface) and all(c in _FALLBACK_PUNCT for c in surface)
 
 
-def _fallback_token(idx: int, surface: str) -> Token:
+def _fallback_token(idx: int, surface: str, *, script: str | None) -> Token:
     is_punct = _is_fallback_punct(surface)
     upos = "PUNCT" if is_punct else "X"
+    is_word = should_treat_as_word(surface, upos, script=script)
     return Token(
         idx=idx,
         surface=surface,
-        # NON_WORD_UPOS is imported so the reader's is_word predicate
-        # stays consistent with the Stanza path for the same UPOS.
-        is_word=upos not in NON_WORD_UPOS,
+        is_word=is_word,
         candidates=[LemmaCandidate(lemma=surface, pos=upos, score=1.0, features={})],
         is_ambiguous=False,
         # Fallback tokens are by definition OOV — Stanza produced nothing,
         # so there's no dictionary lemma. Punctuation is exempt by the
         # same rule the Stanza path uses.
-        is_oov=not is_punct,
+        is_oov=is_word and not is_punct,
         romanization=None,
     )
 
@@ -92,7 +91,11 @@ class MarathiPipeline(StanzaUDPipeline):
 
     def _fallback_process(self, text: str) -> PipelineResult:
         surfaces = self._fallback_tokenizer(text)
-        tokens = [_fallback_token(i, s) for i, s in enumerate(surfaces) if s]
+        tokens = [
+            _fallback_token(i, s, script=self._script)
+            for i, s in enumerate(surfaces)
+            if s
+        ]
         return PipelineResult(pipeline_id=self.pipeline_id, tokens=tokens)
 
 

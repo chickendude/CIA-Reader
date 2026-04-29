@@ -131,6 +131,20 @@ def test_fallback_marks_punctuation_correctly():
     assert result.tokens[2].is_oov is False
 
 
+def test_fallback_ignores_latin_only_words_when_script_known():
+    def fb(_text: str) -> list[str]:
+        return ["Edit", "नमस्कार"]
+
+    pipe = MarathiPipeline(
+        nlp=FakeStanza(FakeDoc(sentences=[])),
+        fallback_tokenizer=fb,
+        script="Deva",
+    )
+    result = pipe.process("Edit नमस्कार")
+    assert [t.is_word for t in result.tokens] == [False, True]
+    assert [t.is_oov for t in result.tokens] == [False, True]
+
+
 def test_fallback_drops_empty_surfaces():
     # A fallback tokenizer that returns stray empty strings (e.g. because
     # IndicNLP split on a trailing newline) shouldn't emit empty tokens —

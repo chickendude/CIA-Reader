@@ -14,6 +14,7 @@ happens in the corresponding ``build_<lang>_pipeline`` factory.
 
 from __future__ import annotations
 
+import unicodedata
 from typing import Any, Protocol
 
 from app.numbers import number_forms as _compute_number_forms
@@ -43,6 +44,46 @@ NON_OOV_UPOS: frozenset[str] = frozenset({"PUNCT", "SYM", "NUM", "PROPN", "X"})
 # UD UPOS tags that aren't lexical words. The reader uses ``is_word`` to
 # skip these when counting known-words and when rendering the pop-up.
 NON_WORD_UPOS: frozenset[str] = frozenset({"PUNCT", "SYM"})
+
+_SCRIPT_RANGES: dict[str, tuple[tuple[int, int], ...]] = {
+    "Deva": ((0x0900, 0x097F),),
+    "Orya": ((0x0B00, 0x0B7F),),
+}
+
+
+def _has_target_script(surface: str, script: str | None) -> bool:
+    if not script:
+        return True
+    ranges = _SCRIPT_RANGES.get(script)
+    if ranges is None:
+        return True
+    return any(
+        start <= ord(ch) <= end
+        for ch in surface
+        for start, end in ranges
+    )
+
+
+def _has_letter(surface: str) -> bool:
+    return any(unicodedata.category(ch).startswith("L") for ch in surface)
+
+
+def should_treat_as_word(surface: str, upos: str, *, script: str | None) -> bool:
+    """Return whether a token should participate in reader word UX.
+
+    Stanza often tags English-only editorial fragments inside Indic
+    articles as ``X`` or ``PROPN``. Those are useful for preserving text,
+    but they should not become known-word entries or clickable dictionary
+    tokens for a Hindi / Marathi / Odia reader. Numeric tokens are kept so
+    the existing number-form popover still works for Latin or native digits.
+    """
+    if upos in NON_WORD_UPOS:
+        return False
+    if upos == "NUM":
+        return True
+    if _has_letter(surface) and not _has_target_script(surface, script):
+        return False
+    return True
 
 
 def parse_feats(feats: str | None) -> dict[str, str]:
@@ -134,8 +175,12 @@ class StanzaUDPipeline(Pipeline):
                 lemma = word.lemma or surface
                 upos = (word.upos or "X").upper()
                 features = parse_feats(word.feats)
-                is_word = upos not in NON_WORD_UPOS
-                is_oov = lemma == surface and upos not in NON_OOV_UPOS
+                is_word = should_treat_as_word(
+                    surface,
+                    upos,
+                    script=self._script,
+                )
+                is_oov = is_word and lemma == surface and upos not in NON_OOV_UPOS
                 tokens.append(
                     Token(
                         idx=idx,
@@ -209,4 +254,5 @@ __all__ = [
     "StanzaLike",
     "StanzaUDPipeline",
     "parse_feats",
+    "should_treat_as_word",
 ]
