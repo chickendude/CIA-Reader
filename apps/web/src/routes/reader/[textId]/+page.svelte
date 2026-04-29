@@ -362,31 +362,34 @@
     color: var(--ink, var(--color-fg));
     /* Fill the AppShell's content track so page mode can occupy the
        full vertical space (T-5.23). Children flex-stack vertically:
-       fluid body and progress foot — the top bar is fixed across the
-       whole viewport, so the body just needs the matching padding. */
+       sticky top bar, fluid body, and progress foot. */
     min-height: 100dvh;
     display: flex;
     flex-direction: column;
-    padding-top: var(--reader-top-h, 0px);
+  }
+  /* The word side-panel is a permanent right column on desktop. Pad
+     the reader so its chapter, header, and progress strip never run
+     behind it. The panel width comes from Sheet's --sheet-width
+     (default 380px). */
+  @media (min-width: 960px) {
+    .reader {
+      padding-right: 380px;
+    }
   }
   /* Page mode is meant to behave like a book — no vertical scroll;
-     overflow stays inside the viewport, page arrows step through it.
-     Hard-cap the height so the inner flex chain (.reader-page-wrap →
-     .reader-page-viewport with overflow:hidden) actually constrains
-     the content, instead of letting min-height grow with it. */
+     overflow stays inside the viewport, page arrows step through it. */
   .reader[data-mode='page'] {
     height: 100dvh;
     min-height: 0;
     overflow: hidden;
   }
-  /* Full-viewport top bar so the rail sits below it (rail reads the
-     same `--reader-top-h` variable to know how much room to leave). */
+  /* The top bar lives inside the reader's right column (sticky inside
+     the AppShell content track, not over the rail). The right side
+     panel reads `--reader-top-h` to anchor below it. */
   .reader-top {
-    position: fixed;
+    position: sticky;
     top: 0;
-    left: 0;
-    right: 0;
-    z-index: 20;
+    z-index: 5;
     display: grid;
     grid-template-columns: 1fr;
     gap: 0.5rem 1rem;

@@ -55,13 +55,16 @@
   // anchorRect is accepted but unused — anchor positioning was used
   // before T-5.10 switched to Sheet. Kept on the prop signature for
   // backward compat with callers that still pass it.
+  // `token` is nullable now: the side panel renders unconditionally
+  // on desktop (static layout) and shows an empty-state prompt when
+  // the user hasn't picked a word yet.
   let {
     token,
     isOwner,
     onClose,
     onStatusChange,
   }: {
-    token: ServerToken;
+    token: ServerToken | null;
     anchorRect?: { top: number; left: number; bottom: number; right: number };
     isOwner: boolean;
     onClose: () => void;
@@ -75,9 +78,22 @@
   let loadError = $state<string | null>(null);
   let showAlternates = $state(false);
   let optimisticStatus = $state<'unknown' | 'learning' | 'known' | 'ignored'>(
-    untrack(() => token.status),
+    untrack(() => token?.status ?? 'unknown'),
   );
   let writeError = $state<string | null>(null);
+
+  // Desktop (>=960px) shows the panel as a static right column —
+  // always rendered. Mobile slides it up only when a word is active.
+  let isDesktop = $state(false);
+  $effect(() => {
+    if (typeof window === 'undefined') return;
+    const mq = window.matchMedia('(min-width: 960px)');
+    const apply = () => (isDesktop = mq.matches);
+    apply();
+    mq.addEventListener('change', apply);
+    return () => mq.removeEventListener('change', apply);
+  });
+  const sheetOpen = $derived(isDesktop || token !== null);
 
   // Re-fetch translations whenever the token prop changes. `$effect`
   // runs the body each time `token` (and thus `token.id` / `lemmaId`)
@@ -86,6 +102,12 @@
   // instead of leaving the old one stuck.
   $effect(() => {
     const t = token;
+    if (!t) {
+      payload = null;
+      loadError = null;
+      optimisticStatus = 'unknown';
+      return;
+    }
     optimisticStatus = t.status;
     if (!t.lemmaId) {
       payload = null;
@@ -116,7 +138,7 @@
   });
 
   function handleKeydown(e: KeyboardEvent) {
-    if (!isOwner || !token.lemmaId) return;
+    if (!isOwner || !token?.lemmaId) return;
     // T-5.21: skip the k/l/i shortcuts whenever the user is typing
     // into a form field — otherwise typing 'l' in the add-translation
     // textarea would silently flip the lemma to learning.
@@ -192,7 +214,7 @@
     body: string,
     parentTranslationId: string | null,
   ): Promise<PublicTranslation> {
-    if (!token.lemmaId) throw new Error('Missing lemma id');
+    if (!token || !token.lemmaId) throw new Error('Missing lemma id');
     const res = await fetch('/api/v1/translations', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -237,7 +259,7 @@
   }
 
   async function submitNewTranslation() {
-    if (!token.lemmaId) return;
+    if (!token || !token.lemmaId) return;
     const trimmed = newTranslationBody.trim();
     if (trimmed.length === 0) {
       addError = 'Translation cannot be empty.';
@@ -292,7 +314,7 @@
   }
 
   async function submitCustomize() {
-    if (!customizingId || !token.lemmaId) return;
+    if (!customizingId || !token || !token.lemmaId) return;
     const trimmed = customizeBody.trim();
     if (trimmed.length === 0) {
       customizeError = 'Translation cannot be empty.';
@@ -316,7 +338,7 @@
   async function markStatus(
     status: 'unknown' | 'learning' | 'known' | 'ignored',
   ) {
-    if (!token.lemmaId) return;
+    if (!token || !token.lemmaId) return;
     const lemmaId = token.lemmaId;
     const previous = optimisticStatus;
     optimisticStatus = status;
@@ -341,20 +363,27 @@
 <svelte:window onkeydown={handleKeydown} />
 
 <!-- T-5.17: dimmed=false so the reader paragraph remains readable
-     while a word is locked in the panel. -->
-<Sheet open={true} onClose={onClose} title="" dimmed={false}>
-  <div data-testid="word-popup">
-    <header class="sp-head">
-      <button
-        type="button"
-        class="sp-close"
-        aria-label="Close"
-        title="Close"
-        onclick={onClose}
-      >
-        ×
-      </button>
-      <h2 class="sp-word">{token.surface}</h2>
+     while a word is locked in the panel.
+     The panel is always open on desktop (static right column) and
+     conditional on mobile (slides up only when a word is picked). -->
+<Sheet open={sheetOpen} onClose={onClose} title="" dimmed={false}>
+  {#if !token}
+    <div class="sp-empty" data-testid="word-popup-empty">
+      <p>Click a word to see its definition.</p>
+    </div>
+  {:else}
+    <div data-testid="word-popup">
+      <header class="sp-head">
+        <button
+          type="button"
+          class="sp-close"
+          aria-label="Close"
+          title="Close"
+          onclick={onClose}
+        >
+          ×
+        </button>
+        <h2 class="sp-word">{token.surface}</h2>
       {#if token.romanization}
         <p class="sp-roman">{token.romanization}</p>
       {/if}
@@ -554,10 +583,18 @@
         </p>
       {/if}
     {/if}
-  </div>
+    </div>
+  {/if}
 </Sheet>
 
 <style>
+  .sp-empty {
+    color: var(--ink-3, var(--color-fg-muted));
+    font-size: 0.85rem;
+    font-style: italic;
+    text-align: center;
+    padding: 1.5rem 0.5rem;
+  }
   .sp-head {
     position: relative;
     margin-bottom: 0.85rem;

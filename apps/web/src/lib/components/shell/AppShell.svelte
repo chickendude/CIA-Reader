@@ -389,10 +389,7 @@
     text-overflow: ellipsis;
   }
 
-  /* —— Rail (desktop only) ——
-     The rail sits below any page-level top bar via `--reader-top-h`,
-     a CSS var the reader sets to its top-bar height. Pages that don't
-     have a top bar leave the var unset and the rail goes top:0. */
+  /* —— Rail (desktop only) —— */
   .rail {
     grid-area: rail;
     display: none;
@@ -406,8 +403,8 @@
       var(--paper-2, transparent)
     );
     position: sticky;
-    top: var(--reader-top-h, 0px);
-    height: calc(100dvh - var(--reader-top-h, 0px));
+    top: 0;
+    height: 100dvh;
   }
   @media (min-width: 960px) {
     .rail {
