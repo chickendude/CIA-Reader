@@ -14,7 +14,7 @@
 import { and, eq, inArray, isNotNull } from 'drizzle-orm';
 
 import { db, schema } from '../db/index.js';
-import type { TextToken, UserKnownLemma } from '../db/schema.js';
+import type { TextToken, TokenCorrection, UserKnownLemma } from '../db/schema.js';
 
 /**
  * One candidate in the disambiguation list (T-6.1). Set on
@@ -79,9 +79,38 @@ export async function loadChapterTokens(
 
   if (tokens.length === 0) return null;
 
-  // Primary lemma for each token (the worker's top pick).
+  // T-6.4: pull the viewer's per-token corrections in one SELECT
+  // so we can apply them in the same map below without a per-token
+  // round trip. Anonymous viewers don't have corrections; signed-in
+  // viewers usually have only a handful per chapter, so this is
+  // cheap.
+  const correctionsByTokenId = new Map<string, TokenCorrection>();
+  if (viewerId && tokens.length > 0) {
+    const corrRows = (await db
+      .select()
+      .from(schema.tokenCorrections)
+      .where(
+        and(
+          eq(schema.tokenCorrections.userId, viewerId),
+          inArray(
+            schema.tokenCorrections.tokenId,
+            tokens.map((t) => t.id),
+          ),
+        ),
+      )) as TokenCorrection[];
+    for (const r of corrRows) correctionsByTokenId.set(r.tokenId, r);
+  }
+
+  // Primary lemma for each token (the worker's top pick) AFTER any
+  // T-6.4 correction is applied — that way the gloss + known-status
+  // joins below pick up the corrected lemma in a single pass instead
+  // of fetching twice.
   const primaryLemmaIds = tokens
-    .map((t) => t.lemmaId)
+    .map((t) => {
+      const c = correctionsByTokenId.get(t.id);
+      if (c?.chosenLemmaId) return c.chosenLemmaId;
+      return t.lemmaId;
+    })
     .filter((id): id is string => !!id);
   // T-6.1: also pre-fetch every lemma referenced as a CANDIDATE so
   // the popup's alternate-meanings list can render headword + POS
@@ -223,42 +252,94 @@ export async function loadChapterTokens(
   }
 
   return tokens.map((t) => {
-    const status: RenderedToken['status'] =
-      t.lemmaId && statusByLemma.has(t.lemmaId)
-        ? statusByLemma.get(t.lemmaId)!
+    // T-6.4: apply the viewer's persistent correction here so the
+    // chosen lemma drives every downstream concern (status colour,
+    // gloss tooltip, candidate list).
+    const correction = correctionsByTokenId.get(t.id) ?? null;
+    const correctedLemmaId =
+      correction && correction.chosenLemmaId
+        ? correction.chosenLemmaId
+        : t.lemmaId;
+    // mark_proper_noun / mark_foreign / mark_not_a_word: the user
+    // declared this surface isn't a learnable word. Drop the lemma
+    // tie + suppress is_oov / is_ambiguous so the reader stops
+    // colouring it. The status maps to 'ignored' so it counts as
+    // "deliberately not learning."
+    const isMarkedNonWord =
+      correction != null &&
+      (correction.type === 'mark_proper_noun' ||
+        correction.type === 'mark_foreign' ||
+        correction.type === 'mark_not_a_word');
+    const effectiveLemmaId = isMarkedNonWord ? null : correctedLemmaId;
+
+    const status: RenderedToken['status'] = isMarkedNonWord
+      ? 'ignored'
+      : effectiveLemmaId && statusByLemma.has(effectiveLemmaId)
+        ? statusByLemma.get(effectiveLemmaId)!
         : 'unknown';
+
     // T-6.1: build the candidate list, dropping (a) candidates with
     // no lemmaId (the worker couldn't link them — those become
     // "search the dictionary" picks under T-6.2), and (b) the
-    // current primary's lemmaId so the popup never offers the user
-    // their already-active pick. Sort descending by score so the
-    // strongest alternative reads first.
+    // currently-active lemma (post-correction) so the popup never
+    // offers the user their already-active pick. T-6.4: if the
+    // user picked a candidate, the worker's original primary
+    // re-enters the candidate list so they can flip back without
+    // re-hunting it.
     const candidates: RenderedCandidate[] = [];
-    for (const c of t.lemmaCandidates) {
-      if (!c.lemmaId) continue;
-      if (c.lemmaId === t.lemmaId) continue;
-      const meta = lemmaMetaById.get(c.lemmaId);
-      if (!meta) continue;
+    const seen = new Set<string>();
+    function pushCandidate(
+      lemmaId: string,
+      score: number,
+      features: Record<string, string>,
+    ) {
+      if (lemmaId === effectiveLemmaId) return;
+      if (seen.has(lemmaId)) return;
+      const meta = lemmaMetaById.get(lemmaId);
+      if (!meta) return;
+      seen.add(lemmaId);
       candidates.push({
-        lemmaId: c.lemmaId,
+        lemmaId,
         headword: meta.headword,
         pos: meta.pos,
-        glossDefault: glossByLemma.get(c.lemmaId) ?? null,
-        score: c.score,
-        features: c.features,
+        glossDefault: glossByLemma.get(lemmaId) ?? null,
+        score,
+        features,
       });
     }
+    for (const c of t.lemmaCandidates) {
+      if (!c.lemmaId) continue;
+      pushCandidate(c.lemmaId, c.score, c.features);
+    }
+    // Re-introduce the worker's original primary as a candidate
+    // when the viewer's correction has bumped it out — they may
+    // want to revert with one tap.
+    if (
+      correction &&
+      correction.chosenLemmaId &&
+      t.lemmaId &&
+      t.lemmaId !== correction.chosenLemmaId &&
+      !isMarkedNonWord
+    ) {
+      pushCandidate(t.lemmaId, 0, {});
+    }
     candidates.sort((a, b) => b.score - a.score);
+
     return {
       id: t.id,
       idx: t.idx,
       surface: t.surface,
-      isWord: t.isWord,
-      isAmbiguous: t.isAmbiguous,
-      isOov: t.isOov,
-      lemmaId: t.lemmaId,
+      isWord: isMarkedNonWord ? false : t.isWord,
+      isAmbiguous: candidates.length > 0,
+      // mark_* corrections bypass OOV: the user has told us this
+      // surface is a proper noun / foreign / non-word, not "missing
+      // from the dictionary".
+      isOov: isMarkedNonWord ? false : t.isOov,
+      lemmaId: effectiveLemmaId,
       romanization: t.romanization,
-      glossDefault: t.lemmaId ? glossByLemma.get(t.lemmaId) ?? null : null,
+      glossDefault: effectiveLemmaId
+        ? glossByLemma.get(effectiveLemmaId) ?? null
+        : null,
       candidates,
       status,
     };

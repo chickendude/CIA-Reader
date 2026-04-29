@@ -36,6 +36,10 @@ vi.mock('../db/index.js', () => ({
       lemmaId: 'user_known_lemmas.lemma_id',
       status: 'user_known_lemmas.status',
     },
+    tokenCorrections: {
+      userId: 'token_corrections.user_id',
+      tokenId: 'token_corrections.token_id',
+    },
     lemmas: {
       id: 'lemmas.id',
       glossDefault: 'lemmas.gloss_default',
@@ -82,6 +86,7 @@ describe('loadChapterTokens', () => {
 
   it('returns tokens with status=unknown when the viewer has no known-lemma rows', async () => {
     stage([tokenRow({ id: 't1', idx: 0 }), tokenRow({ id: 't2', idx: 1 })]);
+    stage([]); // token_corrections (T-6.4) — none
     stage([]); // user_known_lemmas → empty
     stage([]); // lemmas (gloss lookup) → empty
     const result = await loadChapterTokens('chap-1', 'user-1');
@@ -95,6 +100,7 @@ describe('loadChapterTokens', () => {
       tokenRow({ id: 't2', idx: 1, lemmaId: 'lem-learning' }),
       tokenRow({ id: 't3', idx: 2, lemmaId: 'lem-other' }),
     ]);
+    stage([]); // token_corrections (T-6.4) — none
     stage([
       { userId: 'user-1', lemmaId: 'lem-known', status: 'known' },
       { userId: 'user-1', lemmaId: 'lem-learning', status: 'learning' },
@@ -114,6 +120,7 @@ describe('loadChapterTokens', () => {
       tokenRow({ id: 't2', idx: 1, lemmaId: 'lem-b' }),
       tokenRow({ id: 't3', idx: 2, lemmaId: null, isWord: false, surface: ' ' }),
     ]);
+    stage([]); // token_corrections (T-6.4)
     stage([]); // user_known_lemmas
     stage([
       { id: 'lem-a', language: 'hi', headword: 'सुबह', glossDefault: 'morning' },
@@ -136,6 +143,7 @@ describe('loadChapterTokens', () => {
     // Common case: NLP tagged "पार्क" as PROPN with no gloss; the
     // dictionary entry is under "पार्क/NOUN" with the actual gloss.
     stage([tokenRow({ id: 't1', idx: 0, lemmaId: 'lem-propn' })]);
+    stage([]); // token_corrections (T-6.4)
     stage([]); // user_known_lemmas
     stage([
       { id: 'lem-propn', language: 'hi', headword: 'पार्क', glossDefault: null },
@@ -149,13 +157,14 @@ describe('loadChapterTokens', () => {
 
   it('skips the sibling fallback query entirely when every lemma has its own gloss (T-3.14)', async () => {
     stage([tokenRow({ id: 't1', idx: 0, lemmaId: 'lem-a' })]);
+    stage([]); // token_corrections (T-6.4)
     stage([]); // user_known_lemmas
     stage([{ id: 'lem-a', language: 'hi', headword: 'पानी', glossDefault: 'water' }]);
-    // No 4th stage — fallback query must not fire.
+    // No 5th stage — fallback query must not fire.
     await loadChapterTokens('chap-1', 'user-1');
-    // 1 (tokens) + 1 (user_known_lemmas) + 1 (gloss lookup) = 3, no
-    // sibling fallback.
-    expect(selectFn).toHaveBeenCalledTimes(3);
+    // 1 (tokens) + 1 (token_corrections) + 1 (user_known_lemmas) +
+    // 1 (gloss lookup) = 4, no sibling fallback.
+    expect(selectFn).toHaveBeenCalledTimes(4);
   });
 
   it('populates token.candidates with metadata pulled from the lemmas table (T-6.1)', async () => {
@@ -173,6 +182,7 @@ describe('loadChapterTokens', () => {
         ],
       }),
     ]);
+    stage([]); // token_corrections (T-6.4)
     stage([]); // user_known_lemmas
     stage([
       {
@@ -210,6 +220,90 @@ describe('loadChapterTokens', () => {
         features: { Case: 'Acc' },
       },
     ]);
+  });
+
+  it('applies a pick_candidate correction at read time, swapping the active lemma (T-6.4)', async () => {
+    stage([
+      tokenRow({
+        id: 't1',
+        idx: 0,
+        lemmaId: 'lem-original',
+        isAmbiguous: true,
+        lemmaCandidates: [
+          { lemmaId: 'lem-original', features: {}, score: 0.6 },
+          { lemmaId: 'lem-corrected', features: {}, score: 0.3 },
+        ],
+      }),
+    ]);
+    stage([
+      {
+        userId: 'user-1',
+        tokenId: 't1',
+        type: 'pick_candidate',
+        chosenLemmaId: 'lem-corrected',
+      },
+    ]);
+    stage([]); // user_known_lemmas
+    stage([
+      {
+        id: 'lem-original',
+        language: 'hi',
+        headword: 'मूल',
+        pos: 'NOUN',
+        glossDefault: 'original',
+      },
+      {
+        id: 'lem-corrected',
+        language: 'hi',
+        headword: 'सही',
+        pos: 'VERB',
+        glossDefault: 'corrected',
+      },
+    ]);
+    const result = await loadChapterTokens('chap-1', 'user-1');
+    expect(result![0]).toMatchObject({
+      id: 't1',
+      lemmaId: 'lem-corrected',
+      glossDefault: 'corrected',
+    });
+    // The previous primary now appears in the candidate list so the
+    // user can flip back without leaving the popup.
+    const cands = result![0]!.candidates.map((c) => c.lemmaId);
+    expect(cands).toContain('lem-original');
+    expect(cands).not.toContain('lem-corrected');
+  });
+
+  it('mark_proper_noun clears the lemma + sets status=ignored (T-6.4)', async () => {
+    stage([
+      tokenRow({ id: 't1', idx: 0, lemmaId: 'lem-x', isOov: false }),
+    ]);
+    stage([
+      {
+        userId: 'user-1',
+        tokenId: 't1',
+        type: 'mark_proper_noun',
+        chosenLemmaId: null,
+      },
+    ]);
+    stage([]); // user_known_lemmas
+    stage([
+      {
+        id: 'lem-x',
+        language: 'hi',
+        headword: 'X',
+        pos: 'NOUN',
+        // Non-null gloss so the sibling-fallback SELECT doesn't fire.
+        glossDefault: 'placeholder',
+      },
+    ]);
+    const result = await loadChapterTokens('chap-1', 'user-1');
+    expect(result![0]).toMatchObject({
+      id: 't1',
+      lemmaId: null,
+      status: 'ignored',
+      isWord: false,
+      isOov: false,
+    });
   });
 
   it('handles anonymous viewers (no user_known_lemmas SELECT, every status=unknown)', async () => {
