@@ -39,6 +39,10 @@
     return qs ? `?${qs}` : '';
   }
 
+  function exportHref(language: string): string {
+    return `/api/v1/me/vocabulary/export?language=${encodeURIComponent(language)}`;
+  }
+
   function relativeFromNow(date: Date | string): string {
     const d = typeof date === 'string' ? new Date(date) : date;
     const seconds = Math.max(0, (Date.now() - d.getTime()) / 1000);
@@ -107,6 +111,30 @@
       </a>
     {/each}
   </nav>
+
+  <div class="language-row" aria-label="Language filter">
+    <a
+      class="language-chip"
+      data-active={data.filters.language === null ? '1' : '0'}
+      href={hrefWith({ language: null })}
+    >
+      All
+    </a>
+    {#each data.languages as language (language.code)}
+      <a
+        class="language-chip"
+        data-active={data.filters.language === language.code ? '1' : '0'}
+        href={hrefWith({ language: language.code })}
+      >
+        {language.nativeName}
+      </a>
+    {/each}
+    {#if data.filters.language}
+      <a class="export-link" href={exportHref(data.filters.language)}>
+        Export CSV
+      </a>
+    {/if}
+  </div>
 
   {#if data.rows.length === 0}
     <p class="empty">
@@ -282,6 +310,54 @@
       transparent
     );
     color: var(--ink, var(--color-fg));
+  }
+
+  .language-row {
+    display: flex;
+    gap: 0.4rem;
+    align-items: center;
+    flex-wrap: wrap;
+    margin: -0.25rem 0 0.9rem;
+  }
+  .language-chip,
+  .export-link {
+    min-height: 32px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 7px;
+    border: 1px solid var(--rule, var(--color-border));
+    padding: 0 0.7rem;
+    font-family: var(--font-sans, var(--font-ui));
+    font-size: 0.76rem;
+    color: var(--ink-2, var(--color-fg-muted));
+    text-decoration: none;
+    background: var(--paper, var(--color-bg));
+  }
+  .language-chip[data-active='1'] {
+    border-color: color-mix(
+      in oklch,
+      var(--ink, var(--color-fg)) 22%,
+      var(--rule, var(--color-border))
+    );
+    color: var(--ink, var(--color-fg));
+    background: color-mix(
+      in oklch,
+      var(--ink, var(--color-fg)) 6%,
+      var(--paper, var(--color-bg))
+    );
+  }
+  .export-link {
+    margin-left: auto;
+    background: var(--ink, var(--color-fg));
+    border-color: var(--ink, var(--color-fg));
+    color: var(--paper, var(--color-bg));
+  }
+  @media (max-width: 560px) {
+    .export-link {
+      width: 100%;
+      margin-left: 0;
+    }
   }
 
   .card {
