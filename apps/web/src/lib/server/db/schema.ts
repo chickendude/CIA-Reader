@@ -901,6 +901,109 @@ export const tokenCorrections = pgTable(
   }),
 );
 
+/**
+ * Curator moderation queue for parse / lemma errors (T-6.5).
+ *
+ * Distinct from `token_corrections`: corrections are *per-user*
+ * picks the reader applies to their own view. A `parse_report` is
+ * a *site-wide* claim that the worker (or the dictionary) is
+ * mis-modeling a specific surface — surfaced to curators on T-6.6's
+ * moderation page, who promote accepted reports to
+ * `form_lemma_overrides` (the global override table) and/or fix
+ * the dictionary itself.
+ *
+ * Two routes file rows here:
+ *
+ *  - User-initiated: T-6.2's correction modal optionally checks
+ *    "Also report to moderators" when the user picks a manual
+ *    lemma / proposes a new one. (Default OFF for `pick_candidate`,
+ *    ON for `manual_lemma` / `new_lemma`.)
+ *
+ *  - System-initiated: T-6.7's aggregation worker auto-files a
+ *    `triaged`-status report when ≥K users converge on the same
+ *    correction. The curator's choice in T-6.6 promotes or vetoes.
+ *
+ * Duplicate merging: a new report whose
+ * `(language, surface_nfc, context_signature, corrected_lemma_id)`
+ * matches an existing open / triaged row increments that row's
+ * `duplicate_count` instead of creating a new row. Resolved /
+ * rejected rows do NOT collide — re-files after a curator
+ * resolution start a new conversation.
+ */
+export const parseReportStatus = pgEnum('parse_report_status', [
+  'open',
+  'triaged',
+  'resolved',
+  'rejected',
+  'duplicate',
+  'deferred',
+]);
+
+export const parseReports = pgTable(
+  'parse_reports',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    tokenId: uuid('token_id').references(() => textTokens.id, {
+      onDelete: 'set null',
+    }),
+    language: language('language').notNull(),
+    surfaceNfc: text('surface_nfc').notNull(),
+    // sha1-16 of (prev_pos, cur_pos, next_pos) — same shape as
+    // form_lemma_overrides.context_signature so the dedup math
+    // matches what T-6.7's aggregation worker writes downstream.
+    contextSignature: text('context_signature').notNull().default(''),
+    // Snapshot of the worker's top-K candidate list at report time —
+    // useful for the moderation UI even when the underlying token
+    // has since been re-processed.
+    originalCandidates: jsonb('original_candidates')
+      .$type<
+        Array<{
+          lemmaId: string | null;
+          score: number;
+          features: Record<string, string>;
+        }>
+      >()
+      .notNull()
+      .default([]),
+    correctedLemmaId: uuid('corrected_lemma_id').references(() => lemmas.id, {
+      onDelete: 'set null',
+    }),
+    correctionType: tokenCorrectionType('correction_type').notNull(),
+    reporterId: uuid('reporter_id').references(() => users.id, {
+      onDelete: 'set null',
+    }),
+    note: text('note'),
+    status: parseReportStatus('status').notNull().default('open'),
+    assignedReviewerId: uuid('assigned_reviewer_id').references(
+      () => users.id,
+      {
+        onDelete: 'set null',
+      },
+    ),
+    resolvedAt: timestamp('resolved_at', { withTimezone: true }),
+    resolutionNote: text('resolution_note'),
+    duplicateCount: integer('duplicate_count').notNull().default(1),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    languageStatusIdx: index('parse_reports_lang_status_idx').on(
+      t.language,
+      t.status,
+    ),
+    dedupIdx: index('parse_reports_dedup_idx').on(
+      t.language,
+      t.surfaceNfc,
+      t.contextSignature,
+      t.correctedLemmaId,
+    ),
+  }),
+);
+
 export type Text = InferSelectModel<typeof texts>;
 export type TextChapter = InferSelectModel<typeof textChapters>;
 export type NlpJob = InferSelectModel<typeof nlpJobs>;
@@ -909,3 +1012,4 @@ export type UserKnownLemma = InferSelectModel<typeof userKnownLemmas>;
 export type UserTextProgress = InferSelectModel<typeof userTextProgress>;
 export type FormLemmaOverride = InferSelectModel<typeof formLemmaOverrides>;
 export type TokenCorrection = InferSelectModel<typeof tokenCorrections>;
+export type ParseReport = InferSelectModel<typeof parseReports>;
