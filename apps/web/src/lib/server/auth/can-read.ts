@@ -44,9 +44,18 @@ export async function canReadText(
   if (text.visibility === 'official') return true;
   // 2. The owner can always read their own text.
   if (viewer && text.ownerId && text.ownerId === viewer.id) return true;
-  // 3. Direct + group shares (M7) — placeholder for the M7 ticket to
-  //    fill in. Falling through to false here is the deny-by-default
-  //    policy.
+  // 3. T-7.2: direct shares. A row in `text_shares` keyed on
+  //    (text_id, viewer.id) grants read access regardless of the
+  //    text's visibility. Imported lazily so unit tests of pure
+  //    visibility logic don't need to mock the sharing module.
+  if (viewer && viewer.id) {
+    const { viewerHasDirectShare } = await import('../texts/sharing.js');
+    if (await viewerHasDirectShare(viewer.id, text.id)) return true;
+    // 4. T-7.4: group shares — viewer is a member of a group
+    //    that's been granted access to this text.
+    const { viewerHasGroupShare } = await import('../groups.js');
+    if (await viewerHasGroupShare(viewer.id, text.id)) return true;
+  }
   return false;
 }
 

@@ -120,6 +120,20 @@
       "when": 1777427948215,
       "tag": "0016_friendly_tarot",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1777429173400,
+      "tag": "0017_curved_unicorn",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1777429423523,
+      "tag": "0018_chief_caretaker",
+      "breakpoints": true
     }
   ]
 }
