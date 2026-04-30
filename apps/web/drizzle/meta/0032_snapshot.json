@@ -1,6 +1,6 @@
 {
-  "id": "9e1428b5-8c98-4396-9edb-b10f39765b5a",
-  "prevId": "e24e4dec-7944-47d2-a659-c22c1c7f7ee6",
+  "id": "8ebca072-47f1-4a97-b9ca-597580630a06",
+  "prevId": "9e1428b5-8c98-4396-9edb-b10f39765b5a",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -1229,7 +1229,13 @@
           "name": "lemma_id",
           "type": "uuid",
           "primaryKey": false,
-          "notNull": true
+          "notNull": false
+        },
+        "phrase_id": {
+          "name": "phrase_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
         },
         "editor_id": {
           "name": "editor_id",
@@ -1286,6 +1292,27 @@
           "method": "btree",
           "with": {}
         },
+        "lemma_edit_history_phrase_idx": {
+          "name": "lemma_edit_history_phrase_idx",
+          "columns": [
+            {
+              "expression": "phrase_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
         "lemma_edit_history_editor_idx": {
           "name": "lemma_edit_history_editor_idx",
           "columns": [
@@ -1309,6 +1336,19 @@
           "tableTo": "lemmas",
           "columnsFrom": [
             "lemma_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "lemma_edit_history_phrase_id_phrases_id_fk": {
+          "name": "lemma_edit_history_phrase_id_phrases_id_fk",
+          "tableFrom": "lemma_edit_history",
+          "tableTo": "phrases",
+          "columnsFrom": [
+            "phrase_id"
           ],
           "columnsTo": [
             "id"
@@ -2754,6 +2794,13 @@
         },
         "curator_locked": {
           "name": "curator_locked",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "hidden": {
+          "name": "hidden",
           "type": "boolean",
           "primaryKey": false,
           "notNull": true,
@@ -5080,7 +5127,13 @@
         "form_delete",
         "lemma_merge",
         "lemma_split",
-        "translation_reorder"
+        "translation_reorder",
+        "phrase_update",
+        "phrase_lock",
+        "phrase_unlock",
+        "phrase_hide",
+        "phrase_unhide",
+        "phrase_merge"
       ]
     },
     "public.lemma_proposal_status": {

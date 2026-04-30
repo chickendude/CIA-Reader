@@ -108,6 +108,14 @@ vi.mock('./phrase-spans.js', () => ({
   rebuildChapterSpans: (...a: unknown[]) => rebuildChapterSpans(...a),
 }));
 
+// T-14.5a: stub the phrase-proposals queue write. The hook is
+// covered by `phrase-proposals.test.ts`; this fake is just so
+// existing dispatcher tests don't have to stage extra DB calls.
+const upsertPhraseProposals = vi.fn();
+vi.mock('./phrase-proposals.js', () => ({
+  upsertPhraseProposals: (...a: unknown[]) => upsertPhraseProposals(...a),
+}));
+
 const { processTextNow } = await import('./in-process-dispatcher.js');
 
 beforeEach(() => {
@@ -120,6 +128,8 @@ beforeEach(() => {
   nlpProcess.mockReset();
   rebuildChapterSpans.mockReset();
   rebuildChapterSpans.mockResolvedValue(0);
+  upsertPhraseProposals.mockReset();
+  upsertPhraseProposals.mockResolvedValue(0);
 });
 
 afterEach(() => {
@@ -573,5 +583,100 @@ describe('processTextNow', () => {
       chapterId: 'chap-1',
       language: 'hi',
     });
+  });
+
+  it('persists NLP phrase proposals when the response includes proposed_phrases (T-14.5a)', async () => {
+    stage([{ id: 'text-1', language: 'hi' }]);
+    stage([{ id: 'chap-1', body: 'one' }]);
+    // Pre-seed the lemma index with both candidate lemmas so
+    // pickLemmaId hits byHeadwordPos and doesn't fire
+    // ensureLemma's SELECT+INSERT pair per token.
+    stage([
+      { id: 'lemma-intazaar', headword: 'इंतज़ार', pos: 'NOUN' },
+      { id: 'lemma-karnaa', headword: 'करना', pos: 'VERB' },
+    ]);
+    stage([]); // overrides
+
+    nlpProcess.mockResolvedValueOnce({
+      language: 'hi',
+      pipeline_id: 'hi/stub',
+      tokens: [
+        {
+          idx: 0,
+          surface: 'इंतज़ार',
+          is_word: true,
+          is_ambiguous: false,
+          is_oov: false,
+          romanization: null,
+          number_forms: null,
+          candidates: [
+            { lemma: 'इंतज़ार', pos: 'NOUN', score: 0.9, features: {} },
+          ],
+        },
+        {
+          idx: 1,
+          surface: 'किया',
+          is_word: true,
+          is_ambiguous: false,
+          is_oov: false,
+          romanization: null,
+          number_forms: null,
+          candidates: [
+            { lemma: 'करना', pos: 'VERB', score: 0.9, features: {} },
+          ],
+        },
+      ],
+      proposed_phrases: [
+        {
+          start_idx: 0,
+          end_idx: 1,
+          pattern_id: 'hi.conjunct_verb_karna',
+          surfaces: ['इंतज़ार', 'किया'],
+        },
+      ],
+    });
+
+    await processTextNow('text-1');
+    expect(upsertPhraseProposals).toHaveBeenCalledTimes(1);
+    expect(upsertPhraseProposals).toHaveBeenCalledWith({
+      chapterId: 'chap-1',
+      language: 'hi',
+      proposals: [
+        {
+          start_idx: 0,
+          end_idx: 1,
+          pattern_id: 'hi.conjunct_verb_karna',
+          surfaces: ['इंतज़ार', 'किया'],
+        },
+      ],
+    });
+  });
+
+  it('skips the proposals upsert when the NLP response has no proposed_phrases (T-14.5a)', async () => {
+    stage([{ id: 'text-1', language: 'hi' }]);
+    stage([{ id: 'chap-1', body: 'one' }]);
+    stage([{ id: 'lemma-bolnaa', headword: 'बोलना', pos: 'verb' }]);
+    stage([]);
+    nlpProcess.mockResolvedValueOnce({
+      language: 'hi',
+      pipeline_id: 'hi/stub',
+      tokens: [
+        {
+          idx: 0,
+          surface: 'बोलना',
+          is_word: true,
+          is_ambiguous: false,
+          is_oov: false,
+          romanization: null,
+          number_forms: null,
+          candidates: [
+            { lemma: 'बोलना', pos: 'verb', score: 1, features: {} },
+          ],
+        },
+      ],
+      // proposed_phrases omitted entirely (older NLP build).
+    });
+    await processTextNow('text-1');
+    expect(upsertPhraseProposals).not.toHaveBeenCalled();
   });
 });
