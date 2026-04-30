@@ -38,10 +38,28 @@ export interface NlpToken {
   number_forms: NumberForms | null;
 }
 
+/** T-14.5: rule-based phrase proposal. The NLP service runs a
+ *  per-language `PhraseDetector` (see `services/nlp/app/phrases/`)
+ *  over the token stream and emits one of these per pattern match.
+ *  The web worker (T-14.5a) writes proposals to `phrase_proposals`
+ *  and a periodic promotion pass moves ≥3-chapter occurrences into
+ *  `phrases` (`source='nlp'`). Surfaces are NFC-normalised on the
+ *  Python side. */
+export interface ProposedPhrase {
+  start_idx: number;
+  end_idx: number;
+  pattern_id: string;
+  surfaces: string[];
+}
+
 export interface ProcessResponse {
   language: string;
   pipeline_id: string;
   tokens: NlpToken[];
+  /** T-14.5. Empty array when no patterns matched; older NLP
+   *  service builds may omit the field, so consumers must default
+   *  to an empty list. */
+  proposed_phrases?: ProposedPhrase[];
 }
 
 export interface HealthResponse {

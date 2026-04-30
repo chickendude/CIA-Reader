@@ -1,0 +1,38 @@
+# Marathi phrase patterns (T-14.5).
+#
+# Marathi conjunct verbs use करणे ("to do") and होणे ("to be") as the
+# light verbs, parallel to Hindi करना / होना. Compound postpositions
+# in Marathi tend to be a single morphological cluster
+# (मध्ये, वर, खाली) — the patterns below treat the surface form as
+# the matcher, since Stanza's `mr` model occasionally tags them as
+# part of the head noun's analysis.
+
+- id: mr.conjunct_verb_karne
+  description: NOUN/ADJ + करणे
+  match:
+    - upos: [NOUN, ADJ]
+    - lemma: करणे
+
+- id: mr.conjunct_verb_hone
+  description: NOUN/ADJ + होणे
+  match:
+    - upos: [NOUN, ADJ]
+    - lemma: होणे
+
+- id: mr.compound_postp_madhye
+  description: Compound postposition मध्ये ("in")
+  match:
+    - upos: [NOUN, PROPN]
+    - surface: [मध्ये]
+
+- id: mr.compound_postp_var
+  description: Compound postposition वर ("on")
+  match:
+    - upos: [NOUN, PROPN]
+    - surface: [वर]
+
+- id: mr.compound_postp_khali
+  description: Compound postposition खाली ("under")
+  match:
+    - upos: [NOUN, PROPN]
+    - surface: [खाली]
