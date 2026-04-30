@@ -1,6 +1,6 @@
 {
-  "id": "d2f2ef38-81fc-4f82-bbec-94c07b005fa3",
-  "prevId": "8ebca072-47f1-4a97-b9ca-597580630a06",
+  "id": "9b7c4742-b046-422a-96b9-9e4da36c9901",
+  "prevId": "9e1428b5-8c98-4396-9edb-b10f39765b5a",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -2516,6 +2516,133 @@
         }
       },
       "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "public.phrase_proposals": {
+      "name": "phrase_proposals",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "language": {
+          "name": "language",
+          "type": "language",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "surface_normalised": {
+          "name": "surface_normalised",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "tokens": {
+          "name": "tokens",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "pattern_id": {
+          "name": "pattern_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "chapter_id": {
+          "name": "chapter_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "promoted_at": {
+          "name": "promoted_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "promoted_phrase_id": {
+          "name": "promoted_phrase_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "phrase_proposals_promotion_lookup_idx": {
+          "name": "phrase_proposals_promotion_lookup_idx",
+          "columns": [
+            {
+              "expression": "language",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "surface_normalised",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "phrase_proposals_chapter_id_text_chapters_id_fk": {
+          "name": "phrase_proposals_chapter_id_text_chapters_id_fk",
+          "tableFrom": "phrase_proposals",
+          "tableTo": "text_chapters",
+          "columnsFrom": [
+            "chapter_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "phrase_proposals_promoted_phrase_id_phrases_id_fk": {
+          "name": "phrase_proposals_promoted_phrase_id_phrases_id_fk",
+          "tableFrom": "phrase_proposals",
+          "tableTo": "phrases",
+          "columnsFrom": [
+            "promoted_phrase_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "phrase_proposals_occurrence_uq": {
+          "name": "phrase_proposals_occurrence_uq",
+          "nullsNotDistinct": false,
+          "columns": [
+            "chapter_id",
+            "surface_normalised",
+            "pattern_id"
+          ]
+        }
+      },
       "checkConstraints": {}
     },
     "public.phrase_tokens": {
@@ -5132,7 +5259,8 @@
       "values": [
         "official_dictionary",
         "curator",
-        "user"
+        "user",
+        "nlp"
       ]
     },
     "public.translation_target_type": {

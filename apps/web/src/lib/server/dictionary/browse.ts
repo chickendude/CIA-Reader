@@ -111,7 +111,8 @@ function baseConditions(language: LanguageCode, query: BrowseQuery) {
     conditions.push(
       sql`EXISTS (
         SELECT 1 FROM ${schema.translations} t
-        WHERE t.lemma_id = ${schema.lemmas.id}
+        WHERE t.target_type = 'lemma'
+          AND t.target_id = ${schema.lemmas.id}
           AND t.hidden = false
           AND t.source IN ('official_dictionary', 'curator')
       )`,

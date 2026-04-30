@@ -62,7 +62,6 @@ vi.mock('../db/index.js', () => ({
     phrases: { id: 'phrases.id' },
     translations: {
       id: 'translations.id',
-      lemmaId: 'translations.lemma_id',
       targetType: 'translations.target_type',
       targetId: 'translations.target_id',
       submittedBy: 'translations.submitted_by',

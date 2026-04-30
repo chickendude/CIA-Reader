@@ -107,7 +107,8 @@ vi.mock('../db/index.js', () => ({
     },
     translations: {
       id: 'translations.id',
-      lemmaId: 'translations.lemma_id',
+      targetType: 'translations.target_type',
+      targetId: 'translations.target_id',
       source: 'translations.source',
       sourceAttribution: 'translations.source_attribution',
     },

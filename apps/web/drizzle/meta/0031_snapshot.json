@@ -1,5 +1,5 @@
 {
-  "id": "8ebca072-47f1-4a97-b9ca-597580630a06",
+  "id": "9e1428b5-8c98-4396-9edb-b10f39765b5a",
   "prevId": "e24e4dec-7944-47d2-a659-c22c1c7f7ee6",
   "version": "7",
   "dialect": "postgresql",
@@ -1229,13 +1229,7 @@
           "name": "lemma_id",
           "type": "uuid",
           "primaryKey": false,
-          "notNull": false
-        },
-        "phrase_id": {
-          "name": "phrase_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
         "editor_id": {
           "name": "editor_id",
@@ -1292,27 +1286,6 @@
           "method": "btree",
           "with": {}
         },
-        "lemma_edit_history_phrase_idx": {
-          "name": "lemma_edit_history_phrase_idx",
-          "columns": [
-            {
-              "expression": "phrase_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "created_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
         "lemma_edit_history_editor_idx": {
           "name": "lemma_edit_history_editor_idx",
           "columns": [
@@ -1336,19 +1309,6 @@
           "tableTo": "lemmas",
           "columnsFrom": [
             "lemma_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "lemma_edit_history_phrase_id_phrases_id_fk": {
-          "name": "lemma_edit_history_phrase_id_phrases_id_fk",
-          "tableFrom": "lemma_edit_history",
-          "tableTo": "phrases",
-          "columnsFrom": [
-            "phrase_id"
           ],
           "columnsTo": [
             "id"
@@ -2518,6 +2478,133 @@
       "uniqueConstraints": {},
       "checkConstraints": {}
     },
+    "public.phrase_proposals": {
+      "name": "phrase_proposals",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "language": {
+          "name": "language",
+          "type": "language",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "surface_normalised": {
+          "name": "surface_normalised",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "tokens": {
+          "name": "tokens",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "pattern_id": {
+          "name": "pattern_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "chapter_id": {
+          "name": "chapter_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "promoted_at": {
+          "name": "promoted_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "promoted_phrase_id": {
+          "name": "promoted_phrase_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "phrase_proposals_promotion_lookup_idx": {
+          "name": "phrase_proposals_promotion_lookup_idx",
+          "columns": [
+            {
+              "expression": "language",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "surface_normalised",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "phrase_proposals_chapter_id_text_chapters_id_fk": {
+          "name": "phrase_proposals_chapter_id_text_chapters_id_fk",
+          "tableFrom": "phrase_proposals",
+          "tableTo": "text_chapters",
+          "columnsFrom": [
+            "chapter_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "phrase_proposals_promoted_phrase_id_phrases_id_fk": {
+          "name": "phrase_proposals_promoted_phrase_id_phrases_id_fk",
+          "tableFrom": "phrase_proposals",
+          "tableTo": "phrases",
+          "columnsFrom": [
+            "promoted_phrase_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "phrase_proposals_occurrence_uq": {
+          "name": "phrase_proposals_occurrence_uq",
+          "nullsNotDistinct": false,
+          "columns": [
+            "chapter_id",
+            "surface_normalised",
+            "pattern_id"
+          ]
+        }
+      },
+      "checkConstraints": {}
+    },
     "public.phrase_tokens": {
       "name": "phrase_tokens",
       "schema": "",
@@ -2667,13 +2754,6 @@
         },
         "curator_locked": {
           "name": "curator_locked",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
-        "hidden": {
-          "name": "hidden",
           "type": "boolean",
           "primaryKey": false,
           "notNull": true,
@@ -5000,13 +5080,7 @@
         "form_delete",
         "lemma_merge",
         "lemma_split",
-        "translation_reorder",
-        "phrase_update",
-        "phrase_lock",
-        "phrase_unlock",
-        "phrase_hide",
-        "phrase_unhide",
-        "phrase_merge"
+        "translation_reorder"
       ]
     },
     "public.lemma_proposal_status": {
@@ -5160,7 +5234,8 @@
       "values": [
         "official_dictionary",
         "curator",
-        "user"
+        "user",
+        "nlp"
       ]
     },
     "public.translation_target_type": {

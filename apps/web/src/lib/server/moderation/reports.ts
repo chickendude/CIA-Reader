@@ -218,7 +218,9 @@ export type ListReportsFilter = {
 
 export type ListedReport = {
   report: TranslationReport;
-  translation: Pick<Translation, 'id' | 'body' | 'hidden' | 'lemmaId' | 'source'>;
+  translation: Pick<Translation, 'id' | 'body' | 'hidden' | 'source'> & {
+    lemmaId: string;
+  };
   lemma: Pick<Lemma, 'id' | 'language' | 'headword' | 'pos'>;
   reporterEmail: string | null;
   /** Total count of reports against the same translation (any status) —
@@ -273,7 +275,7 @@ export async function listReports(
         id: schema.translations.id,
         body: schema.translations.body,
         hidden: schema.translations.hidden,
-        lemmaId: schema.translations.lemmaId,
+        lemmaId: schema.translations.targetId,
         source: schema.translations.source,
       },
       lemma: {
@@ -289,7 +291,13 @@ export async function listReports(
       schema.translations,
       eq(schema.translationReports.translationId, schema.translations.id),
     )
-    .innerJoin(schema.lemmas, eq(schema.translations.lemmaId, schema.lemmas.id))
+    .innerJoin(
+      schema.lemmas,
+      and(
+        eq(schema.translations.targetType, 'lemma'),
+        eq(schema.translations.targetId, schema.lemmas.id),
+      ),
+    )
     .leftJoin(schema.users, eq(schema.translationReports.reporterId, schema.users.id))
     .where(and(...wherePredicates))
     .orderBy(desc(schema.translationReports.createdAt))
@@ -355,7 +363,10 @@ async function loadLemmaForTranslation(translationId: string): Promise<Lemma> {
     .from(schema.lemmas)
     .innerJoin(
       schema.translations,
-      eq(schema.translations.lemmaId, schema.lemmas.id),
+      and(
+        eq(schema.translations.targetType, 'lemma'),
+        eq(schema.translations.targetId, schema.lemmas.id),
+      ),
     )
     .where(eq(schema.translations.id, translationId))
     .limit(1);
