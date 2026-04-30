@@ -75,11 +75,14 @@
   let {
     token,
     phrase = null,
+    pendingSelection,
+    selectionError,
     language,
     isOwner,
     onClose,
     onStatusChange,
     onCorrectionApplied,
+    onPhraseCreated,
   }: {
     token: ServerToken | null;
     /** T-14.3: surface the longest phrase containing the click
@@ -88,6 +91,19 @@
      *  body. The component lemma stays underneath so a click on a
      *  phrase token still surfaces the lemma's translations. */
     phrase?: import('./types.js').ChapterPhraseSpan | null;
+    /** T-14.3a: a multi-token selection waiting to be saved as a
+     *  new phrase. When non-null, the popup renders a "Create
+     *  phrase" surface listing the selected words with Save /
+     *  Cancel buttons; on save it POSTs to /api/v1/phrases and
+     *  notifies the parent via `onPhraseCreated`. */
+    pendingSelection?: {
+      language: LanguageCode;
+      surfaces: string[];
+      rangeIdx: { start: number; end: number };
+    };
+    /** T-14.3a: surface from the parent if shift-click validation
+     *  failed (e.g. selection crossed a sentence boundary). */
+    selectionError?: string;
     /** Drives the CorrectionModal's dictionary search + script
      *  selection. Required from T-6.2 forward. */
     language: LanguageCode;
@@ -101,7 +117,41 @@
     /** T-6.1: parent applies the new lemma to the token's render so
      *  the reader reflects the correction without a page reload. */
     onCorrectionApplied?: (tokenId: string, chosenLemmaId: string | null) => void;
+    /** T-14.3a: fired after a successful phrase-create POST so
+     *  the parent can refetch chapter spans / close the popup. */
+    onPhraseCreated?: (phraseId: string) => void;
   } = $props();
+
+  // T-14.3a: phrase-create state.
+  let phraseCreateSubmitting = $state(false);
+  let phraseCreateError = $state<string | null>(null);
+
+  async function submitPhraseCreate() {
+    if (!pendingSelection) return;
+    phraseCreateSubmitting = true;
+    phraseCreateError = null;
+    try {
+      const res = await fetch('/api/v1/phrases', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          language: pendingSelection.language,
+          tokens: pendingSelection.surfaces,
+        }),
+      });
+      if (res.ok) {
+        const json = (await res.json()) as { phrase: { id: string } };
+        onPhraseCreated?.(json.phrase.id);
+      } else {
+        const text = await res.text().catch(() => '');
+        phraseCreateError = text || `Could not create phrase (${res.status})`;
+      }
+    } catch (e) {
+      phraseCreateError = `Network error: ${(e as Error).message}`;
+    } finally {
+      phraseCreateSubmitting = false;
+    }
+  }
 
   // T-14.3: optimistic phrase status, mirroring the lemma path.
   // Re-syncs from the prop whenever the user clicks into a
@@ -667,6 +717,50 @@
      The panel is always open on desktop (static right column) and
      conditional on mobile (slides up only when a word is picked). -->
 <Sheet open={sheetOpen} onClose={onClose} title="" dimmed={false}>
+  {#if pendingSelection}
+    <!-- T-14.3a: phrase-create banner. Shown when the user
+         shift-clicked across two or more tokens; lists the
+         selected surfaces and offers Save (POSTs to
+         /api/v1/phrases) and Cancel. The popup's underlying
+         token + phrase rendering still shows below so the user
+         can compare the proposed phrase against the lemma it
+         covers. -->
+    <section class="sp-phrase-create" data-testid="word-popup-phrase-create">
+      <header class="sp-phrase-create-head">
+        <span class="sp-phrase-eyebrow">Create phrase</span>
+        <p class="sp-phrase-create-words">
+          {#each pendingSelection.surfaces as s, i (i)}<span
+              class="sp-phrase-create-word">{s}</span>{#if i < pendingSelection.surfaces.length - 1}<span
+                class="sp-phrase-create-sep"> · </span>{/if}{/each}
+        </p>
+      </header>
+      <div class="sp-phrase-create-actions">
+        <button
+          type="button"
+          data-testid="phrase-create-save"
+          disabled={phraseCreateSubmitting}
+          onclick={() => {
+            void submitPhraseCreate();
+          }}
+        >
+          {phraseCreateSubmitting ? 'Saving…' : 'Save phrase'}
+        </button>
+        <button
+          type="button"
+          data-testid="phrase-create-cancel"
+          disabled={phraseCreateSubmitting}
+          onclick={onClose}
+        >
+          Cancel
+        </button>
+        {#if phraseCreateError}
+          <span class="err small">{phraseCreateError}</span>
+        {/if}
+      </div>
+    </section>
+  {:else if selectionError}
+    <p class="err small sp-phrase-select-err">{selectionError}</p>
+  {/if}
   {#if phrase}
     <!-- T-14.3 / T-14.4: phrase banner. Header (eyebrow + gloss) +
          status flips ride from T-14.3; T-14.4 adds the visible
@@ -1175,6 +1269,65 @@
   }
   .sp-phrase-status {
     margin-top: 0.5rem;
+  }
+  /* T-14.3a: phrase-create banner shown above the regular
+     popup body while a multi-token selection is pending Save /
+     Cancel. */
+  .sp-phrase-create {
+    margin: 0 0 1rem;
+    padding: 0.55rem 0.75rem 0.7rem;
+    border-radius: 8px;
+    background: color-mix(
+      in srgb,
+      var(--color-accent) 10%,
+      transparent
+    );
+    border: 1px dashed
+      color-mix(in srgb, var(--color-accent) 35%, transparent);
+  }
+  .sp-phrase-create-head {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+  }
+  .sp-phrase-create-words {
+    margin: 0;
+    font-size: 1rem;
+  }
+  .sp-phrase-create-word {
+    background: color-mix(
+      in srgb,
+      var(--color-accent) 14%,
+      transparent
+    );
+    border-radius: 4px;
+    padding: 0.05rem 0.25rem;
+  }
+  .sp-phrase-create-sep {
+    color: var(--ink-3, var(--color-fg-muted));
+  }
+  .sp-phrase-create-actions {
+    margin-top: 0.55rem;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    flex-wrap: wrap;
+  }
+  .sp-phrase-create-actions button {
+    padding: 0.3rem 0.7rem;
+    border-radius: 6px;
+    border: 1px solid var(--rule, var(--color-border));
+    background: var(--card, var(--color-bg));
+    color: var(--ink, var(--color-fg));
+    cursor: pointer;
+    font-size: 0.85rem;
+  }
+  .sp-phrase-create-actions button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  .sp-phrase-select-err {
+    margin: 0 0 0.75rem;
   }
   /* T-14.4: phrase translations list + add form. The list re-uses
      the popup's neutral type scale; the per-row attribution chip
