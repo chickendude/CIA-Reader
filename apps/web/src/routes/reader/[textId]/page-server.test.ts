@@ -81,12 +81,13 @@ vi.mock('$lib/server/db/index.js', () => {
 type LoadFn = (typeof import('./+page.server.js'))['load'];
 
 const VALID_ID = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
-const USER = { id: 'user-1', role: 'user' as const };
+type TestUser = { id: string; role: 'user' | 'curator' | 'admin' };
+const USER: TestUser = { id: 'user-1', role: 'user' };
 
 async function callLoad(
   url: string,
   textId = VALID_ID,
-  user: typeof USER | null = USER,
+  user: TestUser | null = USER,
 ) {
   const { load } = await import('./+page.server.js');
   const event = {
@@ -253,6 +254,41 @@ describe('/reader/[textId] loader', () => {
       status: number;
     };
     expect(res.status).toBe(404);
+  });
+
+  it('exposes isAdmin=true only for users with role=admin (T-2.8)', async () => {
+    getReadableText.mockResolvedValueOnce(ownedTextWithChapters(1));
+    const adminData = (await callLoad(`http://x/reader/${VALID_ID}`, VALID_ID, {
+      id: USER.id,
+      role: 'admin',
+    })) as { isAdmin: boolean };
+    expect(adminData.isAdmin).toBe(true);
+
+    getReadableText.mockResolvedValueOnce(ownedTextWithChapters(1));
+    const userData = (await callLoad(`http://x/reader/${VALID_ID}`)) as {
+      isAdmin: boolean;
+    };
+    expect(userData.isAdmin).toBe(false);
+
+    getReadableText.mockResolvedValueOnce(ownedTextWithChapters(1));
+    const curatorData = (await callLoad(`http://x/reader/${VALID_ID}`, VALID_ID, {
+      id: USER.id,
+      role: 'curator',
+    })) as { isAdmin: boolean };
+    // Curators get dictionary access, not pipeline reruns.
+    expect(curatorData.isAdmin).toBe(false);
+
+    const fixture = ownedTextWithChapters(1);
+    getReadableText.mockResolvedValueOnce({
+      ...fixture,
+      text: { ...fixture.text, ownerId: null, visibility: 'official' },
+    });
+    const anonData = (await callLoad(
+      `http://x/reader/${VALID_ID}`,
+      VALID_ID,
+      null,
+    )) as { isAdmin: boolean };
+    expect(anonData.isAdmin).toBe(false);
   });
 
   it('lets anonymous viewers read official texts and reports isOwner=false', async () => {

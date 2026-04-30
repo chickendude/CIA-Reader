@@ -222,6 +222,12 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
     // a session-only live preview.
     canPersistSettings: locals.user != null,
     isOwner: Boolean(locals.user && locals.user.id === result.text.ownerId),
+    // T-2.8: surface admin status so the reader chrome can offer the
+    // reprocess affordance to admins on any text (owners get the
+    // existing per-text controls; reprocess is admin-only because it
+    // re-runs NLP and overwrites token rows). Curators don't get it
+    // — they can edit the dictionary, not rerun pipelines.
+    isAdmin: locals.user?.role === 'admin',
     collectionContext: collectionContext
       ? {
           collectionId: collectionContext.collection.id,

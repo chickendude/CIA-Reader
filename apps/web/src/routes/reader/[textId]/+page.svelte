@@ -57,6 +57,49 @@
   });
   let settingsOpen = $state(false);
 
+  // T-2.8: admin-only "Reprocess this text" affordance. Re-runs the
+  // NLP pipeline (POSTs `/api/v1/admin/texts/:id/reprocess`) and
+  // refreshes the reader once the worker has rewritten `text_tokens`.
+  // Useful after a parser / dispatcher upgrade so a previously-
+  // uploaded text picks up new fields (e.g. number_forms after the
+  // T-2.8 fix) without the owner having to re-upload.
+  let reprocessing = $state(false);
+  let reprocessFeedback = $state<{
+    kind: 'ok' | 'err';
+    text: string;
+  } | null>(null);
+
+  async function reprocessText() {
+    if (reprocessing) return;
+    reprocessing = true;
+    reprocessFeedback = null;
+    try {
+      const res = await fetch(
+        `/api/v1/admin/texts/${data.text.id}/reprocess`,
+        { method: 'POST' },
+      );
+      if (!res.ok) {
+        const text = await res.text().catch(() => '');
+        throw new Error(text || `HTTP ${res.status}`);
+      }
+      const body = (await res.json()) as { tokensWritten: number };
+      reprocessFeedback = {
+        kind: 'ok',
+        text: `Reprocessed — ${body.tokensWritten} tokens written.`,
+      };
+      // Refresh the page-data so the new tokens render in place
+      // without a full reload.
+      await invalidateAll();
+    } catch (e) {
+      reprocessFeedback = {
+        kind: 'err',
+        text: `Reprocess failed: ${(e as Error).message}`,
+      };
+    } finally {
+      reprocessing = false;
+    }
+  }
+
   // CSS-variable string applied to the reader root so every reader
   // mode picks up the setting without each one having to know about
   // every CSS variable. Keeping the math in JS lets the popover's
@@ -359,6 +402,19 @@
         Aa
       </button>
 
+      {#if data.isAdmin}
+        <button
+          type="button"
+          class="reprocess-toggle"
+          onclick={reprocessText}
+          disabled={reprocessing}
+          title="Re-run the NLP pipeline on this text (admin only)"
+          data-testid="admin-reprocess"
+        >
+          {reprocessing ? 'Reprocessing…' : 'Reprocess'}
+        </button>
+      {/if}
+
       <button
         type="button"
         class="settings-toggle"
@@ -393,6 +449,17 @@
 
   {#if liveStatus === 'failed' && liveError}
     <p class="err" role="alert">Processing error: {liveError}</p>
+  {/if}
+
+  {#if reprocessFeedback}
+    <p
+      class="reprocess-feedback"
+      class:err={reprocessFeedback.kind === 'err'}
+      data-testid="reprocess-feedback"
+      role={reprocessFeedback.kind === 'err' ? 'alert' : 'status'}
+    >
+      {reprocessFeedback.text}
+    </p>
   {/if}
 
   {#if data.mode === 'page'}
@@ -652,6 +719,33 @@
     background: var(--accent-soft, var(--color-accent));
     border-color: var(--accent, var(--color-accent));
     color: var(--accent-ink, var(--color-accent-fg, #fff));
+  }
+  .reprocess-toggle {
+    height: 32px;
+    padding: 0 0.7rem;
+    border: 1px solid var(--rule, var(--color-border));
+    border-radius: 8px;
+    background: transparent;
+    color: var(--ink-2, var(--color-fg-muted));
+    font: inherit;
+    font-size: 0.78rem;
+    cursor: pointer;
+  }
+  .reprocess-toggle:hover:not([disabled]) {
+    background: color-mix(in oklch, var(--ink, var(--color-fg)) 5%, transparent);
+    color: var(--ink, var(--color-fg));
+  }
+  .reprocess-toggle[disabled] {
+    opacity: 0.55;
+    cursor: progress;
+  }
+  .reprocess-feedback {
+    margin: 0.5rem 1.25rem 0;
+    padding: 0.55rem 0.85rem;
+    font-size: 0.82rem;
+    border-radius: 8px;
+    background: color-mix(in oklch, var(--ink, var(--color-fg)) 5%, transparent);
+    color: var(--ink-2, var(--color-fg));
   }
   /* T-5.26: the immersive-toggle button moved to AppShell as a
      hamburger icon. The selector is gone but the Esc-to-exit
