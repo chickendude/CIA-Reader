@@ -100,7 +100,9 @@
     correctedTokens ? paragraphsOfServerTokens(correctedTokens) : null,
   );
   const fallbackParagraphs = $derived(
-    current && !current.tokens ? paragraphsOfTokens(tokenize(current.body)) : null,
+    current && !current.tokens && current.body != null
+      ? paragraphsOfTokens(tokenize(current.body))
+      : null,
   );
 
   function packServer(paragraphs: ParaServer[]): ParaServer[][] {

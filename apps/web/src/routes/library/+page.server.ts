@@ -96,6 +96,11 @@ export const load: PageServerLoad = async ({ url, locals }) => {
     textCount: number;
     estimatedComprehensionPct: number | null;
   }> = [];
+  let collectionsPage = {
+    totalCount: 0,
+    limit,
+    offset,
+  };
   // T-10.2: per-card known% badge. Decorated after the page is
   // fetched so we don't push a JOIN into every list query — the
   // batch helper does one round trip regardless of card count.
@@ -122,20 +127,27 @@ export const load: PageServerLoad = async ({ url, locals }) => {
     // the most-current edit state.
     const seen = new Set<string>();
     const merged = [...ownItems, ...officialItems].filter((row) => {
+      if (language && row.collection.language !== language) return false;
       if (seen.has(row.collection.id)) return false;
       seen.add(row.collection.id);
       return true;
     });
+    const paged = merged.slice(offset, offset + limit);
+    collectionsPage = {
+      totalCount: merged.length,
+      limit,
+      offset,
+    };
     // T-10.2 collection-card badge: bulk-fetch comprehension for
-    // every collection on the page. Anonymous viewers can't have
+    // every visible collection. Anonymous viewers can't have
     // any known lemmas yet, so we skip the lookup for them.
     const compMap = locals.user
       ? await estimatedComprehensionForCollections(
           locals.user.id,
-          merged.map((m) => m.collection.id),
+          paged.map((m) => m.collection.id),
         )
       : new Map<string, number | null>();
-    collections = merged.map((row) => ({
+    collections = paged.map((row) => ({
       id: row.collection.id,
       title: row.collection.title,
       kind: row.collection.kind,
@@ -168,6 +180,7 @@ export const load: PageServerLoad = async ({ url, locals }) => {
     page,
     textComprehension: Object.fromEntries(textComprehension),
     collections,
+    collectionsPage,
     language,
     languages: Object.values(LANGUAGES).map((d) => ({
       code: d.code,

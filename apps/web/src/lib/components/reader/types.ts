@@ -95,7 +95,7 @@ export type ChapterView = {
   id: string;
   idx: number;
   title: string | null;
-  body: string;
+  body: string | null;
   tokenCount: number;
   tokens: ServerToken[] | null;
 };

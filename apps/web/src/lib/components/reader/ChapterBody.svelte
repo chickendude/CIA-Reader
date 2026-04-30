@@ -98,7 +98,9 @@
     tokensWithOverrides ? paragraphsOfServerTokens(tokensWithOverrides) : null,
   );
   const fallbackParagraphs = $derived(
-    chapter.tokens ? null : paragraphsOfTokens(tokenize(chapter.body)),
+    chapter.tokens || chapter.body == null
+      ? null
+      : paragraphsOfTokens(tokenize(chapter.body)),
   );
 
   // Lookup helper — server tokens are keyed by id.

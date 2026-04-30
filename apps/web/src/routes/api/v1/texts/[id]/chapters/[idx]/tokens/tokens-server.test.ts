@@ -56,7 +56,7 @@ function fixtureWithChapters(n: number) {
       id: `c${i}`,
       idx: i,
       title: null,
-      body: '',
+      body: `body ${i}`,
       tokenCount: 0,
     })),
   };
@@ -94,10 +94,12 @@ describe('GET /api/v1/texts/:id/chapters/:idx/tokens', () => {
     const body = (await res.json()) as {
       chapterId: string;
       chapterIdx: number;
+      body: string;
       tokens: unknown[] | null;
     };
     expect(body.chapterIdx).toBe(1);
     expect(body.chapterId).toBe('c1');
+    expect(body.body).toBe('body 1');
     expect(body.tokens).toHaveLength(1);
     expect(loadChapterTokens).toHaveBeenCalledWith('c1', 'user-1');
   });

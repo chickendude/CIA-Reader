@@ -4,6 +4,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const listOwnedTexts = vi.fn();
 const listSharedTexts = vi.fn();
 const listOfficialTexts = vi.fn();
+const listCollectionsForUser = vi.fn();
+const listOfficialCollections = vi.fn();
+const estimatedComprehensionForTexts = vi.fn();
+const estimatedComprehensionForCollections = vi.fn();
 
 vi.mock('$lib/server/texts/library.js', async () => {
   const actual = await vi.importActual<typeof import('$lib/server/texts/library.js')>(
@@ -22,14 +26,16 @@ vi.mock('$lib/server/texts/library.js', async () => {
 // have to mock the DB. Tests that care can override the resolved
 // value.
 vi.mock('$lib/server/learning-stats.js', () => ({
-  estimatedComprehensionForTexts: async () => new Map(),
-  estimatedComprehensionForCollections: async () => new Map(),
+  estimatedComprehensionForTexts: (...a: unknown[]) =>
+    estimatedComprehensionForTexts(...a),
+  estimatedComprehensionForCollections: (...a: unknown[]) =>
+    estimatedComprehensionForCollections(...a),
 }));
 
 // T-8.5: collections tab calls into collections.js; mock to empty.
 vi.mock('$lib/server/collections.js', () => ({
-  listCollectionsForUser: async () => [],
-  listOfficialCollections: async () => [],
+  listCollectionsForUser: (...a: unknown[]) => listCollectionsForUser(...a),
+  listOfficialCollections: (...a: unknown[]) => listOfficialCollections(...a),
 }));
 
 type LoadFn = (typeof import('./+page.server.js'))['load'];
@@ -52,6 +58,14 @@ beforeEach(() => {
   listOwnedTexts.mockReset();
   listSharedTexts.mockReset();
   listOfficialTexts.mockReset();
+  listCollectionsForUser.mockReset();
+  listOfficialCollections.mockReset();
+  estimatedComprehensionForTexts.mockReset();
+  estimatedComprehensionForCollections.mockReset();
+  listCollectionsForUser.mockResolvedValue([]);
+  listOfficialCollections.mockResolvedValue([]);
+  estimatedComprehensionForTexts.mockResolvedValue(new Map());
+  estimatedComprehensionForCollections.mockResolvedValue(new Map());
 });
 
 afterEach(() => {
@@ -130,5 +144,44 @@ describe('/library loader', () => {
       status: number;
     };
     expect(res.status).toBe(400);
+  });
+
+  it('paginates collection cards before fetching comprehension (T-12.5)', async () => {
+    const collectionRows = Array.from({ length: 5 }, (_, i) => ({
+      collection: {
+        id: `c${i}`,
+        title: `Collection ${i}`,
+        kind: 'chapter_book',
+        language: 'hi',
+        visibility: 'private',
+        coverUrl: null,
+      },
+      textCount: i + 1,
+    }));
+    listCollectionsForUser.mockResolvedValueOnce(collectionRows);
+    estimatedComprehensionForCollections.mockResolvedValueOnce(
+      new Map([
+        ['c2', 40],
+        ['c3', 60],
+      ]),
+    );
+
+    const data = (await callLoad(
+      'http://x/library?tab=collections&limit=2&offset=2',
+    )) as {
+      collections: Array<{ id: string; estimatedComprehensionPct: number | null }>;
+      collectionsPage: { totalCount: number; limit: number; offset: number };
+    };
+
+    expect(data.collections.map((c) => c.id)).toEqual(['c2', 'c3']);
+    expect(data.collectionsPage).toEqual({
+      totalCount: 5,
+      limit: 2,
+      offset: 2,
+    });
+    expect(estimatedComprehensionForCollections).toHaveBeenCalledWith(
+      USER.id,
+      ['c2', 'c3'],
+    );
   });
 });
