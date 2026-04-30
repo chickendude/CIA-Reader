@@ -583,6 +583,73 @@ export const translationVotes = pgTable(
 );
 
 /**
+ * Reader-submitted reports flagging community translations for moderation
+ * (T-11.1). Officials and curator rows are edited in place by curators; this
+ * queue exists for `source='user'` translations only and is the input to the
+ * `/moderation/translations` review page.
+ *
+ * Resolution semantics:
+ *  - `resolved_hidden` — moderator hid the translation. The hide flip and the
+ *    `bulkResolveByTranslation` write happen in one transaction so the
+ *    `lemma_edit_history` audit row and the report status stay consistent.
+ *  - `resolved_kept` — moderator reviewed and decided the translation is fine.
+ *    Future reports on the same row create new open rows; "kept" is the
+ *    decision on this batch only.
+ *  - `dismissed` — moderator closed a single report without acting on the
+ *    translation (e.g. duplicate of an existing open report from the same
+ *    reporter, or a misuse of the flow). Other open reports on the same
+ *    translation are unaffected.
+ *
+ * `(reporter_id, translation_id)` is unique so a single user can't pile up
+ * reports on the same translation. Re-submitting from the API yields 409.
+ */
+export const translationReportReason = pgEnum('translation_report_reason', [
+  'spam',
+  'incorrect',
+  'offensive',
+  'duplicate',
+  'other',
+]);
+
+export const translationReportStatus = pgEnum('translation_report_status', [
+  'open',
+  'resolved_hidden',
+  'resolved_kept',
+  'dismissed',
+]);
+
+export const translationReports = pgTable(
+  'translation_reports',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    translationId: uuid('translation_id')
+      .notNull()
+      .references(() => translations.id, { onDelete: 'cascade' }),
+    reporterId: uuid('reporter_id').references(() => users.id, {
+      onDelete: 'set null',
+    }),
+    reason: translationReportReason('reason').notNull(),
+    note: text('note'),
+    status: translationReportStatus('status').notNull().default('open'),
+    resolvedBy: uuid('resolved_by').references(() => users.id, {
+      onDelete: 'set null',
+    }),
+    resolvedAt: timestamp('resolved_at', { withTimezone: true }),
+    resolutionNote: text('resolution_note'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    statusIdx: index('translation_reports_status_idx').on(t.status, t.createdAt),
+    translationIdx: index('translation_reports_translation_idx').on(t.translationId),
+    reporterTranslationUq: unique('translation_reports_reporter_translation_uq').on(
+      t.reporterId,
+      t.translationId,
+    ),
+  }),
+);
+
+/**
  * Audit row per dictionary-import run. One row written per `runImport(...)`
  * invocation so we can answer "when did we last pull Hindi WordNet and
  * what changed?" without re-reading the source file or scanning lemmas.
@@ -962,6 +1029,7 @@ export type Phrase = InferSelectModel<typeof phrases>;
 export type PhraseToken = InferSelectModel<typeof phraseTokens>;
 export type Translation = InferSelectModel<typeof translations>;
 export type TranslationVote = InferSelectModel<typeof translationVotes>;
+export type TranslationReport = InferSelectModel<typeof translationReports>;
 export type DictionaryImport = InferSelectModel<typeof dictionaryImports>;
 export type CuratorLanguage = InferSelectModel<typeof curatorLanguages>;
 export type LemmaEditHistoryEntry = InferSelectModel<typeof lemmaEditHistory>;

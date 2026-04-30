@@ -1,5 +1,5 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-import { cleanup, render } from '@testing-library/svelte';
+import { cleanup, render, waitFor } from '@testing-library/svelte';
 
 import WordPopup from './WordPopup.svelte';
 import type { ServerToken, ServerNumberForms } from './types.js';
@@ -157,5 +157,83 @@ describe('WordPopup — number-only token block (T-2.8)', () => {
     expect(document.body.querySelector('.sp-status')).toBeNull();
     expect(document.body.querySelector('.translations')).toBeNull();
     expect(document.body.querySelector('.fix-toggle')).toBeNull();
+  });
+});
+
+describe('WordPopup — translation reporting (T-11.1)', () => {
+  function makePayload() {
+    return {
+      lemma: { id: 'lem-1', headword: 'पानी', pos: 'NOUN', glossDefault: null },
+      translations: {
+        personal: [],
+        official: [],
+        community: [
+          {
+            id: 'tr-com-1',
+            source: 'user',
+            submittedBy: 'someone-else',
+            body: 'wrong',
+            targetLanguage: 'en',
+            sourceAttribution: null,
+            parentTranslationId: null,
+            provenance: { kind: 'community', attribution: null },
+            voteScore: 0,
+            viewerVote: null,
+          },
+        ],
+      },
+    };
+  }
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('renders a Report button on each community row when isOwner=true', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify(makePayload()), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        }),
+      ),
+    );
+    render(WordPopup, {
+      token: makeToken({ surface: 'पानी', lemmaId: 'lem-1' }),
+      language: 'hi',
+      isOwner: true,
+      onClose: vi.fn(),
+    });
+    await waitFor(() => {
+      expect(
+        document.body.querySelector('[data-testid="report-button"]'),
+      ).not.toBeNull();
+    });
+  });
+
+  it('hides the Report button when isOwner=false', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify(makePayload()), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        }),
+      ),
+    );
+    render(WordPopup, {
+      token: makeToken({ surface: 'पानी', lemmaId: 'lem-1' }),
+      language: 'hi',
+      isOwner: false,
+      onClose: vi.fn(),
+    });
+    // Wait for the popup payload to render so we know fetch has resolved.
+    await waitFor(() => {
+      expect(document.body.querySelector('.community-row')).not.toBeNull();
+    });
+    expect(
+      document.body.querySelector('[data-testid="report-button"]'),
+    ).toBeNull();
   });
 });

@@ -21,6 +21,7 @@
   import { untrack } from 'svelte';
   import Sheet from '../overlay/Sheet.svelte';
   import CorrectionModal from './CorrectionModal.svelte';
+  import ReportTranslationModal from './ReportTranslationModal.svelte';
   import { customizableOfficialIds } from './customize-eligibility.js';
   import type { LanguageCode } from '@ciareader/shared-types';
   import { looksLikeNumberToken, type ServerToken } from './types.js';
@@ -260,6 +261,16 @@
   let customizeError = $state<string | null>(null);
   let votingTranslationId = $state<string | null>(null);
   let voteError = $state<string | null>(null);
+
+  // T-11.1 — translation report flow. The set of translations the viewer
+  // has reported in this session is tracked client-side so the popup can
+  // re-render the Report button as a "Reported" badge without refetching.
+  // The set survives across word-to-word navigation in one mount but
+  // resets on page reload, which is fine — the server enforces the
+  // unique (reporter, translation) constraint either way.
+  let reportingTranslationId = $state<string | null>(null);
+  let reportedIds = $state<Set<string>>(new Set());
+  let reportToast = $state<string | null>(null);
 
   const customizableIds = $derived(() =>
     customizableOfficialIds(
@@ -504,6 +515,36 @@
       pickError = (e as Error).message;
     } finally {
       pickingLemmaId = null;
+    }
+  }
+
+  function openReport(translationId: string) {
+    reportingTranslationId = translationId;
+    reportToast = null;
+  }
+  function closeReport() {
+    reportingTranslationId = null;
+  }
+  function onReportOutcome(
+    outcome:
+      | { kind: 'reported' }
+      | { kind: 'duplicate' }
+      | { kind: 'rate_limited'; retryAfterSeconds?: number },
+  ) {
+    if (!reportingTranslationId) return;
+    if (outcome.kind === 'reported') {
+      reportedIds = new Set([...reportedIds, reportingTranslationId]);
+      reportToast = 'Thanks — moderators will review.';
+    } else if (outcome.kind === 'duplicate') {
+      reportedIds = new Set([...reportedIds, reportingTranslationId]);
+      reportToast = "You've already reported this translation.";
+    } else if (outcome.kind === 'rate_limited') {
+      const mins = outcome.retryAfterSeconds
+        ? Math.ceil(outcome.retryAfterSeconds / 60)
+        : null;
+      reportToast = mins
+        ? `Too many reports submitted. Try again in ~${mins} min.`
+        : 'Too many reports submitted. Try again later.';
     }
   }
 
@@ -762,6 +803,24 @@
             <div class="community-body">
               <span class="badge tone-community">community</span>
               {t.body}
+              {#if isOwner}
+                {#if reportedIds.has(t.id)}
+                  <span class="reported-badge" data-testid="reported-badge">
+                    Reported
+                  </span>
+                {:else}
+                  <button
+                    type="button"
+                    class="report-button"
+                    data-testid="report-button"
+                    aria-label="Report translation"
+                    title="Report this translation to moderators"
+                    onclick={() => openReport(t.id)}
+                  >
+                    Report
+                  </button>
+                {/if}
+              {/if}
             </div>
             {#if isOwner}
               <div class="vote-controls" aria-label="Community translation votes">
@@ -796,6 +855,11 @@
           <li class="muted">No translations yet.</li>
         {/if}
       </ul>
+      {#if reportToast}
+        <p class="report-toast" data-testid="report-toast" role="status">
+          {reportToast}
+        </p>
+      {/if}
       {#if voteError}
         <p class="err small">Could not save vote: {voteError}</p>
       {/if}
@@ -920,6 +984,13 @@
     }}
   />
 {/if}
+
+<ReportTranslationModal
+  open={reportingTranslationId !== null}
+  translationId={reportingTranslationId}
+  onClose={closeReport}
+  onReported={onReportOutcome}
+/>
 
 <style>
   .sp-empty {
@@ -1091,6 +1162,41 @@
   }
   .community-body {
     min-width: 0;
+  }
+  .report-button {
+    margin-left: 0.5rem;
+    padding: 0.05rem 0.4rem;
+    font: inherit;
+    font-size: 0.66rem;
+    color: var(--ink-3, var(--color-fg-muted));
+    border: 1px solid var(--rule, var(--color-border));
+    background: var(--paper, var(--color-bg));
+    border-radius: 999px;
+    cursor: pointer;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .report-button:hover {
+    color: #b91c1c;
+    border-color: #fecaca;
+  }
+  .reported-badge {
+    margin-left: 0.5rem;
+    padding: 0.1rem 0.5rem;
+    font-size: 0.66rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--ink-3, var(--color-fg-muted));
+    background: color-mix(in oklch, var(--ink, var(--color-fg)) 6%, transparent);
+    border-radius: 999px;
+  }
+  .report-toast {
+    margin: 0.4rem 0 0;
+    padding: 0.4rem 0.6rem;
+    font-size: 0.78rem;
+    color: var(--ink-2, var(--color-fg));
+    background: color-mix(in oklch, var(--ink, var(--color-fg)) 4%, transparent);
+    border-radius: 6px;
   }
   .vote-controls {
     flex: 0 0 auto;
