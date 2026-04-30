@@ -1,6 +1,6 @@
 {
-  "id": "8ebca072-47f1-4a97-b9ca-597580630a06",
-  "prevId": "9e1428b5-8c98-4396-9edb-b10f39765b5a",
+  "id": "2f2efabf-a926-4b56-a98d-008943af438e",
+  "prevId": "8ebca072-47f1-4a97-b9ca-597580630a06",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -4132,12 +4132,6 @@
           "notNull": true,
           "default": "gen_random_uuid()"
         },
-        "lemma_id": {
-          "name": "lemma_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
         "target_type": {
           "name": "target_type",
           "type": "translation_target_type",
@@ -4225,21 +4219,6 @@
         }
       },
       "indexes": {
-        "translations_lemma_idx": {
-          "name": "translations_lemma_idx",
-          "columns": [
-            {
-              "expression": "lemma_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
         "translations_target_idx": {
           "name": "translations_target_idx",
           "columns": [
@@ -4286,7 +4265,13 @@
           "name": "translations_source_lookup_idx",
           "columns": [
             {
-              "expression": "lemma_id",
+              "expression": "target_type",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "target_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -4311,19 +4296,6 @@
         }
       },
       "foreignKeys": {
-        "translations_lemma_id_lemmas_id_fk": {
-          "name": "translations_lemma_id_lemmas_id_fk",
-          "tableFrom": "translations",
-          "tableTo": "lemmas",
-          "columnsFrom": [
-            "lemma_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
         "translations_submitted_by_users_id_fk": {
           "name": "translations_submitted_by_users_id_fk",
           "tableFrom": "translations",

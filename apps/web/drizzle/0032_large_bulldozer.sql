@@ -4,10 +4,6 @@ ALTER TYPE "public"."lemma_edit_change_type" ADD VALUE 'phrase_unlock';--> state
 ALTER TYPE "public"."lemma_edit_change_type" ADD VALUE 'phrase_hide';--> statement-breakpoint
 ALTER TYPE "public"."lemma_edit_change_type" ADD VALUE 'phrase_unhide';--> statement-breakpoint
 ALTER TYPE "public"."lemma_edit_change_type" ADD VALUE 'phrase_merge';--> statement-breakpoint
-ALTER TABLE "translations" DROP CONSTRAINT "translations_lemma_id_lemmas_id_fk";
---> statement-breakpoint
-DROP INDEX IF EXISTS "translations_lemma_idx";--> statement-breakpoint
-DROP INDEX IF EXISTS "translations_source_lookup_idx";--> statement-breakpoint
 ALTER TABLE "lemma_edit_history" ALTER COLUMN "lemma_id" DROP NOT NULL;--> statement-breakpoint
 ALTER TABLE "lemma_edit_history" ADD COLUMN "phrase_id" uuid;--> statement-breakpoint
 ALTER TABLE "phrases" ADD COLUMN "hidden" boolean DEFAULT false NOT NULL;--> statement-breakpoint
@@ -24,6 +20,4 @@ CREATE INDEX IF NOT EXISTS "lemma_edit_history_phrase_idx" ON "lemma_edit_histor
 -- constraint is satisfied immediately for every legacy row.
 ALTER TABLE "lemma_edit_history"
   ADD CONSTRAINT "lemma_edit_history_target_xor_chk"
-  CHECK ((lemma_id IS NOT NULL) <> (phrase_id IS NOT NULL));--> statement-breakpoint
-CREATE INDEX IF NOT EXISTS "translations_source_lookup_idx" ON "translations" USING btree ("target_type","target_id","source","source_id");--> statement-breakpoint
-ALTER TABLE "translations" DROP COLUMN IF EXISTS "lemma_id";
+  CHECK ((lemma_id IS NOT NULL) <> (phrase_id IS NOT NULL));
