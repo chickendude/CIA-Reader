@@ -24,7 +24,7 @@
   import {
     columnIndexForElement,
     computePctRead,
-    findFirstVisibleWordAnchor,
+    findFirstWordInColumn,
     findTokenElementAtOrAfter,
   } from './reader-progress.js';
   import { classifySwipe } from './touch-gestures.js';
@@ -73,8 +73,11 @@
   let contentW = $state(0);
   let pageInChapter = $state(0);
   let initialTokenApplied = $state(false);
+  let restorePaintReady = $state(false);
   let lastReportedKey = '';
-  const isRestoringInitialToken = $derived(initialTokenIdx > 0 && !initialTokenApplied);
+  const isRestoringInitialToken = $derived(
+    initialTokenIdx > 0 && (!initialTokenApplied || !restorePaintReady),
+  );
 
   const pageCount = $derived(pageCountFor(contentW, pageW));
   const offset = $derived(pageOffset(pageInChapter, pageW));
@@ -86,6 +89,7 @@
     void initialTokenIdx;
     pageInChapter = 0;
     initialTokenApplied = false;
+    restorePaintReady = initialTokenIdx <= 0;
     lastReportedKey = '';
   });
 
@@ -247,16 +251,26 @@
       if (tokenEl) {
         pageInChapter = clampPage(columnIndexForElement(tokenEl, contentEl, pageW), pageCount);
       }
+    } else {
+      restorePaintReady = true;
     }
     initialTokenApplied = true;
+    if (initialTokenIdx > 0) {
+      void tick().then(() => {
+        window.requestAnimationFrame(() => {
+          restorePaintReady = true;
+        });
+      });
+    }
   }
 
   function reportProgress() {
-    if (!onProgress || !viewportEl) return;
-    const anchor = findFirstVisibleWordAnchor(viewportEl, {
-      clip: viewportEl.getBoundingClientRect(),
+    if (!onProgress || !contentEl) return;
+    const anchor = findFirstWordInColumn(contentEl, {
+      contentEl,
+      pageWidth: pageW,
+      pageIdx: pageInChapter,
       fallbackChapterIdx: chapterIdx,
-      minVisiblePx: 4,
     });
     if (!anchor) return;
     const next: ProgressAnchor = {

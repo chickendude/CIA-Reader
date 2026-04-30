@@ -4,6 +4,7 @@ import {
   columnIndexForElement,
   computePctRead,
   findFirstVisibleWordAnchor,
+  findFirstWordInColumn,
   findTokenElementAtOrAfter,
   firstTokenPage,
 } from './reader-progress.js';
@@ -100,6 +101,51 @@ describe('reader progress helpers', () => {
       }) as DOMRectList;
 
     expect(columnIndexForElement(el, content, 300)).toBe(2);
+  });
+
+  it('finds the first word in a paginated column without relying on transform visibility', () => {
+    const content = document.createElement('div');
+    content.getBoundingClientRect = () => rect(0, 20, 400, 420);
+    const first = word(8, rect(40, 330, 60, 380), { tokenId: 'a' });
+    const second = word(12, rect(20, 625, 40, 700), { tokenId: 'b' });
+    const third = word(13, rect(80, 625, 100, 700), { tokenId: 'c' });
+    first.getClientRects = () =>
+      ({
+        0: rect(40, 330, 60, 380),
+        length: 1,
+        item: (idx: number) => (idx === 0 ? rect(40, 330, 60, 380) : null),
+        [Symbol.iterator]: function* () {
+          yield rect(40, 330, 60, 380);
+        },
+      }) as DOMRectList;
+    second.getClientRects = () =>
+      ({
+        0: rect(20, 625, 40, 700),
+        length: 1,
+        item: (idx: number) => (idx === 0 ? rect(20, 625, 40, 700) : null),
+        [Symbol.iterator]: function* () {
+          yield rect(20, 625, 40, 700);
+        },
+      }) as DOMRectList;
+    third.getClientRects = () =>
+      ({
+        0: rect(80, 625, 100, 700),
+        length: 1,
+        item: (idx: number) => (idx === 0 ? rect(80, 625, 100, 700) : null),
+        [Symbol.iterator]: function* () {
+          yield rect(80, 625, 100, 700);
+        },
+      }) as DOMRectList;
+    content.append(first, third, second);
+
+    expect(
+      findFirstWordInColumn(content, {
+        contentEl: content,
+        pageWidth: 300,
+        pageIdx: 2,
+        fallbackChapterIdx: 3,
+      }),
+    ).toEqual({ chapterIdx: 3, tokenIdx: 12 });
   });
 
   it('maps a saved token to the first paged-scroll page that contains it', () => {

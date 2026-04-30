@@ -113,9 +113,25 @@
   }
 
   let currentProgressAnchor = $state<ProgressAnchor>(untrack(anchorFromData));
+  let lastUrlAnchorKey = '';
+
+  function mirrorAnchorToUrl(anchor: ProgressAnchor) {
+    if (typeof window === 'undefined') return;
+    const key = `${data.mode}:${anchor.chapterIdx}:${anchor.tokenIdx}:${showRomanization ? 1 : 0}`;
+    if (key === lastUrlAnchorKey) return;
+    lastUrlAnchorKey = key;
+    const url = new URL(window.location.href);
+    url.searchParams.set('mode', data.mode);
+    url.searchParams.set('chapter', String(anchor.chapterIdx));
+    url.searchParams.set('token', String(anchor.tokenIdx));
+    if (showRomanization) url.searchParams.set('roman', '1');
+    else url.searchParams.delete('roman');
+    window.history.replaceState(window.history.state, '', url.toString());
+  }
 
   function onReaderProgress(anchor: ProgressAnchor) {
     currentProgressAnchor = anchor;
+    mirrorAnchorToUrl(anchor);
     progressWriter?.schedule(anchor);
   }
 
@@ -150,7 +166,7 @@
   // T-5.6 progress writer. Signed-in readers get one; anonymous
   // viewers of an official text don't have a row to write against.
   let progressWriter: ProgressWriter | null = null;
-  let beforeUnloadHandler: (() => void) | null = null;
+  let pageHideHandler: (() => void) | null = null;
 
   // The reader's top bar is a full-width fixed element. We measure
   // its height into a `--reader-top-h` CSS variable so the AppShell
@@ -207,17 +223,13 @@
     // viewers (the only false branch of canPersistSettings) skip.
     if (data.canPersistSettings) {
       progressWriter = new ProgressWriter(data.text.id);
-      // Schedule an initial write so reopening immediately at the
-      // current chapter persists even without scrolling.
       currentProgressAnchor = anchorFromData();
-      progressWriter.schedule(currentProgressAnchor);
-      // Flush on tab close so the user resumes near where they were
-      // even if their last action was scrolling and they didn't trip
-      // the debounce timer.
-      beforeUnloadHandler = () => {
-        void progressWriter?.flush();
+      // Flush on refresh / tab close through the keepalive path so
+      // the latest debounced anchor survives the navigation.
+      pageHideHandler = () => {
+        void progressWriter?.flush({ keepalive: true });
       };
-      window.addEventListener('beforeunload', beforeUnloadHandler);
+      window.addEventListener('pagehide', pageHideHandler);
     }
 
     // Track the .reader-top height so the rail can sit below it.
@@ -236,23 +248,21 @@
     return () => {
       cleanupPoll?.();
       window.removeEventListener('keydown', onKey);
-      if (beforeUnloadHandler) window.removeEventListener('beforeunload', beforeUnloadHandler);
+      if (pageHideHandler) window.removeEventListener('pagehide', pageHideHandler);
       void progressWriter?.flush();
       topRO?.disconnect();
       document.documentElement.style.removeProperty('--reader-top-h');
     };
   });
 
-  // Watch URL anchor changes and write them to the progress writer.
-  // The mode-toggle / chapter-nav buttons all funnel through goto(),
-  // which re-runs the loader and hands us a new `data.anchor` —
-  // sending here keeps a fresh row even if the user navigates by
-  // URL without scrolling.
+  // Watch URL anchor changes so mode switches and fresh loads start
+  // from the loader's anchor locally. We deliberately don't write it
+  // back immediately; the active reader mode reports the actual
+  // first visible word once it has restored layout.
   $effect(() => {
     const anchor = anchorFromData();
     currentProgressAnchor = anchor;
-    if (!progressWriter) return;
-    progressWriter.schedule(anchor);
+    lastUrlAnchorKey = `${data.mode}:${anchor.chapterIdx}:${anchor.tokenIdx}:${showRomanization ? 1 : 0}`;
   });
 </script>
 

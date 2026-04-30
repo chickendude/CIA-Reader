@@ -12,9 +12,7 @@ afterEach(() => {
 
 describe('ProgressWriter', () => {
   it('debounces repeated schedule() calls into a single PATCH', async () => {
-    const fetchMock = vi.fn(() =>
-      Promise.resolve(new Response('{}', { status: 200 })),
-    );
+    const fetchMock = vi.fn(() => Promise.resolve(new Response('{}', { status: 200 })));
     vi.stubGlobal('fetch', fetchMock);
 
     const w = new ProgressWriter('text-1');
@@ -33,9 +31,7 @@ describe('ProgressWriter', () => {
   });
 
   it('suppresses a flush when nothing has changed since the previous send', async () => {
-    const fetchMock = vi.fn(() =>
-      Promise.resolve(new Response('{}', { status: 200 })),
-    );
+    const fetchMock = vi.fn(() => Promise.resolve(new Response('{}', { status: 200 })));
     vi.stubGlobal('fetch', fetchMock);
 
     const w = new ProgressWriter('text-1');
@@ -49,15 +45,25 @@ describe('ProgressWriter', () => {
   });
 
   it('flush() bypasses the debounce timer', async () => {
-    const fetchMock = vi.fn(() =>
-      Promise.resolve(new Response('{}', { status: 200 })),
-    );
+    const fetchMock = vi.fn(() => Promise.resolve(new Response('{}', { status: 200 })));
     vi.stubGlobal('fetch', fetchMock);
 
     const w = new ProgressWriter('text-1');
     w.schedule({ chapterIdx: 1, tokenIdx: 5, pctRead: 5 });
     await w.flush();
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('can flush through the browser keepalive path for refresh/pagehide', async () => {
+    const fetchMock = vi.fn(() => Promise.resolve(new Response('{}', { status: 200 })));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const w = new ProgressWriter('text-1');
+    w.schedule({ chapterIdx: 2, tokenIdx: 25, pctRead: 50 });
+    await w.flush({ keepalive: true });
+
+    const call = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(call[1].keepalive).toBe(true);
   });
 
   it('swallows network errors so the reader keeps working', async () => {
