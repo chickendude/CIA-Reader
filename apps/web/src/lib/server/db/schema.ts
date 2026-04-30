@@ -184,6 +184,10 @@ export const userLanguages = pgTable(
     scriptPreference: scriptPreference('script_preference').notNull().default('native'),
     romanizationScheme: romanizationScheme('romanization_scheme').notNull().default('iso15919'),
     knownWordsCountCache: integer('known_words_count_cache').notNull().default(0),
+    // T-14.1: parallel counter for phrases (M14). `setKnownPhraseStatus`
+    // recomputes this in the same transaction as the status flip,
+    // mirroring the words counter. Surfaced in T-14.6's stats panes.
+    knownPhrasesCountCache: integer('known_phrases_count_cache').notNull().default(0),
     readerLayoutMode: readerLayoutMode('reader_layout_mode').notNull().default('page'),
     wordsPerPage: integer('words_per_page').notNull().default(250),
     fontFamily: text('font_family'),
@@ -214,6 +218,25 @@ export const translationSource = pgEnum('translation_source', [
 export const translationVoteValue = pgEnum('translation_vote_value', [
   'up',
   'down',
+]);
+
+/**
+ * Polymorphic target for `translations` (T-14.1).
+ *
+ * A translation row attaches to either a single `lemmas` row (the
+ * legacy default — every pre-M14 row was implicitly 'lemma') or to a
+ * `phrases` row (M14 phrase-level translations). The (target_type,
+ * target_id) pair is the canonical join key going forward; the
+ * legacy `lemma_id` column on `translations` is kept populated for
+ * 'lemma' rows during T-14.1's overlap window and dropped in T-14.7.
+ *
+ * No native Postgres FK on `target_id` because it points at two
+ * tables — application layer (`translations.ts` / `phrases.ts`)
+ * enforces target existence on every write.
+ */
+export const translationTargetType = pgEnum('translation_target_type', [
+  'lemma',
+  'phrase',
 ]);
 
 /**
@@ -318,23 +341,122 @@ export const lemmaForms = pgTable(
 );
 
 /**
- * Translation rows for a lemma. Officials, curator edits, and user
- * submissions all live here and are distinguished by `source`. A user can
- * fork an official into a personal copy via `parent_translation_id` (T-3.5)
- * — the fork is visible only to the forker and renders at the top of the
- * pop-up for them specifically.
+ * Multi-word dictionary entries (T-14.1, M14 phrase-level translations).
  *
- * `hidden` is the moderation switch for community translations; officials
- * are edited in place (with an audit trail in T-3.4's `lemma_edit_history`)
- * rather than hidden.
+ * A phrase is identified by its ordered token sequence (see
+ * `phrase_tokens`) — `surface_normalised` is only the dedupe lookup
+ * column (joined surfaces, NFC, single-space). Per-source duplicates
+ * are allowed by design (mirrors lemmas merge story from T-3.10): a
+ * curator phrase and a Kaikki-imported phrase with the same surface
+ * are kept as separate rows and reconciled via the merge UI in T-14.7.
+ *
+ * Sources reuse the existing `translation_source` enum. T-14.5
+ * extends that enum with `'nlp'` for compound/conjunct verb
+ * proposals from the rule-based detector.
+ *
+ * `curator_locked = true` mirrors the same flag on `lemmas`: a human
+ * has touched this row and importers must not clobber it.
+ */
+export const phrases = pgTable(
+  'phrases',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    language: language('language').notNull(),
+    // NFC-normalised, single-spaced join of `phrase_tokens.surface`
+    // ordered by `position`. Dedup lookup only — the canonical key
+    // is the ordered phrase_tokens rows.
+    surfaceNormalised: text('surface_normalised').notNull(),
+    pos: text('pos'),
+    glossDefault: text('gloss_default'),
+    frequencyRank: integer('frequency_rank'),
+    source: translationSource('source').notNull(),
+    sourceAttribution: text('source_attribution'),
+    sourceId: text('source_id'),
+    curatorLocked: boolean('curator_locked').notNull().default(false),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    // Non-unique by design — per-source duplication is reconciled in
+    // T-14.7's merge UI, same as lemmas (T-3.10).
+    surfaceIdx: index('phrases_language_surface_idx').on(t.language, t.surfaceNormalised),
+    languageIdx: index('phrases_language_idx').on(t.language),
+    frequencyIdx: index('phrases_language_frequency_idx').on(t.language, t.frequencyRank),
+    // Idempotent re-import: an importer finds its own previously-
+    // written row by (language, source, source_id).
+    sourceIdx: index('phrases_source_lookup_idx').on(t.language, t.source, t.sourceId),
+  }),
+);
+
+/**
+ * Ordered token components of a phrase (T-14.1). The canonical
+ * identity of a phrase is the ordered `(surface)` rows here — the
+ * `phrases.surface_normalised` column is just a fast dedupe lookup.
+ *
+ * `lemma_id` is a *soft hint*, not a join key — `इंतज़ार करना` ≠
+ * `इंतज़ार` + `करना` semantically. Cross-linking to a lemma drives
+ * the popup's "see component lemmas" affordance and lets the
+ * frequency-rank scorer inherit data, but it never participates in
+ * matching. Set to NULL on lemma deletion so cascading lemma merges
+ * never silently rewrite phrase identity.
+ */
+export const phraseTokens = pgTable(
+  'phrase_tokens',
+  {
+    phraseId: uuid('phrase_id')
+      .notNull()
+      .references(() => phrases.id, { onDelete: 'cascade' }),
+    position: integer('position').notNull(),
+    surface: text('surface').notNull(),
+    lemmaId: uuid('lemma_id').references(() => lemmas.id, {
+      onDelete: 'set null',
+    }),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.phraseId, t.position] }),
+    // Drives the chapter-span resolver in T-14.2: "every phrase
+    // whose first surface is X" is a single index lookup.
+    surfaceIdx: index('phrase_tokens_surface_idx').on(t.surface),
+  }),
+);
+
+/**
+ * Translation rows for a lemma OR a phrase (T-14.1 polymorphic).
+ * Officials, curator edits, and user submissions all live here and
+ * are distinguished by `source`. A user can fork an official into a
+ * personal copy via `parent_translation_id` (T-3.5) — the fork is
+ * visible only to the forker and renders at the top of the pop-up
+ * for them specifically.
+ *
+ * `hidden` is the moderation switch for community translations;
+ * officials are edited in place (with an audit trail in T-3.4's
+ * `lemma_edit_history`) rather than hidden.
+ *
+ * Polymorphic target (T-14.1): the canonical join key is
+ * `(target_type, target_id)`. For legacy 'lemma' rows the value of
+ * `target_id` equals `lemma_id`; the column is kept on the row so
+ * existing readers (T-3.3, T-3.5, the reader pop-up) keep working
+ * during the overlap window. T-14.7 drops `lemma_id` once every
+ * read path moves to `target_type` / `target_id`.
+ *
+ * No native FK on `target_id` because it points at two tables —
+ * the service layer (`translations.ts` / `phrases.ts`) enforces
+ * target existence on every write.
  */
 export const translations = pgTable(
   'translations',
   {
     id: uuid('id').primaryKey().defaultRandom(),
-    lemmaId: uuid('lemma_id')
-      .notNull()
-      .references(() => lemmas.id, { onDelete: 'cascade' }),
+    // Legacy lemma FK. Nullable as of T-14.1 so phrase-target rows
+    // can be inserted without a lemma. For target_type='lemma'
+    // rows, this still equals `target_id`. Dropped in T-14.7.
+    lemmaId: uuid('lemma_id').references(() => lemmas.id, {
+      onDelete: 'cascade',
+    }),
+    targetType: translationTargetType('target_type').notNull().default('lemma'),
+    // Canonical polymorphic target. For legacy rows this is
+    // backfilled to equal `lemma_id` in migration 0024.
+    targetId: uuid('target_id').notNull(),
     source: translationSource('source').notNull(),
     submittedBy: uuid('submitted_by').references(() => users.id, { onDelete: 'set null' }),
     parentTranslationId: uuid('parent_translation_id').references(
@@ -357,7 +479,14 @@ export const translations = pgTable(
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({
+    // Legacy index on lemma_id — kept for the overlap window so any
+    // un-migrated read path stays cheap. Dropped in T-14.7 once
+    // every consumer uses target_type/target_id.
     lemmaIdx: index('translations_lemma_idx').on(t.lemmaId),
+    // T-14.1 canonical lookup index. Reader pop-up + dictionary
+    // editor read by (target_type, target_id) and re-import dedup
+    // adds `source` as the third column for the importer fast path.
+    targetIdx: index('translations_target_idx').on(t.targetType, t.targetId, t.source),
     submittedByIdx: index('translations_submitted_by_idx').on(t.submittedBy),
     // The (lemma, source, source_id) triple is how a re-import finds its
     // own previously-written row to update.
@@ -772,6 +901,8 @@ export type MagicLink = InferSelectModel<typeof magicLinks>;
 export type UserLanguage = InferSelectModel<typeof userLanguages>;
 export type Lemma = InferSelectModel<typeof lemmas>;
 export type LemmaForm = InferSelectModel<typeof lemmaForms>;
+export type Phrase = InferSelectModel<typeof phrases>;
+export type PhraseToken = InferSelectModel<typeof phraseTokens>;
 export type Translation = InferSelectModel<typeof translations>;
 export type TranslationVote = InferSelectModel<typeof translationVotes>;
 export type DictionaryImport = InferSelectModel<typeof dictionaryImports>;
@@ -927,6 +1058,34 @@ export const userKnownLemmas = pgTable(
   (t) => ({
     pk: primaryKey({ columns: [t.userId, t.lemmaId] }),
     userIdx: index('user_known_lemmas_user_idx').on(t.userId, t.status),
+  }),
+);
+
+/**
+ * Per-user known-status for phrases (T-14.1). Direct parallel to
+ * `user_known_lemmas` — the `known_lemma_status` enum is reused
+ * because the semantics (unknown / learning / known / ignored) are
+ * identical for phrases. `setKnownPhraseStatus` updates this table
+ * and recomputes `user_languages.known_phrases_count_cache` in the
+ * same transaction.
+ */
+export const userKnownPhrases = pgTable(
+  'user_known_phrases',
+  {
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    phraseId: uuid('phrase_id')
+      .notNull()
+      .references(() => phrases.id, { onDelete: 'cascade' }),
+    status: knownLemmaStatus('status').notNull().default('learning'),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.userId, t.phraseId] }),
+    userIdx: index('user_known_phrases_user_idx').on(t.userId, t.status),
   }),
 );
 
@@ -1270,6 +1429,7 @@ export type TextChapter = InferSelectModel<typeof textChapters>;
 export type NlpJob = InferSelectModel<typeof nlpJobs>;
 export type TextToken = InferSelectModel<typeof textTokens>;
 export type UserKnownLemma = InferSelectModel<typeof userKnownLemmas>;
+export type UserKnownPhrase = InferSelectModel<typeof userKnownPhrases>;
 export type UserTextProgress = InferSelectModel<typeof userTextProgress>;
 export type FormLemmaOverride = InferSelectModel<typeof formLemmaOverrides>;
 export type TokenCorrection = InferSelectModel<typeof tokenCorrections>;

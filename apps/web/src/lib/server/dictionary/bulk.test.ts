@@ -154,6 +154,11 @@ function translationRow(overrides: Record<string, unknown> = {}) {
   return {
     id: 'tr-1',
     lemmaId: 'lemma-1',
+    // T-14.1: bulk operations only run on lemma-target translations;
+    // every fixture row gets the polymorphic columns mirrored from
+    // lemma_id. Phrase-target bulk paths land in T-14.7.
+    targetType: 'lemma',
+    targetId: 'lemma-1',
     source: 'user',
     submittedBy: 'user-42',
     parentTranslationId: null,

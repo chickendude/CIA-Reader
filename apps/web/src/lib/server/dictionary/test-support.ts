@@ -158,6 +158,11 @@ export class InMemoryDictionaryRepo implements DictionaryRepo {
     const row: Translation = {
       id,
       lemmaId: payload.lemmaId,
+      // T-14.1: in-memory test fixture mirrors the polymorphic
+      // columns. The fake repo only writes lemma-target rows
+      // (phrases use a separate service path).
+      targetType: 'lemma',
+      targetId: payload.lemmaId,
       source: payload.source,
       submittedBy: null,
       parentTranslationId: null,
