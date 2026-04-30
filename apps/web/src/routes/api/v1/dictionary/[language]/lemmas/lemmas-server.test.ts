@@ -4,6 +4,8 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { jsonContract } from '$lib/test/json-contract.js';
+
 const listDictionaryLemmas = vi.fn();
 
 vi.mock('$lib/server/dictionary/browse.js', async () => {
@@ -67,6 +69,7 @@ describe('GET /api/v1/dictionary/:language/lemmas', () => {
       totalCount: 1,
       limit: 50,
       offset: 0,
+      usedNuktaFallback: false,
     });
     const res = (await callGet(
       'http://x/api/v1/dictionary/hi/lemmas?q=%E0%A4%AC%E0%A5%8B%E0%A4%B2',
@@ -80,6 +83,29 @@ describe('GET /api/v1/dictionary/:language/lemmas', () => {
     });
     expect(json.lemmas[0].sourceId).toBeUndefined();
     expect(json.totalCount).toBe(1);
+    expect(jsonContract(json)).toMatchInlineSnapshot(`
+      {
+        "language": "string",
+        "lemmas": [
+          {
+            "curatorLocked": "boolean",
+            "frequencyRank": "number",
+            "glossDefault": "string",
+            "headword": "string",
+            "id": "string",
+            "language": "string",
+            "pos": "string",
+            "provenanceSource": "string",
+            "script": "string",
+            "sourceAttribution": "string",
+          },
+        ],
+        "limit": "number",
+        "offset": "number",
+        "totalCount": "number",
+        "usedNuktaFallback": "boolean",
+      }
+    `);
   });
 
   it('returns 400 on an unsupported language', async () => {
@@ -118,6 +144,7 @@ describe('GET /api/v1/dictionary/:language/lemmas', () => {
       totalCount: 0,
       limit: 10,
       offset: 20,
+      usedNuktaFallback: false,
     });
     await callGet(
       'http://x/api/v1/dictionary/hi/lemmas?pos=verb&pos=noun&minRank=1&maxRank=1000&hasOfficialTranslation=true&limit=10&offset=20',

@@ -4,6 +4,8 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { jsonContract } from '$lib/test/json-contract.js';
+
 const getReadableText = vi.fn();
 const loadChapterTokens = vi.fn();
 
@@ -86,6 +88,8 @@ describe('GET /api/v1/texts/:id/chapters/:idx/tokens', () => {
         lemmaId: 'lem-1',
         romanization: null,
         glossDefault: null,
+        candidates: [],
+        numberForms: null,
         status: 'unknown',
       },
     ]);
@@ -101,6 +105,29 @@ describe('GET /api/v1/texts/:id/chapters/:idx/tokens', () => {
     expect(body.chapterId).toBe('c1');
     expect(body.body).toBe('body 1');
     expect(body.tokens).toHaveLength(1);
+    expect(jsonContract(body)).toMatchInlineSnapshot(`
+      {
+        "body": "string",
+        "chapterId": "string",
+        "chapterIdx": "number",
+        "tokens": [
+          {
+            "candidates": "array",
+            "glossDefault": "null",
+            "id": "string",
+            "idx": "number",
+            "isAmbiguous": "boolean",
+            "isOov": "boolean",
+            "isWord": "boolean",
+            "lemmaId": "string",
+            "numberForms": "null",
+            "romanization": "null",
+            "status": "string",
+            "surface": "string",
+          },
+        ],
+      }
+    `);
     expect(loadChapterTokens).toHaveBeenCalledWith('c1', 'user-1');
   });
 

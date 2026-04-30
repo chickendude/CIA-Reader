@@ -4,6 +4,8 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { jsonContract } from '$lib/test/json-contract.js';
+
 const getLemmaTranslations = vi.fn();
 const resolveUser = vi.fn();
 
@@ -67,13 +69,70 @@ describe('GET /api/v1/lemmas/:id/translations', () => {
         glossDefault: 'water',
         frequencyRank: 120,
       },
-      translations: { personal: [], official: [], community: [] },
+      translations: {
+        personal: [],
+        official: [
+          {
+            id: 'tr-1',
+            source: 'official_dictionary',
+            submittedBy: null,
+            parentTranslationId: null,
+            body: 'water',
+            targetLanguage: 'en',
+            sourceAttribution: 'Hindi WordNet',
+            provenance: { kind: 'imported', attribution: 'Hindi WordNet' },
+            hidden: false,
+            voteScore: 2,
+            viewerVote: null,
+            createdAt: new Date('2026-04-27T00:00:00Z'),
+            updatedAt: new Date('2026-04-27T00:00:00Z'),
+          },
+        ],
+        community: [],
+      },
     });
     const res = (await callGet(VALID_LEMMA_ID)) as Response;
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.lemma.headword).toBe('पानी');
-    expect(body.translations).toEqual({ personal: [], official: [], community: [] });
+    expect(body.translations.official[0].body).toBe('water');
+    expect(jsonContract(body)).toMatchInlineSnapshot(`
+      {
+        "lemma": {
+          "frequencyRank": "number",
+          "glossDefault": "string",
+          "headword": "string",
+          "id": "string",
+          "language": "string",
+          "pos": "string",
+          "script": "string",
+        },
+        "translations": {
+          "community": "array",
+          "official": [
+            {
+              "body": "string",
+              "createdAt": "string",
+              "hidden": "boolean",
+              "id": "string",
+              "parentTranslationId": "null",
+              "provenance": {
+                "attribution": "string",
+                "kind": "string",
+              },
+              "source": "string",
+              "sourceAttribution": "string",
+              "submittedBy": "null",
+              "targetLanguage": "string",
+              "updatedAt": "string",
+              "viewerVote": "null",
+              "voteScore": "number",
+            },
+          ],
+          "personal": "array",
+        },
+      }
+    `);
     expect(getLemmaTranslations).toHaveBeenCalledWith(VALID_LEMMA_ID, null);
   });
 

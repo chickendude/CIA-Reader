@@ -8,6 +8,8 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { jsonContract } from '$lib/test/json-contract.js';
+
 const submitUserTranslation = vi.fn();
 const requireUser = vi.fn();
 const consumeRateLimit = vi.fn();
@@ -83,6 +85,8 @@ describe('POST /api/v1/translations', () => {
     submitUserTranslation.mockResolvedValueOnce({
       id: 'tr-1',
       lemmaId: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+      targetType: 'lemma',
+      targetId: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
       source: 'user',
       submittedBy: 'u1',
       parentTranslationId: null,
@@ -110,6 +114,25 @@ describe('POST /api/v1/translations', () => {
     // Never leaks sourceId on user submissions (it's always null, but
     // ensure we send the stable public shape).
     expect(json.translation.sourceId).toBeUndefined();
+    expect(jsonContract(json)).toMatchInlineSnapshot(`
+      {
+        "translation": {
+          "body": "string",
+          "createdAt": "string",
+          "hidden": "boolean",
+          "id": "string",
+          "lemmaId": "string",
+          "parentTranslationId": "null",
+          "source": "string",
+          "sourceAttribution": "null",
+          "submittedBy": "string",
+          "targetId": "string",
+          "targetLanguage": "string",
+          "targetType": "string",
+          "updatedAt": "string",
+        },
+      }
+    `);
     expect(res.headers.get('x-ratelimit-remaining')).toBe('29');
   });
 

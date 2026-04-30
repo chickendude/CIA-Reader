@@ -4,6 +4,8 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { jsonContract } from '$lib/test/json-contract.js';
+
 const createPastedText = vi.fn();
 const createTxtText = vi.fn();
 const requireUser = vi.fn();
@@ -91,6 +93,21 @@ describe('POST /api/v1/texts', () => {
       visibility: 'private',
       sourceType: 'paste',
     });
+    expect(jsonContract(json)).toMatchInlineSnapshot(`
+      {
+        "chapterCount": "number",
+        "text": {
+          "createdAt": "string",
+          "id": "string",
+          "language": "string",
+          "ownerId": "string",
+          "sourceType": "string",
+          "status": "string",
+          "title": "string",
+          "visibility": "string",
+        },
+      }
+    `);
     expect(json.chapterCount).toBe(1);
     expect(createPastedText).toHaveBeenCalledWith(
       { id: USER.id },
