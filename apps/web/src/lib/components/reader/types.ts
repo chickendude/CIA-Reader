@@ -21,6 +21,29 @@ export type ServerCandidate = {
   features: Record<string, string>;
 };
 
+/** T-2.8: cheap surface-level detector — does this token *look* like a
+ *  digit-only number, possibly with thousands / lakh separators?
+ *  Latin (0–9), Devanagari (०–९), and Odia (୦–୯) digit ranges all
+ *  qualify. Mixed-script doesn't. Used both by the dispatcher (skip
+ *  lemma auto-create for these surfaces so the lemmas table doesn't
+ *  fill with "1,013,322"-style entries) and by the popup / tooltip
+ *  (treat as a number even when the older `numberForms` column is
+ *  null because the chapter was processed before the comma fix
+ *  landed). The full Python parser in `services/nlp/app/numbers.py`
+ *  is the source of truth for actually generating the spelled-out
+ *  forms; this helper just gates UI branching on the client. */
+// Each alternation pins a single script across all comma-separated
+// groups so mixed-script input ("1,२३४") doesn't sneak through.
+const _NUMBER_RE =
+  /^(?:[0-9]+(?:,[0-9]+)*|[०-९]+(?:,[०-९]+)*|[୦-୯]+(?:,[୦-୯]+)*)$/u;
+export function looksLikeNumberToken(surface: string): boolean {
+  if (!surface) return false;
+  // Reject leading / trailing comma without paying for a regex run.
+  if (surface.startsWith(',') || surface.endsWith(',')) return false;
+  if (surface.includes(',,')) return false;
+  return _NUMBER_RE.test(surface);
+}
+
 /** T-2.8: per-language spelled-out + ISO 15919 romanization for a
  *  digit-only NUM token. Mirrors `RenderedNumberForms` in
  *  `$lib/server/texts/tokens.ts`. */

@@ -10,7 +10,11 @@
 -->
 <script lang="ts">
   import type { LanguageCode } from '@ciareader/shared-types';
-  import type { ServerToken, ServerNumberLanguageForm } from './types.js';
+  import {
+    looksLikeNumberToken,
+    type ServerToken,
+    type ServerNumberLanguageForm,
+  } from './types.js';
   import { placeTooltip, type AnchorRect } from './tooltip-position.js';
 
   interface Props {
@@ -37,6 +41,15 @@
             ? token.numberForms.odia
             : null
       : null,
+  );
+
+  // T-2.8: legacy data fallback. The chapter was processed before the
+  // worker started writing number_forms, so we have no spelled-out
+  // payload — but we can at least recognize the surface as a number
+  // and stop the tooltip from claiming "No translations" / "No
+  // dictionary match", which is misleading.
+  const isLegacyNumber = $derived(
+    !token.numberForms && looksLikeNumberToken(token.surface),
   );
 
   let tipEl: HTMLDivElement | null = $state(null);
@@ -104,8 +117,9 @@
     <!-- T-2.8: for number tokens the romanization field carries the
          literal digit string ("123" → "123") which is just noise in
          the head; suppress it and let the spelled-out form below do
-         the work. -->
-    {#if token.romanization && !numberForm}
+         the work. Same suppression for legacy number tokens whose
+         numberForms payload is missing. -->
+    {#if token.romanization && !numberForm && !isLegacyNumber}
       <span class="tip-roman">{token.romanization}</span>
     {/if}
   </div>
@@ -117,6 +131,8 @@
       {numberForm.spelled}
       <span class="tip-roman num-roman">{numberForm.romanized}</span>
     </div>
+  {:else if isLegacyNumber}
+    <div class="tip-def empty" data-testid="legacy-number">Number</div>
   {:else if token.isOov}
     <!-- T-5.20: surface the top translation when we have one, fall
          back to an italic "No translations" otherwise so the user

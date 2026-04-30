@@ -24,6 +24,7 @@ import { and, eq } from 'drizzle-orm';
 
 import { db, schema } from '../db/index.js';
 import { nlpClient, type NlpToken } from '../nlp-client.js';
+import { looksLikeNumberToken } from '$lib/components/reader/types.js';
 import type {
   Lemma,
   Text,
@@ -198,6 +199,13 @@ async function pickLemmaId(
   index: LemmaIndex,
 ): Promise<string | null> {
   if (!token.is_word) return null;
+  // T-2.8: digit-only surfaces (with or without comma separators)
+  // get rendered as numbers in the popup, not as lemmas. Skip lemma
+  // resolution + auto-create for them so the lemmas table doesn't
+  // collect "1,013,322 / NUM" rows the curator has to clean up later.
+  // The number_forms column on the token row carries the per-language
+  // spelled-out payload that drives the popup.
+  if (looksLikeNumberToken(token.surface)) return null;
   // T-2.7: form_lemma_overrides wins over Stanza. Curator seeds for
   // treebank quirks (Hindi finite copulas → होना and friends) +
   // T-6.7's crowdsourced promotions land here. The lookup is keyed

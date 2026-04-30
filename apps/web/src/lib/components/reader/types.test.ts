@@ -1,6 +1,47 @@
 import { describe, expect, it } from 'vitest';
 
-import { STATUS_TO_CODE, paragraphsOfTokens, statusToCode, tokenize } from './types.js';
+import {
+  STATUS_TO_CODE,
+  looksLikeNumberToken,
+  paragraphsOfTokens,
+  statusToCode,
+  tokenize,
+} from './types.js';
+
+describe('looksLikeNumberToken (T-2.8)', () => {
+  it.each([
+    '0',
+    '123',
+    '1,000',
+    '12,345',
+    '1,00,000',
+    '1,234,567',
+    '१२३',
+    '१,२३४',
+    '१,००,०००',
+    '୧୨୩',
+    '୧,୨୩୪',
+  ])('accepts %s', (s) => {
+    expect(looksLikeNumberToken(s)).toBe(true);
+  });
+
+  it.each([
+    '',
+    'abc',
+    '12a',
+    '१23', // mixed script
+    '1२3',
+    '1,२३४', // mixed script across comma groups
+    '-1',
+    '1.5',
+    ',1',
+    '1,',
+    '1,,000',
+    ',',
+  ])('rejects %s', (s) => {
+    expect(looksLikeNumberToken(s)).toBe(false);
+  });
+});
 
 describe('tokenize', () => {
   it('splits on word boundaries while preserving whitespace + punctuation', () => {
