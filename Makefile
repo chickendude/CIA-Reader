@@ -39,15 +39,20 @@ clean:
 
 # Native dev: data services in docker, web + nlp on the host. Use when
 # docker buildx can't reach pypi/npm registries (corp DNS, VPN, etc.).
+#
+# Each var defers to the caller's environment first (`${VAR:-default}` shell
+# expansion) so you can override any value via `export FOO=...` in your shell
+# or a per-command prefix (`FOO=... make dev-native-db`). The defaults match
+# the docker-compose host-port defaults.
 NATIVE_ENV = \
-	NLP_SERVICE_URL=http://localhost:8000 \
-	DATABASE_URL=postgres://ciareader:ciareader@localhost:5432/ciareader \
-	REDIS_URL=redis://localhost:6379 \
-	AUTH_SECRET=dev-only-secret-replace-in-prod-0000000000000000000000000000000 \
-	APP_BASE_URL=http://localhost:5173 \
-	SMTP_HOST=localhost \
-	SMTP_PORT=1025 \
-	SMTP_FROM=no-reply@ciareader.local
+	NLP_SERVICE_URL=$${NLP_SERVICE_URL:-http://localhost:8000} \
+	DATABASE_URL=$${DATABASE_URL:-postgres://ciareader:ciareader@localhost:5432/ciareader} \
+	REDIS_URL=$${REDIS_URL:-redis://localhost:6379} \
+	AUTH_SECRET=$${AUTH_SECRET:-dev-only-secret-replace-in-prod-0000000000000000000000000000000} \
+	APP_BASE_URL=$${APP_BASE_URL:-http://localhost:5173} \
+	SMTP_HOST=$${SMTP_HOST:-localhost} \
+	SMTP_PORT=$${SMTP_PORT:-1025} \
+	SMTP_FROM=$${SMTP_FROM:-no-reply@ciareader.local}
 
 dev-native: dev-native-services dev-native-db
 	@echo ""
@@ -65,7 +70,7 @@ dev-native-down:
 	docker compose -f infra/docker-compose.yml stop postgres redis mailpit
 
 dev-native-db:
-	cd apps/web && $(NATIVE_ENV) pnpm exec drizzle-kit push --verbose
+	cd apps/web && $(NATIVE_ENV) pnpm exec drizzle-kit migrate
 
 dev-native-nlp:
 	cd services/nlp && PYTHONPATH=../../packages/shared-types/python:. .venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
