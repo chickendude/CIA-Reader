@@ -16,6 +16,7 @@ import { error, json } from '@sveltejs/kit';
 
 import { getReadableText } from '$lib/server/texts/upload.js';
 import { loadChapterTokens } from '$lib/server/texts/tokens.js';
+import { loadChapterPhraseSpans } from '$lib/server/texts/phrase-spans.js';
 import type { RequestHandler } from './$types';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -35,10 +36,17 @@ export const GET: RequestHandler = async ({ params, locals }) => {
   if (!chapter) throw error(404, 'Chapter not found');
 
   const tokens = await loadChapterTokens(chapter.id, viewer?.id ?? null);
+  // T-14.3: spans ride alongside tokens. Empty array when the
+  // chapter has been processed but contains no phrase matches;
+  // null when tokens are also null (unprocessed chapter).
+  const phraseSpans = tokens
+    ? await loadChapterPhraseSpans(chapter.id, viewer?.id ?? null)
+    : null;
   return json({
     chapterId: chapter.id,
     chapterIdx: chapter.idx,
     body: chapter.body,
     tokens,
+    phraseSpans,
   });
 };

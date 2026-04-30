@@ -73,6 +73,7 @@
   // the user hasn't picked a word yet.
   let {
     token,
+    phrase = null,
     language,
     isOwner,
     onClose,
@@ -80,6 +81,12 @@
     onCorrectionApplied,
   }: {
     token: ServerToken | null;
+    /** T-14.3: surface the longest phrase containing the click
+     *  target. When non-null, the popup renders a phrase banner
+     *  (status flips + gloss + headword) above the existing token
+     *  body. The component lemma stays underneath so a click on a
+     *  phrase token still surfaces the lemma's translations. */
+    phrase?: import('./types.js').ChapterPhraseSpan | null;
     /** Drives the CorrectionModal's dictionary search + script
      *  selection. Required from T-6.2 forward. */
     language: LanguageCode;
@@ -94,6 +101,42 @@
      *  the reader reflects the correction without a page reload. */
     onCorrectionApplied?: (tokenId: string, chosenLemmaId: string | null) => void;
   } = $props();
+
+  // T-14.3: optimistic phrase status, mirroring the lemma path.
+  // Re-syncs from the prop whenever the user clicks into a
+  // different phrase. The PATCH happens against
+  // /api/v1/me/known-phrases/:phraseId.
+  let optimisticPhraseStatus = $state<
+    'unknown' | 'learning' | 'known' | 'ignored'
+  >(untrack(() => phrase?.status ?? 'unknown'));
+  let phraseStatusError = $state<string | null>(null);
+  $effect(() => {
+    optimisticPhraseStatus = phrase?.status ?? 'unknown';
+    phraseStatusError = null;
+  });
+
+  async function setPhraseStatus(
+    next: 'unknown' | 'learning' | 'known' | 'ignored',
+  ) {
+    if (!phrase) return;
+    const prev = optimisticPhraseStatus;
+    optimisticPhraseStatus = next;
+    phraseStatusError = null;
+    try {
+      const res = await fetch(`/api/v1/me/known-phrases/${phrase.phraseId}`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ status: next }),
+      });
+      if (!res.ok) {
+        optimisticPhraseStatus = prev;
+        phraseStatusError = `Could not update phrase status (${res.status})`;
+      }
+    } catch (e) {
+      optimisticPhraseStatus = prev;
+      phraseStatusError = `Network error: ${(e as Error).message}`;
+    }
+  }
 
   let payload = $state<LemmaPayload | null>(null);
   let loadError = $state<string | null>(null);
@@ -496,6 +539,54 @@
      The panel is always open on desktop (static right column) and
      conditional on mobile (slides up only when a word is picked). -->
 <Sheet open={sheetOpen} onClose={onClose} title="" dimmed={false}>
+  {#if phrase}
+    <!-- T-14.3: phrase banner. Sits above the token body so the
+         user sees the multi-word entry first, with the component
+         lemma's translations available underneath. The `Customize`
+         + translation list for the phrase itself land in T-14.4. -->
+    <section class="sp-phrase" data-testid="word-popup-phrase">
+      <header class="sp-phrase-head">
+        <span class="sp-phrase-eyebrow">Phrase</span>
+        {#if phrase.glossDefault}
+          <p class="sp-phrase-gloss">{phrase.glossDefault}</p>
+        {:else}
+          <p class="sp-phrase-gloss muted">No phrase gloss yet.</p>
+        {/if}
+      </header>
+      {#if isOwner}
+        <div
+          class="sp-status sp-phrase-status"
+          role="group"
+          aria-label="Mark phrase status"
+        >
+          <button
+            type="button"
+            data-active={optimisticPhraseStatus === 'learning' ? '1' : '0'}
+            onclick={() => setPhraseStatus('learning')}
+          >
+            Learning
+          </button>
+          <button
+            type="button"
+            data-active={optimisticPhraseStatus === 'known' ? '1' : '0'}
+            onclick={() => setPhraseStatus('known')}
+          >
+            Known
+          </button>
+          <button
+            type="button"
+            data-active={optimisticPhraseStatus === 'ignored' ? '1' : '0'}
+            onclick={() => setPhraseStatus('ignored')}
+          >
+            Ignored
+          </button>
+        </div>
+        {#if phraseStatusError}
+          <p class="err small">{phraseStatusError}</p>
+        {/if}
+      {/if}
+    </section>
+  {/if}
   {#if !token}
     <div class="sp-empty" data-testid="word-popup-empty">
       <p>Click a word to see its definition.</p>
@@ -837,6 +928,38 @@
     font-style: italic;
     text-align: center;
     padding: 1.5rem 0.5rem;
+  }
+  /* T-14.3: phrase banner. Sits above the token block when the
+     user clicked inside a phrase wrapper. Lightweight visual
+     treatment so it doesn't compete with the (richer) token /
+     lemma section underneath. */
+  .sp-phrase {
+    margin: 0 0 1rem;
+    padding: 0.5rem 0.75rem 0.6rem;
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--color-accent) 6%, transparent);
+  }
+  .sp-phrase-head {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+  }
+  .sp-phrase-eyebrow {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--ink-3, var(--color-fg-muted));
+  }
+  .sp-phrase-gloss {
+    margin: 0;
+    font-size: 0.95rem;
+  }
+  .sp-phrase-gloss.muted {
+    color: var(--ink-3, var(--color-fg-muted));
+    font-style: italic;
+  }
+  .sp-phrase-status {
+    margin-top: 0.5rem;
   }
   .sp-head {
     position: relative;

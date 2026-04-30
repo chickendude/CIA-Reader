@@ -33,12 +33,14 @@ describe('LazyTokenLoader', () => {
         chapterIdx: idx,
         body: `body ${idx}`,
         tokens: fakeTokens(2),
+        phraseSpans: [],
       }));
     const loader = new LazyTokenLoader('text-1', fetcher);
     const a = await loader.load(2);
     const b = await loader.load(2);
     expect(a.tokens).toHaveLength(2);
     expect(a.body).toBe('body 2');
+    expect(a.phraseSpans).toEqual([]);
     expect(b).toEqual(a);
     expect(fetcher).toHaveBeenCalledTimes(1);
   });
@@ -52,10 +54,17 @@ describe('LazyTokenLoader', () => {
     const loader = new LazyTokenLoader('t1', fetcher);
     const p1 = loader.load(1);
     const p2 = loader.load(1);
-    resolveFn!({ chapterId: 'c1', chapterIdx: 1, body: 'body 1', tokens: null });
+    resolveFn!({
+      chapterId: 'c1',
+      chapterIdx: 1,
+      body: 'body 1',
+      tokens: null,
+      phraseSpans: null,
+    });
     const [a, b] = await Promise.all([p1, p2]);
     expect(a.tokens).toBeNull();
     expect(a.body).toBe('body 1');
+    expect(a.phraseSpans).toBeNull();
     expect(b).toEqual(a);
     expect(fetcher).toHaveBeenCalledTimes(1);
   });
@@ -87,11 +96,13 @@ describe('LazyTokenLoader', () => {
       chapterIdx: 1,
       body: 'fallback body',
       tokens: null,
+      phraseSpans: null,
     });
     const loader = new LazyTokenLoader('t1', fetcher);
     expect(await loader.load(1)).toMatchObject({
       body: 'fallback body',
       tokens: null,
+      phraseSpans: null,
     });
     expect(loader.state(1)).toEqual({
       kind: 'loaded',
@@ -99,6 +110,7 @@ describe('LazyTokenLoader', () => {
       chapterIdx: 1,
       body: 'fallback body',
       tokens: null,
+      phraseSpans: null,
     });
   });
 });
