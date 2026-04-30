@@ -24,6 +24,8 @@ describe('OpenAPI generator', () => {
       deprecationHeader: API_DEPRECATION_HEADER,
     });
     expect(doc.components.headers[API_DEPRECATION_HEADER]).toBeDefined();
+    expect(doc.components.headers['X-RateLimit-Remaining']).toBeDefined();
+    expect(doc.components.responses.RateLimited).toBeDefined();
     expect(doc.components.securitySchemes.personalApiKeyAuth).toBeDefined();
   });
 

@@ -204,6 +204,13 @@
       "when": 1777516246583,
       "tag": "0028_flashy_epoch",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1777516696178,
+      "tag": "0029_massive_vulcan",
+      "breakpoints": true
     }
   ]
 }
