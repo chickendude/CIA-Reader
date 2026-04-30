@@ -139,6 +139,93 @@
     }
   }
 
+  // T-14.4: phrase translations. Mirrors the lemma translation
+  // fetch below — when a phrase is active, GET the phrase detail
+  // (which includes its visible translations) and render them
+  // inside the phrase banner. The "Add translation" form posts to
+  // POST /api/v1/phrases/:id/translations (T-14.1), the same path
+  // T-3.5's customize fork uses for lemma-target rows.
+  type PhraseTranslation = {
+    id: string;
+    body: string;
+    targetLanguage: string;
+    source: 'official_dictionary' | 'curator' | 'user';
+    submittedBy: string | null;
+    sourceAttribution: string | null;
+  };
+  let phraseTranslations = $state<PhraseTranslation[]>([]);
+  let phraseTranslationsError = $state<string | null>(null);
+  let phraseTranslationDraft = $state('');
+  let phraseSubmitting = $state(false);
+  let phraseSubmitError = $state<string | null>(null);
+
+  $effect(() => {
+    const p = phrase;
+    if (!p) {
+      phraseTranslations = [];
+      phraseTranslationsError = null;
+      phraseTranslationDraft = '';
+      phraseSubmitError = null;
+      return;
+    }
+    let cancelled = false;
+    phraseTranslations = [];
+    phraseTranslationsError = null;
+    void (async () => {
+      try {
+        const res = await fetch(`/api/v1/phrases/${p.phraseId}`);
+        if (cancelled) return;
+        if (res.ok) {
+          const json = (await res.json()) as {
+            translations: Array<PhraseTranslation>;
+          };
+          phraseTranslations = json.translations ?? [];
+        } else {
+          phraseTranslationsError = `Could not load phrase translations (${res.status})`;
+        }
+      } catch (e) {
+        if (!cancelled) {
+          phraseTranslationsError = `Network error: ${(e as Error).message}`;
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  });
+
+  async function submitPhraseTranslation() {
+    if (!phrase) return;
+    const body = phraseTranslationDraft.trim();
+    if (body.length === 0) return;
+    phraseSubmitting = true;
+    phraseSubmitError = null;
+    try {
+      const res = await fetch(
+        `/api/v1/phrases/${phrase.phraseId}/translations`,
+        {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ body }),
+        },
+      );
+      if (res.ok) {
+        const json = (await res.json()) as { translation: PhraseTranslation };
+        // Optimistic prepend — server-side sort still wins on the
+        // next popup open, but for the current popup session the
+        // user sees their submission instantly.
+        phraseTranslations = [json.translation, ...phraseTranslations];
+        phraseTranslationDraft = '';
+      } else {
+        phraseSubmitError = `Could not add translation (${res.status})`;
+      }
+    } catch (e) {
+      phraseSubmitError = `Network error: ${(e as Error).message}`;
+    } finally {
+      phraseSubmitting = false;
+    }
+  }
+
   let payload = $state<LemmaPayload | null>(null);
   let loadError = $state<string | null>(null);
   let showAlternates = $state(false);
@@ -581,10 +668,11 @@
      conditional on mobile (slides up only when a word is picked). -->
 <Sheet open={sheetOpen} onClose={onClose} title="" dimmed={false}>
   {#if phrase}
-    <!-- T-14.3: phrase banner. Sits above the token body so the
-         user sees the multi-word entry first, with the component
-         lemma's translations available underneath. The `Customize`
-         + translation list for the phrase itself land in T-14.4. -->
+    <!-- T-14.3 / T-14.4: phrase banner. Header (eyebrow + gloss) +
+         status flips ride from T-14.3; T-14.4 adds the visible
+         translations list and the "Add translation" form so a
+         learner can attach meaning to a phrase the same way
+         T-3.5 lets them customize a lemma translation. -->
     <section class="sp-phrase" data-testid="word-popup-phrase">
       <header class="sp-phrase-head">
         <span class="sp-phrase-eyebrow">Phrase</span>
@@ -626,6 +714,62 @@
           <p class="err small">{phraseStatusError}</p>
         {/if}
       {/if}
+      <!-- T-14.4: translations list. The phrase detail endpoint
+           (GET /api/v1/phrases/:id) returns visible translations
+           ordered curator > imported > user > vote. We render them
+           with a small attribution chip so the learner can
+           distinguish official entries from user submissions. -->
+      <div class="sp-phrase-trans" data-testid="phrase-translations">
+        {#if phraseTranslationsError}
+          <p class="err small">{phraseTranslationsError}</p>
+        {:else if phraseTranslations.length === 0}
+          <p class="muted small">No translations yet — add one below.</p>
+        {:else}
+          <ul class="sp-phrase-trans-list">
+            {#each phraseTranslations as t (t.id)}
+              <li class="sp-phrase-trans-row" data-source={t.source}>
+                <span class="sp-phrase-trans-body">{t.body}</span>
+                <span class="sp-phrase-trans-tag">{t.source.replace('_', ' ')}</span>
+              </li>
+            {/each}
+          </ul>
+        {/if}
+        {#if isOwner}
+          <form
+            class="sp-phrase-trans-form"
+            onsubmit={(e) => {
+              e.preventDefault();
+              void submitPhraseTranslation();
+            }}
+          >
+            <label class="sp-phrase-trans-label" for="phrase-trans-input">
+              Add translation
+            </label>
+            <textarea
+              id="phrase-trans-input"
+              class="sp-phrase-trans-input"
+              data-testid="phrase-translation-input"
+              rows="2"
+              placeholder="e.g. to wait"
+              bind:value={phraseTranslationDraft}
+              disabled={phraseSubmitting}
+              maxlength="500"
+            ></textarea>
+            <div class="sp-phrase-trans-actions">
+              <button
+                type="submit"
+                disabled={phraseSubmitting || phraseTranslationDraft.trim().length === 0}
+                data-testid="phrase-translation-submit"
+              >
+                {phraseSubmitting ? 'Saving…' : 'Add'}
+              </button>
+              {#if phraseSubmitError}
+                <span class="err small">{phraseSubmitError}</span>
+              {/if}
+            </div>
+          </form>
+        {/if}
+      </div>
     </section>
   {/if}
   {#if !token}
@@ -1031,6 +1175,85 @@
   }
   .sp-phrase-status {
     margin-top: 0.5rem;
+  }
+  /* T-14.4: phrase translations list + add form. The list re-uses
+     the popup's neutral type scale; the per-row attribution chip
+     surfaces source provenance the same way T-3.8 surfaces lemma-
+     translation provenance. */
+  .sp-phrase-trans {
+    margin-top: 0.6rem;
+    padding-top: 0.55rem;
+    border-top: 1px dashed
+      color-mix(in srgb, var(--ink, var(--color-fg)) 12%, transparent);
+  }
+  .sp-phrase-trans-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+  .sp-phrase-trans-row {
+    display: flex;
+    align-items: baseline;
+    gap: 0.45rem;
+    font-size: 0.9rem;
+  }
+  .sp-phrase-trans-body {
+    flex: 1;
+  }
+  .sp-phrase-trans-tag {
+    font-size: 0.65rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--ink-3, var(--color-fg-muted));
+    border: 1px solid var(--rule, var(--color-border));
+    border-radius: 4px;
+    padding: 0 0.3rem;
+    line-height: 1.3;
+    flex-shrink: 0;
+  }
+  .sp-phrase-trans-form {
+    margin-top: 0.55rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+  }
+  .sp-phrase-trans-label {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--ink-3, var(--color-fg-muted));
+  }
+  .sp-phrase-trans-input {
+    width: 100%;
+    resize: vertical;
+    min-height: 2.5rem;
+    border-radius: 6px;
+    border: 1px solid var(--rule, var(--color-border));
+    background: var(--bg, var(--color-bg));
+    color: var(--ink, var(--color-fg));
+    padding: 0.4rem 0.5rem;
+    font: inherit;
+  }
+  .sp-phrase-trans-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  .sp-phrase-trans-actions button {
+    padding: 0.3rem 0.7rem;
+    border-radius: 6px;
+    border: 1px solid var(--rule, var(--color-border));
+    background: var(--card, var(--color-bg));
+    color: var(--ink, var(--color-fg));
+    cursor: pointer;
+    font-size: 0.85rem;
+  }
+  .sp-phrase-trans-actions button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
   }
   .sp-head {
     position: relative;
