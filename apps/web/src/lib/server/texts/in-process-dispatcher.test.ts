@@ -98,6 +98,16 @@ vi.mock('../nlp-client.js', () => ({
   nlpClient: { process: (...a: unknown[]) => nlpProcess(...a) },
 }));
 
+// T-14.2: stub the phrase-span resolver so existing dispatcher
+// tests don't have to stage extra DB calls. The hook itself is
+// covered by `phrase-spans.test.ts` (rebuild + loader) and the
+// `'rebuilds chapter phrase spans after writing text_tokens'` case
+// at the bottom of this file.
+const rebuildChapterSpans = vi.fn();
+vi.mock('./phrase-spans.js', () => ({
+  rebuildChapterSpans: (...a: unknown[]) => rebuildChapterSpans(...a),
+}));
+
 const { processTextNow } = await import('./in-process-dispatcher.js');
 
 beforeEach(() => {
@@ -108,6 +118,8 @@ beforeEach(() => {
   insertFn.mockClear();
   deleteFn.mockClear();
   nlpProcess.mockReset();
+  rebuildChapterSpans.mockReset();
+  rebuildChapterSpans.mockResolvedValue(0);
 });
 
 afterEach(() => {
@@ -528,5 +540,38 @@ describe('processTextNow', () => {
     expect(
       (failed!.set as { statusError: string }).statusError,
     ).toMatch(/NLP service 500/);
+  });
+
+  it('rebuilds chapter phrase spans after writing text_tokens (T-14.2)', async () => {
+    stage([{ id: 'text-1', language: 'hi' }]); // text lookup
+    stage([{ id: 'chap-1', body: 'one' }]); // chapters
+    stage([{ id: 'lemma-bolnaa', headword: 'बोलना', pos: 'verb' }]); // lemmas
+    stage([]); // form_lemma_overrides preload
+
+    nlpProcess.mockResolvedValueOnce({
+      language: 'hi',
+      pipeline_id: 'hi/stub',
+      tokens: [
+        {
+          idx: 0,
+          surface: 'बोलना',
+          is_word: true,
+          is_ambiguous: false,
+          is_oov: false,
+          romanization: 'bolnā',
+          number_forms: null,
+          candidates: [
+            { lemma: 'बोलना', pos: 'verb', score: 0.9, features: {} },
+          ],
+        },
+      ],
+    });
+
+    await processTextNow('text-1');
+    expect(rebuildChapterSpans).toHaveBeenCalledTimes(1);
+    expect(rebuildChapterSpans).toHaveBeenCalledWith({
+      chapterId: 'chap-1',
+      language: 'hi',
+    });
   });
 });

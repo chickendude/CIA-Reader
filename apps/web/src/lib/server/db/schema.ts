@@ -1062,6 +1062,54 @@ export const userKnownLemmas = pgTable(
 );
 
 /**
+ * Materialised phrase occurrences per chapter (T-14.2).
+ *
+ * The chapter-span resolver (`server/texts/phrase-spans.ts`) builds
+ * this table when the worker writes `text_tokens` and on every text
+ * reprocess. Each row is one occurrence of a `phrases` row inside a
+ * chapter — `start_token_idx` and `end_token_idx` are inclusive
+ * `text_tokens.idx` values for the first and last tokens covered by
+ * the span.
+ *
+ * Why a materialised table rather than computing on chapter load:
+ * resolution joins phrase_tokens by first-surface against the
+ * chapter's tokens. For a 7000-token chapter against the language's
+ * full phrase set, that's a non-trivial pass to repeat per page
+ * load. Building once on write keeps the reader hot path cheap and
+ * makes T-14.6's "phrases this user has seen" stats query trivial.
+ *
+ * The same start position can host multiple phrases — longer phrase
+ * winning over a shorter one is a render-time decision, not a
+ * storage one. PK is `(chapter_id, start_token_idx, phrase_id)` so
+ * overlapping phrases coexist; T-14.3's reader UI picks the longest
+ * containing span for the visible wrapper element and exposes the
+ * shorter ones via `data-phrase-overlap`.
+ */
+export const phraseChapterSpans = pgTable(
+  'phrase_chapter_spans',
+  {
+    chapterId: uuid('chapter_id')
+      .notNull()
+      .references(() => textChapters.id, { onDelete: 'cascade' }),
+    phraseId: uuid('phrase_id')
+      .notNull()
+      .references(() => phrases.id, { onDelete: 'cascade' }),
+    startTokenIdx: integer('start_token_idx').notNull(),
+    endTokenIdx: integer('end_token_idx').notNull(),
+  },
+  (t) => ({
+    pk: primaryKey({
+      columns: [t.chapterId, t.startTokenIdx, t.phraseId],
+    }),
+    // Drives `loadChapterTokens` — every span in this chapter in
+    // one indexed scan.
+    chapterIdx: index('phrase_chapter_spans_chapter_idx').on(t.chapterId),
+    // Drives T-14.6 stats — every chapter a given phrase appears in.
+    phraseIdx: index('phrase_chapter_spans_phrase_idx').on(t.phraseId),
+  }),
+);
+
+/**
  * Per-user known-status for phrases (T-14.1). Direct parallel to
  * `user_known_lemmas` — the `known_lemma_status` enum is reused
  * because the semantics (unknown / learning / known / ignored) are
@@ -1430,6 +1478,7 @@ export type NlpJob = InferSelectModel<typeof nlpJobs>;
 export type TextToken = InferSelectModel<typeof textTokens>;
 export type UserKnownLemma = InferSelectModel<typeof userKnownLemmas>;
 export type UserKnownPhrase = InferSelectModel<typeof userKnownPhrases>;
+export type PhraseChapterSpan = InferSelectModel<typeof phraseChapterSpans>;
 export type UserTextProgress = InferSelectModel<typeof userTextProgress>;
 export type FormLemmaOverride = InferSelectModel<typeof formLemmaOverrides>;
 export type TokenCorrection = InferSelectModel<typeof tokenCorrections>;
