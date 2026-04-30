@@ -57,12 +57,18 @@
     fetcher?: ChapterTokenFetcher;
   } = $props();
 
-  // Map of chapterIdx → fetched body + tokens. SSR only includes the
-  // active chapter's body, so siblings hydrate their text on demand.
-  // Seeded with the initial chapter so re-renders don't trigger an
-  // unnecessary network round-trip for the chapter we already have.
+  // Map of chapterIdx → fetched body + tokens + phrase spans. SSR
+  // only includes the active chapter's body, so siblings hydrate
+  // their text on demand. Seeded with the initial chapter so re-
+  // renders don't trigger an unnecessary network round-trip for
+  // the chapter we already have. T-14.3: phraseSpans rides on the
+  // same fetch so a sibling chapter scrolled into view repaints
+  // with phrase highlights on the next $derived pass.
   let lazyChapters = $state(
-    new Map<number, Pick<ChapterTokensResponse, 'body' | 'tokens'>>(),
+    new Map<
+      number,
+      Pick<ChapterTokensResponse, 'body' | 'tokens' | 'phraseSpans'>
+    >(),
   );
 
   const loader = $derived(new LazyTokenLoader(textId, fetcher));
@@ -74,7 +80,12 @@
       if (c.tokens != null && c.body != null) return c;
       const fetched = lazyChapters.get(c.idx);
       if (fetched === undefined) return c;
-      return { ...c, body: fetched.body, tokens: fetched.tokens };
+      return {
+        ...c,
+        body: fetched.body,
+        tokens: fetched.tokens,
+        phraseSpans: fetched.phraseSpans,
+      };
     });
   });
 
@@ -88,14 +99,18 @@
       .load(chapterIdx)
       .then((chapter) => {
         const next = new Map(untrack(() => lazyChapters));
-        next.set(chapterIdx, { body: chapter.body, tokens: chapter.tokens });
+        next.set(chapterIdx, {
+          body: chapter.body,
+          tokens: chapter.tokens,
+          phraseSpans: chapter.phraseSpans,
+        });
         lazyChapters = next;
       })
       .catch(() => {
         // Swallow — the chapter still renders via the whitespace
         // fallback, just without lemma colouring. A retry happens
         // automatically the next time the observer trips because
-        // we never wrote to `lazyTokens`.
+        // we never wrote to `lazyChapters`.
       });
   }
 

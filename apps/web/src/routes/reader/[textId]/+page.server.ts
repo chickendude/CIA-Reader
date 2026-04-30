@@ -23,6 +23,7 @@ import { and, eq } from 'drizzle-orm';
 
 import { getReadableText } from '$lib/server/texts/upload.js';
 import { loadChapterTokens } from '$lib/server/texts/tokens.js';
+import { loadChapterPhraseSpans } from '$lib/server/texts/phrase-spans.js';
 import { getTextProgress } from '$lib/server/texts/progress.js';
 import { readerCollectionContext } from '$lib/server/collections.js';
 import { listAudioForText } from '$lib/server/audio/audio.js';
@@ -152,6 +153,14 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
   const activeTokens = activeChapter
     ? await loadChapterTokens(activeChapter.id, viewerId)
     : null;
+  // T-14.3: phrase spans for the active chapter, joined with the
+  // viewer's known-phrase status. Empty array when the chapter
+  // has tokens but no phrase matches (the common case during
+  // M14 rollout); null for unprocessed chapters so the reader
+  // chrome can still render via the whitespace fallback.
+  const activeChapterSpans = activeChapter && activeTokens
+    ? await loadChapterPhraseSpans(activeChapter.id, viewerId)
+    : null;
 
   // T-8.3: if this text is a member of a collection, surface the
   // collection title + prev / next text ids in the reader chrome.
@@ -205,6 +214,10 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
       // Siblings carry `tokens: null`; the lazy endpoint returns both
       // body and tokens when a sibling needs to render.
       tokens: c.idx === chapterIdx ? activeTokens : null,
+      // T-14.3: phrase spans ride alongside tokens with the same
+      // active-only / lazy-fill posture. Sibling chapters get null
+      // until the lazy fetch lands.
+      phraseSpans: c.idx === chapterIdx ? activeChapterSpans : null,
     })),
     anchor: {
       chapterIdx,

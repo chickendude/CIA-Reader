@@ -8,6 +8,7 @@ import { jsonContract } from '$lib/test/json-contract.js';
 
 const getReadableText = vi.fn();
 const loadChapterTokens = vi.fn();
+const loadChapterPhraseSpans = vi.fn();
 
 vi.mock('$lib/server/texts/upload.js', async () => {
   const actual = await vi.importActual<typeof import('$lib/server/texts/upload.js')>(
@@ -27,6 +28,20 @@ vi.mock('$lib/server/texts/tokens.js', async () => {
   return {
     ...actual,
     loadChapterTokens: (...a: unknown[]) => loadChapterTokens(...a),
+  };
+});
+
+// T-14.3: phrase spans ride alongside tokens; mock the loader so
+// existing tests stay focused on the lazy-token path. The default
+// resolves to an empty array so the endpoint shape includes
+// `phraseSpans: []` without each test having to stage it.
+vi.mock('$lib/server/texts/phrase-spans.js', async () => {
+  const actual = await vi.importActual<
+    typeof import('$lib/server/texts/phrase-spans.js')
+  >('$lib/server/texts/phrase-spans.js');
+  return {
+    ...actual,
+    loadChapterPhraseSpans: (...a: unknown[]) => loadChapterPhraseSpans(...a),
   };
 });
 
@@ -68,6 +83,8 @@ beforeEach(() => {
   getReadableText.mockReset();
   loadChapterTokens.mockReset();
   loadChapterTokens.mockResolvedValue(null);
+  loadChapterPhraseSpans.mockReset();
+  loadChapterPhraseSpans.mockResolvedValue([]);
 });
 
 afterEach(() => {
@@ -110,6 +127,7 @@ describe('GET /api/v1/texts/:id/chapters/:idx/tokens', () => {
         "body": "string",
         "chapterId": "string",
         "chapterIdx": "number",
+        "phraseSpans": "array",
         "tokens": [
           {
             "candidates": "array",

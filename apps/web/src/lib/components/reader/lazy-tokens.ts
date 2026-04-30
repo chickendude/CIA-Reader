@@ -13,13 +13,17 @@
  * which matches the reader's data flow (status overrides happen
  * client-side via WordPopup, not by re-pulling rows).
  */
-import type { ServerToken } from './types.js';
+import type { ChapterPhraseSpan, ServerToken } from './types.js';
 
 export type ChapterTokensResponse = {
   chapterId: string;
   chapterIdx: number;
   body: string;
   tokens: ServerToken[] | null;
+  /** T-14.3: phrase spans, hydrated alongside tokens by the same
+   *  endpoint. Empty array when the chapter has tokens but no phrase
+   *  matches; null when tokens is also null (unprocessed chapter). */
+  phraseSpans: ChapterPhraseSpan[] | null;
 };
 
 export type FetchState =
@@ -31,6 +35,10 @@ export type FetchState =
       chapterIdx: number;
       body: string;
       tokens: ServerToken[] | null;
+      /** T-14.3: cached alongside tokens so a sibling chapter
+       *  scrolled into view repaints with the right phrase
+       *  highlights on the next $derived pass. */
+      phraseSpans: ChapterPhraseSpan[] | null;
     }
   | { kind: 'error'; message: string };
 
@@ -68,10 +76,11 @@ export class LazyTokenLoader {
 
   /**
    * Kick off (or join) a fetch for `chapterIdx`. Resolves to the
-   * fetched body plus tokens, or null tokens if the worker hasn't run
-   * for that chapter yet. The SSR loader only includes the active
-   * chapter body; this on-demand shape lets continuous mode hydrate
-   * sibling chapters without bloating first paint.
+   * fetched body plus tokens (and T-14.3 phrase spans), or null
+   * tokens / null spans if the worker hasn't run for that chapter
+   * yet. The SSR loader only includes the active chapter body;
+   * this on-demand shape lets continuous mode hydrate sibling
+   * chapters without bloating first paint.
    */
   async load(chapterIdx: number): Promise<ChapterTokensResponse> {
     const existing = this.states.get(chapterIdx);
@@ -81,6 +90,7 @@ export class LazyTokenLoader {
         chapterIdx: existing.chapterIdx,
         body: existing.body,
         tokens: existing.tokens,
+        phraseSpans: existing.phraseSpans,
       };
     }
     const existingPromise = this.inflight.get(chapterIdx);
@@ -98,6 +108,7 @@ export class LazyTokenLoader {
         chapterIdx: r.chapterIdx,
         body: r.body,
         tokens: r.tokens,
+        phraseSpans: r.phraseSpans,
       });
       return r;
     } catch (err) {

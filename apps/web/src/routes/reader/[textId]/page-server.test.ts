@@ -11,6 +11,7 @@ import {
 
 const getReadableText = vi.fn();
 const loadChapterTokens = vi.fn();
+const loadChapterPhraseSpans = vi.fn();
 
 vi.mock('$lib/server/texts/upload.js', async () => {
   const actual = await vi.importActual<typeof import('$lib/server/texts/upload.js')>(
@@ -30,6 +31,19 @@ vi.mock('$lib/server/texts/tokens.js', async () => {
   return {
     ...actual,
     loadChapterTokens: (...a: unknown[]) => loadChapterTokens(...a),
+  };
+});
+
+// T-14.3: phrase spans ride alongside the active chapter. Default
+// the loader to an empty array so existing tests stay focused on
+// the chapter / token / progress surfaces.
+vi.mock('$lib/server/texts/phrase-spans.js', async () => {
+  const actual = await vi.importActual<
+    typeof import('$lib/server/texts/phrase-spans.js')
+  >('$lib/server/texts/phrase-spans.js');
+  return {
+    ...actual,
+    loadChapterPhraseSpans: (...a: unknown[]) => loadChapterPhraseSpans(...a),
   };
 });
 
@@ -133,11 +147,15 @@ function ownedTextWithChapters(n: number) {
 beforeEach(() => {
   getReadableText.mockReset();
   loadChapterTokens.mockReset();
+  loadChapterPhraseSpans.mockReset();
   getTextProgress.mockReset();
   // The token loader is called once per chapter; default to "no
   // tokens written yet" so the loader falls back to client-side
   // tokenization in tests that don't care.
   loadChapterTokens.mockResolvedValue(null);
+  // T-14.3: phrase spans default to an empty array — existing
+  // tests stay phrase-agnostic.
+  loadChapterPhraseSpans.mockResolvedValue([]);
   // No saved progress unless a test stages it.
   getTextProgress.mockResolvedValue(null);
   // No persisted reader settings unless a test stages a row.
@@ -425,5 +443,54 @@ describe('/reader/[textId] loader', () => {
     expect(loadChapterTokens).toHaveBeenCalledTimes(1);
     expect(loadChapterTokens).toHaveBeenCalledWith('c3', USER.id);
     expect(data.chapters.map((c) => c.tokens)).toEqual([null, null, null, null, null]);
+  });
+
+  it('attaches phrase spans to the active chapter only (T-14.3)', async () => {
+    getReadableText.mockResolvedValueOnce(ownedTextWithChapters(3));
+    loadChapterTokens.mockResolvedValueOnce([
+      {
+        id: 't0',
+        idx: 0,
+        surface: 'इंतज़ार',
+        isWord: true,
+        isAmbiguous: false,
+        isOov: false,
+        lemmaId: null,
+        lemmaCandidates: [],
+        features: {},
+        sentenceIdx: 0,
+        romanization: null,
+        numberForms: null,
+      },
+    ]);
+    loadChapterPhraseSpans.mockResolvedValueOnce([
+      {
+        phraseId: 'phr-1',
+        startTokenIdx: 0,
+        endTokenIdx: 1,
+        glossDefault: 'to wait',
+        status: 'unknown',
+      },
+    ]);
+    const data = (await callLoad(`http://x/reader/${VALID_ID}`)) as {
+      chapters: Array<{ phraseSpans: unknown }>;
+    };
+    expect(data.chapters[0]!.phraseSpans).toHaveLength(1);
+    // Sibling chapters carry null until the lazy fetch fills them.
+    expect(data.chapters[1]!.phraseSpans).toBeNull();
+    expect(data.chapters[2]!.phraseSpans).toBeNull();
+    // Loader is called once with the active chapter id + viewer id.
+    expect(loadChapterPhraseSpans).toHaveBeenCalledTimes(1);
+    expect(loadChapterPhraseSpans).toHaveBeenCalledWith('c0', USER.id);
+  });
+
+  it('skips phraseSpans loading when the chapter has no tokens (T-14.3)', async () => {
+    getReadableText.mockResolvedValueOnce(ownedTextWithChapters(1));
+    loadChapterTokens.mockResolvedValueOnce(null);
+    const data = (await callLoad(`http://x/reader/${VALID_ID}`)) as {
+      chapters: Array<{ phraseSpans: unknown }>;
+    };
+    expect(data.chapters[0]!.phraseSpans).toBeNull();
+    expect(loadChapterPhraseSpans).not.toHaveBeenCalled();
   });
 });
