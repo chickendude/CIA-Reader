@@ -46,12 +46,20 @@ afterEach(() => {
 });
 
 describe('GET /api/v1/me/vocabulary/export', () => {
-  it('returns a CSV attachment for the requested language', async () => {
+  it('returns a CSV attachment with kind/headword/pos/gloss/status (T-14.6)', async () => {
     getVocabularyForExport.mockResolvedValueOnce([
       {
+        kind: 'lemma',
         headword: 'बोलना',
         pos: 'VERB',
         gloss: 'to speak',
+        status: 'known',
+      },
+      {
+        kind: 'phrase',
+        headword: 'इंतज़ार करना',
+        pos: 'VERB',
+        gloss: 'to wait',
         status: 'known',
       },
     ]);
@@ -64,7 +72,9 @@ describe('GET /api/v1/me/vocabulary/export', () => {
       'ciareader-vocabulary-hi.csv',
     );
     expect(await res.text()).toBe(
-      'headword,pos,gloss,status\nबोलना,VERB,to speak,known\n',
+      'kind,headword,pos,gloss,status\n' +
+        'lemma,बोलना,VERB,to speak,known\n' +
+        'phrase,इंतज़ार करना,VERB,to wait,known\n',
     );
     expect(getVocabularyForExport).toHaveBeenCalledWith('u1', 'hi');
   });
