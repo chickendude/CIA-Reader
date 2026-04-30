@@ -135,15 +135,19 @@
     progressWriter?.schedule(anchor);
   }
 
-  async function setMode(mode: 'page' | 'paged_scroll' | 'continuous') {
+  function setMode(mode: 'page' | 'paged_scroll' | 'continuous') {
+    // Snapshot the anchor synchronously so a late `reportProgress`
+    // can't change it between flush and goto. Use the keepalive
+    // path so the navigation that follows can't cancel the PATCH.
+    const anchor = currentProgressAnchor;
     if (progressWriter) {
-      progressWriter.schedule(currentProgressAnchor);
-      await progressWriter.flush();
+      progressWriter.schedule(anchor);
+      void progressWriter.flush({ keepalive: true });
     }
     const params = new URLSearchParams();
     params.set('mode', mode);
-    params.set('chapter', String(currentProgressAnchor.chapterIdx));
-    params.set('token', String(currentProgressAnchor.tokenIdx));
+    params.set('chapter', String(anchor.chapterIdx));
+    params.set('token', String(anchor.tokenIdx));
     if (showRomanization) params.set('roman', '1');
     void goto(`/reader/${data.text.id}?${params.toString()}`, {
       keepFocus: true,
@@ -167,6 +171,7 @@
   // viewers of an official text don't have a row to write against.
   let progressWriter: ProgressWriter | null = null;
   let pageHideHandler: (() => void) | null = null;
+  let visibilityHandler: (() => void) | null = null;
 
   // The reader's top bar is a full-width fixed element. We measure
   // its height into a `--reader-top-h` CSS variable so the AppShell
@@ -225,11 +230,19 @@
       progressWriter = new ProgressWriter(data.text.id);
       currentProgressAnchor = anchorFromData();
       // Flush on refresh / tab close through the keepalive path so
-      // the latest debounced anchor survives the navigation.
-      pageHideHandler = () => {
+      // the latest debounced anchor survives the navigation. iOS
+      // Safari doesn't reliably fire `pagehide` when the tab is
+      // backgrounded — `visibilitychange → hidden` is the more
+      // dependable hook there, so we wire both.
+      const flushKeepalive = () => {
         void progressWriter?.flush({ keepalive: true });
       };
+      pageHideHandler = flushKeepalive;
+      visibilityHandler = () => {
+        if (document.visibilityState === 'hidden') flushKeepalive();
+      };
       window.addEventListener('pagehide', pageHideHandler);
+      document.addEventListener('visibilitychange', visibilityHandler);
     }
 
     // Track the .reader-top height so the rail can sit below it.
@@ -249,6 +262,7 @@
       cleanupPoll?.();
       window.removeEventListener('keydown', onKey);
       if (pageHideHandler) window.removeEventListener('pagehide', pageHideHandler);
+      if (visibilityHandler) document.removeEventListener('visibilitychange', visibilityHandler);
       void progressWriter?.flush();
       topRO?.disconnect();
       document.documentElement.style.removeProperty('--reader-top-h');

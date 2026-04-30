@@ -53,9 +53,12 @@
   let page = $state(0);
   let articleEl: HTMLElement | null = $state(null);
   let initialTokenApplied = $state(false);
+  let restorePaintReady = $state(false);
   let lastReportedKey = '';
   let reportRaf = 0;
-  const isRestoringInitialToken = $derived(initialTokenIdx > 0 && !initialTokenApplied);
+  const isRestoringInitialToken = $derived(
+    initialTokenIdx > 0 && (!initialTokenApplied || !restorePaintReady),
+  );
 
   const current = $derived(chapters[Math.max(0, Math.min(chapterIdx, chapters.length - 1))]);
 
@@ -161,6 +164,7 @@
     void initialTokenIdx;
     page = 0;
     initialTokenApplied = false;
+    restorePaintReady = initialTokenIdx <= 0;
     lastReportedKey = '';
   });
 
@@ -171,11 +175,22 @@
     if (initialTokenApplied) return;
     initialTokenApplied = true;
     page = firstTokenPage(activePages, initialTokenIdx);
+    if (initialTokenIdx > 0) {
+      void tick().then(() => {
+        window.requestAnimationFrame(() => {
+          restorePaintReady = true;
+        });
+      });
+    }
   });
 
   function reportProgress() {
     reportRaf = 0;
     if (!onProgress || !articleEl) return;
+    // Same guard as ReaderPage — don't mirror an anchor while the
+    // viewport mask is up; the page might still be 0 before the
+    // restore-jump effect runs.
+    if (isRestoringInitialToken) return;
     const anchor = findFirstVisibleWordAnchor(articleEl, {
       clip: readableRect(articleEl),
       fallbackChapterIdx: chapterIdx,

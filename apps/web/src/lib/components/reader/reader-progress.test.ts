@@ -168,4 +168,58 @@ describe('reader progress helpers', () => {
     expect(computePctRead(chapters, 1, 10)).toBe(50);
     expect(computePctRead(chapters, 1, 10, { completedText: true })).toBe(100);
   });
+
+  it('returns null when the target column has no words (still-laying-out case)', () => {
+    const content = document.createElement('div');
+    content.getBoundingClientRect = () => rect(0, 20, 400, 420);
+    // Both words sit in column 0 — the saved page is column 5.
+    const a = word(1, rect(20, 20, 40, 60), { tokenId: 'a' });
+    const b = word(2, rect(40, 20, 60, 80), { tokenId: 'b' });
+    a.getClientRects = () =>
+      ({
+        0: rect(20, 20, 40, 60),
+        length: 1,
+        item: (i: number) => (i === 0 ? rect(20, 20, 40, 60) : null),
+        [Symbol.iterator]: function* () {
+          yield rect(20, 20, 40, 60);
+        },
+      }) as DOMRectList;
+    b.getClientRects = () =>
+      ({
+        0: rect(40, 20, 60, 80),
+        length: 1,
+        item: (i: number) => (i === 0 ? rect(40, 20, 60, 80) : null),
+        [Symbol.iterator]: function* () {
+          yield rect(40, 20, 60, 80);
+        },
+      }) as DOMRectList;
+    content.append(a, b);
+
+    expect(
+      findFirstWordInColumn(content, {
+        contentEl: content,
+        pageWidth: 300,
+        pageIdx: 5,
+        fallbackChapterIdx: 0,
+      }),
+    ).toBeNull();
+  });
+
+  it('returns null when called with a zero pageWidth (pre-measure)', () => {
+    const content = document.createElement('div');
+    expect(
+      findFirstWordInColumn(content, {
+        contentEl: content,
+        pageWidth: 0,
+        pageIdx: 0,
+        fallbackChapterIdx: 0,
+      }),
+    ).toBeNull();
+  });
+
+  it('findTokenElementAtOrAfter returns null when no token is at or past the saved index', () => {
+    const root = document.createElement('article');
+    root.append(word(3, rect(0, 0, 1, 1)), word(7, rect(0, 0, 1, 1)));
+    expect(findTokenElementAtOrAfter(root, 99)).toBeNull();
+  });
 });

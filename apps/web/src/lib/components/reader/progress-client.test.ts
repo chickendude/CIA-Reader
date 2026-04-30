@@ -66,6 +66,30 @@ describe('ProgressWriter', () => {
     expect(call[1].keepalive).toBe(true);
   });
 
+  it('does not set keepalive on a default flush() (steady-state writes)', async () => {
+    const fetchMock = vi.fn(() => Promise.resolve(new Response('{}', { status: 200 })));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const w = new ProgressWriter('text-1');
+    w.schedule({ chapterIdx: 4, tokenIdx: 7, pctRead: 12 });
+    await w.flush();
+
+    const call = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(call[1].keepalive).toBe(false);
+  });
+
+  it('does not set keepalive on the debounced background flush', async () => {
+    const fetchMock = vi.fn(() => Promise.resolve(new Response('{}', { status: 200 })));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const w = new ProgressWriter('text-1');
+    w.schedule({ chapterIdx: 4, tokenIdx: 7, pctRead: 12 });
+    await vi.advanceTimersByTimeAsync(2000);
+
+    const call = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(call[1].keepalive).toBe(false);
+  });
+
   it('swallows network errors so the reader keeps working', async () => {
     const fetchMock = vi.fn(() => Promise.reject(new Error('network down')));
     vi.stubGlobal('fetch', fetchMock);

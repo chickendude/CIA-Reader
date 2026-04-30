@@ -8,7 +8,7 @@ export type VisibleRect = {
   bottom: number;
 };
 
-const WORD_SELECTOR = '[data-token-id][data-token-idx], .word[data-token-idx]';
+export const WORD_SELECTOR = '[data-token-id][data-token-idx], .word[data-token-idx]';
 
 function visibleSize(a: DOMRect, b: VisibleRect): { width: number; height: number } {
   return {
