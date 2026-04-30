@@ -1,5 +1,5 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-import { cleanup, render } from '@testing-library/svelte';
+import { cleanup, render, waitFor } from '@testing-library/svelte';
 
 import WordPopup from './WordPopup.svelte';
 import type { ServerToken, ServerNumberForms } from './types.js';
@@ -205,9 +205,11 @@ describe('WordPopup — translation reporting (T-11.1)', () => {
       isOwner: true,
       onClose: vi.fn(),
     });
-    for (let i = 0; i < 12; i += 1) await Promise.resolve();
-    const reportBtn = document.body.querySelector('[data-testid="report-button"]');
-    expect(reportBtn).not.toBeNull();
+    await waitFor(() => {
+      expect(
+        document.body.querySelector('[data-testid="report-button"]'),
+      ).not.toBeNull();
+    });
   });
 
   it('hides the Report button when isOwner=false', async () => {
@@ -226,7 +228,10 @@ describe('WordPopup — translation reporting (T-11.1)', () => {
       isOwner: false,
       onClose: vi.fn(),
     });
-    for (let i = 0; i < 12; i += 1) await Promise.resolve();
+    // Wait for the popup payload to render so we know fetch has resolved.
+    await waitFor(() => {
+      expect(document.body.querySelector('.community-row')).not.toBeNull();
+    });
     expect(
       document.body.querySelector('[data-testid="report-button"]'),
     ).toBeNull();

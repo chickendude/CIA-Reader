@@ -8,7 +8,7 @@
  *   - other → form-level error message
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render } from '@testing-library/svelte';
+import { cleanup, fireEvent, render, waitFor } from '@testing-library/svelte';
 
 import ReportTranslationModal from './ReportTranslationModal.svelte';
 
@@ -58,9 +58,7 @@ describe('ReportTranslationModal', () => {
     ) as HTMLFormElement;
     await fireEvent.submit(form);
 
-    // Allow the microtask queue to drain
-    await Promise.resolve();
-    await Promise.resolve();
+    await waitFor(() => expect(onReported).toHaveBeenCalled());
 
     const fetchSpy = globalThis.fetch as ReturnType<typeof vi.fn>;
     expect(fetchSpy).toHaveBeenCalledWith(
@@ -90,8 +88,7 @@ describe('ReportTranslationModal', () => {
         '[data-testid="report-translation-form"]',
       ) as HTMLFormElement,
     );
-    await Promise.resolve();
-    await Promise.resolve();
+    await waitFor(() => expect(onReported).toHaveBeenCalled());
     expect(onReported).toHaveBeenCalledWith({ kind: 'duplicate' });
   });
 
@@ -111,8 +108,7 @@ describe('ReportTranslationModal', () => {
         '[data-testid="report-translation-form"]',
       ) as HTMLFormElement,
     );
-    await Promise.resolve();
-    await Promise.resolve();
+    await waitFor(() => expect(onReported).toHaveBeenCalled());
     expect(onReported).toHaveBeenCalledWith({
       kind: 'rate_limited',
       retryAfterSeconds: 86400,
@@ -135,14 +131,17 @@ describe('ReportTranslationModal', () => {
         '[data-testid="report-translation-form"]',
       ) as HTMLFormElement,
     );
-    // Flush enough microtasks for: fetch → res.text() → setState → re-render.
-    for (let i = 0; i < 10; i += 1) await Promise.resolve();
+    await waitFor(() => {
+      const el = document.body.querySelector(
+        '[data-testid="report-form-error"]',
+      );
+      expect(el).not.toBeNull();
+    });
     expect(onReported).not.toHaveBeenCalled();
-    const errEl = document.body.querySelector(
-      '[data-testid="report-form-error"]',
-    );
-    expect(errEl).not.toBeNull();
-    expect(errEl!.textContent).toContain('Boom');
+    expect(
+      document.body.querySelector('[data-testid="report-form-error"]')!
+        .textContent,
+    ).toContain('Boom');
   });
 
   it('does nothing when translationId is null', async () => {
