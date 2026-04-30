@@ -55,6 +55,7 @@
   let initialTokenApplied = $state(false);
   let lastReportedKey = '';
   let reportRaf = 0;
+  const isRestoringInitialToken = $derived(initialTokenIdx > 0 && !initialTokenApplied);
 
   const current = $derived(chapters[Math.max(0, Math.min(chapterIdx, chapters.length - 1))]);
 
@@ -178,6 +179,7 @@
     const anchor = findFirstVisibleWordAnchor(articleEl, {
       clip: readableRect(articleEl),
       fallbackChapterIdx: chapterIdx,
+      minVisiblePx: 4,
     });
     if (!anchor) return;
     const next: ProgressAnchor = {
@@ -381,7 +383,7 @@
     ‹
   </button>
 
-  <div class="reader-scroll-inner">
+  <div class="reader-scroll-inner" data-restoring={isRestoringInitialToken ? '1' : undefined}>
     <header class="page-header">
       {#if current}
         <h2>
@@ -466,6 +468,9 @@
     max-width: var(--reader-col-width, 40rem);
     margin: 0 auto;
     padding: 1.25rem 3rem 2rem;
+  }
+  .reader-scroll-inner[data-restoring='1'] {
+    opacity: 0;
   }
   @media (min-width: 1024px) {
     .reader-scroll-inner {

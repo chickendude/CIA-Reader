@@ -10,8 +10,11 @@ export type VisibleRect = {
 
 const WORD_SELECTOR = '[data-token-id][data-token-idx], .word[data-token-idx]';
 
-function intersects(a: DOMRect, b: VisibleRect): boolean {
-  return a.bottom > b.top && a.top < b.bottom && a.right > b.left && a.left < b.right;
+function visibleSize(a: DOMRect, b: VisibleRect): { width: number; height: number } {
+  return {
+    width: Math.max(0, Math.min(a.right, b.right) - Math.max(a.left, b.left)),
+    height: Math.max(0, Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top)),
+  };
 }
 
 export function viewportRect(topInset = 0): VisibleRect {
@@ -63,8 +66,10 @@ export function findFirstVisibleWordAnchor(
   args: {
     clip: VisibleRect;
     fallbackChapterIdx?: number;
+    minVisiblePx?: number;
   },
 ): Pick<ProgressAnchor, 'chapterIdx' | 'tokenIdx'> | null {
+  const minVisiblePx = args.minVisiblePx ?? 2;
   let best: {
     chapterIdx: number;
     tokenIdx: number;
@@ -79,7 +84,8 @@ export function findFirstVisibleWordAnchor(
     if (!Number.isFinite(tokenIdx)) continue;
 
     const rect = el.getBoundingClientRect();
-    if (!intersects(rect, args.clip)) continue;
+    const visible = visibleSize(rect, args.clip);
+    if (visible.width < minVisiblePx || visible.height < minVisiblePx) continue;
 
     const rawChapterIdx = el.closest<HTMLElement>('[data-chapter-idx]')?.dataset.chapterIdx;
     const chapterIdx =
@@ -94,6 +100,14 @@ export function findFirstVisibleWordAnchor(
   }
 
   return best ? { chapterIdx: best.chapterIdx, tokenIdx: best.tokenIdx } : null;
+}
+
+export function columnIndexForElement(el: Element, contentEl: Element, pageWidth: number): number {
+  if (pageWidth <= 0) return 0;
+  const firstRect = el.getClientRects()[0] ?? el.getBoundingClientRect();
+  const contentRect = contentEl.getBoundingClientRect();
+  const x = Math.max(0, firstRect.left - contentRect.left);
+  return Math.max(0, Math.floor((x + 1) / pageWidth));
 }
 
 export function computePctRead(

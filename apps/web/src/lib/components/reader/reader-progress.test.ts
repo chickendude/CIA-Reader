@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  columnIndexForElement,
   computePctRead,
   findFirstVisibleWordAnchor,
   findTokenElementAtOrAfter,
@@ -60,6 +61,19 @@ describe('reader progress helpers', () => {
     ).toEqual({ chapterIdx: 4, tokenIdx: 7 });
   });
 
+  it('ignores tiny clipped edge slivers when finding the first visible word', () => {
+    const root = document.createElement('section');
+    root.dataset.chapterIdx = '1';
+    root.append(word(4, rect(0, 0, 100, 1)), word(5, rect(20, 10, 40, 80)));
+
+    expect(
+      findFirstVisibleWordAnchor(root, {
+        clip: { top: 0, left: 0, right: 300, bottom: 500 },
+        minVisiblePx: 4,
+      }),
+    ).toEqual({ chapterIdx: 1, tokenIdx: 5 });
+  });
+
   it('finds the nearest rendered word at or after a saved token index', () => {
     const root = document.createElement('article');
     const before = word(3, rect(0, 0, 1, 1));
@@ -69,6 +83,23 @@ describe('reader progress helpers', () => {
 
     expect(findTokenElementAtOrAfter(root, 8)).toBe(exact);
     expect(findTokenElementAtOrAfter(root, 9)).toBe(after);
+  });
+
+  it('computes a token element column from its first rendered rect', () => {
+    const content = document.createElement('div');
+    const el = document.createElement('span');
+    content.getBoundingClientRect = () => rect(0, 20, 400, 420);
+    el.getClientRects = () =>
+      ({
+        0: rect(20, 625, 40, 700),
+        length: 1,
+        item: (idx: number) => (idx === 0 ? rect(20, 625, 40, 700) : null),
+        [Symbol.iterator]: function* () {
+          yield rect(20, 625, 40, 700);
+        },
+      }) as DOMRectList;
+
+    expect(columnIndexForElement(el, content, 300)).toBe(2);
   });
 
   it('maps a saved token to the first paged-scroll page that contains it', () => {
