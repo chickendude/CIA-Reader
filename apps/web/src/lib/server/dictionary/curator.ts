@@ -299,6 +299,15 @@ export async function updateTranslation(
 ): Promise<Translation> {
   validateTranslationPatch(patch);
   const existing = await loadTranslation(translationId);
+  // T-14.1: curator dictionary editor today only handles lemma-
+  // target translations. Phrase-target moderation lands in T-14.7
+  // (curator merge + moderation parity for M14).
+  if (existing.targetType !== 'lemma' || !existing.lemmaId) {
+    throw new CuratorValidationError(
+      'Phrase-target translations are managed via the phrase editor (T-14.4 / T-14.7)',
+      409,
+    );
+  }
   const parentLemma = await loadLemma(existing.lemmaId);
   await requireCanEditDictionary(editor, parentLemma.language);
 
@@ -354,6 +363,14 @@ export async function setTranslationHidden(
   now: Date = new Date(),
 ): Promise<Translation> {
   const existing = await loadTranslation(translationId);
+  // T-14.1: same guard as `updateTranslation` above. Phrase-target
+  // moderation goes through T-14.7's curator surface.
+  if (existing.targetType !== 'lemma' || !existing.lemmaId) {
+    throw new CuratorValidationError(
+      'Phrase-target translations are managed via the phrase editor (T-14.4 / T-14.7)',
+      409,
+    );
+  }
   const parentLemma = await loadLemma(existing.lemmaId);
   await requireCanEditDictionary(editor, parentLemma.language);
 

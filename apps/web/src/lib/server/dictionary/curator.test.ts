@@ -157,6 +157,11 @@ function translationRow(overrides: Record<string, unknown> = {}) {
   return {
     id: 'tr-1',
     lemmaId: 'lemma-1',
+    // T-14.1: every translation row in the fixture is lemma-target;
+    // the polymorphic columns mirror lemma_id during the overlap
+    // window. Phrase-target curator flows are tested in T-14.4.
+    targetType: 'lemma',
+    targetId: 'lemma-1',
     source: 'user',
     submittedBy: 'user-42',
     parentTranslationId: null,

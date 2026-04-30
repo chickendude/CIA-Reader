@@ -189,6 +189,10 @@ export async function bulkImportTranslations(
       .insert(schema.translations)
       .values({
         lemmaId: lemma.id,
+        // T-14.1: bulk-curator inserts are always lemma-target.
+        // Phrase bulk import is a follow-up under T-14.4.
+        targetType: 'lemma',
+        targetId: lemma.id,
         source: 'curator',
         submittedBy: editor.id,
         body,
@@ -279,6 +283,13 @@ export async function bulkPromoteTranslations(
       // Same one-way guard as updateTranslation: imported rows must be
       // edited directly, not re-tagged.
       skipped.push({ id, reason: 'imported officials cannot be re-tagged' });
+      continue;
+    }
+    // T-14.1: bulk promote operates on lemma-target translations only.
+    // Phrase-target community translations move through the phrase
+    // editor (T-14.4 / T-14.7).
+    if (row.targetType !== 'lemma' || !row.lemmaId) {
+      skipped.push({ id, reason: 'phrase-target translations not supported here' });
       continue;
     }
 
@@ -405,6 +416,9 @@ export async function bulkUpdateAttribution(
     );
 
   for (const row of before) {
+    // T-14.1: bulk-attribution audit only fires for lemma-target
+    // rows; phrase-target rebrands happen in T-14.7's phrase editor.
+    if (row.targetType !== 'lemma' || !row.lemmaId) continue;
     await recordLemmaEdit({
       lemmaId: row.lemmaId,
       editorId: editor.id,
