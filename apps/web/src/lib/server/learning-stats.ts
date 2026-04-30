@@ -20,6 +20,7 @@ export type LanguageStats = {
   knownCount: number;
   learningCount: number;
   ignoredCount: number;
+  listeningMinutes: number;
   /** Distinct lemmas seen at least once across the user's owned
    *  texts in this language. */
   encounteredCount: number;
@@ -32,6 +33,10 @@ function unwrapRows<T>(out: unknown): T[] {
     if (Array.isArray(rows)) return rows;
   }
   return [];
+}
+
+function msToMinutes(ms: number | string | null | undefined): number {
+  return Math.round((Number(ms ?? 0) / 60_000) * 10) / 10;
 }
 
 export async function getLanguageStats(
@@ -73,11 +78,22 @@ export async function getLanguageStats(
   );
   const encounteredCount = encountered[0]?.n ?? 0;
 
+  const listening = unwrapRows<{ listened_ms: number | string | null }>(
+    await db.execute(sql`
+      SELECT COALESCE(SUM(ual.listened_ms), 0)::bigint AS listened_ms
+      FROM user_audio_listening ual
+      INNER JOIN texts tx ON tx.id = ual.text_id
+      WHERE ual.user_id = ${userId}
+        AND tx.language = ${language}
+    `),
+  );
+
   return {
     knownCount: row.known ?? 0,
     learningCount: row.learning ?? 0,
     ignoredCount: row.ignored ?? 0,
     encounteredCount,
+    listeningMinutes: msToMinutes(listening[0]?.listened_ms),
   };
 }
 
@@ -88,6 +104,7 @@ export type TextStats = {
   uniqueLemmas: number;
   totalWords: number;
   estimatedComprehensionPct: number;
+  listeningMinutes: number;
 };
 
 /**
@@ -113,6 +130,7 @@ export async function listTextStats(
     unique_lemmas: number;
     total_words: number;
     known_words: number;
+    listened_ms: number | string | null;
   }>(
     await db.execute(sql`
       SELECT
@@ -125,7 +143,13 @@ export async function listTextStats(
           WHERE tt.is_word = true
             AND tt.lemma_id IS NOT NULL
             AND ukl.status = 'known'
-        )::int AS known_words
+        )::int AS known_words,
+        (
+          SELECT COALESCE(SUM(ual.listened_ms), 0)::bigint
+          FROM user_audio_listening ual
+          WHERE ual.user_id = ${userId}
+            AND ual.text_id = tx.id
+        ) AS listened_ms
       FROM texts tx
       INNER JOIN text_chapters ch ON ch.text_id = tx.id
       INNER JOIN text_tokens tt ON tt.chapter_id = ch.id
@@ -147,6 +171,7 @@ export async function listTextStats(
       r.total_words === 0
         ? 0
         : Math.round((r.known_words / r.total_words) * 100),
+    listeningMinutes: msToMinutes(r.listened_ms),
   }));
 }
 
@@ -239,6 +264,7 @@ export type CollectionStats = {
   title: string;
   textCount: number;
   estimatedComprehensionPct: number;
+  listeningMinutes: number;
 };
 
 /** Bulk comprehension for the collections grid (T-10.2). */
@@ -301,6 +327,7 @@ export async function listCollectionStats(
     text_count: number;
     total_words: number;
     known_words: number;
+    listened_ms: number | string | null;
   }>(
     await db.execute(sql`
       SELECT
@@ -312,7 +339,14 @@ export async function listCollectionStats(
           WHERE tt.is_word = true
             AND tt.lemma_id IS NOT NULL
             AND ukl.status = 'known'
-        )::int AS known_words
+        )::int AS known_words,
+        (
+          SELECT COALESCE(SUM(ual.listened_ms), 0)::bigint
+          FROM user_audio_listening ual
+          INNER JOIN collection_items ci2 ON ci2.text_id = ual.text_id
+          WHERE ual.user_id = ${userId}
+            AND ci2.collection_id = c.id
+        ) AS listened_ms
       FROM collections c
       INNER JOIN collection_items ci ON ci.collection_id = c.id
       INNER JOIN text_chapters ch ON ch.text_id = ci.text_id
@@ -333,6 +367,6 @@ export async function listCollectionStats(
       r.total_words === 0
         ? 0
         : Math.round((r.known_words / r.total_words) * 100),
+    listeningMinutes: msToMinutes(r.listened_ms),
   }));
 }
-

@@ -28,7 +28,10 @@
 
   import { untrack } from 'svelte';
 
-  let { audio }: { audio: AudioFile } = $props();
+  let {
+    audio,
+    canRecordListening = false,
+  }: { audio: AudioFile; canRecordListening?: boolean } = $props();
 
   let audioEl: HTMLAudioElement | null = $state(null);
   let isPlaying = $state(false);
@@ -37,8 +40,12 @@
     untrack(() => (audio.durationMs ? audio.durationMs / 1000 : 0)),
   );
   let speed = $state(1);
+  let pendingListeningMs = 0;
+  let pendingListeningAudioId: string | null = null;
+  let lastMediaSec: number | null = null;
 
   const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
+  const LISTENING_FLUSH_MS = 10_000;
 
   function fmtTime(s: number): string {
     if (!Number.isFinite(s)) return '0:00';
@@ -70,6 +77,18 @@
 
   function onTimeUpdate() {
     if (!audioEl) return;
+    const nextSec = audioEl.currentTime;
+    if (isPlaying && canRecordListening && lastMediaSec !== null) {
+      const deltaSec = nextSec - lastMediaSec;
+      if (deltaSec > 0 && deltaSec <= 5) {
+        pendingListeningAudioId = audio.id;
+        pendingListeningMs += Math.round(deltaSec * 1000);
+        if (pendingListeningMs >= LISTENING_FLUSH_MS) {
+          void flushListening();
+        }
+      }
+    }
+    lastMediaSec = nextSec;
     currentSec = audioEl.currentTime;
     setAudioState({
       currentTimeMs: Math.round(audioEl.currentTime * 1000),
@@ -85,15 +104,64 @@
   }
   function onPlay() {
     isPlaying = true;
+    lastMediaSec = audioEl?.currentTime ?? currentSec;
     setAudioState({ isPlaying: true, audioFileId: audio.id });
   }
   function onPause() {
     isPlaying = false;
+    void flushListening();
+    lastMediaSec = null;
     setAudioState({ isPlaying: false, audioFileId: audio.id });
+  }
+
+  async function flushListening() {
+    if (!canRecordListening || pendingListeningMs <= 0) return;
+    const audioFileId = pendingListeningAudioId ?? audio.id;
+    const listenedMs = pendingListeningMs;
+    pendingListeningMs = 0;
+    pendingListeningAudioId = null;
+    try {
+      await fetch('/api/v1/me/listening', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ audioFileId, listenedMs }),
+        keepalive: true,
+      });
+    } catch {
+      pendingListeningAudioId = audioFileId;
+      pendingListeningMs += listenedMs;
+    }
+  }
+
+  function flushListeningOnPageHide() {
+    if (!canRecordListening || pendingListeningMs <= 0) return;
+    const audioFileId = pendingListeningAudioId ?? audio.id;
+    const listenedMs = pendingListeningMs;
+    pendingListeningMs = 0;
+    pendingListeningAudioId = null;
+    const body = JSON.stringify({ audioFileId, listenedMs });
+    if (navigator.sendBeacon) {
+      const ok = navigator.sendBeacon(
+        '/api/v1/me/listening',
+        new window.Blob([body], { type: 'application/json' }),
+      );
+      if (ok) return;
+    }
+    void fetch('/api/v1/me/listening', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body,
+      keepalive: true,
+    }).catch(() => {
+      pendingListeningAudioId = audioFileId;
+      pendingListeningMs += listenedMs;
+    });
   }
 
   onMount(() => {
     setAudioState({ audioFileId: audio.id, isPlaying: false, currentTimeMs: 0 });
+    window.addEventListener('pagehide', flushListeningOnPageHide);
+    window.addEventListener('beforeunload', flushListeningOnPageHide);
     const controller: AudioController = {
       seekMs: (ms) => seekToSec(ms / 1000),
       play,
@@ -101,6 +169,9 @@
     };
     setAudioController(controller);
     return () => {
+      flushListeningOnPageHide();
+      window.removeEventListener('pagehide', flushListeningOnPageHide);
+      window.removeEventListener('beforeunload', flushListeningOnPageHide);
       setAudioController(null);
       setAudioState({ audioFileId: null, isPlaying: false, currentTimeMs: 0 });
     };
@@ -113,9 +184,11 @@
   // different chapter that has its own track).
   $effect(() => {
     void audio.id;
+    void flushListening();
     if (audioEl) audioEl.load();
     currentSec = 0;
     isPlaying = false;
+    lastMediaSec = null;
     setAudioState({ audioFileId: audio.id, currentTimeMs: 0, isPlaying: false });
   });
 </script>

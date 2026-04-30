@@ -2,6 +2,10 @@
   import type { PageData } from './$types';
 
   let { data }: { data: PageData } = $props();
+
+  function minutes(n: number): string {
+    return n.toLocaleString(undefined, { maximumFractionDigits: 1 });
+  }
 </script>
 
 <svelte:head>
@@ -14,7 +18,7 @@
       {data.languageDescriptor.displayName}
       <span class="ls-native">{data.languageDescriptor.nativeName}</span>
     </h1>
-    <p class="ls-h-sub">Your reading + vocabulary stats for this language.</p>
+    <p class="ls-h-sub">Your reading, listening, and vocabulary stats for this language.</p>
   </header>
 
   <section class="ls-totals">
@@ -34,6 +38,10 @@
       <div class="ls-tile-n">{data.stats.ignoredCount.toLocaleString()}</div>
       <div class="ls-tile-l">Ignored (proper nouns / borrowings)</div>
     </div>
+    <div class="ls-tile">
+      <div class="ls-tile-n">{minutes(data.stats.listeningMinutes)}</div>
+      <div class="ls-tile-l">Minutes listened</div>
+    </div>
   </section>
 
   <section class="ls-section">
@@ -48,6 +56,7 @@
             <th class="num">Unique lemmas</th>
             <th class="num">Words</th>
             <th class="num">Est. comprehension</th>
+            <th class="num">Listened</th>
           </tr>
         </thead>
         <tbody>
@@ -63,6 +72,7 @@
                   {t.estimatedComprehensionPct}%
                 </span>
               </td>
+              <td class="num">{minutes(t.listeningMinutes)} min</td>
             </tr>
           {/each}
         </tbody>
@@ -79,6 +89,7 @@
             <th>Collection</th>
             <th class="num">Texts</th>
             <th class="num">Est. comprehension</th>
+            <th class="num">Listened</th>
           </tr>
         </thead>
         <tbody>
@@ -93,6 +104,7 @@
                   {c.estimatedComprehensionPct}%
                 </span>
               </td>
+              <td class="num">{minutes(c.listeningMinutes)} min</td>
             </tr>
           {/each}
         </tbody>
@@ -103,7 +115,7 @@
   <section class="ls-section ls-export">
     <h2>Export</h2>
     <p>
-      <a class="ls-link" href={`/api/v1/me/vocabulary.csv?language=${data.language}`}>
+      <a class="ls-link" href={`/api/v1/me/vocabulary/export?language=${data.language}`}>
         Download vocabulary as CSV
       </a> · headword, POS, gloss, status — Anki-friendly.
     </p>

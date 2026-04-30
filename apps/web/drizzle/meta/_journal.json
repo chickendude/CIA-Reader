@@ -169,6 +169,13 @@
       "when": 1777468189649,
       "tag": "0023_tense_vermin",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1777513538222,
+      "tag": "0024_uneven_oracle",
+      "breakpoints": true
     }
   ]
 }

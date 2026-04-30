@@ -410,7 +410,7 @@
   {/if}
 
   {#if data.audio}
-    <AudioPlayer audio={data.audio} />
+    <AudioPlayer audio={data.audio} canRecordListening={data.canPersistSettings} />
     <AlignmentHighlighter />
   {/if}
 </div>
