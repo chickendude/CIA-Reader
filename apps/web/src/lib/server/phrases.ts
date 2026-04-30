@@ -18,7 +18,7 @@
  * follow-up. The schema is shaped so that change is a resolver-only
  * change with no migration.
  */
-import { and, eq, inArray, isNull } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 
 import { db, schema } from './db/index.js';
 import type {
@@ -862,6 +862,296 @@ export async function setPhraseLocked(args: {
     reason: args.reason,
   });
   return updated;
+}
+
+// -----------------------------------------------------------------------
+// Curator editor service (T-14.4a — admin dictionary surface).
+// -----------------------------------------------------------------------
+
+export type AdminPhraseListItem = {
+  id: string;
+  language: LanguageCode;
+  surfaceNormalised: string;
+  pos: string | null;
+  glossDefault: string | null;
+  frequencyRank: number | null;
+  source: Phrase['source'];
+  curatorLocked: boolean;
+  hidden: boolean;
+  /** Visible (non-hidden) translation count for this phrase. */
+  translationCount: number;
+  /** Number of distinct chapters this phrase has matched in via
+   *  T-14.2's resolver — gives curators a quick read on usage. */
+  chapterCount: number;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+export type ListAdminPhrasesArgs = {
+  language: LanguageCode;
+  source?: Phrase['source'];
+  /** Filter on `curator_locked`. Omit to include both. */
+  locked?: boolean;
+  /** Filter on `hidden`. Omit to include both — the curator
+   *  needs to see hidden rows in order to unhide them. */
+  hidden?: boolean;
+  limit?: number;
+  offset?: number;
+};
+
+/**
+ * Paginated list of phrases for the curator dictionary editor
+ * (parallel to `dictionary/lookups.ts` for lemmas). Includes
+ * hidden + curator-locked phrases by default since the editor
+ * audience IS the curator.
+ *
+ * `translationCount` and `chapterCount` come from correlated
+ * subqueries so the list query is one round-trip even on the
+ * larger phrase tables.
+ */
+export async function listAdminPhrases(
+  args: ListAdminPhrasesArgs,
+): Promise<AdminPhraseListItem[]> {
+  const limit = Math.min(Math.max(args.limit ?? 50, 1), 200);
+  const offset = Math.max(args.offset ?? 0, 0);
+
+  // Build the WHERE list dynamically so the query plan stays
+  // tight when no optional filters are set.
+  const wheres = [eq(schema.phrases.language, args.language)];
+  if (args.source) wheres.push(eq(schema.phrases.source, args.source));
+  if (args.locked !== undefined) {
+    wheres.push(eq(schema.phrases.curatorLocked, args.locked));
+  }
+  if (args.hidden !== undefined) {
+    wheres.push(eq(schema.phrases.hidden, args.hidden));
+  }
+
+  const rows = (await db
+    .select({
+      id: schema.phrases.id,
+      language: schema.phrases.language,
+      surfaceNormalised: schema.phrases.surfaceNormalised,
+      pos: schema.phrases.pos,
+      glossDefault: schema.phrases.glossDefault,
+      frequencyRank: schema.phrases.frequencyRank,
+      source: schema.phrases.source,
+      curatorLocked: schema.phrases.curatorLocked,
+      hidden: schema.phrases.hidden,
+      createdAt: schema.phrases.createdAt,
+      updatedAt: schema.phrases.updatedAt,
+      translationCount: sql<number>`(
+        SELECT COUNT(*)::int FROM ${schema.translations} t
+        WHERE t.target_type = 'phrase'
+          AND t.target_id = ${schema.phrases.id}
+          AND t.hidden = false
+      )`,
+      chapterCount: sql<number>`(
+        SELECT COUNT(DISTINCT pcs.chapter_id)::int
+        FROM ${schema.phraseChapterSpans} pcs
+        WHERE pcs.phrase_id = ${schema.phrases.id}
+      )`,
+    })
+    .from(schema.phrases)
+    .where(and(...wheres))
+    .orderBy(desc(schema.phrases.updatedAt))
+    .limit(limit)
+    .offset(offset)) as AdminPhraseListItem[];
+
+  return rows;
+}
+
+export type PhraseEditorView = {
+  phrase: Phrase;
+  tokens: PhraseToken[];
+  /** All phrase-target translations including hidden rows —
+   *  curators need to see what's been moderated. */
+  translations: Translation[];
+  /** Distinct chapter IDs this phrase appears in. Drives the
+   *  span preview affordance. */
+  chapterIds: string[];
+  /** Recent audit-log entries on this phrase, newest first. */
+  history: Array<{
+    id: string;
+    changeType: string;
+    reason: string;
+    createdAt: Date;
+    editorId: string | null;
+  }>;
+};
+
+/**
+ * Full editor view: phrase + tokens + every translation (hidden
+ * included) + chapter occurrences + recent audit history. Mirror
+ * of `getLemmaEditorView` for lemmas.
+ */
+export async function getPhraseEditorView(
+  phraseId: string,
+): Promise<PhraseEditorView | null> {
+  const [phrase] = (await db
+    .select()
+    .from(schema.phrases)
+    .where(eq(schema.phrases.id, phraseId))
+    .limit(1)) as Phrase[];
+  if (!phrase) return null;
+
+  const tokens = (await db
+    .select()
+    .from(schema.phraseTokens)
+    .where(eq(schema.phraseTokens.phraseId, phraseId))) as PhraseToken[];
+  tokens.sort((a, b) => a.position - b.position);
+
+  // Curator view: include hidden rows (the moderation toggle is
+  // here precisely so the curator can review them).
+  const translations = (await db
+    .select()
+    .from(schema.translations)
+    .where(
+      and(
+        eq(schema.translations.targetType, 'phrase'),
+        eq(schema.translations.targetId, phraseId),
+      ),
+    )) as Translation[];
+
+  const chapterRows = (await db
+    .selectDistinct({ chapterId: schema.phraseChapterSpans.chapterId })
+    .from(schema.phraseChapterSpans)
+    .where(eq(schema.phraseChapterSpans.phraseId, phraseId))) as Array<{
+    chapterId: string;
+  }>;
+  const chapterIds = chapterRows.map((r) => r.chapterId);
+
+  const historyRows = (await db
+    .select({
+      id: schema.lemmaEditHistory.id,
+      changeType: schema.lemmaEditHistory.changeType,
+      reason: schema.lemmaEditHistory.reason,
+      createdAt: schema.lemmaEditHistory.createdAt,
+      editorId: schema.lemmaEditHistory.editorId,
+    })
+    .from(schema.lemmaEditHistory)
+    .where(eq(schema.lemmaEditHistory.phraseId, phraseId))
+    .orderBy(desc(schema.lemmaEditHistory.createdAt))
+    .limit(50)) as Array<{
+    id: string;
+    changeType: string;
+    reason: string;
+    createdAt: Date;
+    editorId: string | null;
+  }>;
+
+  return { phrase, tokens, translations, chapterIds, history: historyRows };
+}
+
+export type UpdatePhraseFieldsPatch = {
+  glossDefault?: string | null;
+  pos?: string | null;
+  frequencyRank?: number | null;
+  sourceAttribution?: string | null;
+};
+
+/**
+ * Patch editable fields on a phrase row + write a `phrase_update`
+ * audit entry. Mirror of `updateLemma`. Implicitly flips
+ * `curatorLocked=true` so subsequent NLP promotion / re-import
+ * can't clobber the curator edit — same safety net as the lemma
+ * path.
+ */
+export async function updatePhraseFields(args: {
+  phraseId: string;
+  patch: UpdatePhraseFieldsPatch;
+  editorId: string;
+  reason: string;
+  now?: Date;
+}): Promise<Phrase> {
+  const now = args.now ?? new Date();
+
+  // Light validation — match the createPhrase rules.
+  if (args.patch.pos !== undefined && args.patch.pos !== null) {
+    if (args.patch.pos.length > 32) {
+      throw new PhraseValidationError('pos exceeds 32 characters');
+    }
+  }
+  if (args.patch.glossDefault !== undefined && args.patch.glossDefault !== null) {
+    if (args.patch.glossDefault.length > 500) {
+      throw new PhraseValidationError(
+        'glossDefault exceeds 500 characters',
+      );
+    }
+  }
+  if (
+    args.patch.frequencyRank !== undefined &&
+    args.patch.frequencyRank !== null
+  ) {
+    if (
+      !Number.isInteger(args.patch.frequencyRank) ||
+      args.patch.frequencyRank < 0
+    ) {
+      throw new PhraseValidationError(
+        'frequencyRank must be a non-negative integer',
+      );
+    }
+  }
+
+  const [existing] = (await db
+    .select()
+    .from(schema.phrases)
+    .where(eq(schema.phrases.id, args.phraseId))
+    .limit(1)) as Phrase[];
+  if (!existing) {
+    throw new PhraseValidationError(
+      `Phrase ${args.phraseId} not found`,
+      404,
+    );
+  }
+
+  const setValues: Partial<Phrase> = { updatedAt: now };
+  if (args.patch.glossDefault !== undefined) {
+    setValues.glossDefault = args.patch.glossDefault;
+  }
+  if (args.patch.pos !== undefined) setValues.pos = args.patch.pos;
+  if (args.patch.frequencyRank !== undefined) {
+    setValues.frequencyRank = args.patch.frequencyRank;
+  }
+  if (args.patch.sourceAttribution !== undefined) {
+    setValues.sourceAttribution = args.patch.sourceAttribution;
+  }
+  // Implicit lock — same as updateLemma.
+  setValues.curatorLocked = true;
+
+  const [updated] = (await db
+    .update(schema.phrases)
+    .set(setValues)
+    .where(eq(schema.phrases.id, args.phraseId))
+    .returning()) as Phrase[];
+  if (!updated) throw new Error('Failed to update phrase');
+
+  const { recordPhraseEdit } = await import('./dictionary/audit.js');
+  await recordPhraseEdit({
+    phraseId: args.phraseId,
+    editorId: args.editorId,
+    changeType: 'phrase_update',
+    change: {
+      before: snapshotPhrase(existing),
+      after: snapshotPhrase(updated),
+    },
+    reason: args.reason,
+  });
+  return updated;
+}
+
+function snapshotPhrase(p: Phrase): Record<string, unknown> {
+  return {
+    id: p.id,
+    language: p.language,
+    surfaceNormalised: p.surfaceNormalised,
+    pos: p.pos,
+    glossDefault: p.glossDefault,
+    frequencyRank: p.frequencyRank,
+    source: p.source,
+    sourceAttribution: p.sourceAttribution,
+    curatorLocked: p.curatorLocked,
+    hidden: p.hidden,
+  };
 }
 
 // Suppress a noisy unused-import warning when only the typecheck
