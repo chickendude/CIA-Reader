@@ -288,8 +288,8 @@ export async function generateOpenApiDocument(): Promise<OpenApiDocument> {
       { url: 'http://nlp:8000', description: 'NLP service in docker compose' },
     ],
     externalDocs: {
-      description: 'API versioning and deprecation policy',
-      url: '/docs/api-versioning.md',
+      description: 'Client API reference',
+      url: '/docs/api/',
     },
     'x-api-versioning': {
       stablePrefix: STABLE_API_PREFIX,

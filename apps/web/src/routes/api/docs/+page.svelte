@@ -119,7 +119,10 @@
       <p class="eyebrow">OpenAPI 3.1</p>
       <h1>CIA Reader API</h1>
     </div>
-    <a href={specUrl}>JSON</a>
+    <nav aria-label="API documentation links">
+      <a href="/docs/api/">Client guide</a>
+      <a href={specUrl}>JSON</a>
+    </nav>
   </header>
 
   <section class="viewer" aria-label="OpenAPI reference">
@@ -181,6 +184,12 @@
     letter-spacing: 0.08em;
     text-transform: uppercase;
     color: var(--ink-3, var(--color-fg-muted));
+  }
+  nav {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    justify-content: flex-end;
   }
   a {
     color: inherit;
