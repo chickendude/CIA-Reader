@@ -47,6 +47,7 @@ vi.mock('../db/index.js', () => ({
       id: 'lemmas.id',
       language: 'lemmas.language',
       headword: 'lemmas.headword',
+      headwordNuktaStripped: 'lemmas.headword_nukta_stripped',
       pos: 'lemmas.pos',
       frequencyRank: 'lemmas.frequency_rank',
     },
@@ -100,6 +101,7 @@ describe('listDictionaryLemmas', () => {
     expect(result.totalCount).toBe(57);
     expect(result.limit).toBe(DEFAULT_PAGE_SIZE);
     expect(result.offset).toBe(0);
+    expect(result.usedNuktaFallback).toBe(false);
   });
 
   it('clamps limit to MAX_PAGE_SIZE when caller asks for too many', async () => {
@@ -174,6 +176,74 @@ describe('listDictionaryLemmas', () => {
     await expect(
       listDictionaryLemmas('hi', { pos: [] }),
     ).resolves.toMatchObject({ totalCount: 1 });
+  });
+
+  // ---- nukta-agnostic fallback (#318) ----------------------------------
+
+  it('falls back to a nukta-agnostic search when the user typed without nukta but DB has it', async () => {
+    // The bug-driving direction: user types `पढना` (no nukta), the
+    // canonical entry is `पढ़ना`. Strict misses; fallback should
+    // surface the entry. Mock convention: each tier issues
+    // rows-then-count, two `db` calls = two `stage()` entries.
+    stage([]);
+    stage([{ n: 0 }]);
+    stage([lemmaRow({ headword: 'पढ़ना' })]);
+    stage([{ n: 1 }]);
+
+    const result = await listDictionaryLemmas('hi', { q: 'पढना' });
+    expect(result.usedNuktaFallback).toBe(true);
+    expect(result.lemmas).toHaveLength(1);
+    expect(result.totalCount).toBe(1);
+  });
+
+  it('falls back to a nukta-agnostic search when the user typed with nukta but DB strips it', async () => {
+    // Inverse direction: user types `पढ़ना`, DB has `पढना` (e.g.
+    // pre-#316 lemma rows). Same fallback path because both sides
+    // reduce to the same nukta-free key.
+    stage([]);
+    stage([{ n: 0 }]);
+    stage([lemmaRow({ headword: 'पढना' })]);
+    stage([{ n: 1 }]);
+
+    const result = await listDictionaryLemmas('hi', { q: 'पढ़ना' });
+    expect(result.usedNuktaFallback).toBe(true);
+    expect(result.totalCount).toBe(1);
+  });
+
+  it('does not run the fallback when the strict tier already has hits', async () => {
+    stage([lemmaRow({ headword: 'पढ़ना' })]);
+    stage([{ n: 1 }]);
+    // No fallback stages — if the function were to run the fallback
+    // the test would explode in nextStaged().
+
+    const result = await listDictionaryLemmas('hi', { q: 'पढ़ना' });
+    expect(result.usedNuktaFallback).toBe(false);
+    expect(result.lemmas).toHaveLength(1);
+  });
+
+  it('does not advertise the fallback when both tiers are empty', async () => {
+    // Strict empty.
+    stage([]);
+    stage([{ n: 0 }]);
+    // Fallback also empty — a "showing nukta-agnostic results"
+    // banner over zero rows would read worse than a plain "no
+    // matches".
+    stage([]);
+    stage([{ n: 0 }]);
+
+    const result = await listDictionaryLemmas('hi', { q: 'पढ़ना' });
+    expect(result.usedNuktaFallback).toBe(false);
+    expect(result.totalCount).toBe(0);
+  });
+
+  it('does not run the fallback when no query is provided', async () => {
+    // Empty-query browse must skip the fallback entirely so an
+    // unfiltered list isn't double-counted (and no extra DB call is
+    // wasted on every page-load of the dictionary index).
+    stage([lemmaRow()]);
+    stage([{ n: 1 }]);
+    const result = await listDictionaryLemmas('hi');
+    expect(result.usedNuktaFallback).toBe(false);
   });
 });
 

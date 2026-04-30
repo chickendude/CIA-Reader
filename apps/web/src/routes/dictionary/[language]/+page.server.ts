@@ -57,6 +57,10 @@ export const load: PageServerLoad = async ({ params, url }) => {
     totalCount: result.totalCount,
     limit: result.limit,
     offset: result.offset,
+    // #318: Surface the nukta-agnostic fallback so the page can
+    // render a hint when an exact-match search missed and we showed
+    // the user the closest nukta-stripped match instead.
+    usedNuktaFallback: result.usedNuktaFallback,
     query: {
       q: q ?? '',
       pos,

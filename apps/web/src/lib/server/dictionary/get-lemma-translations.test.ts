@@ -46,6 +46,7 @@ vi.mock('../db/index.js', () => ({
       id: 'lemmas.id',
       language: 'lemmas.language',
       headword: 'lemmas.headword',
+      headwordNuktaStripped: 'lemmas.headword_nukta_stripped',
     },
     translations: {
       id: 'translations.id',
@@ -152,14 +153,42 @@ describe('getLemmaTranslations (T-3.14 sibling fallback)', () => {
     expect(selectFn).toHaveBeenCalledTimes(3);
   });
 
-  it('still returns empty when neither the primary nor any sibling has translations', async () => {
+  it('still returns empty when neither the primary nor any sibling tier has translations', async () => {
     stage([lemmaRow()]);
     stage([]); // primary empty
-    stage([]); // sibling join empty
+    stage([]); // exact-headword sibling join empty
+    stage([]); // #318: nukta-stripped sibling join empty
     const out = await getLemmaTranslations('lemma-1', null);
     expect(out.translations.personal).toEqual([]);
     expect(out.translations.official).toEqual([]);
     expect(out.translations.community).toEqual([]);
+  });
+
+  it('falls back to nukta-stripped siblings when exact-headword siblings are empty (#318)', async () => {
+    // Linked lemma is `पढना` (pre-#316, no nukta). Exact-headword
+    // sibling fetch finds nothing (no other `पढना` rows). The
+    // canonical entry sits under `पढ़ना` (with nukta) and ships the
+    // gloss — caught by the nukta-stripped tier because both reduce
+    // to the same key.
+    stage([lemmaRow({ id: 'lemma-1', headword: 'पढना', pos: 'VERB' })]);
+    stage([]); // primary translations empty
+    stage([]); // exact-headword sibling fetch empty
+    stage([
+      // nukta-stripped sibling fetch finds the canonical `पढ़ना` row
+      {
+        translation: translationRow({
+          lemmaId: 'lemma-canonical',
+          body: 'to read',
+        }),
+      },
+    ]);
+    const out = await getLemmaTranslations('lemma-1', null);
+    // We honor the user-clicked lemma's metadata; only the
+    // translation text comes from the canonical sibling.
+    expect(out.lemma.id).toBe('lemma-1');
+    expect(out.lemma.headword).toBe('पढना');
+    expect(out.translations.official.map((t) => t.body)).toEqual(['to read']);
+    expect(selectFn).toHaveBeenCalledTimes(4);
   });
 
   it('honors the viewer when bucketing sibling translations into personal vs community', async () => {
