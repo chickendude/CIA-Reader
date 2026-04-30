@@ -4,6 +4,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const listUserLanguages = vi.fn();
 const updateUserProfile = vi.fn();
 const upsertUserLanguage = vi.fn();
+const createPersonalApiKey = vi.fn();
+const listPersonalApiKeys = vi.fn();
+const revokePersonalApiKey = vi.fn();
 
 vi.mock('$lib/server/profile.js', () => ({
   listUserLanguages: (...a: unknown[]) => listUserLanguages(...a),
@@ -21,6 +24,12 @@ vi.mock('$lib/server/profile.js', () => ({
     })),
 }));
 
+vi.mock('$lib/server/auth/personal-api-keys.js', () => ({
+  createPersonalApiKey: (...a: unknown[]) => createPersonalApiKey(...a),
+  listPersonalApiKeys: (...a: unknown[]) => listPersonalApiKeys(...a),
+  revokePersonalApiKey: (...a: unknown[]) => revokePersonalApiKey(...a),
+}));
+
 type LoadFn = (typeof import('./+page.server.js'))['load'];
 type LoadEvent = Parameters<LoadFn>[0];
 
@@ -33,6 +42,8 @@ async function loadActions() {
   return {
     updateProfile: mod.actions.updateProfile as ActionFn,
     updateLanguage: mod.actions.updateLanguage as ActionFn,
+    createApiKey: mod.actions.createApiKey as ActionFn,
+    revokeApiKey: mod.actions.revokeApiKey as ActionFn,
   };
 }
 
@@ -55,6 +66,10 @@ describe('profile +page.server.ts', () => {
     listUserLanguages.mockReset();
     updateUserProfile.mockReset();
     upsertUserLanguage.mockReset();
+    createPersonalApiKey.mockReset();
+    listPersonalApiKeys.mockReset();
+    revokePersonalApiKey.mockReset();
+    listPersonalApiKeys.mockResolvedValue([]);
   });
 
   afterEach(() => vi.resetModules());
@@ -89,6 +104,8 @@ describe('profile +page.server.ts', () => {
       expect(data.languages[0]?.code).toBe('hi');
       expect(data.languages[0]?.displayName).toBe('Hindi');
       expect(data.languages[0]?.supportedRomanizations).toContain('iso15919');
+      expect(data.apiKeys).toEqual([]);
+      expect(listPersonalApiKeys).toHaveBeenCalledWith('u1');
     });
   });
 
@@ -205,6 +222,65 @@ describe('profile +page.server.ts', () => {
       expect(upsertUserLanguage).toHaveBeenCalledWith('u1', 'hi', {
         scriptPreference: 'romanization_only',
         romanizationScheme: 'iast',
+      });
+    });
+  });
+
+  describe('personal API key actions', () => {
+    it('creates a personal API key for the authenticated user', async () => {
+      createPersonalApiKey.mockResolvedValue({
+        key: 'ciar_pk_secret',
+        record: { id: 'key-1', name: 'Phone' },
+      });
+      const actions = await loadActions();
+
+      const result = await actions.createApiKey(
+        formEvent({ name: 'Phone' }, { user: { id: 'u1' } }),
+      );
+
+      expect(result).toMatchObject({
+        ok: true,
+        section: 'apiKeys',
+        key: 'ciar_pk_secret',
+      });
+      expect(createPersonalApiKey).toHaveBeenCalledWith('u1', 'Phone');
+    });
+
+    it('revokes a personal API key owned by the authenticated user', async () => {
+      revokePersonalApiKey.mockResolvedValue(true);
+      const actions = await loadActions();
+
+      const result = await actions.revokeApiKey(
+        formEvent(
+          { keyId: '00000000-0000-4000-8000-000000000001' },
+          { user: { id: 'u1' } },
+        ),
+      );
+
+      expect(result).toMatchObject({
+        ok: true,
+        section: 'apiKeys',
+      });
+      expect(revokePersonalApiKey).toHaveBeenCalledWith(
+        'u1',
+        '00000000-0000-4000-8000-000000000001',
+      );
+    });
+
+    it('returns 404 when revoking an unknown key', async () => {
+      revokePersonalApiKey.mockResolvedValue(false);
+      const actions = await loadActions();
+
+      const result = await actions.revokeApiKey(
+        formEvent(
+          { keyId: '00000000-0000-4000-8000-000000000001' },
+          { user: { id: 'u1' } },
+        ),
+      );
+
+      expect(result).toMatchObject({
+        status: 404,
+        data: { ok: false, section: 'apiKeys' },
       });
     });
   });

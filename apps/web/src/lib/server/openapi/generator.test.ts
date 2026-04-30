@@ -24,6 +24,7 @@ describe('OpenAPI generator', () => {
       deprecationHeader: API_DEPRECATION_HEADER,
     });
     expect(doc.components.headers[API_DEPRECATION_HEADER]).toBeDefined();
+    expect(doc.components.securitySchemes.personalApiKeyAuth).toBeDefined();
   });
 
   it('represents every exported SvelteKit API handler with schemas', async () => {

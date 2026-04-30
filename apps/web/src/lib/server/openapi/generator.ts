@@ -190,7 +190,7 @@ function operationFor(op: RouteOperation): JsonSchema {
     summary: summaryFor(op.path, op.method),
     description:
       'Generated from the matching SvelteKit API route. Endpoint-specific request validation is implemented with local Zod schemas in the route/service layer.',
-    security: [{ bearerAuth: [] }, { cookieAuth: [] }],
+    security: [{ bearerAuth: [] }, { personalApiKeyAuth: [] }, { cookieAuth: [] }],
     ...(requestBody ? { requestBody } : {}),
     responses: responsesFor(op.method),
     'x-source-file': path.relative(WEB_ROOT, op.file),
@@ -298,6 +298,13 @@ export async function generateOpenApiDocument(): Promise<OpenApiDocument> {
     components: {
       securitySchemes: {
         bearerAuth: { type: 'http', scheme: 'bearer', bearerFormat: 'JWT' },
+        personalApiKeyAuth: {
+          type: 'apiKey',
+          in: 'header',
+          name: 'X-API-Key',
+          description:
+            'Personal API key generated from the user profile. Keys are scoped to the owning account and stored hashed.',
+        },
         cookieAuth: { type: 'apiKey', in: 'cookie', name: 'ciar_session' },
       },
       responses: {

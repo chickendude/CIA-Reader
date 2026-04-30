@@ -197,6 +197,13 @@
       "when": 1777515328521,
       "tag": "0027_lean_bucky",
       "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1777516246583,
+      "tag": "0028_flashy_epoch",
+      "breakpoints": true
     }
   ]
 }

@@ -3,6 +3,10 @@ import { eq } from 'drizzle-orm';
 import { db, schema } from '../db/index.js';
 import { readSessionCookie, validateSessionToken } from './sessions.js';
 import { verifyAccessToken } from './access-token.js';
+import {
+  PERSONAL_API_KEY_PREFIX,
+  resolvePersonalApiKey,
+} from './personal-api-keys.js';
 import type { User } from '../db/schema.js';
 
 /**
@@ -14,9 +18,18 @@ import type { User } from '../db/schema.js';
  * throw a 401 instead.
  */
 export async function resolveUser(event: RequestEvent): Promise<User | null> {
+  const apiKeyHeader = event.request.headers.get('x-api-key');
+  if (apiKeyHeader) {
+    return await resolvePersonalApiKey(apiKeyHeader);
+  }
+
   const authHeader = event.request.headers.get('authorization');
   if (authHeader?.toLowerCase().startsWith('bearer ')) {
     const token = authHeader.slice('bearer '.length).trim();
+    if (token.startsWith(PERSONAL_API_KEY_PREFIX)) {
+      return await resolvePersonalApiKey(token);
+    }
+
     const payload = await verifyAccessToken(token);
     if (payload) {
       const [user] = await db

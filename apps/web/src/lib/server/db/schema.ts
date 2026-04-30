@@ -144,6 +144,33 @@ export const refreshTokens = pgTable(
 );
 
 /**
+ * Personal API keys for mobile / third-party clients. The plaintext key is
+ * returned once at creation time; only SHA-256(key) is stored. Revocation is a
+ * soft delete so the profile page can show key history without leaking secret
+ * material.
+ */
+export const personalApiKeys = pgTable(
+  'personal_api_keys',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    keyHash: text('key_hash').notNull(),
+    keyPrefix: text('key_prefix').notNull(),
+    lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
+    revokedAt: timestamp('revoked_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    hashUnique: unique('personal_api_keys_hash_unique').on(t.keyHash),
+    userIdx: index('personal_api_keys_user_idx').on(t.userId),
+    activeUserIdx: index('personal_api_keys_active_user_idx').on(t.userId, t.revokedAt),
+  }),
+);
+
+/**
  * Magic-link login tokens. Single-use. `id` is the SHA-256 of the token; the
  * plaintext only appears in the emailed URL.
  */
@@ -896,6 +923,7 @@ export const textChapters = pgTable(
 
 export type User = InferSelectModel<typeof users>;
 export type Session = InferSelectModel<typeof sessions>;
+export type PersonalApiKey = InferSelectModel<typeof personalApiKeys>;
 export type RefreshToken = InferSelectModel<typeof refreshTokens>;
 export type MagicLink = InferSelectModel<typeof magicLinks>;
 export type UserLanguage = InferSelectModel<typeof userLanguages>;
