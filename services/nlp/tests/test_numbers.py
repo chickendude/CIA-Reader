@@ -55,6 +55,30 @@ def test_parse_digits_accepts_single_script(surface: str, expected: int) -> None
 
 
 @pytest.mark.parametrize(
+    "surface,expected",
+    [
+        # Western thousands grouping
+        ("1,000", 1_000),
+        ("12,345", 12_345),
+        ("123,456", 123_456),
+        ("1,234,567", 1_234_567),
+        ("9,999,999", 9_999_999),
+        # Indian lakh grouping
+        ("10,000", 10_000),
+        ("1,00,000", 100_000),
+        ("12,34,567", 1_234_567),
+        ("99,99,999", 9_999_999),
+        # Native-script digits with separators
+        ("१,२३४", 1_234),
+        ("१,००,०००", 100_000),
+        ("୧,୨୩୪", 1_234),
+    ],
+)
+def test_parse_digits_accepts_comma_separators(surface: str, expected: int) -> None:
+    assert parse_digits(surface) == expected
+
+
+@pytest.mark.parametrize(
     "surface",
     [
         "",
@@ -73,10 +97,16 @@ def test_parse_digits_accepts_single_script(surface: str, expected: int) -> None
         "1.5",
         ".5",
         "1.",
-        "1,000",
+        # Malformed comma positions
+        ",1",
+        "1,",
+        "1,,000",
+        ",",
+        ",,",
         # Out of range.
         "10000001",
         "99999999",
+        "10,000,001",
     ],
 )
 def test_parse_digits_rejects(surface: str) -> None:

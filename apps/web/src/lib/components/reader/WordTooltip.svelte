@@ -9,15 +9,35 @@
   full side panel (WordPopup), which does fetch.
 -->
 <script lang="ts">
-  import type { ServerToken } from './types.js';
+  import type { LanguageCode } from '@ciareader/shared-types';
+  import type { ServerToken, ServerNumberLanguageForm } from './types.js';
   import { placeTooltip, type AnchorRect } from './tooltip-position.js';
 
   interface Props {
     token: ServerToken;
     anchorRect: AnchorRect;
+    /** Reading language — drives which spelled-out form the tooltip
+     *  surfaces for digit-only NUM tokens (T-2.8). The side panel
+     *  shows all three; the tooltip is meant to be glanceable, so it
+     *  only shows the one matching the text being read. Optional for
+     *  backward-compat with callers that haven't been updated yet —
+     *  when absent, number tokens fall back to the empty-state copy. */
+    language?: LanguageCode;
   }
 
-  let { token, anchorRect }: Props = $props();
+  let { token, anchorRect, language }: Props = $props();
+
+  const numberForm = $derived<ServerNumberLanguageForm | null>(
+    token.numberForms && language
+      ? language === 'hi'
+        ? token.numberForms.hi
+        : language === 'mr'
+          ? token.numberForms.mr
+          : language === 'or'
+            ? token.numberForms.odia
+            : null
+      : null,
+  );
 
   let tipEl: HTMLDivElement | null = $state(null);
   let measured = $state<{ w: number; h: number } | null>(null);
@@ -81,17 +101,29 @@
 >
   <div class="tip-head">
     <span class="tip-w">{token.surface}</span>
-    {#if token.romanization}
+    <!-- T-2.8: for number tokens the romanization field carries the
+         literal digit string ("123" → "123") which is just noise in
+         the head; suppress it and let the spelled-out form below do
+         the work. -->
+    {#if token.romanization && !numberForm}
       <span class="tip-roman">{token.romanization}</span>
     {/if}
   </div>
-  <!-- T-5.20: surface the top translation when we have one, fall
-       back to an italic "No translations" otherwise so the user
-       always knows whether the lookup is empty or just absent. The
-       tooltip stays no-fetch — it reads `glossDefault` off the token
-       row, which the side-panel still backs up with the full
-       hierarchy on click. -->
-  {#if token.isOov}
+  {#if numberForm}
+    <!-- T-2.8: digit-only NUM token. Show the spelled-out form for
+         the reading language + its romanization; the side panel shows
+         all three languages on click. -->
+    <div class="tip-def">
+      {numberForm.spelled}
+      <span class="tip-roman num-roman">{numberForm.romanized}</span>
+    </div>
+  {:else if token.isOov}
+    <!-- T-5.20: surface the top translation when we have one, fall
+         back to an italic "No translations" otherwise so the user
+         always knows whether the lookup is empty or just absent. The
+         tooltip stays no-fetch — it reads `glossDefault` off the token
+         row, which the side-panel still backs up with the full
+         hierarchy on click. -->
     <div class="tip-def empty">No dictionary match</div>
   {:else if token.glossDefault}
     <div class="tip-def">{token.glossDefault}</div>
@@ -148,6 +180,11 @@
     line-clamp: 2;
     -webkit-box-orient: vertical;
     overflow: hidden;
+  }
+  /* T-2.8: small romanization stripe inside the gloss row for
+   * number tokens. Same colour ramp as the head romanization. */
+  .num-roman {
+    margin-left: 0.45rem;
   }
   /* T-5.20: italic "no match" / "no translations" copy. */
   .tip-def.empty {

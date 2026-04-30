@@ -81,13 +81,30 @@ def _classify_script(surface: str) -> DigitScript | None:
 
 
 def parse_digits(surface: str) -> int | None:
-    """Parse a digit-only token to an int.
+    """Parse a digit-only token (with optional thousands separators) to an int.
+
+    Accepts Latin, Devanagari, or Odia digits; all digits must come
+    from a single script. ASCII commas may appear as thousands /
+    lakh separators — both Western (``1,000,000``) and Indian
+    (``10,00,000``) grouping styles are accepted, since validating
+    the precise grouping rule per locale is more friction than it's
+    worth. Doubled commas, leading commas, and trailing commas are
+    rejected so genuinely malformed input falls through.
 
     Returns ``None`` for empty input, mixed-script input, signed
     input, decimal input, or values exceeding :data:`MAX_VALUE`.
-    Accepts Latin, Devanagari, or Odia digits; all digits must come
-    from a single script.
     """
+    if not surface:
+        return None
+    # Comma-separator handling — reject obviously malformed positions
+    # (`,123` / `123,` / `1,,234`) so a genuine non-number doesn't
+    # collapse into a digit run.
+    if "," in surface:
+        if surface.startswith(",") or surface.endswith(",") or ",," in surface:
+            return None
+        surface = surface.replace(",", "")
+        if not surface:
+            return None
     script = _classify_script(surface)
     if script is None:
         return None

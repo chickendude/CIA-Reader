@@ -438,7 +438,7 @@
 </div>
 
 {#if hoverToken && hoverRect}
-  <WordTooltip token={hoverToken} anchorRect={hoverRect} />
+  <WordTooltip token={hoverToken} anchorRect={hoverRect} {language} />
 {/if}
 
 {#if activeToken && activeRect}

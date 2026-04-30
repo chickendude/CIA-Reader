@@ -99,3 +99,77 @@ describe('WordTooltip — gloss display (T-5.18)', () => {
     expect(document.body.querySelector('.tip')).not.toBeNull();
   });
 });
+
+describe('WordTooltip — number tokens (T-2.8)', () => {
+  function makeNumberToken(): ServerToken {
+    return makeToken({
+      surface: '123',
+      lemmaId: null,
+      romanization: '123',
+      numberForms: {
+        value: 123,
+        digitsLatin: '123',
+        digitsDeva: '१२३',
+        digitsOrya: '୧୨୩',
+        hi: { spelled: 'एक सौ तेईस', romanized: 'ek sau teīs' },
+        mr: { spelled: 'एकशे तेवीस', romanized: 'ēkaśē tēvīsa' },
+        odia: { spelled: 'ଏକ ଶହ ତେଇଶ', romanized: 'ēka śaha tēiśa' },
+      },
+    });
+  }
+
+  it('shows the spelled-out form + romanization for the reading language', () => {
+    render(WordTooltip, {
+      token: makeNumberToken(),
+      anchorRect: ANCHOR,
+      language: 'hi',
+    });
+    const def = document.body.querySelector('.tip-def');
+    expect(def?.textContent).toContain('एक सौ तेईस');
+    expect(def?.textContent).toContain('ek sau teīs');
+    expect(def?.classList.contains('empty')).toBe(false);
+  });
+
+  it('switches to the Marathi form when the reader is in Marathi', () => {
+    render(WordTooltip, {
+      token: makeNumberToken(),
+      anchorRect: ANCHOR,
+      language: 'mr',
+    });
+    const def = document.body.querySelector('.tip-def');
+    expect(def?.textContent).toContain('एकशे तेवीस');
+  });
+
+  it('switches to the Odia form when the reader is in Odia', () => {
+    render(WordTooltip, {
+      token: makeNumberToken(),
+      anchorRect: ANCHOR,
+      language: 'or',
+    });
+    const def = document.body.querySelector('.tip-def');
+    expect(def?.textContent).toContain('ଏକ ଶହ ତେଇଶ');
+  });
+
+  it('suppresses the head romanization for number tokens (the digits would be redundant)', () => {
+    render(WordTooltip, {
+      token: makeNumberToken(),
+      anchorRect: ANCHOR,
+      language: 'hi',
+    });
+    // Head holds only the surface; the romanization stripe is
+    // suppressed because token.romanization for "123" is just "123".
+    const head = document.body.querySelector('.tip-head');
+    expect(head?.querySelectorAll('.tip-roman')).toHaveLength(0);
+  });
+
+  it('falls back to the empty state when no language is given (legacy callers)', () => {
+    render(WordTooltip, {
+      token: makeNumberToken(),
+      anchorRect: ANCHOR,
+    });
+    // No language prop → tooltip can't pick a form, so the regular
+    // "No translations" path runs (lemmaId is null on number tokens).
+    const def = document.body.querySelector('.tip-def');
+    expect(def?.classList.contains('empty')).toBe(true);
+  });
+});
