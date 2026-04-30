@@ -1442,6 +1442,46 @@ export const audioFiles = pgTable(
 );
 
 /**
+ * Aggregate listening time per user/audio file (T-10.5).
+ *
+ * The audio player sends small playback deltas while a signed-in reader is
+ * listening. We store an aggregate rather than an event stream so the stats
+ * page can cheaply compute minutes per language, text, and collection.
+ */
+export const userAudioListening = pgTable(
+  'user_audio_listening',
+  {
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    audioFileId: uuid('audio_file_id')
+      .notNull()
+      .references(() => audioFiles.id, { onDelete: 'cascade' }),
+    textId: uuid('text_id')
+      .notNull()
+      .references(() => texts.id, { onDelete: 'cascade' }),
+    listenedMs: integer('listened_ms').notNull().default(0),
+    lastListenedAt: timestamp('last_listened_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.userId, t.audioFileId] }),
+    userTextIdx: index('user_audio_listening_user_text_idx').on(
+      t.userId,
+      t.textId,
+    ),
+    textIdx: index('user_audio_listening_text_idx').on(t.textId),
+  }),
+);
+
+/**
  * Per-token timing for an audio file (T-9.3 / T-9.5 / T-9.6).
  *
  * One row per (audio_file, token) pair. Optional — a chapter can
@@ -1491,4 +1531,5 @@ export const audioAlignments = pgTable(
 );
 
 export type AudioFile = InferSelectModel<typeof audioFiles>;
+export type UserAudioListening = InferSelectModel<typeof userAudioListening>;
 export type AudioAlignment = InferSelectModel<typeof audioAlignments>;
