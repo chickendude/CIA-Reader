@@ -370,6 +370,144 @@ describe('processTextNow', () => {
     expect(tokenInsert[0]!.numberForms?.value).toBe(1_013_322);
   });
 
+  it('resolves a post-#316 nukta candidate onto an existing pre-#316 lemma row (#320)', async () => {
+    // The transition scenario: the lemmas table has an old `पढना`
+    // (no nukta) row from before the lemma-restoration fix.
+    // Post-fix, the NLP pipeline emits `पढ़ना` (with nukta) as the
+    // candidate. Without the third tier the dispatcher would
+    // mint a duplicate row and split known-words tracking.
+    stage([{ id: 'text-1', language: 'hi' }]);
+    stage([{ id: 'chap-1', body: 'वह पढ़ती है।' }]);
+    // lemma index: only the pre-#316 row exists.
+    stage([{ id: 'lemma-padhna-old', headword: 'पढना', pos: 'VERB' }]);
+    stage([]); // form_lemma_overrides
+
+    nlpProcess.mockResolvedValueOnce({
+      language: 'hi',
+      pipeline_id: 'stanza-hi',
+      tokens: [
+        {
+          idx: 0,
+          surface: 'पढ़ती',
+          is_word: true,
+          is_ambiguous: false,
+          is_oov: false,
+          romanization: 'paṛhtī',
+          // Post-#316 lemma carries the nukta — strict-POS and
+          // loose-headword tiers both miss the `पढना` row; the
+          // nukta-stripped tier catches it.
+          candidates: [
+            { lemma: 'पढ़ना', pos: 'VERB', score: 1.0, features: {} },
+          ],
+        },
+      ],
+    });
+
+    await processTextNow('text-1');
+
+    const inserts = calls.filter(
+      (c): c is Extract<Call, { kind: 'insert' }> => c.kind === 'insert',
+    );
+    // One insert: the text_tokens batch. No ensureLemma path —
+    // the third tier already had the answer.
+    expect(inserts).toHaveLength(1);
+    const tokenInsert = inserts[0]!.values as Array<{
+      lemmaId: string | null;
+      surface: string;
+    }>;
+    expect(tokenInsert[0]!.lemmaId).toBe('lemma-padhna-old');
+  });
+
+  it('resolves a pre-#316 nukta-free candidate onto an existing canonical lemma row (#320)', async () => {
+    // Inverse: lemma table has the canonical `पढ़ना` row, but the
+    // candidate this run produced lacks the nukta (could be a
+    // legacy text re-process after the fix landed but before the
+    // pipeline was rolled out, or a fallback path elsewhere). Same
+    // tier collapse — third tier matches both directions.
+    stage([{ id: 'text-1', language: 'hi' }]);
+    stage([{ id: 'chap-1', body: 'पढती है।' }]);
+    stage([{ id: 'lemma-padhna-canon', headword: 'पढ़ना', pos: 'VERB' }]);
+    stage([]); // overrides
+
+    nlpProcess.mockResolvedValueOnce({
+      language: 'hi',
+      pipeline_id: 'stanza-hi',
+      tokens: [
+        {
+          idx: 0,
+          surface: 'पढती',
+          is_word: true,
+          is_ambiguous: false,
+          is_oov: false,
+          romanization: 'paṛhtī',
+          candidates: [
+            { lemma: 'पढना', pos: 'VERB', score: 1.0, features: {} },
+          ],
+        },
+      ],
+    });
+
+    await processTextNow('text-1');
+
+    const inserts = calls.filter(
+      (c): c is Extract<Call, { kind: 'insert' }> => c.kind === 'insert',
+    );
+    expect(inserts).toHaveLength(1);
+    const tokenInsert = inserts[0]!.values as Array<{
+      lemmaId: string | null;
+    }>;
+    expect(tokenInsert[0]!.lemmaId).toBe('lemma-padhna-canon');
+  });
+
+  it('still prefers a strict-POS match over the nukta-stripped tier (#320)', async () => {
+    // Both rows are loaded: one nukta-free `पढना VERB` and one
+    // canonical `पढ़ना VERB`. A candidate that exactly matches the
+    // canonical row's `headword` + `pos` should resolve to it via
+    // the strict tier — the third tier's lossy collapse mustn't
+    // shadow an exact win.
+    stage([{ id: 'text-1', language: 'hi' }]);
+    stage([{ id: 'chap-1', body: 'वह पढ़ती है।' }]);
+    stage([
+      // Insertion order: nukta-free first. The third-tier map
+      // would key both `पढना` and `पढ़ना` to the same stripped
+      // string `पढना` — first-row-wins means the legacy row
+      // would win the third-tier lookup. The strict tier must
+      // beat that for the canonical candidate.
+      { id: 'lemma-padhna-old', headword: 'पढना', pos: 'VERB' },
+      { id: 'lemma-padhna-canon', headword: 'पढ़ना', pos: 'VERB' },
+    ]);
+    stage([]); // overrides
+
+    nlpProcess.mockResolvedValueOnce({
+      language: 'hi',
+      pipeline_id: 'stanza-hi',
+      tokens: [
+        {
+          idx: 0,
+          surface: 'पढ़ती',
+          is_word: true,
+          is_ambiguous: false,
+          is_oov: false,
+          romanization: 'paṛhtī',
+          candidates: [
+            { lemma: 'पढ़ना', pos: 'VERB', score: 1.0, features: {} },
+          ],
+        },
+      ],
+    });
+
+    await processTextNow('text-1');
+
+    const inserts = calls.filter(
+      (c): c is Extract<Call, { kind: 'insert' }> => c.kind === 'insert',
+    );
+    const tokenInsert = inserts[0]!.values as Array<{
+      lemmaId: string | null;
+    }>;
+    // Strict-POS wins → canonical row, not the legacy duplicate.
+    expect(tokenInsert[0]!.lemmaId).toBe('lemma-padhna-canon');
+  });
+
   it('marks the text failed when the NLP service throws', async () => {
     stage([{ id: 'text-1', language: 'hi' }]);
     stage([{ id: 'chap-1', body: 'oops' }]);
