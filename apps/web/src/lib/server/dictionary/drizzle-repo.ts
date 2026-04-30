@@ -113,6 +113,10 @@ export class DrizzleDictionaryRepo implements DictionaryRepo {
       .insert(translations)
       .values({
         lemmaId: payload.lemmaId,
+        // T-14.1: importer-driven inserts are lemma-target. Phrase
+        // imports go through the phrase service (T-14.5 NLP path).
+        targetType: 'lemma',
+        targetId: payload.lemmaId,
         source: payload.source,
         body: payload.body,
         targetLanguage: payload.targetLanguage,

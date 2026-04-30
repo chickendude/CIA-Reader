@@ -19,11 +19,27 @@
  * lookup — useful for the stub pipeline (every candidate `pos:'X'`)
  * and real-world POS disagreements (e.g. Stanza tagging a
  * participle VERB while the dictionary stores ADJ).
+ *
+ * Nukta-agnostic third tier (#320): once #316 landed, the Hindi
+ * pipeline emits `पढ़ना` (with nukta) for verbs whose lemmas Stanza
+ * had previously been stripping. Pre-#316 `lemmas` rows were stored
+ * without the nukta as `पढना`, and a strict `byHeadword` lookup
+ * misses them — `ensureLemma` would mint a duplicate row and split
+ * known-words tracking + translations across two lemma IDs. The
+ * third tier reduces both candidate and stored headword to their
+ * nukta-free form (via `stripNukta` from `@ciareader/shared-types`)
+ * so the two variants collapse to the same key. This is a transition
+ * aid: long-term, a one-shot dedup migration can fold pre-#316
+ * duplicates into the canonical with-nukta row and the tier becomes
+ * a no-op.
  */
 import { and, eq } from 'drizzle-orm';
 
+import { stripNukta } from '@ciareader/shared-types';
+
 import { db, schema } from '../db/index.js';
 import { nlpClient, type NlpToken } from '../nlp-client.js';
+import { looksLikeNumberToken } from '$lib/components/reader/types.js';
 import type {
   Lemma,
   Text,
@@ -36,12 +52,21 @@ import {
   markTextReady,
   type JobDispatcher,
 } from './jobs.js';
+import { rebuildChapterSpans } from './phrase-spans.js';
 
 type LemmaIndex = {
   /** `${headword} ${pos}` → id. Strict-POS lookup. */
   byHeadwordPos: Map<string, string>;
   /** `headword` → id (first row wins). Loose fallback. */
   byHeadword: Map<string, string>;
+  /**
+   * `stripNukta(headword)` → id (first row wins). #320 transition
+   * tier so post-#316 candidates (`पढ़ना`) collapse onto pre-#316
+   * lemma rows (`पढना`) — and vice-versa — instead of triggering
+   * an auto-create. Both directions of the mismatch reduce to the
+   * same nukta-free key.
+   */
+  byNuktaStrippedHeadword: Map<string, string>;
   /**
    * `surface_nfc` → chosen lemma id, applied BEFORE Stanza's
    * candidate is consulted (T-2.7). Curator seeds + crowdsourced
@@ -73,9 +98,19 @@ async function loadLemmaIndex(
   >;
   const byHeadwordPos = new Map<string, string>();
   const byHeadword = new Map<string, string>();
+  const byNuktaStrippedHeadword = new Map<string, string>();
   for (const r of rows) {
     byHeadwordPos.set(`${r.headword} ${r.pos}`, r.id);
     if (!byHeadword.has(r.headword)) byHeadword.set(r.headword, r.id);
+    // Same first-row-wins rule as `byHeadword`. We compute the
+    // stripped key in JS rather than reading the Postgres-side
+    // generated column (#318) so the dispatcher doesn't need a
+    // schema migration for this tier — and the helper is the
+    // single source of truth for the strip rule.
+    const stripped = stripNukta(r.headword);
+    if (!byNuktaStrippedHeadword.has(stripped)) {
+      byNuktaStrippedHeadword.set(stripped, r.id);
+    }
   }
   // T-2.7 overrides — pre-load every wildcard-context row for the
   // language. Signature-keyed rows (T-6.7's aggregation output)
@@ -100,7 +135,12 @@ async function loadLemmaIndex(
       overridesBySurface.set(r.surfaceNfc, r.chosenLemmaId);
     }
   }
-  return { byHeadwordPos, byHeadword, overridesBySurface };
+  return {
+    byHeadwordPos,
+    byHeadword,
+    byNuktaStrippedHeadword,
+    overridesBySurface,
+  };
 }
 
 // Each MVP language has a single canonical script today (multi-script
@@ -119,6 +159,9 @@ function lookupCandidate(
   return (
     index.byHeadwordPos.get(`${c.lemma} ${c.pos}`) ??
     index.byHeadword.get(c.lemma) ??
+    // #320 third tier — collapse nukta variants onto the canonical
+    // row regardless of which side has the nukta.
+    index.byNuktaStrippedHeadword.get(stripNukta(c.lemma)) ??
     null
   );
 }
@@ -163,10 +206,7 @@ async function ensureLemma(
     .returning()) as Lemma[];
 
   if (row) {
-    index.byHeadwordPos.set(`${headword} ${pos}`, row.id);
-    if (!index.byHeadword.has(headword)) {
-      index.byHeadword.set(headword, row.id);
-    }
+    cacheRow(index, headword, pos, row.id);
     return row.id;
   }
 
@@ -183,13 +223,32 @@ async function ensureLemma(
     )
     .limit(1)) as Lemma[];
   if (found) {
-    index.byHeadwordPos.set(`${headword} ${pos}`, found.id);
-    if (!index.byHeadword.has(headword)) {
-      index.byHeadword.set(headword, found.id);
-    }
+    cacheRow(index, headword, pos, found.id);
     return found.id;
   }
   return null;
+}
+
+/**
+ * Refresh the in-memory lemma index after a row is inserted (or
+ * read back from the DB on a race). Centralized so all three tiers
+ * (#320 added the third) stay populated in lockstep — a future
+ * tier addition only has to update this one helper.
+ */
+function cacheRow(
+  index: LemmaIndex,
+  headword: string,
+  pos: string,
+  id: string,
+): void {
+  index.byHeadwordPos.set(`${headword} ${pos}`, id);
+  if (!index.byHeadword.has(headword)) {
+    index.byHeadword.set(headword, id);
+  }
+  const stripped = stripNukta(headword);
+  if (!index.byNuktaStrippedHeadword.has(stripped)) {
+    index.byNuktaStrippedHeadword.set(stripped, id);
+  }
 }
 
 async function pickLemmaId(
@@ -198,6 +257,13 @@ async function pickLemmaId(
   index: LemmaIndex,
 ): Promise<string | null> {
   if (!token.is_word) return null;
+  // T-2.8: digit-only surfaces (with or without comma separators)
+  // get rendered as numbers in the popup, not as lemmas. Skip lemma
+  // resolution + auto-create for them so the lemmas table doesn't
+  // collect "1,013,322 / NUM" rows the curator has to clean up later.
+  // The number_forms column on the token row carries the per-language
+  // spelled-out payload that drives the popup.
+  if (looksLikeNumberToken(token.surface)) return null;
   // T-2.7: form_lemma_overrides wins over Stanza. Curator seeds for
   // treebank quirks (Hindi finite copulas → होना and friends) +
   // T-6.7's crowdsourced promotions land here. The lookup is keyed
@@ -219,6 +285,17 @@ async function pickLemmaId(
   for (const c of token.candidates) {
     const loose = index.byHeadword.get(c.lemma);
     if (loose) return loose;
+  }
+  // #320 nukta-stripped fallback. Catches the post-#316 / pre-#316
+  // mismatch where the candidate's headword has nuktas the stored
+  // row lacks (e.g. candidate `पढ़ना` against pre-fix `पढना`), or
+  // the inverse. Both reduce to the same nukta-free key. Done as a
+  // separate pass so the strict-POS and loose-headword tiers above
+  // always win when they could — the stripped tier is intentionally
+  // lossy (`ज़रा` and `जरा` collapse) so it goes last.
+  for (const c of token.candidates) {
+    const stripped = index.byNuktaStrippedHeadword.get(stripNukta(c.lemma));
+    if (stripped) return stripped;
   }
   // Last resort — auto-create a lemma row from the top candidate so
   // the user can attach translations to it. Stub-pipeline candidates
@@ -283,6 +360,14 @@ async function processChapter(
   for (let off = 0; off < rows.length; off += BATCH) {
     await db.insert(schema.textTokens).values(rows.slice(off, off + BATCH));
   }
+  // T-14.2: rebuild `phrase_chapter_spans` now that the chapter's
+  // text_tokens are in place. Failures bubble up so a span-resolver
+  // crash flips the text to 'failed' rather than leaving it
+  // half-indexed.
+  await rebuildChapterSpans({
+    chapterId: chapter.id,
+    language,
+  });
   return rows.length;
 }
 

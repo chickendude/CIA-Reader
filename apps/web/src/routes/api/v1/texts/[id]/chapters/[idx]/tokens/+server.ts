@@ -38,6 +38,7 @@ export const GET: RequestHandler = async ({ params, locals }) => {
   return json({
     chapterId: chapter.id,
     chapterIdx: chapter.idx,
+    body: chapter.body,
     tokens,
   });
 };

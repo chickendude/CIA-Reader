@@ -4,6 +4,11 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import {
+  MOBILE_RESPONSE_BUDGET_BYTES,
+  jsonPayloadBytes,
+} from '$lib/server/payload-budget.js';
+
 const getReadableText = vi.fn();
 const loadChapterTokens = vi.fn();
 
@@ -81,12 +86,13 @@ vi.mock('$lib/server/db/index.js', () => {
 type LoadFn = (typeof import('./+page.server.js'))['load'];
 
 const VALID_ID = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
-const USER = { id: 'user-1', role: 'user' as const };
+type TestUser = { id: string; role: 'user' | 'curator' | 'admin' };
+const USER: TestUser = { id: 'user-1', role: 'user' };
 
 async function callLoad(
   url: string,
   textId = VALID_ID,
-  user: typeof USER | null = USER,
+  user: TestUser | null = USER,
 ) {
   const { load } = await import('./+page.server.js');
   const event = {
@@ -255,6 +261,41 @@ describe('/reader/[textId] loader', () => {
     expect(res.status).toBe(404);
   });
 
+  it('exposes isAdmin=true only for users with role=admin (T-2.8)', async () => {
+    getReadableText.mockResolvedValueOnce(ownedTextWithChapters(1));
+    const adminData = (await callLoad(`http://x/reader/${VALID_ID}`, VALID_ID, {
+      id: USER.id,
+      role: 'admin',
+    })) as { isAdmin: boolean };
+    expect(adminData.isAdmin).toBe(true);
+
+    getReadableText.mockResolvedValueOnce(ownedTextWithChapters(1));
+    const userData = (await callLoad(`http://x/reader/${VALID_ID}`)) as {
+      isAdmin: boolean;
+    };
+    expect(userData.isAdmin).toBe(false);
+
+    getReadableText.mockResolvedValueOnce(ownedTextWithChapters(1));
+    const curatorData = (await callLoad(`http://x/reader/${VALID_ID}`, VALID_ID, {
+      id: USER.id,
+      role: 'curator',
+    })) as { isAdmin: boolean };
+    // Curators get dictionary access, not pipeline reruns.
+    expect(curatorData.isAdmin).toBe(false);
+
+    const fixture = ownedTextWithChapters(1);
+    getReadableText.mockResolvedValueOnce({
+      ...fixture,
+      text: { ...fixture.text, ownerId: null, visibility: 'official' },
+    });
+    const anonData = (await callLoad(
+      `http://x/reader/${VALID_ID}`,
+      VALID_ID,
+      null,
+    )) as { isAdmin: boolean };
+    expect(anonData.isAdmin).toBe(false);
+  });
+
   it('lets anonymous viewers read official texts and reports isOwner=false', async () => {
     const fixture = ownedTextWithChapters(1);
     getReadableText.mockResolvedValueOnce({
@@ -337,8 +378,10 @@ describe('/reader/[textId] loader', () => {
     });
     loadChapterTokens.mockResolvedValueOnce([tokenRow('t0', 0)]);
     const data = (await callLoad(`http://x/reader/${VALID_ID}`)) as {
-      chapters: Array<{ id: string; tokens: unknown }>;
+      chapters: Array<{ id: string; body: string | null; tokens: unknown }>;
     };
+    expect(data.chapters[0]!.body).toBe('पाठ');
+    expect(data.chapters[1]!.body).toBeNull();
     expect(data.chapters[0]!.tokens).toHaveLength(1);
     expect(data.chapters[1]!.tokens).toBeNull();
     expect(data.chapters[2]!.tokens).toBeNull();
@@ -346,6 +389,29 @@ describe('/reader/[textId] loader', () => {
     // siblings get filled in client-side via the lazy-load endpoint.
     expect(loadChapterTokens).toHaveBeenCalledTimes(1);
     expect(loadChapterTokens).toHaveBeenCalledWith('c0', USER.id);
+  });
+
+  it('keeps sibling chapter bodies out of the SSR payload for mobile (T-12.5)', async () => {
+    const longBody = 'x'.repeat(30_000);
+    const fixture = ownedTextWithChapters(5);
+    getReadableText.mockResolvedValueOnce({
+      ...fixture,
+      chapters: fixture.chapters.map((chapter) => ({
+        ...chapter,
+        body: longBody,
+        tokenCount: 10_000,
+      })),
+    });
+
+    const data = (await callLoad(`http://x/reader/${VALID_ID}`)) as {
+      chapters: Array<{ body: string | null; tokens: unknown }>;
+    };
+
+    expect(data.chapters[0]!.body).toHaveLength(30_000);
+    expect(data.chapters.slice(1).every((chapter) => chapter.body === null)).toBe(
+      true,
+    );
+    expect(jsonPayloadBytes(data)).toBeLessThan(MOBILE_RESPONSE_BUDGET_BYTES);
   });
 
   it('lazy-loads only the requested chapter when ?chapter=N is set (T-5.1a)', async () => {

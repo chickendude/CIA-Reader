@@ -6,6 +6,26 @@
   function minutes(n: number): string {
     return n.toLocaleString(undefined, { maximumFractionDigits: 1 });
   }
+
+  function statsHref(
+    patch: Partial<{
+      textOffset: number | null;
+      collectionOffset: number | null;
+    }>,
+  ): string {
+    const params = new URLSearchParams();
+    params.set('textLimit', String(data.textsPage.limit));
+    params.set('collectionLimit', String(data.collectionsPage.limit));
+    params.set(
+      'textOffset',
+      String(patch.textOffset ?? data.textsPage.offset),
+    );
+    params.set(
+      'collectionOffset',
+      String(patch.collectionOffset ?? data.collectionsPage.offset),
+    );
+    return `/stats/${data.language}?${params.toString()}`;
+  }
 </script>
 
 <svelte:head>
@@ -77,6 +97,16 @@
           {/each}
         </tbody>
       </table>
+      {#if data.textsPage.prevOffset !== null || data.textsPage.nextOffset !== null}
+        <nav class="ls-pager" aria-label="Text stats pages">
+          {#if data.textsPage.prevOffset !== null}
+            <a class="ls-page-link" href={statsHref({ textOffset: data.textsPage.prevOffset })}>Previous</a>
+          {/if}
+          {#if data.textsPage.nextOffset !== null}
+            <a class="ls-page-link" href={statsHref({ textOffset: data.textsPage.nextOffset })}>Next</a>
+          {/if}
+        </nav>
+      {/if}
     {/if}
   </section>
 
@@ -109,6 +139,16 @@
           {/each}
         </tbody>
       </table>
+      {#if data.collectionsPage.prevOffset !== null || data.collectionsPage.nextOffset !== null}
+        <nav class="ls-pager" aria-label="Collection stats pages">
+          {#if data.collectionsPage.prevOffset !== null}
+            <a class="ls-page-link" href={statsHref({ collectionOffset: data.collectionsPage.prevOffset })}>Previous</a>
+          {/if}
+          {#if data.collectionsPage.nextOffset !== null}
+            <a class="ls-page-link" href={statsHref({ collectionOffset: data.collectionsPage.nextOffset })}>Next</a>
+          {/if}
+        </nav>
+      {/if}
     </section>
   {/if}
 
@@ -217,6 +257,23 @@
   }
   .ls-link:hover {
     text-decoration: underline;
+  }
+  .ls-pager {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.5rem;
+    margin-top: 0.7rem;
+  }
+  .ls-page-link {
+    color: inherit;
+    border: 1px solid var(--rule, var(--color-border));
+    border-radius: 6px;
+    padding: 0.35rem 0.6rem;
+    text-decoration: none;
+    font-size: 0.82rem;
+  }
+  .ls-page-link:hover {
+    background: color-mix(in oklch, var(--ink, var(--color-fg)) 5%, transparent);
   }
   .ls-pct {
     font-feature-settings: 'tnum';

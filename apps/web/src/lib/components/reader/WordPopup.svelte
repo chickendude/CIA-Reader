@@ -24,7 +24,7 @@
   import ReportTranslationModal from './ReportTranslationModal.svelte';
   import { customizableOfficialIds } from './customize-eligibility.js';
   import type { LanguageCode } from '@ciareader/shared-types';
-  import type { ServerToken } from './types.js';
+  import { looksLikeNumberToken, type ServerToken } from './types.js';
 
   type Provenance =
     | { kind: 'personal'; attribution: null }
@@ -235,6 +235,17 @@
       payload?.translations.official ?? [],
       payload?.translations.personal ?? [],
     ),
+  );
+
+  // T-2.8: a token is treated as a number whenever the NLP service
+  // populated `numberForms` OR the raw surface looks like one.
+  // The second arm catches chapters processed before the comma-fix
+  // landed (their text_tokens.number_forms column is null even though
+  // the surface is clearly a number) so the popup doesn't fall back
+  // to the bogus auto-created lemma row for those tokens.
+  const isNumberToken = $derived(
+    token != null &&
+      (token.numberForms != null || looksLikeNumberToken(token.surface)),
   );
 
   const numberDisplay = $derived((): NumberDisplay | null => {
@@ -563,6 +574,16 @@
             <span class="num-roman">{numberDisplay()?.romanized}</span>
           </div>
         </div>
+      {:else if isNumberToken}
+        <!-- T-2.8: legacy token from a chapter processed before the
+             number-form support landed. We can detect that the surface
+             is a number but the worker never wrote per-language
+             spelled-out forms, so we deliberately suppress the (almost
+             always wrong) auto-created lemma row and ask the owner to
+             reprocess the text. -->
+        <p class="muted small" data-testid="number-needs-reprocess">
+          Reprocess this text to see written-out number forms in each language.
+        </p>
       {:else}
         {#if token.romanization}
           <p class="sp-roman">{token.romanization}</p>
@@ -586,7 +607,7 @@
       {/if}
     </header>
 
-    {#if !token.numberForms}
+    {#if !isNumberToken}
     {#if isOwner && token.lemmaId}
       <div class="sp-status" role="group" aria-label="Mark status">
         <button

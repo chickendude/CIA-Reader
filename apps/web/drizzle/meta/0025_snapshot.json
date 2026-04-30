@@ -1,5 +1,5 @@
 {
-  "id": "737a22f0-209d-457b-8e9c-064a097bb089",
+  "id": "913e1df8-db10-439b-9a78-ce7c3ab0e15d",
   "prevId": "d98c52f0-141f-43dc-8373-55a09f365fa7",
   "version": "7",
   "dialect": "postgresql",
@@ -1588,6 +1588,16 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "headword_nukta_stripped": {
+          "name": "headword_nukta_stripped",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "generated": {
+            "as": "translate(normalize(\"headword\", NFD), '़', '')",
+            "type": "stored"
+          }
         }
       },
       "indexes": {
@@ -1671,6 +1681,27 @@
             },
             {
               "expression": "source_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "lemmas_language_headword_stripped_idx": {
+          "name": "lemmas_language_headword_stripped_idx",
+          "columns": [
+            {
+              "expression": "language",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "headword_nukta_stripped",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -3043,175 +3074,6 @@
       "uniqueConstraints": {},
       "checkConstraints": {}
     },
-    "public.translation_reports": {
-      "name": "translation_reports",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "translation_id": {
-          "name": "translation_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "reporter_id": {
-          "name": "reporter_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "reason": {
-          "name": "reason",
-          "type": "translation_report_reason",
-          "typeSchema": "public",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "note": {
-          "name": "note",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "status": {
-          "name": "status",
-          "type": "translation_report_status",
-          "typeSchema": "public",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'open'"
-        },
-        "resolved_by": {
-          "name": "resolved_by",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "resolved_at": {
-          "name": "resolved_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "resolution_note": {
-          "name": "resolution_note",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "translation_reports_status_idx": {
-          "name": "translation_reports_status_idx",
-          "columns": [
-            {
-              "expression": "status",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "created_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "translation_reports_translation_idx": {
-          "name": "translation_reports_translation_idx",
-          "columns": [
-            {
-              "expression": "translation_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "translation_reports_translation_id_translations_id_fk": {
-          "name": "translation_reports_translation_id_translations_id_fk",
-          "tableFrom": "translation_reports",
-          "tableTo": "translations",
-          "columnsFrom": [
-            "translation_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "translation_reports_reporter_id_users_id_fk": {
-          "name": "translation_reports_reporter_id_users_id_fk",
-          "tableFrom": "translation_reports",
-          "tableTo": "users",
-          "columnsFrom": [
-            "reporter_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        },
-        "translation_reports_resolved_by_users_id_fk": {
-          "name": "translation_reports_resolved_by_users_id_fk",
-          "tableFrom": "translation_reports",
-          "tableTo": "users",
-          "columnsFrom": [
-            "resolved_by"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "translation_reports_reporter_translation_uq": {
-          "name": "translation_reports_reporter_translation_uq",
-          "nullsNotDistinct": false,
-          "columns": [
-            "reporter_id",
-            "translation_id"
-          ]
-        }
-      },
-      "checkConstraints": {}
-    },
     "public.translation_votes": {
       "name": "translation_votes",
       "schema": "",
@@ -4310,27 +4172,6 @@
         "mark_proper_noun",
         "mark_foreign",
         "mark_not_a_word"
-      ]
-    },
-    "public.translation_report_reason": {
-      "name": "translation_report_reason",
-      "schema": "public",
-      "values": [
-        "spam",
-        "incorrect",
-        "offensive",
-        "duplicate",
-        "other"
-      ]
-    },
-    "public.translation_report_status": {
-      "name": "translation_report_status",
-      "schema": "public",
-      "values": [
-        "open",
-        "resolved_hidden",
-        "resolved_kept",
-        "dismissed"
       ]
     },
     "public.translation_source": {

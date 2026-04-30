@@ -145,6 +145,12 @@ async function assertUnderRateLimit(userId: string, now: Date): Promise<void> {
  * import by hand. `parentTranslationId` is how T-3.5 will implement
  * "customize an official translation"; the parent is kept for display
  * provenance only — the fork is a real, independently-editable row.
+ *
+ * T-14.1: writes are polymorphic-aware. For lemma-target rows the
+ * row carries both `lemma_id` (legacy column, still NOT NULL via
+ * default behaviour for callers but column-level NULLability flipped
+ * for phrase rows) and `target_type='lemma'` / `target_id=lemma_id`.
+ * Phrase-target submissions go through `submitUserPhraseTranslation`.
  */
 export async function submitUserTranslation(
   userId: string,
@@ -162,6 +168,12 @@ export async function submitUserTranslation(
     .insert(schema.translations)
     .values({
       lemmaId: input.lemmaId,
+      // T-14.1 polymorphic columns. For lemma-target rows the
+      // canonical (target_type, target_id) pair mirrors the legacy
+      // lemma_id so existing readers keep working during the
+      // overlap window before T-14.7 drops `lemma_id`.
+      targetType: 'lemma',
+      targetId: input.lemmaId,
       source: 'user',
       submittedBy: userId,
       parentTranslationId: input.parentTranslationId ?? null,
@@ -169,6 +181,99 @@ export async function submitUserTranslation(
       targetLanguage,
       // Officials carry an attribution string and an upstream id; user
       // submissions carry neither.
+      sourceAttribution: null,
+      sourceId: null,
+    })
+    .returning();
+  if (!row) throw new Error('Failed to insert translation');
+  return row as Translation;
+}
+
+// -----------------------------------------------------------------------
+// Phrase-target translations (T-14.1).
+// -----------------------------------------------------------------------
+
+export type SubmitPhraseTranslationInput = {
+  phraseId: string;
+  body: string;
+  parentTranslationId?: string | null;
+  targetLanguage?: string;
+};
+
+async function assertPhraseExists(phraseId: string): Promise<void> {
+  const [row] = await db
+    .select({ id: schema.phrases.id })
+    .from(schema.phrases)
+    .where(eq(schema.phrases.id, phraseId))
+    .limit(1);
+  if (!row) {
+    throw new TranslationValidationError(`Phrase ${phraseId} not found`, 404);
+  }
+}
+
+async function assertParentBelongsToPhrase(
+  parentId: string,
+  phraseId: string,
+): Promise<void> {
+  const [row] = await db
+    .select({
+      id: schema.translations.id,
+      targetType: schema.translations.targetType,
+      targetId: schema.translations.targetId,
+    })
+    .from(schema.translations)
+    .where(eq(schema.translations.id, parentId))
+    .limit(1);
+  if (!row) {
+    throw new TranslationValidationError(
+      `parentTranslationId ${parentId} not found`,
+      404,
+    );
+  }
+  if (row.targetType !== 'phrase' || row.targetId !== phraseId) {
+    throw new TranslationValidationError(
+      'parentTranslationId belongs to a different target',
+    );
+  }
+}
+
+/**
+ * Insert a new user-submitted *phrase* translation. Same rate-limit
+ * window and body validation as the lemma path — sharing
+ * `assertUnderRateLimit` is intentional so a translation-spam bot
+ * can't dodge the cap by alternating between targets. Writes
+ * `lemma_id=NULL`, `target_type='phrase'`, `target_id=phraseId`.
+ */
+export async function submitUserPhraseTranslation(
+  userId: string,
+  input: SubmitPhraseTranslationInput,
+  now: Date = new Date(),
+): Promise<Translation> {
+  const { body, targetLanguage } = validateInput({
+    lemmaId: 'unused',
+    body: input.body,
+    targetLanguage: input.targetLanguage,
+  });
+  await assertPhraseExists(input.phraseId);
+  if (input.parentTranslationId) {
+    await assertParentBelongsToPhrase(
+      input.parentTranslationId,
+      input.phraseId,
+    );
+  }
+  await assertUnderRateLimit(userId, now);
+
+  const [row] = await db
+    .insert(schema.translations)
+    .values({
+      lemmaId: null,
+      targetType: 'phrase',
+      targetId: input.phraseId,
+      source: 'user',
+      submittedBy: userId,
+      parentTranslationId: input.parentTranslationId ?? null,
+      body,
+      targetLanguage,
       sourceAttribution: null,
       sourceId: null,
     })
@@ -266,7 +371,13 @@ export async function deleteUserTranslation(
 export function publicTranslation(row: Translation) {
   return {
     id: row.id,
+    // T-14.1 polymorphic surface. Both the legacy `lemmaId` field
+    // and the new `targetType` / `targetId` are returned during
+    // the overlap window — clients should prefer the latter; we
+    // drop `lemmaId` from this projection in T-14.7.
     lemmaId: row.lemmaId,
+    targetType: row.targetType,
+    targetId: row.targetId,
     source: row.source,
     submittedBy: row.submittedBy,
     parentTranslationId: row.parentTranslationId,

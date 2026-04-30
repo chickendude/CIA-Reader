@@ -24,6 +24,14 @@
     hunterian: 'Hunterian',
     itrans: 'ITRANS',
   };
+
+  function formatDate(value: Date | string | null): string {
+    if (!value) return 'Never';
+    return new Intl.DateTimeFormat(undefined, {
+      dateStyle: 'medium',
+      timeStyle: 'short',
+    }).format(new Date(value));
+  }
 </script>
 
 <svelte:head>
@@ -89,6 +97,67 @@
           {/if}
         </div>
       </form>
+    </section>
+
+    <section class="settings-section">
+      <div class="settings-h-col">
+        <h2 class="settings-h">Personal API Keys</h2>
+        <p class="settings-sub">
+          Scoped to your account for mobile apps and third-party clients.
+        </p>
+      </div>
+      <div class="form-col">
+        <form method="POST" action="?/createApiKey" use:enhance class="api-key-form">
+          <label class="field">
+            <span class="field-label">Key name</span>
+            <input
+              type="text"
+              name="name"
+              maxlength="80"
+              placeholder="Laptop, phone, integration..."
+              required
+            />
+          </label>
+          <div class="form-actions">
+            <button type="submit" class="btn">Generate key</button>
+            {#if form && form.section === 'apiKeys' && !form.ok}
+              <span class="err" role="alert">{form.message}</span>
+            {:else if form && form.section === 'apiKeys' && form.ok && !form.key}
+              <span class="ok" role="status">{form.message}</span>
+            {/if}
+          </div>
+          {#if form && form.section === 'apiKeys' && form.ok && form.key}
+            <div class="api-key-secret" role="status">
+              <span>{form.message}</span>
+              <code>{form.key}</code>
+            </div>
+          {/if}
+        </form>
+
+        {#if data.apiKeys.length > 0}
+          <div class="api-key-list">
+            {#each data.apiKeys as key (key.id)}
+              <div class="api-key-row" class:revoked={key.revokedAt}>
+                <div>
+                  <strong>{key.name}</strong>
+                  <span class="muted small">{key.keyPrefix}...</span>
+                  <span class="muted small">
+                    Last used {formatDate(key.lastUsedAt)}
+                  </span>
+                </div>
+                {#if key.revokedAt}
+                  <span class="muted small">Revoked {formatDate(key.revokedAt)}</span>
+                {:else}
+                  <form method="POST" action="?/revokeApiKey" use:enhance>
+                    <input type="hidden" name="keyId" value={key.id} />
+                    <button type="submit" class="btn secondary">Revoke</button>
+                  </form>
+                {/if}
+              </div>
+            {/each}
+          </div>
+        {/if}
+      </div>
     </section>
 
     <section class="settings-section">
@@ -244,6 +313,50 @@
     display: flex;
     flex-direction: column;
     gap: 0.6rem;
+  }
+  .api-key-form,
+  .api-key-row {
+    border: 1px solid var(--rule, var(--color-border));
+    border-radius: 9px;
+    padding: 0.85rem 1rem;
+    background: color-mix(
+      in oklch,
+      var(--paper, var(--color-bg)) 92%,
+      transparent
+    );
+  }
+  .api-key-secret {
+    display: grid;
+    gap: 0.45rem;
+    margin-top: 0.4rem;
+    padding: 0.7rem;
+    border: 1px solid var(--rule, var(--color-border));
+    border-radius: 7px;
+    background: var(--paper, var(--color-bg));
+    color: var(--ink, var(--color-fg));
+    font-size: 0.8rem;
+  }
+  .api-key-secret code {
+    overflow-wrap: anywhere;
+    font-family: var(--font-mono-display, var(--font-mono));
+    font-size: 0.78rem;
+  }
+  .api-key-list {
+    display: grid;
+    gap: 0.55rem;
+  }
+  .api-key-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.8rem;
+  }
+  .api-key-row > div {
+    display: grid;
+    gap: 0.15rem;
+  }
+  .api-key-row.revoked {
+    opacity: 0.68;
   }
   .lang-form-h {
     display: flex;

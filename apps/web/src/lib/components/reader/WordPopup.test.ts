@@ -134,6 +134,30 @@ describe('WordPopup — number-only token block (T-2.8)', () => {
       document.body.querySelector('[data-testid="word-popup"]'),
     ).not.toBeNull();
   });
+
+  it('shows a reprocess hint for legacy number tokens whose numberForms column is null', () => {
+    // Pre-#340 chapter: the dispatcher auto-created a "1,013,322 / NUM"
+    // lemma row, so lemmaId is set. The popup must NOT render that
+    // bogus lemma block; it must show the reprocess hint instead.
+    render(WordPopup, {
+      token: makeToken({
+        surface: '1,013,322',
+        lemmaId: 'auto-created-lem',
+        numberForms: null,
+      }),
+      language: 'hi',
+      isOwner: true,
+      onClose: vi.fn(),
+    });
+    expect(
+      document.body.querySelector('[data-testid="number-needs-reprocess"]'),
+    ).not.toBeNull();
+    // No misleading "Lemma 1,013,322" / status / translations / Fix.
+    expect(document.body.querySelector('.sp-row')).toBeNull();
+    expect(document.body.querySelector('.sp-status')).toBeNull();
+    expect(document.body.querySelector('.translations')).toBeNull();
+    expect(document.body.querySelector('.fix-toggle')).toBeNull();
+  });
 });
 
 describe('WordPopup — translation reporting (T-11.1)', () => {

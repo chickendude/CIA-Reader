@@ -14,19 +14,25 @@
 
   let { data }: { data: PageData } = $props();
 
-  const pageNum = $derived(Math.floor(data.page.offset / data.page.limit) + 1);
-  const totalPages = $derived(
-    Math.max(1, Math.ceil(data.page.totalCount / data.page.limit)),
+  const activePage = $derived(
+    data.tab === 'collections' ? data.collectionsPage : data.page,
   );
-  const prevOffset = $derived(Math.max(0, data.page.offset - data.page.limit));
-  const nextOffset = $derived(data.page.offset + data.page.limit);
+  const visibleCount = $derived(
+    data.tab === 'collections' ? data.collections.length : data.page.cards.length,
+  );
+  const pageNum = $derived(Math.floor(activePage.offset / activePage.limit) + 1);
+  const totalPages = $derived(
+    Math.max(1, Math.ceil(activePage.totalCount / activePage.limit)),
+  );
+  const prevOffset = $derived(Math.max(0, activePage.offset - activePage.limit));
+  const nextOffset = $derived(activePage.offset + activePage.limit);
 
   function hrefWith(overrides: Record<string, string | null>): string {
     const params = new URLSearchParams();
     params.set('tab', data.tab);
     if (data.language) params.set('language', data.language);
-    if (data.page.offset > 0) params.set('offset', String(data.page.offset));
-    if (data.page.limit !== 20) params.set('limit', String(data.page.limit));
+    if (activePage.offset > 0) params.set('offset', String(activePage.offset));
+    if (activePage.limit !== 20) params.set('limit', String(activePage.limit));
     for (const [k, v] of Object.entries(overrides)) {
       if (v === null) params.delete(k);
       else params.set(k, v);
@@ -187,19 +193,19 @@
     </p>
   {/if}
 
-  {#if data.page.cards.length > 0}
+  {#if visibleCount > 0}
     <nav class="pager" aria-label="Pagination">
       <span class="page-info">
         Page {pageNum} of {totalPages}
-        ({data.page.totalCount.toLocaleString()} total)
+        ({activePage.totalCount.toLocaleString()} total)
       </span>
       <span class="page-links">
-        {#if data.page.offset > 0}
+        {#if activePage.offset > 0}
           <a href={hrefWith({ offset: prevOffset > 0 ? String(prevOffset) : null })}>
             ← Previous
           </a>
         {/if}
-        {#if nextOffset < data.page.totalCount}
+        {#if nextOffset < activePage.totalCount}
           <a href={hrefWith({ offset: String(nextOffset) })}>Next →</a>
         {/if}
       </span>

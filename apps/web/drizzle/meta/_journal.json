@@ -180,8 +180,43 @@
     {
       "idx": 25,
       "version": "7",
-      "when": 1777514344143,
-      "tag": "0025_sticky_madelyne_pryor",
+      "when": 1777514311003,
+      "tag": "0025_nukta_stripped_headword",
+      "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1777515171894,
+      "tag": "0026_little_vertigo",
+      "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1777515328521,
+      "tag": "0027_lean_bucky",
+      "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1777516246583,
+      "tag": "0028_flashy_epoch",
+      "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1777516696178,
+      "tag": "0029_massive_vulcan",
+      "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1777546259162,
+      "tag": "0030_slippery_betty_ross",
       "breakpoints": true
     }
   ]

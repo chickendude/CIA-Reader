@@ -60,5 +60,10 @@ export const GET: RequestHandler = async ({ params, url }) => {
     totalCount: result.totalCount,
     limit: result.limit,
     offset: result.offset,
+    // #318: API consumers (the curator dictionary editor, the
+    // correction modal) need the same signal the SSR pages use so
+    // they can render their own "showing nukta-agnostic results"
+    // hint without re-deriving it from the input.
+    usedNuktaFallback: result.usedNuktaFallback,
   });
 };

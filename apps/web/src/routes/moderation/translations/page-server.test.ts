@@ -52,19 +52,31 @@ const TR_ID = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
 const REPORT_ID = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
 const USER_ID = 'cccccccc-cccc-cccc-cccc-cccccccccccc';
 
-const CURATOR_VIEWER = {
+type Viewer = {
+  id: string;
+  role: 'user' | 'curator' | 'admin';
+  email: string;
+  passwordHash: string | null;
+  displayName: string | null;
+  emailVerifiedAt: Date | null;
+  onboardedAt: Date | null;
+  themePreference: 'system' | 'light' | 'dark';
+  createdAt: Date;
+  updatedAt: Date;
+};
+const CURATOR_VIEWER: Viewer = {
   id: 'curator-1',
-  role: 'curator' as const,
+  role: 'curator',
   email: 'c@test',
   passwordHash: null,
   displayName: null,
   emailVerifiedAt: null,
   onboardedAt: null,
-  themePreference: 'system' as const,
+  themePreference: 'system',
   createdAt: new Date(),
   updatedAt: new Date(),
 };
-const ADMIN_VIEWER = { ...CURATOR_VIEWER, id: 'admin-1', role: 'admin' as const };
+const ADMIN_VIEWER: Viewer = { ...CURATOR_VIEWER, id: 'admin-1', role: 'admin' };
 
 beforeEach(() => {
   listReports.mockReset();
@@ -98,10 +110,10 @@ async function callLoad(url: string, role: 'curator' | 'admin' | 'user' = 'curat
 async function callAction(
   actionName: 'hide' | 'keep' | 'dismiss' | 'promoteReporter',
   formFields: Record<string, string>,
-  user: typeof CURATOR_VIEWER | null = CURATOR_VIEWER,
+  user: Viewer | null = CURATOR_VIEWER,
 ) {
   const mod = await importMod();
-  const action = mod.actions[actionName];
+  const action = mod.actions[actionName] as (event: unknown) => Promise<unknown>;
   const fd = new FormData();
   for (const [k, v] of Object.entries(formFields)) fd.set(k, v);
   const event = {
@@ -110,7 +122,7 @@ async function callAction(
       body: fd,
     }),
     locals: { user },
-  } as unknown as Parameters<typeof action>[0];
+  };
   try {
     return await action(event);
   } catch (e) {

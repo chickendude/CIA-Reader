@@ -18,13 +18,20 @@ import type { ServerToken } from './types.js';
 export type ChapterTokensResponse = {
   chapterId: string;
   chapterIdx: number;
+  body: string;
   tokens: ServerToken[] | null;
 };
 
 export type FetchState =
   | { kind: 'idle' }
   | { kind: 'loading' }
-  | { kind: 'loaded'; tokens: ServerToken[] | null }
+  | {
+      kind: 'loaded';
+      chapterId: string;
+      chapterIdx: number;
+      body: string;
+      tokens: ServerToken[] | null;
+    }
   | { kind: 'error'; message: string };
 
 export type ChapterTokenFetcher = (
@@ -61,25 +68,38 @@ export class LazyTokenLoader {
 
   /**
    * Kick off (or join) a fetch for `chapterIdx`. Resolves to the
-   * fetched tokens or null if the worker hasn't run for that chapter
-   * yet — same shape the SSR loader returns for the active chapter,
-   * so callers can drop the result straight into the ChapterView.
+   * fetched body plus tokens, or null tokens if the worker hasn't run
+   * for that chapter yet. The SSR loader only includes the active
+   * chapter body; this on-demand shape lets continuous mode hydrate
+   * sibling chapters without bloating first paint.
    */
-  async load(chapterIdx: number): Promise<ServerToken[] | null> {
+  async load(chapterIdx: number): Promise<ChapterTokensResponse> {
     const existing = this.states.get(chapterIdx);
-    if (existing?.kind === 'loaded') return existing.tokens;
+    if (existing?.kind === 'loaded') {
+      return {
+        chapterId: existing.chapterId,
+        chapterIdx: existing.chapterIdx,
+        body: existing.body,
+        tokens: existing.tokens,
+      };
+    }
     const existingPromise = this.inflight.get(chapterIdx);
     if (existingPromise) {
-      const r = await existingPromise;
-      return r.tokens;
+      return await existingPromise;
     }
     this.states.set(chapterIdx, { kind: 'loading' });
     const promise = this.fetcher(this.textId, chapterIdx);
     this.inflight.set(chapterIdx, promise);
     try {
       const r = await promise;
-      this.states.set(chapterIdx, { kind: 'loaded', tokens: r.tokens });
-      return r.tokens;
+      this.states.set(chapterIdx, {
+        kind: 'loaded',
+        chapterId: r.chapterId,
+        chapterIdx: r.chapterIdx,
+        body: r.body,
+        tokens: r.tokens,
+      });
+      return r;
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Fetch failed';
       this.states.set(chapterIdx, { kind: 'error', message });

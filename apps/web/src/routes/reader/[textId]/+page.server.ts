@@ -141,14 +141,12 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
     ? readBool(url, 'roman')
     : readerSettings.scriptPreference !== 'native';
 
-  // T-5.1a: lazy chapter loading. Only the active chapter is
-  // pre-fetched server-side — a 50-chapter novel was previously
-  // shipping every chapter's token rows on first paint, blowing up
-  // the SSR payload and stalling time-to-first-byte for long books.
-  // Other chapters get `tokens: null` here; the components fetch on
-  // demand via /api/v1/texts/:id/chapters/:idx/tokens (paged-mode
-  // navigation re-runs this loader; continuous mode prefetches the
-  // next chapter near the bottom of the visible one).
+  // T-12.5: mobile payload audit. Only the active chapter ships its
+  // body and tokens on first paint; sibling chapter bodies were the
+  // remaining large field after T-5.1a made tokens lazy. Continuous
+  // mode fetches body+tokens on demand from the chapter endpoint, and
+  // page / scroll modes re-run this loader when the active chapter
+  // changes.
   const viewerId = locals.user?.id ?? null;
   const activeChapter = result.chapters[chapterIdx];
   const activeTokens = activeChapter
@@ -201,13 +199,11 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
       id: c.id,
       idx: c.idx,
       title: c.title,
-      body: c.body,
+      body: c.idx === chapterIdx ? c.body : null,
       tokenCount: c.tokenCount,
-      // Only the active chapter ships with server-rendered tokens;
-      // siblings carry `tokens: null` and are filled in client-side
-      // by the lazy-load endpoint. A null payload also still happens
-      // when the NLP worker hasn't run for this chapter — the reader
-      // components transparently fall back to whitespace tokenization.
+      // Only the active chapter ships with server-rendered tokens.
+      // Siblings carry `tokens: null`; the lazy endpoint returns both
+      // body and tokens when a sibling needs to render.
       tokens: c.idx === chapterIdx ? activeTokens : null,
     })),
     anchor: {
@@ -222,6 +218,12 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
     // a session-only live preview.
     canPersistSettings: locals.user != null,
     isOwner: Boolean(locals.user && locals.user.id === result.text.ownerId),
+    // T-2.8: surface admin status so the reader chrome can offer the
+    // reprocess affordance to admins on any text (owners get the
+    // existing per-text controls; reprocess is admin-only because it
+    // re-runs NLP and overwrites token rows). Curators don't get it
+    // — they can edit the dictionary, not rerun pipelines.
+    isAdmin: locals.user?.role === 'admin',
     collectionContext: collectionContext
       ? {
           collectionId: collectionContext.collection.id,

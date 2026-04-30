@@ -57,6 +57,49 @@
   });
   let settingsOpen = $state(false);
 
+  // T-2.8: admin-only "Reprocess this text" affordance. Re-runs the
+  // NLP pipeline (POSTs `/api/v1/admin/texts/:id/reprocess`) and
+  // refreshes the reader once the worker has rewritten `text_tokens`.
+  // Useful after a parser / dispatcher upgrade so a previously-
+  // uploaded text picks up new fields (e.g. number_forms after the
+  // T-2.8 fix) without the owner having to re-upload.
+  let reprocessing = $state(false);
+  let reprocessFeedback = $state<{
+    kind: 'ok' | 'err';
+    text: string;
+  } | null>(null);
+
+  async function reprocessText() {
+    if (reprocessing) return;
+    reprocessing = true;
+    reprocessFeedback = null;
+    try {
+      const res = await fetch(
+        `/api/v1/admin/texts/${data.text.id}/reprocess`,
+        { method: 'POST' },
+      );
+      if (!res.ok) {
+        const text = await res.text().catch(() => '');
+        throw new Error(text || `HTTP ${res.status}`);
+      }
+      const body = (await res.json()) as { tokensWritten: number };
+      reprocessFeedback = {
+        kind: 'ok',
+        text: `Reprocessed — ${body.tokensWritten} tokens written.`,
+      };
+      // Refresh the page-data so the new tokens render in place
+      // without a full reload.
+      await invalidateAll();
+    } catch (e) {
+      reprocessFeedback = {
+        kind: 'err',
+        text: `Reprocess failed: ${(e as Error).message}`,
+      };
+    } finally {
+      reprocessing = false;
+    }
+  }
+
   // CSS-variable string applied to the reader root so every reader
   // mode picks up the setting without each one having to know about
   // every CSS variable. Keeping the math in JS lets the popover's
@@ -113,21 +156,41 @@
   }
 
   let currentProgressAnchor = $state<ProgressAnchor>(untrack(anchorFromData));
+  let lastUrlAnchorKey = '';
+
+  function mirrorAnchorToUrl(anchor: ProgressAnchor) {
+    if (typeof window === 'undefined') return;
+    const key = `${data.mode}:${anchor.chapterIdx}:${anchor.tokenIdx}:${showRomanization ? 1 : 0}`;
+    if (key === lastUrlAnchorKey) return;
+    lastUrlAnchorKey = key;
+    const url = new URL(window.location.href);
+    url.searchParams.set('mode', data.mode);
+    url.searchParams.set('chapter', String(anchor.chapterIdx));
+    url.searchParams.set('token', String(anchor.tokenIdx));
+    if (showRomanization) url.searchParams.set('roman', '1');
+    else url.searchParams.delete('roman');
+    window.history.replaceState(window.history.state, '', url.toString());
+  }
 
   function onReaderProgress(anchor: ProgressAnchor) {
     currentProgressAnchor = anchor;
+    mirrorAnchorToUrl(anchor);
     progressWriter?.schedule(anchor);
   }
 
-  async function setMode(mode: 'page' | 'paged_scroll' | 'continuous') {
+  function setMode(mode: 'page' | 'paged_scroll' | 'continuous') {
+    // Snapshot the anchor synchronously so a late `reportProgress`
+    // can't change it between flush and goto. Use the keepalive
+    // path so the navigation that follows can't cancel the PATCH.
+    const anchor = currentProgressAnchor;
     if (progressWriter) {
-      progressWriter.schedule(currentProgressAnchor);
-      await progressWriter.flush();
+      progressWriter.schedule(anchor);
+      void progressWriter.flush({ keepalive: true });
     }
     const params = new URLSearchParams();
     params.set('mode', mode);
-    params.set('chapter', String(currentProgressAnchor.chapterIdx));
-    params.set('token', String(currentProgressAnchor.tokenIdx));
+    params.set('chapter', String(anchor.chapterIdx));
+    params.set('token', String(anchor.tokenIdx));
     if (showRomanization) params.set('roman', '1');
     void goto(`/reader/${data.text.id}?${params.toString()}`, {
       keepFocus: true,
@@ -150,7 +213,8 @@
   // T-5.6 progress writer. Signed-in readers get one; anonymous
   // viewers of an official text don't have a row to write against.
   let progressWriter: ProgressWriter | null = null;
-  let beforeUnloadHandler: (() => void) | null = null;
+  let pageHideHandler: (() => void) | null = null;
+  let visibilityHandler: (() => void) | null = null;
 
   // The reader's top bar is a full-width fixed element. We measure
   // its height into a `--reader-top-h` CSS variable so the AppShell
@@ -207,17 +271,21 @@
     // viewers (the only false branch of canPersistSettings) skip.
     if (data.canPersistSettings) {
       progressWriter = new ProgressWriter(data.text.id);
-      // Schedule an initial write so reopening immediately at the
-      // current chapter persists even without scrolling.
       currentProgressAnchor = anchorFromData();
-      progressWriter.schedule(currentProgressAnchor);
-      // Flush on tab close so the user resumes near where they were
-      // even if their last action was scrolling and they didn't trip
-      // the debounce timer.
-      beforeUnloadHandler = () => {
-        void progressWriter?.flush();
+      // Flush on refresh / tab close through the keepalive path so
+      // the latest debounced anchor survives the navigation. iOS
+      // Safari doesn't reliably fire `pagehide` when the tab is
+      // backgrounded — `visibilitychange → hidden` is the more
+      // dependable hook there, so we wire both.
+      const flushKeepalive = () => {
+        void progressWriter?.flush({ keepalive: true });
       };
-      window.addEventListener('beforeunload', beforeUnloadHandler);
+      pageHideHandler = flushKeepalive;
+      visibilityHandler = () => {
+        if (document.visibilityState === 'hidden') flushKeepalive();
+      };
+      window.addEventListener('pagehide', pageHideHandler);
+      document.addEventListener('visibilitychange', visibilityHandler);
     }
 
     // Track the .reader-top height so the rail can sit below it.
@@ -236,23 +304,22 @@
     return () => {
       cleanupPoll?.();
       window.removeEventListener('keydown', onKey);
-      if (beforeUnloadHandler) window.removeEventListener('beforeunload', beforeUnloadHandler);
+      if (pageHideHandler) window.removeEventListener('pagehide', pageHideHandler);
+      if (visibilityHandler) document.removeEventListener('visibilitychange', visibilityHandler);
       void progressWriter?.flush();
       topRO?.disconnect();
       document.documentElement.style.removeProperty('--reader-top-h');
     };
   });
 
-  // Watch URL anchor changes and write them to the progress writer.
-  // The mode-toggle / chapter-nav buttons all funnel through goto(),
-  // which re-runs the loader and hands us a new `data.anchor` —
-  // sending here keeps a fresh row even if the user navigates by
-  // URL without scrolling.
+  // Watch URL anchor changes so mode switches and fresh loads start
+  // from the loader's anchor locally. We deliberately don't write it
+  // back immediately; the active reader mode reports the actual
+  // first visible word once it has restored layout.
   $effect(() => {
     const anchor = anchorFromData();
     currentProgressAnchor = anchor;
-    if (!progressWriter) return;
-    progressWriter.schedule(anchor);
+    lastUrlAnchorKey = `${data.mode}:${anchor.chapterIdx}:${anchor.tokenIdx}:${showRomanization ? 1 : 0}`;
   });
 </script>
 
@@ -359,6 +426,19 @@
         Aa
       </button>
 
+      {#if data.isAdmin}
+        <button
+          type="button"
+          class="reprocess-toggle"
+          onclick={reprocessText}
+          disabled={reprocessing}
+          title="Re-run the NLP pipeline on this text (admin only)"
+          data-testid="admin-reprocess"
+        >
+          {reprocessing ? 'Reprocessing…' : 'Reprocess'}
+        </button>
+      {/if}
+
       <button
         type="button"
         class="settings-toggle"
@@ -393,6 +473,17 @@
 
   {#if liveStatus === 'failed' && liveError}
     <p class="err" role="alert">Processing error: {liveError}</p>
+  {/if}
+
+  {#if reprocessFeedback}
+    <p
+      class="reprocess-feedback"
+      class:err={reprocessFeedback.kind === 'err'}
+      data-testid="reprocess-feedback"
+      role={reprocessFeedback.kind === 'err' ? 'alert' : 'status'}
+    >
+      {reprocessFeedback.text}
+    </p>
   {/if}
 
   {#if data.mode === 'page'}
@@ -652,6 +743,33 @@
     background: var(--accent-soft, var(--color-accent));
     border-color: var(--accent, var(--color-accent));
     color: var(--accent-ink, var(--color-accent-fg, #fff));
+  }
+  .reprocess-toggle {
+    height: 32px;
+    padding: 0 0.7rem;
+    border: 1px solid var(--rule, var(--color-border));
+    border-radius: 8px;
+    background: transparent;
+    color: var(--ink-2, var(--color-fg-muted));
+    font: inherit;
+    font-size: 0.78rem;
+    cursor: pointer;
+  }
+  .reprocess-toggle:hover:not([disabled]) {
+    background: color-mix(in oklch, var(--ink, var(--color-fg)) 5%, transparent);
+    color: var(--ink, var(--color-fg));
+  }
+  .reprocess-toggle[disabled] {
+    opacity: 0.55;
+    cursor: progress;
+  }
+  .reprocess-feedback {
+    margin: 0.5rem 1.25rem 0;
+    padding: 0.55rem 0.85rem;
+    font-size: 0.82rem;
+    border-radius: 8px;
+    background: color-mix(in oklch, var(--ink, var(--color-fg)) 5%, transparent);
+    color: var(--ink-2, var(--color-fg));
   }
   /* T-5.26: the immersive-toggle button moved to AppShell as a
      hamburger icon. The selector is gone but the Esc-to-exit
