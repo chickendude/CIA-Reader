@@ -24,6 +24,8 @@
  */
 import { and, eq, ne, sql } from 'drizzle-orm';
 
+import { stripNukta } from '@ciareader/shared-types';
+
 import { db, schema } from '../db/index.js';
 import type { Lemma, Translation, User } from '../db/schema.js';
 import type { TranslationVoteValue } from './votes.js';
@@ -326,6 +328,15 @@ export async function getLemmaTranslations(
   // its meaning, not a metadata lecture about how the parser tagged
   // it. Only triggered on empty primaries so the cost is paid exactly
   // when it would otherwise be a dead-end click.
+  //
+  // #318: Two-stage fallback. First try exact-headword siblings
+  // (T-3.14's original behavior). If that's also empty, try
+  // nukta-stripped siblings — the directly-linked lemma might be a
+  // nukta-stripped form (e.g. pre-#316 `पढना`) while the dictionary
+  // entry that ships the gloss is under the canonical with-nukta
+  // form (`पढ़ना`), or vice-versa. Both sides reduce to the same
+  // stripped key, so the second tier finds the entry the first
+  // tier's strict-equality `headword =` clause missed.
   const lemmaTyped = lemma as Lemma;
   let rows: Translation[] = primaryRows as Translation[];
   if (rows.length === 0) {
@@ -344,6 +355,31 @@ export async function getLemmaTranslations(
         ),
       );
     rows = joined.map((r) => r.translation as Translation);
+  }
+  if (rows.length === 0) {
+    // #318: Run the nukta-stripped tier even when the linked
+    // lemma's own headword has no nukta. The strict tier above
+    // matched on `headword = X`, so it missed any sibling whose
+    // headword has nuktas X lacks (e.g. linked lemma is `पढना` and
+    // the canonical entry under `पढ़ना` ships the gloss). The
+    // stripped column is nukta-free on both sides, so it catches
+    // both directions of the mismatch.
+    const stripped = stripNukta(lemmaTyped.headword);
+    const joinedStripped = await db
+      .select({ translation: schema.translations })
+      .from(schema.translations)
+      .innerJoin(
+        schema.lemmas,
+        eq(schema.translations.lemmaId, schema.lemmas.id),
+      )
+      .where(
+        and(
+          eq(schema.lemmas.language, lemmaTyped.language),
+          eq(schema.lemmas.headwordNuktaStripped, stripped),
+          ne(schema.lemmas.id, lemmaId),
+        ),
+      );
+    rows = joinedStripped.map((r) => r.translation as Translation);
   }
 
   const rowsWithVotes = await attachVoteData(rows, viewer);

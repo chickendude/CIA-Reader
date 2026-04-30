@@ -13,7 +13,7 @@
  * - `findTranslation` / `findLemmaBySource` do linear scans, which is
  *   fine at fixture scale.
  */
-import type { LanguageCode } from '@ciareader/shared-types';
+import { stripNukta, type LanguageCode } from '@ciareader/shared-types';
 
 import type { Lemma, Translation } from '../db/schema.js';
 
@@ -45,7 +45,18 @@ export class InMemoryDictionaryRepo implements DictionaryRepo {
   readonly audit: ImportRunAudit[] = [];
 
   seedCuratorLocked(
-    key: Omit<Lemma, 'createdAt' | 'updatedAt' | 'curatorLocked' | 'id'> & {
+    // `headwordNuktaStripped` is computed by Postgres for real rows
+    // (#318); the in-memory fake mirrors that by deriving it from
+    // `headword` via the shared `stripNukta` helper, so callers
+    // never need to provide it.
+    key: Omit<
+      Lemma,
+      | 'createdAt'
+      | 'updatedAt'
+      | 'curatorLocked'
+      | 'id'
+      | 'headwordNuktaStripped'
+    > & {
       id?: string;
     },
   ): Lemma {
@@ -64,6 +75,7 @@ export class InMemoryDictionaryRepo implements DictionaryRepo {
       curatorLocked: true,
       createdAt: nowUtc(),
       updatedAt: nowUtc(),
+      headwordNuktaStripped: stripNukta(key.headword),
     };
     this.lemmas.set(id, row);
     return row;
@@ -98,6 +110,7 @@ export class InMemoryDictionaryRepo implements DictionaryRepo {
       curatorLocked: false,
       createdAt: nowUtc(),
       updatedAt: nowUtc(),
+      headwordNuktaStripped: stripNukta(payload.headword),
     };
     this.lemmas.set(id, row);
     return row;
@@ -121,6 +134,7 @@ export class InMemoryDictionaryRepo implements DictionaryRepo {
       sourceAttribution: payload.sourceAttribution,
       sourceId: payload.sourceId,
       updatedAt: nowUtc(),
+      headwordNuktaStripped: stripNukta(payload.headword),
     };
     this.lemmas.set(id, next);
     return next;

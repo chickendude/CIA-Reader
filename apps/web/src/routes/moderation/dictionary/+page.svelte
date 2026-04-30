@@ -67,6 +67,20 @@
       <button type="submit">Search</button>
     </form>
 
+    {#if data.usedNuktaFallback}
+      <!--
+        #318: Curators see the same fallback hint readers do — extra
+        salient here because they're often hunting for a specific
+        canonical entry to merge or edit. The hint surfaces the
+        possibility that the entry under their cursor is a
+        different word that just shares the nukta-stripped key.
+      -->
+      <p class="nukta-fallback" role="status">
+        No exact matches for <strong>{data.query.q}</strong> — showing
+        nukta-agnostic results.
+      </p>
+    {/if}
+
     {#if data.lemmas.length === 0}
       <p class="empty">No lemmas match.</p>
     {:else}
@@ -214,6 +228,15 @@
   .empty {
     margin: 2rem 0;
     color: var(--color-fg-muted);
+  }
+  .nukta-fallback {
+    margin: 0 0 1rem;
+    padding: 0.6rem 0.85rem;
+    border-radius: 6px;
+    background: var(--color-info-bg, #eef5ff);
+    color: var(--color-info-fg, var(--color-fg));
+    border-left: 3px solid var(--color-accent);
+    font-size: 0.9rem;
   }
   .pager {
     display: flex;

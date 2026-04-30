@@ -61,6 +61,19 @@
     <button type="submit">Search</button>
   </form>
 
+  {#if data.usedNuktaFallback}
+    <!--
+      #318: Nukta-agnostic fallback fired. Tell the user the strict
+      match missed and we found these by ignoring nuktas — `ज़रा` and
+      `जरा` collapse to the same key, so the user might be looking at
+      a different word than they typed.
+    -->
+    <p class="nukta-fallback" role="status">
+      No exact matches for <strong>{data.query.q}</strong> — showing
+      nukta-agnostic results.
+    </p>
+  {/if}
+
   {#if data.lemmas.length === 0}
     <p class="empty">No lemmas match.</p>
   {:else}
@@ -193,6 +206,15 @@
   .empty {
     margin: 2rem 0;
     color: var(--color-fg-muted);
+  }
+  .nukta-fallback {
+    margin: 0 0 1rem;
+    padding: 0.6rem 0.85rem;
+    border-radius: 6px;
+    background: var(--color-info-bg, #eef5ff);
+    color: var(--color-info-fg, var(--color-fg));
+    border-left: 3px solid var(--color-accent);
+    font-size: 0.9rem;
   }
   .pager {
     display: flex;

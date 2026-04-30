@@ -13,7 +13,7 @@ import {
   unique,
   uuid,
 } from 'drizzle-orm/pg-core';
-import type { InferSelectModel } from 'drizzle-orm';
+import { sql, type InferSelectModel } from 'drizzle-orm';
 
 export const userRole = pgEnum('user_role', ['user', 'curator', 'admin']);
 export const themePreference = pgEnum('theme_preference', ['system', 'light', 'dark']);
@@ -248,6 +248,21 @@ export const lemmas = pgTable(
     curatorLocked: boolean('curator_locked').notNull().default(false),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    // #318: nukta-agnostic search column. Postgres-side mirror of
+    // the JS `stripNukta` helper in `@ciareader/shared-types/nukta`:
+    // NFD-normalize so atomic precomposed nukta consonants
+    // (U+0958..U+095F + U+0929) decompose to base + U+093C, then
+    // delete every U+093C. The resulting string contains only
+    // non-nukta base consonants, which is what the search query also
+    // gets reduced to before the fallback compares them. STORED
+    // because we read it on every fallback search; the index below
+    // must be on the materialized column. Generated columns require
+    // an IMMUTABLE expression — `normalize` and `translate` both are.
+    headwordNuktaStripped: text('headword_nukta_stripped')
+      .notNull()
+      .generatedAlwaysAs(
+        sql`translate(normalize("headword", NFD), '़', '')`,
+      ),
   },
   (t) => ({
     // T-3.10: per-source duplication is allowed by design — Kaikki and
@@ -267,6 +282,13 @@ export const lemmas = pgTable(
     // Lookup by (language, source, source_id) is the idempotent-upsert key
     // for re-running an importer — indexed so re-imports don't full-scan.
     sourceIdx: index('lemmas_source_lookup_idx').on(t.language, t.source, t.sourceId),
+    // #318: index for the nukta-agnostic ILIKE prefix fallback. Same
+    // shape as the canonical headword index so the planner can pick
+    // it without a re-collation.
+    headwordStrippedIdx: index('lemmas_language_headword_stripped_idx').on(
+      t.language,
+      t.headwordNuktaStripped,
+    ),
   }),
 );
 

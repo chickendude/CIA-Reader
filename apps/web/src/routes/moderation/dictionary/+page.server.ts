@@ -37,6 +37,7 @@ export const load: PageServerLoad = async ({ url, parent }) => {
       totalCount: 0,
       limit: DEFAULT_PAGE_SIZE,
       offset: 0,
+      usedNuktaFallback: false,
       query: { q: '' },
       isAdmin: moderator.role === 'admin',
     };
@@ -80,6 +81,7 @@ export const load: PageServerLoad = async ({ url, parent }) => {
     totalCount: result.totalCount,
     limit: result.limit,
     offset: result.offset,
+    usedNuktaFallback: result.usedNuktaFallback,
     query: { q: q ?? '' },
     isAdmin: moderator.role === 'admin',
   };

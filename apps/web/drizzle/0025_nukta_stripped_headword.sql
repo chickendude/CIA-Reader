@@ -1,0 +1,2 @@
+ALTER TABLE "lemmas" ADD COLUMN "headword_nukta_stripped" text GENERATED ALWAYS AS (translate(normalize("headword", NFD), '़', '')) STORED NOT NULL;--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "lemmas_language_headword_stripped_idx" ON "lemmas" USING btree ("language","headword_nukta_stripped");
