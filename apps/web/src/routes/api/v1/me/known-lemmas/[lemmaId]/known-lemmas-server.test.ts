@@ -1,6 +1,8 @@
 // @vitest-environment node
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { jsonContract } from '$lib/test/json-contract.js';
+
 const setKnownLemmaStatus = vi.fn();
 const requireUser = vi.fn();
 
@@ -72,6 +74,16 @@ describe('PATCH /api/v1/me/known-lemmas/:lemmaId', () => {
     expect(res.status).toBe(200);
     const json = await res.json();
     expect(json.knownLemma.status).toBe('known');
+    expect(jsonContract(json)).toMatchInlineSnapshot(`
+      {
+        "knownLemma": {
+          "lemmaId": "string",
+          "status": "string",
+          "updatedAt": "string",
+          "userId": "string",
+        },
+      }
+    `);
     expect(setKnownLemmaStatus).toHaveBeenCalledWith({
       userId: USER.id,
       lemmaId: VALID_ID,

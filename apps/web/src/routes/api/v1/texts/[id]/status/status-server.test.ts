@@ -1,6 +1,8 @@
 // @vitest-environment node
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { jsonContract } from '$lib/test/json-contract.js';
+
 const getTextStatus = vi.fn();
 const requireUser = vi.fn();
 
@@ -71,6 +73,20 @@ describe('GET /api/v1/texts/:id/status', () => {
     const json = await res.json();
     expect(json.status).toBe('processing');
     expect(json.job.id).toBe('job-1');
+    expect(jsonContract(json)).toMatchInlineSnapshot(`
+      {
+        "job": {
+          "createdAt": "string",
+          "error": "null",
+          "finishedAt": "null",
+          "id": "string",
+          "startedAt": "string",
+          "status": "string",
+        },
+        "status": "string",
+        "statusError": "null",
+      }
+    `);
   });
 
   it('returns null job when no nlp_jobs row exists', async () => {
