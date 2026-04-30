@@ -313,6 +313,63 @@ describe('processTextNow', () => {
     expect(tokenInsert[0]!.surface).toBe('है');
   });
 
+  it('does not auto-create a lemma row for digit-only number tokens (T-2.8)', async () => {
+    // Stanza tags "1,013,322" as NUM with lemma=surface. Without the
+    // looksLikeNumberToken short-circuit, ensureLemma would write a
+    // "1,013,322 / NUM" row to the lemmas table, and the popup would
+    // pull that row instead of (or in addition to) the spelled-out
+    // number_forms payload — which is what triggered the user-visible
+    // "Lemma 1013,3" bug. The dispatcher must skip lemma resolution
+    // for this surface and leave lemma_id null.
+    stage([{ id: 'text-1', language: 'hi' }]);
+    stage([{ id: 'chap-1', body: 'about 1,013,322 people' }]);
+    stage([]); // empty lemma index
+    stage([]); // empty overrides
+
+    nlpProcess.mockResolvedValueOnce({
+      language: 'hi',
+      pipeline_id: 'stanza-hi',
+      tokens: [
+        {
+          idx: 0,
+          surface: '1,013,322',
+          is_word: true,
+          is_ambiguous: false,
+          is_oov: false,
+          romanization: '1,013,322',
+          number_forms: {
+            value: 1_013_322,
+            digits_latin: '1,013,322',
+            digits_deva: '१,०१३,३२२',
+            digits_orya: '୧,୦୧୩,୩୨୨',
+            hi: { spelled: 'दस लाख तेरह हज़ार तीन सौ बाईस', romanized: 'das lākh terah hazār tīn sau bāīs' },
+            mr: { spelled: 'दहा लाख तेरा हजार तीनशे बावीस', romanized: 'dahā lākha tērā hajāra tīnaśē bāvīsa' },
+            odia: { spelled: 'ଦଶ ଲକ୍ଷ ତେର ହଜାର ତିନି ଶହ ବାଇଶ', romanized: 'daśa lakṣa tēra hajāra tini śaha bāiśa' },
+          },
+          candidates: [
+            { lemma: '1,013,322', pos: 'NUM', score: 1.0, features: {} },
+          ],
+        },
+      ],
+    });
+
+    await processTextNow('text-1');
+
+    const inserts = calls.filter(
+      (c): c is Extract<Call, { kind: 'insert' }> => c.kind === 'insert',
+    );
+    // Just the text_tokens batch — no auto-created lemma row.
+    expect(inserts).toHaveLength(1);
+    const tokenInsert = inserts[0]!.values as Array<{
+      lemmaId: string | null;
+      surface: string;
+      numberForms: { value: number } | null;
+    }>;
+    expect(tokenInsert[0]!.lemmaId).toBeNull();
+    expect(tokenInsert[0]!.surface).toBe('1,013,322');
+    expect(tokenInsert[0]!.numberForms?.value).toBe(1_013_322);
+  });
+
   it('marks the text failed when the NLP service throws', async () => {
     stage([{ id: 'text-1', language: 'hi' }]);
     stage([{ id: 'chap-1', body: 'oops' }]);

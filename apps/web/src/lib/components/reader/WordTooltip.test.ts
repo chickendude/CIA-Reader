@@ -172,4 +172,23 @@ describe('WordTooltip — number tokens (T-2.8)', () => {
     const def = document.body.querySelector('.tip-def');
     expect(def?.classList.contains('empty')).toBe(true);
   });
+
+  it('marks legacy number tokens (no numberForms payload) as a Number rather than "No translations"', () => {
+    render(WordTooltip, {
+      token: makeToken({
+        surface: '1,013,322',
+        // Pre-#340 chapter: dispatcher auto-created a lemma. Without
+        // the legacy detection the tooltip would fall through to "No
+        // translations" (lemmaId set + glossDefault null).
+        lemmaId: 'auto-created-lem',
+        numberForms: null,
+      }),
+      anchorRect: ANCHOR,
+      language: 'hi',
+    });
+    expect(
+      document.body.querySelector('[data-testid="legacy-number"]'),
+    ).not.toBeNull();
+    expect(document.body.querySelector('.tip-def')?.textContent).toBe('Number');
+  });
 });
