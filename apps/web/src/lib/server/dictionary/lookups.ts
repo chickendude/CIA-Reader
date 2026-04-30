@@ -311,7 +311,14 @@ export async function getLemmaTranslations(
     .from(schema.translations)
     .where(
       and(
-        eq(schema.translations.lemmaId, lemmaId),
+        // T-14.7a: switched from the legacy `lemma_id` column to
+        // the polymorphic (target_type, target_id) pair so the
+        // legacy column can be dropped. Phrase translations
+        // (target_type='phrase') are filtered out by this
+        // explicit type predicate — the lemma reader path never
+        // wants them.
+        eq(schema.translations.targetType, 'lemma'),
+        eq(schema.translations.targetId, lemmaId),
         // Hidden rows are filtered in memory via `bucketTranslations`
         // so curators still see them. The DB fetch returns everything
         // for this lemma; translations-per-lemma is bounded by
@@ -345,10 +352,14 @@ export async function getLemmaTranslations(
       .from(schema.translations)
       .innerJoin(
         schema.lemmas,
-        eq(schema.translations.lemmaId, schema.lemmas.id),
+        // T-14.7a: join on the polymorphic target_id (with the
+        // target_type='lemma' filter) instead of the legacy
+        // lemma_id column.
+        eq(schema.translations.targetId, schema.lemmas.id),
       )
       .where(
         and(
+          eq(schema.translations.targetType, 'lemma'),
           eq(schema.lemmas.language, lemmaTyped.language),
           eq(schema.lemmas.headword, lemmaTyped.headword),
           ne(schema.lemmas.id, lemmaId),
@@ -370,10 +381,16 @@ export async function getLemmaTranslations(
       .from(schema.translations)
       .innerJoin(
         schema.lemmas,
-        eq(schema.translations.lemmaId, schema.lemmas.id),
+        // T-14.7a: same target_id-based join as the strict tier
+        // above. The stripped tier inherits the type predicate
+        // because phrase target rows wouldn't match any
+        // `lemmas.id` anyway, but the explicit filter keeps the
+        // query plan honest.
+        eq(schema.translations.targetId, schema.lemmas.id),
       )
       .where(
         and(
+          eq(schema.translations.targetType, 'lemma'),
           eq(schema.lemmas.language, lemmaTyped.language),
           eq(schema.lemmas.headwordNuktaStripped, stripped),
           ne(schema.lemmas.id, lemmaId),

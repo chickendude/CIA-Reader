@@ -165,8 +165,11 @@ describe('submitUserTranslation — happy path', () => {
 
     expect(result.id).toBe('tr-1');
     const insertCall = calls.find((c) => c.kind === 'insert');
+    // T-14.7a: legacy lemma_id column dropped — the insert
+    // payload now writes only the polymorphic target.
     expect(insertCall?.payload).toMatchObject({
-      lemmaId: 'lemma-1',
+      targetType: 'lemma',
+      targetId: 'lemma-1',
       source: 'user',
       submittedBy: 'user-1',
       body: 'to speak', // whitespace collapsed
@@ -177,7 +180,9 @@ describe('submitUserTranslation — happy path', () => {
 
   it('includes parent check when parentTranslationId is provided', async () => {
     stageSelect([{ id: 'lemma-1' }]);
-    stageSelect([{ id: 'parent-1', lemmaId: 'lemma-1' }]);
+    // T-14.7a: parent existence check now reads via the
+    // polymorphic columns; staged parent row mirrors that.
+    stageSelect([{ id: 'parent-1', targetType: 'lemma', targetId: 'lemma-1' }]);
     stageSelect([{ n: 0 }]);
     stageInsert([
       {

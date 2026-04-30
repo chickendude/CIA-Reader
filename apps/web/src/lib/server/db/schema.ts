@@ -509,15 +509,9 @@ export const translations = pgTable(
   'translations',
   {
     id: uuid('id').primaryKey().defaultRandom(),
-    // Legacy lemma FK. Nullable as of T-14.1 so phrase-target rows
-    // can be inserted without a lemma. For target_type='lemma'
-    // rows, this still equals `target_id`. Dropped in T-14.7.
-    lemmaId: uuid('lemma_id').references(() => lemmas.id, {
-      onDelete: 'cascade',
-    }),
     targetType: translationTargetType('target_type').notNull().default('lemma'),
-    // Canonical polymorphic target. For legacy rows this is
-    // backfilled to equal `lemma_id` in migration 0024.
+    // Canonical polymorphic target. T-14.7a dropped the legacy
+    // `lemma_id` column; reads / writes go through this pair.
     targetId: uuid('target_id').notNull(),
     source: translationSource('source').notNull(),
     submittedBy: uuid('submitted_by').references(() => users.id, { onDelete: 'set null' }),
@@ -541,18 +535,21 @@ export const translations = pgTable(
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({
-    // Legacy index on lemma_id — kept for the overlap window so any
-    // un-migrated read path stays cheap. Dropped in T-14.7 once
-    // every consumer uses target_type/target_id.
-    lemmaIdx: index('translations_lemma_idx').on(t.lemmaId),
     // T-14.1 canonical lookup index. Reader pop-up + dictionary
     // editor read by (target_type, target_id) and re-import dedup
     // adds `source` as the third column for the importer fast path.
     targetIdx: index('translations_target_idx').on(t.targetType, t.targetId, t.source),
     submittedByIdx: index('translations_submitted_by_idx').on(t.submittedBy),
-    // The (lemma, source, source_id) triple is how a re-import finds its
-    // own previously-written row to update.
-    sourceLookupIdx: index('translations_source_lookup_idx').on(t.lemmaId, t.source, t.sourceId),
+    // T-14.7a: importer dedup key. Replaces the legacy
+    // `(lemma_id, source, source_id)` index that was dropped
+    // alongside the column. The polymorphic shape lets future
+    // phrase-source importers re-use the same path.
+    sourceLookupIdx: index('translations_source_lookup_idx').on(
+      t.targetType,
+      t.targetId,
+      t.source,
+      t.sourceId,
+    ),
   }),
 );
 

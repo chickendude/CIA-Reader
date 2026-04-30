@@ -188,9 +188,9 @@ export async function bulkImportTranslations(
     const [created] = (await db
       .insert(schema.translations)
       .values({
-        lemmaId: lemma.id,
-        // T-14.1: bulk-curator inserts are always lemma-target.
-        // Phrase bulk import is a follow-up under T-14.4.
+        // T-14.7a: legacy lemma_id column dropped in this PR's
+        // migration. Inserts now write only the polymorphic
+        // (target_type, target_id) pair.
         targetType: 'lemma',
         targetId: lemma.id,
         source: 'curator',
@@ -288,7 +288,7 @@ export async function bulkPromoteTranslations(
     // T-14.1: bulk promote operates on lemma-target translations only.
     // Phrase-target community translations move through the phrase
     // editor (T-14.4 / T-14.7).
-    if (row.targetType !== 'lemma' || !row.lemmaId) {
+    if (row.targetType !== 'lemma') {
       skipped.push({ id, reason: 'phrase-target translations not supported here' });
       continue;
     }
@@ -303,7 +303,9 @@ export async function bulkPromoteTranslations(
       continue;
     }
     await recordLemmaEdit({
-      lemmaId: row.lemmaId,
+      // T-14.7a: read the lemma id via the polymorphic
+      // target_id (legacy lemma_id is dropped in this PR).
+      lemmaId: row.targetId,
       editorId: editor.id,
       changeType: 'translation_update',
       change: {
@@ -371,15 +373,23 @@ export async function bulkUpdateAttribution(
       return { updated: 0 };
     }
     const scoped = (await db
-      .select({ id: schema.translations.id, lemmaId: schema.translations.lemmaId })
+      .select({
+        id: schema.translations.id,
+        // T-14.7a: switched to the polymorphic target_id.
+        // Bulk attribution rebrands only operate on lemma-target
+        // rows; phrase-target translations are filtered out by
+        // the explicit type predicate below.
+        targetId: schema.translations.targetId,
+      })
       .from(schema.translations)
       .where(
         and(
+          eq(schema.translations.targetType, 'lemma'),
           eq(schema.translations.source, input.source),
           eq(schema.translations.sourceAttribution, input.oldAttribution),
-          inArray(schema.translations.lemmaId, lemmaIds),
+          inArray(schema.translations.targetId, lemmaIds),
         ),
-      )) as Array<{ id: string; lemmaId: string }>;
+      )) as Array<{ id: string; targetId: string }>;
     scopedIds = scoped.map((r) => r.id);
     if (scopedIds.length === 0) {
       return { updated: 0 };
@@ -418,9 +428,11 @@ export async function bulkUpdateAttribution(
   for (const row of before) {
     // T-14.1: bulk-attribution audit only fires for lemma-target
     // rows; phrase-target rebrands happen in T-14.7's phrase editor.
-    if (row.targetType !== 'lemma' || !row.lemmaId) continue;
+    if (row.targetType !== 'lemma') continue;
     await recordLemmaEdit({
-      lemmaId: row.lemmaId,
+      // T-14.7a: lemma id via the polymorphic target_id; the
+      // legacy lemma_id column is dropped in this PR.
+      lemmaId: row.targetId,
       editorId: editor.id,
       changeType: 'translation_update',
       change: {

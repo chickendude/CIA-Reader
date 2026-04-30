@@ -146,7 +146,15 @@ export class InMemoryDictionaryRepo implements DictionaryRepo {
     sourceId: string,
   ): Promise<Translation | null> {
     for (const row of this.translations.values()) {
-      if (row.lemmaId === lemmaId && row.source === source && row.sourceId === sourceId) {
+      // T-14.7a: legacy lemma_id field dropped — match against
+      // the polymorphic target instead. The in-memory repo only
+      // ever writes lemma-target rows.
+      if (
+        row.targetType === 'lemma' &&
+        row.targetId === lemmaId &&
+        row.source === source &&
+        row.sourceId === sourceId
+      ) {
         return row;
       }
     }
@@ -157,10 +165,8 @@ export class InMemoryDictionaryRepo implements DictionaryRepo {
     const id = nextId('translation');
     const row: Translation = {
       id,
-      lemmaId: payload.lemmaId,
-      // T-14.1: in-memory test fixture mirrors the polymorphic
-      // columns. The fake repo only writes lemma-target rows
-      // (phrases use a separate service path).
+      // T-14.1 / T-14.7a: legacy lemma_id removed from Translation;
+      // the in-memory fixture writes only the polymorphic pair.
       targetType: 'lemma',
       targetId: payload.lemmaId,
       source: payload.source,

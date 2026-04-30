@@ -99,7 +99,11 @@ export class DrizzleDictionaryRepo implements DictionaryRepo {
       .from(translations)
       .where(
         and(
-          eq(translations.lemmaId, lemmaId),
+          // T-14.7a: legacy lemma_id column dropped — the
+          // importer dedup lookup now reads via the
+          // polymorphic (target_type, target_id) pair.
+          eq(translations.targetType, 'lemma'),
+          eq(translations.targetId, lemmaId),
           eq(translations.source, source),
           eq(translations.sourceId, sourceId),
         ),
@@ -112,9 +116,9 @@ export class DrizzleDictionaryRepo implements DictionaryRepo {
     const [row] = await this.db
       .insert(translations)
       .values({
-        lemmaId: payload.lemmaId,
-        // T-14.1: importer-driven inserts are lemma-target. Phrase
-        // imports go through the phrase service (T-14.5 NLP path).
+        // T-14.7a: legacy lemma_id column dropped — only the
+        // polymorphic (target_type, target_id) pair is
+        // written. Importer paths are always lemma-target.
         targetType: 'lemma',
         targetId: payload.lemmaId,
         source: payload.source,

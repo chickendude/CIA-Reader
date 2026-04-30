@@ -225,6 +225,13 @@
       "when": 1777554328137,
       "tag": "0031_large_bulldozer",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1777554900701,
+      "tag": "0032_equal_siren",
+      "breakpoints": true
     }
   ]
 }
