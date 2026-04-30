@@ -268,6 +268,13 @@ export const translationSource = pgEnum('translation_source', [
   'official_dictionary',
   'curator',
   'user',
+  // T-14.5a: rule-based NLP-promoted phrase entries. The
+  // detector (T-14.5, services/nlp/app/phrases) emits proposals;
+  // a periodic promotion pass (this ticket) creates `phrases`
+  // rows with this source once a proposal crosses the chapter
+  // occurrence threshold. `lemmas` rows never carry this
+  // source — `nlp` is phrase-only.
+  'nlp',
 ]);
 
 export const translationVoteValue = pgEnum('translation_vote_value', [
@@ -586,6 +593,73 @@ export const translationVotes = pgTable(
       t.translationId,
     ),
     userIdx: index('translation_votes_user_idx').on(t.userId),
+  }),
+);
+
+/**
+ * Reader-submitted reports flagging community translations for moderation
+ * (T-11.1). Officials and curator rows are edited in place by curators; this
+ * queue exists for `source='user'` translations only and is the input to the
+ * `/moderation/translations` review page.
+ *
+ * Resolution semantics:
+ *  - `resolved_hidden` — moderator hid the translation. The hide flip and the
+ *    `bulkResolveByTranslation` write happen in one transaction so the
+ *    `lemma_edit_history` audit row and the report status stay consistent.
+ *  - `resolved_kept` — moderator reviewed and decided the translation is fine.
+ *    Future reports on the same row create new open rows; "kept" is the
+ *    decision on this batch only.
+ *  - `dismissed` — moderator closed a single report without acting on the
+ *    translation (e.g. duplicate of an existing open report from the same
+ *    reporter, or a misuse of the flow). Other open reports on the same
+ *    translation are unaffected.
+ *
+ * `(reporter_id, translation_id)` is unique so a single user can't pile up
+ * reports on the same translation. Re-submitting from the API yields 409.
+ */
+export const translationReportReason = pgEnum('translation_report_reason', [
+  'spam',
+  'incorrect',
+  'offensive',
+  'duplicate',
+  'other',
+]);
+
+export const translationReportStatus = pgEnum('translation_report_status', [
+  'open',
+  'resolved_hidden',
+  'resolved_kept',
+  'dismissed',
+]);
+
+export const translationReports = pgTable(
+  'translation_reports',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    translationId: uuid('translation_id')
+      .notNull()
+      .references(() => translations.id, { onDelete: 'cascade' }),
+    reporterId: uuid('reporter_id').references(() => users.id, {
+      onDelete: 'set null',
+    }),
+    reason: translationReportReason('reason').notNull(),
+    note: text('note'),
+    status: translationReportStatus('status').notNull().default('open'),
+    resolvedBy: uuid('resolved_by').references(() => users.id, {
+      onDelete: 'set null',
+    }),
+    resolvedAt: timestamp('resolved_at', { withTimezone: true }),
+    resolutionNote: text('resolution_note'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    statusIdx: index('translation_reports_status_idx').on(t.status, t.createdAt),
+    translationIdx: index('translation_reports_translation_idx').on(t.translationId),
+    reporterTranslationUq: unique('translation_reports_reporter_translation_uq').on(
+      t.reporterId,
+      t.translationId,
+    ),
   }),
 );
 
@@ -989,6 +1063,7 @@ export type Phrase = InferSelectModel<typeof phrases>;
 export type PhraseToken = InferSelectModel<typeof phraseTokens>;
 export type Translation = InferSelectModel<typeof translations>;
 export type TranslationVote = InferSelectModel<typeof translationVotes>;
+export type TranslationReport = InferSelectModel<typeof translationReports>;
 export type DictionaryImport = InferSelectModel<typeof dictionaryImports>;
 export type CuratorLanguage = InferSelectModel<typeof curatorLanguages>;
 export type LemmaEditHistoryEntry = InferSelectModel<typeof lemmaEditHistory>;
@@ -1190,6 +1265,76 @@ export const phraseChapterSpans = pgTable(
     chapterIdx: index('phrase_chapter_spans_chapter_idx').on(t.chapterId),
     // Drives T-14.6 stats — every chapter a given phrase appears in.
     phraseIdx: index('phrase_chapter_spans_phrase_idx').on(t.phraseId),
+  }),
+);
+
+/**
+ * Queue of NLP-detected phrase proposals (T-14.5a).
+ *
+ * The web worker writes one row here per `(chapter,
+ * surface_normalised, pattern_id)` triple emitted by
+ * `services/nlp/app/phrases` after Stanza finishes a chapter.
+ * A periodic promotion pass (`promotePhraseProposals`) walks
+ * the queue, counts distinct chapters per
+ * `(language, surface_normalised)`, and creates a `phrases` row
+ * (`source='nlp'`, `phrase_tokens` from the stored ordered
+ * `tokens`) once the count crosses
+ * `PHRASE_PROMOTION_MIN_CHAPTERS` (default 3).
+ *
+ * Why a queue + threshold instead of inserting `phrases`
+ * directly: rule-based detectors throw off false positives at
+ * a steady rate; promoting only patterns that recur across
+ * multiple chapters is the simplest filter for noise without a
+ * per-pattern precision audit. Unique on
+ * `(chapter_id, surface_normalised, pattern_id)` so re-running
+ * the worker on the same chapter is idempotent.
+ *
+ * `tokens` carries the ordered surfaces the matcher saw — the
+ * promotion pass writes `phrase_tokens` from this array
+ * verbatim so the eventual phrase row matches the chapter
+ * occurrences exactly.
+ */
+export const phraseProposals = pgTable(
+  'phrase_proposals',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    language: language('language').notNull(),
+    surfaceNormalised: text('surface_normalised').notNull(),
+    tokens: jsonb('tokens').$type<string[]>().notNull(),
+    patternId: text('pattern_id').notNull(),
+    chapterId: uuid('chapter_id')
+      .notNull()
+      .references(() => textChapters.id, { onDelete: 'cascade' }),
+    /** Set when the periodic promotion pass has folded this
+     *  proposal into a `phrases` row; null while still in the
+     *  queue. Lets the pass be idempotent (re-running it skips
+     *  already-promoted rows) and lets the curator dashboard
+     *  surface the promotion event time. */
+    promotedAt: timestamp('promoted_at', { withTimezone: true }),
+    promotedPhraseId: uuid('promoted_phrase_id').references(
+      () => phrases.id,
+      { onDelete: 'set null' },
+    ),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    // Idempotent re-process: a worker that re-runs on the same
+    // chapter after a re-tokenise must not duplicate proposals
+    // for the same pattern hit.
+    occurrenceUq: unique('phrase_proposals_occurrence_uq').on(
+      t.chapterId,
+      t.surfaceNormalised,
+      t.patternId,
+    ),
+    // Promotion query reads `(language, surface_normalised)` and
+    // counts distinct chapter_id; this index drives that
+    // aggregation.
+    promotionLookupIdx: index('phrase_proposals_promotion_lookup_idx').on(
+      t.language,
+      t.surfaceNormalised,
+    ),
   }),
 );
 
@@ -1563,6 +1708,7 @@ export type TextToken = InferSelectModel<typeof textTokens>;
 export type UserKnownLemma = InferSelectModel<typeof userKnownLemmas>;
 export type UserKnownPhrase = InferSelectModel<typeof userKnownPhrases>;
 export type PhraseChapterSpan = InferSelectModel<typeof phraseChapterSpans>;
+export type PhraseProposal = InferSelectModel<typeof phraseProposals>;
 export type UserTextProgress = InferSelectModel<typeof userTextProgress>;
 export type FormLemmaOverride = InferSelectModel<typeof formLemmaOverrides>;
 export type TokenCorrection = InferSelectModel<typeof tokenCorrections>;

@@ -91,6 +91,27 @@ export type ServerToken = {
   status: 'known' | 'learning' | 'ignored' | 'unknown';
 };
 
+/**
+ * One occurrence of a phrase inside a chapter (T-14.3, M14
+ * phrase-level translations). The reader wraps the run of tokens
+ * from `startTokenIdx` through `endTokenIdx` (inclusive) in a
+ * `<phrase>` element so the per-phrase status and gloss can drive
+ * highlighting + the popup header.
+ *
+ * Multiple spans may share `startTokenIdx` (one short, one long) —
+ * the renderer picks the longest as the visible wrapper and keeps
+ * shorter spans in `data-phrase-overlap` so the popup can offer
+ * them as alternatives. Lifecycle parallel to T-14.2's server-side
+ * `phrase_chapter_spans` table.
+ */
+export type ChapterPhraseSpan = {
+  phraseId: string;
+  startTokenIdx: number;
+  endTokenIdx: number;
+  glossDefault: string | null;
+  status: 'known' | 'learning' | 'ignored' | 'unknown';
+};
+
 export type ChapterView = {
   id: string;
   idx: number;
@@ -98,6 +119,10 @@ export type ChapterView = {
   body: string | null;
   tokenCount: number;
   tokens: ServerToken[] | null;
+  /** T-14.3: phrase spans for this chapter — empty array when none,
+   *  null when the chapter hasn't been processed yet (sibling to
+   *  `tokens` null state). */
+  phraseSpans: ChapterPhraseSpan[] | null;
 };
 
 export type ReaderLayoutMode = 'page' | 'paged_scroll' | 'continuous';
@@ -208,5 +233,95 @@ export function paragraphsOfServerTokens(
     current.push(t);
   }
   if (current.length > 0) out.push(current);
+  return out;
+}
+
+/**
+ * One slot in a paragraph after T-14.3 phrase segmentation. Either
+ * a bare token (no phrase covers this idx) or a run of tokens
+ * wrapped by the longest phrase that starts at this idx. Shorter
+ * overlapping spans are exposed via `overlaps` so the popup can
+ * offer them as alternatives without changing the visible wrapper.
+ */
+export type ParagraphSegment =
+  | { kind: 'token'; token: ServerToken }
+  | {
+      kind: 'phrase';
+      span: ChapterPhraseSpan;
+      tokens: ServerToken[];
+      /** Other spans that start at the same idx but are strictly
+       *  shorter than the visible one. Empty when no overlaps. */
+      overlaps: ChapterPhraseSpan[];
+    };
+
+/**
+ * Segment a paragraph into bare-token / phrase-wrapped slots so the
+ * renderer can wrap phrase spans in `<phrase>` elements without
+ * conditional template logic per token. T-14.2's resolver only
+ * emits spans within a single sentence, and paragraphs are
+ * supersets of sentences, so a span never crosses a paragraph
+ * boundary in practice. The defensive bail-out below handles the
+ * theoretical case where a span's `endTokenIdx` lies outside the
+ * provided paragraph (a re-process race) by treating those tokens
+ * as bare.
+ */
+export function segmentParagraphPhrases(
+  paragraph: ServerToken[],
+  spans: ChapterPhraseSpan[],
+): ParagraphSegment[] {
+  if (spans.length === 0) {
+    return paragraph.map((token) => ({ kind: 'token', token }));
+  }
+  const spansByStart = new Map<number, ChapterPhraseSpan[]>();
+  for (const s of spans) {
+    let bucket = spansByStart.get(s.startTokenIdx);
+    if (!bucket) {
+      bucket = [];
+      spansByStart.set(s.startTokenIdx, bucket);
+    }
+    bucket.push(s);
+  }
+
+  const out: ParagraphSegment[] = [];
+  let i = 0;
+  while (i < paragraph.length) {
+    const t = paragraph[i]!;
+    const candidates = spansByStart.get(t.idx);
+    if (candidates && candidates.length > 0) {
+      // Longest span wins for the visible wrapper; any shorter
+      // siblings sharing the start ride along as overlaps.
+      const sorted = [...candidates].sort(
+        (a, b) =>
+          b.endTokenIdx - b.startTokenIdx - (a.endTokenIdx - a.startTokenIdx),
+      );
+      const winner = sorted[0]!;
+      // Collect tokens up to winner.endTokenIdx (inclusive) that
+      // are still in this paragraph.
+      const phraseTokens: ServerToken[] = [];
+      let j = i;
+      while (
+        j < paragraph.length &&
+        paragraph[j]!.idx <= winner.endTokenIdx
+      ) {
+        phraseTokens.push(paragraph[j]!);
+        j += 1;
+      }
+      const last = phraseTokens[phraseTokens.length - 1];
+      if (last && last.idx === winner.endTokenIdx) {
+        out.push({
+          kind: 'phrase',
+          span: winner,
+          tokens: phraseTokens,
+          overlaps: sorted.slice(1),
+        });
+        i = j;
+        continue;
+      }
+      // Span endTokenIdx fell outside this paragraph (defensive
+      // path) — fall through to bare-token rendering.
+    }
+    out.push({ kind: 'token', token: t });
+    i += 1;
+  }
   return out;
 }

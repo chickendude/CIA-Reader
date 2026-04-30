@@ -18,7 +18,7 @@
  * follow-up. The schema is shaped so that change is a resolver-only
  * change with no migration.
  */
-import { and, eq, inArray, isNull } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 
 import { db, schema } from './db/index.js';
 import type {
@@ -867,8 +867,6 @@ export async function setPhraseLocked(args: {
 // -----------------------------------------------------------------------
 // Curator editor service (T-14.4a — admin dictionary surface).
 // -----------------------------------------------------------------------
-
-import { desc, sql } from 'drizzle-orm';
 
 export type AdminPhraseListItem = {
   id: string;

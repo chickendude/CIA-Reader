@@ -1,0 +1,83 @@
+# Hindi phrase patterns (T-14.5).
+#
+# Conjunct verbs are the largest multi-word class in Hindi: a noun or
+# adjective followed by a light verb that carries the morphology
+# (तense, agreement, mood). The patterns below seed the most common
+# light verbs — कर- ("to do" — by far the most common), हो- ("to be /
+# to become"), लग- ("to begin to / to feel"), दे- ("to give"), and आ-
+# ("to come"). Each emits one proposal per (NOUN/ADJ + light-verb)
+# adjacent pair Stanza tags in the chapter.
+#
+# Compound verbs (V + V where the second verb is aspectual — जाना,
+# देना, लेना — and the first is in the V-stem participle form) are
+# trickier because Stanza's `hi_hdtb` lemmatizer doesn't always
+# reliably mark the participle form on the first verb. We seed only
+# the most regular pattern (V VERB Inf + auxiliary VERB) here; T-14.5b
+# can extend with finer-grained morphology checks once curators have
+# audited the false-positive rate.
+#
+# Compound postpositions (के साथ, के बारे में, के लिए, के बाद, etc.)
+# are seeded by literal surface match on the postposition cluster
+# itself rather than by lemma — Stanza tags these as ADP and the
+# lemma it returns isn't always stable across model versions.
+
+- id: hi.conjunct_verb_karna
+  description: NOUN/ADJ + करना (the most common conjunct verb)
+  match:
+    - upos: [NOUN, ADJ]
+    - lemma: करना
+
+- id: hi.conjunct_verb_hona
+  description: NOUN/ADJ + होना ("to be" / "to become")
+  match:
+    - upos: [NOUN, ADJ]
+    - lemma: होना
+
+- id: hi.conjunct_verb_lagana
+  description: NOUN/ADJ + लगाना ("to apply / to put")
+  match:
+    - upos: [NOUN, ADJ]
+    - lemma: लगाना
+
+- id: hi.conjunct_verb_dena
+  description: NOUN/ADJ + देना ("to give")
+  match:
+    - upos: [NOUN, ADJ]
+    - lemma: देना
+
+- id: hi.conjunct_verb_aana
+  description: NOUN/ADJ + आना ("to come")
+  match:
+    - upos: [NOUN, ADJ]
+    - lemma: आना
+
+- id: hi.compound_postp_ke_baare_mein
+  description: Compound postposition के बारे में ("about")
+  match:
+    - surface: [के]
+    - surface: [बारे]
+    - surface: [में]
+
+- id: hi.compound_postp_ke_saath
+  description: Compound postposition के साथ ("with")
+  match:
+    - surface: [के]
+    - surface: [साथ]
+
+- id: hi.compound_postp_ke_liye
+  description: Compound postposition के लिए ("for")
+  match:
+    - surface: [के]
+    - surface: [लिए, लिये]
+
+- id: hi.compound_postp_ke_baad
+  description: Compound postposition के बाद ("after")
+  match:
+    - surface: [के]
+    - surface: [बाद]
+
+- id: hi.compound_postp_ke_pehle
+  description: Compound postposition के पहले ("before")
+  match:
+    - surface: [के]
+    - surface: [पहले]

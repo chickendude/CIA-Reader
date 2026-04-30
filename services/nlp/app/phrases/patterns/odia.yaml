@@ -1,0 +1,29 @@
+# Odia phrase patterns (T-14.5).
+#
+# Odia conjunct verbs use କରିବା ("to do") and ହେବା ("to be / to
+# become") as the light verbs — the same NOUN/ADJ + light-verb
+# pattern as Hindi / Marathi.
+
+- id: or.conjunct_verb_kariba
+  description: NOUN/ADJ + କରିବା
+  match:
+    - upos: [NOUN, ADJ]
+    - lemma: କରିବା
+
+- id: or.conjunct_verb_heba
+  description: NOUN/ADJ + ହେବା
+  match:
+    - upos: [NOUN, ADJ]
+    - lemma: ହେବା
+
+- id: or.compound_postp_paaian
+  description: Compound postposition ପାଇଁ ("for")
+  match:
+    - upos: [NOUN, PROPN]
+    - surface: [ପାଇଁ]
+
+- id: or.compound_postp_pare
+  description: Compound postposition ପରେ ("after")
+  match:
+    - upos: [NOUN, PROPN]
+    - surface: [ପରେ]

@@ -21,6 +21,7 @@
   import { untrack } from 'svelte';
   import Sheet from '../overlay/Sheet.svelte';
   import CorrectionModal from './CorrectionModal.svelte';
+  import ReportTranslationModal from './ReportTranslationModal.svelte';
   import { customizableOfficialIds } from './customize-eligibility.js';
   import type { LanguageCode } from '@ciareader/shared-types';
   import { looksLikeNumberToken, type ServerToken } from './types.js';
@@ -73,13 +74,36 @@
   // the user hasn't picked a word yet.
   let {
     token,
+    phrase = null,
+    pendingSelection,
+    selectionError,
     language,
     isOwner,
     onClose,
     onStatusChange,
     onCorrectionApplied,
+    onPhraseCreated,
   }: {
     token: ServerToken | null;
+    /** T-14.3: surface the longest phrase containing the click
+     *  target. When non-null, the popup renders a phrase banner
+     *  (status flips + gloss + headword) above the existing token
+     *  body. The component lemma stays underneath so a click on a
+     *  phrase token still surfaces the lemma's translations. */
+    phrase?: import('./types.js').ChapterPhraseSpan | null;
+    /** T-14.3a: a multi-token selection waiting to be saved as a
+     *  new phrase. When non-null, the popup renders a "Create
+     *  phrase" surface listing the selected words with Save /
+     *  Cancel buttons; on save it POSTs to /api/v1/phrases and
+     *  notifies the parent via `onPhraseCreated`. */
+    pendingSelection?: {
+      language: LanguageCode;
+      surfaces: string[];
+      rangeIdx: { start: number; end: number };
+    };
+    /** T-14.3a: surface from the parent if shift-click validation
+     *  failed (e.g. selection crossed a sentence boundary). */
+    selectionError?: string;
     /** Drives the CorrectionModal's dictionary search + script
      *  selection. Required from T-6.2 forward. */
     language: LanguageCode;
@@ -93,7 +117,164 @@
     /** T-6.1: parent applies the new lemma to the token's render so
      *  the reader reflects the correction without a page reload. */
     onCorrectionApplied?: (tokenId: string, chosenLemmaId: string | null) => void;
+    /** T-14.3a: fired after a successful phrase-create POST so
+     *  the parent can refetch chapter spans / close the popup. */
+    onPhraseCreated?: (phraseId: string) => void;
   } = $props();
+
+  // T-14.3a: phrase-create state.
+  let phraseCreateSubmitting = $state(false);
+  let phraseCreateError = $state<string | null>(null);
+
+  async function submitPhraseCreate() {
+    if (!pendingSelection) return;
+    phraseCreateSubmitting = true;
+    phraseCreateError = null;
+    try {
+      const res = await fetch('/api/v1/phrases', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          language: pendingSelection.language,
+          tokens: pendingSelection.surfaces,
+        }),
+      });
+      if (res.ok) {
+        const json = (await res.json()) as { phrase: { id: string } };
+        onPhraseCreated?.(json.phrase.id);
+      } else {
+        const text = await res.text().catch(() => '');
+        phraseCreateError = text || `Could not create phrase (${res.status})`;
+      }
+    } catch (e) {
+      phraseCreateError = `Network error: ${(e as Error).message}`;
+    } finally {
+      phraseCreateSubmitting = false;
+    }
+  }
+
+  // T-14.3: optimistic phrase status, mirroring the lemma path.
+  // Re-syncs from the prop whenever the user clicks into a
+  // different phrase. The PATCH happens against
+  // /api/v1/me/known-phrases/:phraseId.
+  let optimisticPhraseStatus = $state<
+    'unknown' | 'learning' | 'known' | 'ignored'
+  >(untrack(() => phrase?.status ?? 'unknown'));
+  let phraseStatusError = $state<string | null>(null);
+  $effect(() => {
+    optimisticPhraseStatus = phrase?.status ?? 'unknown';
+    phraseStatusError = null;
+  });
+
+  async function setPhraseStatus(
+    next: 'unknown' | 'learning' | 'known' | 'ignored',
+  ) {
+    if (!phrase) return;
+    const prev = optimisticPhraseStatus;
+    optimisticPhraseStatus = next;
+    phraseStatusError = null;
+    try {
+      const res = await fetch(`/api/v1/me/known-phrases/${phrase.phraseId}`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ status: next }),
+      });
+      if (!res.ok) {
+        optimisticPhraseStatus = prev;
+        phraseStatusError = `Could not update phrase status (${res.status})`;
+      }
+    } catch (e) {
+      optimisticPhraseStatus = prev;
+      phraseStatusError = `Network error: ${(e as Error).message}`;
+    }
+  }
+
+  // T-14.4: phrase translations. Mirrors the lemma translation
+  // fetch below — when a phrase is active, GET the phrase detail
+  // (which includes its visible translations) and render them
+  // inside the phrase banner. The "Add translation" form posts to
+  // POST /api/v1/phrases/:id/translations (T-14.1), the same path
+  // T-3.5's customize fork uses for lemma-target rows.
+  type PhraseTranslation = {
+    id: string;
+    body: string;
+    targetLanguage: string;
+    source: 'official_dictionary' | 'curator' | 'user';
+    submittedBy: string | null;
+    sourceAttribution: string | null;
+  };
+  let phraseTranslations = $state<PhraseTranslation[]>([]);
+  let phraseTranslationsError = $state<string | null>(null);
+  let phraseTranslationDraft = $state('');
+  let phraseSubmitting = $state(false);
+  let phraseSubmitError = $state<string | null>(null);
+
+  $effect(() => {
+    const p = phrase;
+    if (!p) {
+      phraseTranslations = [];
+      phraseTranslationsError = null;
+      phraseTranslationDraft = '';
+      phraseSubmitError = null;
+      return;
+    }
+    let cancelled = false;
+    phraseTranslations = [];
+    phraseTranslationsError = null;
+    void (async () => {
+      try {
+        const res = await fetch(`/api/v1/phrases/${p.phraseId}`);
+        if (cancelled) return;
+        if (res.ok) {
+          const json = (await res.json()) as {
+            translations: Array<PhraseTranslation>;
+          };
+          phraseTranslations = json.translations ?? [];
+        } else {
+          phraseTranslationsError = `Could not load phrase translations (${res.status})`;
+        }
+      } catch (e) {
+        if (!cancelled) {
+          phraseTranslationsError = `Network error: ${(e as Error).message}`;
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  });
+
+  async function submitPhraseTranslation() {
+    if (!phrase) return;
+    const body = phraseTranslationDraft.trim();
+    if (body.length === 0) return;
+    phraseSubmitting = true;
+    phraseSubmitError = null;
+    try {
+      const res = await fetch(
+        `/api/v1/phrases/${phrase.phraseId}/translations`,
+        {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ body }),
+        },
+      );
+      if (res.ok) {
+        const json = (await res.json()) as { translation: PhraseTranslation };
+        // Optimistic prepend — server-side sort still wins on the
+        // next popup open, but for the current popup session the
+        // user sees their submission instantly.
+        phraseTranslations = [json.translation, ...phraseTranslations];
+        phraseTranslationDraft = '';
+      } else {
+        phraseSubmitError = `Could not add translation (${res.status})`;
+      }
+    } catch (e) {
+      phraseSubmitError = `Network error: ${(e as Error).message}`;
+    } finally {
+      phraseSubmitting = false;
+    }
+  }
 
   let payload = $state<LemmaPayload | null>(null);
   let loadError = $state<string | null>(null);
@@ -217,6 +398,16 @@
   let customizeError = $state<string | null>(null);
   let votingTranslationId = $state<string | null>(null);
   let voteError = $state<string | null>(null);
+
+  // T-11.1 — translation report flow. The set of translations the viewer
+  // has reported in this session is tracked client-side so the popup can
+  // re-render the Report button as a "Reported" badge without refetching.
+  // The set survives across word-to-word navigation in one mount but
+  // resets on page reload, which is fine — the server enforces the
+  // unique (reporter, translation) constraint either way.
+  let reportingTranslationId = $state<string | null>(null);
+  let reportedIds = $state<Set<string>>(new Set());
+  let reportToast = $state<string | null>(null);
 
   const customizableIds = $derived(() =>
     customizableOfficialIds(
@@ -464,6 +655,36 @@
     }
   }
 
+  function openReport(translationId: string) {
+    reportingTranslationId = translationId;
+    reportToast = null;
+  }
+  function closeReport() {
+    reportingTranslationId = null;
+  }
+  function onReportOutcome(
+    outcome:
+      | { kind: 'reported' }
+      | { kind: 'duplicate' }
+      | { kind: 'rate_limited'; retryAfterSeconds?: number },
+  ) {
+    if (!reportingTranslationId) return;
+    if (outcome.kind === 'reported') {
+      reportedIds = new Set([...reportedIds, reportingTranslationId]);
+      reportToast = 'Thanks — moderators will review.';
+    } else if (outcome.kind === 'duplicate') {
+      reportedIds = new Set([...reportedIds, reportingTranslationId]);
+      reportToast = "You've already reported this translation.";
+    } else if (outcome.kind === 'rate_limited') {
+      const mins = outcome.retryAfterSeconds
+        ? Math.ceil(outcome.retryAfterSeconds / 60)
+        : null;
+      reportToast = mins
+        ? `Too many reports submitted. Try again in ~${mins} min.`
+        : 'Too many reports submitted. Try again later.';
+    }
+  }
+
   async function markStatus(
     status: 'unknown' | 'learning' | 'known' | 'ignored',
   ) {
@@ -496,6 +717,155 @@
      The panel is always open on desktop (static right column) and
      conditional on mobile (slides up only when a word is picked). -->
 <Sheet open={sheetOpen} onClose={onClose} title="" dimmed={false}>
+  {#if pendingSelection}
+    <!-- T-14.3a: phrase-create banner. Shown when the user
+         shift-clicked across two or more tokens; lists the
+         selected surfaces and offers Save (POSTs to
+         /api/v1/phrases) and Cancel. The popup's underlying
+         token + phrase rendering still shows below so the user
+         can compare the proposed phrase against the lemma it
+         covers. -->
+    <section class="sp-phrase-create" data-testid="word-popup-phrase-create">
+      <header class="sp-phrase-create-head">
+        <span class="sp-phrase-eyebrow">Create phrase</span>
+        <p class="sp-phrase-create-words">
+          {#each pendingSelection.surfaces as s, i (i)}<span
+              class="sp-phrase-create-word">{s}</span>{#if i < pendingSelection.surfaces.length - 1}<span
+                class="sp-phrase-create-sep"> · </span>{/if}{/each}
+        </p>
+      </header>
+      <div class="sp-phrase-create-actions">
+        <button
+          type="button"
+          data-testid="phrase-create-save"
+          disabled={phraseCreateSubmitting}
+          onclick={() => {
+            void submitPhraseCreate();
+          }}
+        >
+          {phraseCreateSubmitting ? 'Saving…' : 'Save phrase'}
+        </button>
+        <button
+          type="button"
+          data-testid="phrase-create-cancel"
+          disabled={phraseCreateSubmitting}
+          onclick={onClose}
+        >
+          Cancel
+        </button>
+        {#if phraseCreateError}
+          <span class="err small">{phraseCreateError}</span>
+        {/if}
+      </div>
+    </section>
+  {:else if selectionError}
+    <p class="err small sp-phrase-select-err">{selectionError}</p>
+  {/if}
+  {#if phrase}
+    <!-- T-14.3 / T-14.4: phrase banner. Header (eyebrow + gloss) +
+         status flips ride from T-14.3; T-14.4 adds the visible
+         translations list and the "Add translation" form so a
+         learner can attach meaning to a phrase the same way
+         T-3.5 lets them customize a lemma translation. -->
+    <section class="sp-phrase" data-testid="word-popup-phrase">
+      <header class="sp-phrase-head">
+        <span class="sp-phrase-eyebrow">Phrase</span>
+        {#if phrase.glossDefault}
+          <p class="sp-phrase-gloss">{phrase.glossDefault}</p>
+        {:else}
+          <p class="sp-phrase-gloss muted">No phrase gloss yet.</p>
+        {/if}
+      </header>
+      {#if isOwner}
+        <div
+          class="sp-status sp-phrase-status"
+          role="group"
+          aria-label="Mark phrase status"
+        >
+          <button
+            type="button"
+            data-active={optimisticPhraseStatus === 'learning' ? '1' : '0'}
+            onclick={() => setPhraseStatus('learning')}
+          >
+            Learning
+          </button>
+          <button
+            type="button"
+            data-active={optimisticPhraseStatus === 'known' ? '1' : '0'}
+            onclick={() => setPhraseStatus('known')}
+          >
+            Known
+          </button>
+          <button
+            type="button"
+            data-active={optimisticPhraseStatus === 'ignored' ? '1' : '0'}
+            onclick={() => setPhraseStatus('ignored')}
+          >
+            Ignored
+          </button>
+        </div>
+        {#if phraseStatusError}
+          <p class="err small">{phraseStatusError}</p>
+        {/if}
+      {/if}
+      <!-- T-14.4: translations list. The phrase detail endpoint
+           (GET /api/v1/phrases/:id) returns visible translations
+           ordered curator > imported > user > vote. We render them
+           with a small attribution chip so the learner can
+           distinguish official entries from user submissions. -->
+      <div class="sp-phrase-trans" data-testid="phrase-translations">
+        {#if phraseTranslationsError}
+          <p class="err small">{phraseTranslationsError}</p>
+        {:else if phraseTranslations.length === 0}
+          <p class="muted small">No translations yet — add one below.</p>
+        {:else}
+          <ul class="sp-phrase-trans-list">
+            {#each phraseTranslations as t (t.id)}
+              <li class="sp-phrase-trans-row" data-source={t.source}>
+                <span class="sp-phrase-trans-body">{t.body}</span>
+                <span class="sp-phrase-trans-tag">{t.source.replace('_', ' ')}</span>
+              </li>
+            {/each}
+          </ul>
+        {/if}
+        {#if isOwner}
+          <form
+            class="sp-phrase-trans-form"
+            onsubmit={(e) => {
+              e.preventDefault();
+              void submitPhraseTranslation();
+            }}
+          >
+            <label class="sp-phrase-trans-label" for="phrase-trans-input">
+              Add translation
+            </label>
+            <textarea
+              id="phrase-trans-input"
+              class="sp-phrase-trans-input"
+              data-testid="phrase-translation-input"
+              rows="2"
+              placeholder="e.g. to wait"
+              bind:value={phraseTranslationDraft}
+              disabled={phraseSubmitting}
+              maxlength="500"
+            ></textarea>
+            <div class="sp-phrase-trans-actions">
+              <button
+                type="submit"
+                disabled={phraseSubmitting || phraseTranslationDraft.trim().length === 0}
+                data-testid="phrase-translation-submit"
+              >
+                {phraseSubmitting ? 'Saving…' : 'Add'}
+              </button>
+              {#if phraseSubmitError}
+                <span class="err small">{phraseSubmitError}</span>
+              {/if}
+            </div>
+          </form>
+        {/if}
+      </div>
+    </section>
+  {/if}
   {#if !token}
     <div class="sp-empty" data-testid="word-popup-empty">
       <p>Click a word to see its definition.</p>
@@ -671,6 +1041,24 @@
             <div class="community-body">
               <span class="badge tone-community">community</span>
               {t.body}
+              {#if isOwner}
+                {#if reportedIds.has(t.id)}
+                  <span class="reported-badge" data-testid="reported-badge">
+                    Reported
+                  </span>
+                {:else}
+                  <button
+                    type="button"
+                    class="report-button"
+                    data-testid="report-button"
+                    aria-label="Report translation"
+                    title="Report this translation to moderators"
+                    onclick={() => openReport(t.id)}
+                  >
+                    Report
+                  </button>
+                {/if}
+              {/if}
             </div>
             {#if isOwner}
               <div class="vote-controls" aria-label="Community translation votes">
@@ -705,6 +1093,11 @@
           <li class="muted">No translations yet.</li>
         {/if}
       </ul>
+      {#if reportToast}
+        <p class="report-toast" data-testid="report-toast" role="status">
+          {reportToast}
+        </p>
+      {/if}
       {#if voteError}
         <p class="err small">Could not save vote: {voteError}</p>
       {/if}
@@ -830,6 +1223,13 @@
   />
 {/if}
 
+<ReportTranslationModal
+  open={reportingTranslationId !== null}
+  translationId={reportingTranslationId}
+  onClose={closeReport}
+  onReported={onReportOutcome}
+/>
+
 <style>
   .sp-empty {
     color: var(--ink-3, var(--color-fg-muted));
@@ -837,6 +1237,176 @@
     font-style: italic;
     text-align: center;
     padding: 1.5rem 0.5rem;
+  }
+  /* T-14.3: phrase banner. Sits above the token block when the
+     user clicked inside a phrase wrapper. Lightweight visual
+     treatment so it doesn't compete with the (richer) token /
+     lemma section underneath. */
+  .sp-phrase {
+    margin: 0 0 1rem;
+    padding: 0.5rem 0.75rem 0.6rem;
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--color-accent) 6%, transparent);
+  }
+  .sp-phrase-head {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+  }
+  .sp-phrase-eyebrow {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--ink-3, var(--color-fg-muted));
+  }
+  .sp-phrase-gloss {
+    margin: 0;
+    font-size: 0.95rem;
+  }
+  .sp-phrase-gloss.muted {
+    color: var(--ink-3, var(--color-fg-muted));
+    font-style: italic;
+  }
+  .sp-phrase-status {
+    margin-top: 0.5rem;
+  }
+  /* T-14.3a: phrase-create banner shown above the regular
+     popup body while a multi-token selection is pending Save /
+     Cancel. */
+  .sp-phrase-create {
+    margin: 0 0 1rem;
+    padding: 0.55rem 0.75rem 0.7rem;
+    border-radius: 8px;
+    background: color-mix(
+      in srgb,
+      var(--color-accent) 10%,
+      transparent
+    );
+    border: 1px dashed
+      color-mix(in srgb, var(--color-accent) 35%, transparent);
+  }
+  .sp-phrase-create-head {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+  }
+  .sp-phrase-create-words {
+    margin: 0;
+    font-size: 1rem;
+  }
+  .sp-phrase-create-word {
+    background: color-mix(
+      in srgb,
+      var(--color-accent) 14%,
+      transparent
+    );
+    border-radius: 4px;
+    padding: 0.05rem 0.25rem;
+  }
+  .sp-phrase-create-sep {
+    color: var(--ink-3, var(--color-fg-muted));
+  }
+  .sp-phrase-create-actions {
+    margin-top: 0.55rem;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    flex-wrap: wrap;
+  }
+  .sp-phrase-create-actions button {
+    padding: 0.3rem 0.7rem;
+    border-radius: 6px;
+    border: 1px solid var(--rule, var(--color-border));
+    background: var(--card, var(--color-bg));
+    color: var(--ink, var(--color-fg));
+    cursor: pointer;
+    font-size: 0.85rem;
+  }
+  .sp-phrase-create-actions button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  .sp-phrase-select-err {
+    margin: 0 0 0.75rem;
+  }
+  /* T-14.4: phrase translations list + add form. The list re-uses
+     the popup's neutral type scale; the per-row attribution chip
+     surfaces source provenance the same way T-3.8 surfaces lemma-
+     translation provenance. */
+  .sp-phrase-trans {
+    margin-top: 0.6rem;
+    padding-top: 0.55rem;
+    border-top: 1px dashed
+      color-mix(in srgb, var(--ink, var(--color-fg)) 12%, transparent);
+  }
+  .sp-phrase-trans-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+  .sp-phrase-trans-row {
+    display: flex;
+    align-items: baseline;
+    gap: 0.45rem;
+    font-size: 0.9rem;
+  }
+  .sp-phrase-trans-body {
+    flex: 1;
+  }
+  .sp-phrase-trans-tag {
+    font-size: 0.65rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--ink-3, var(--color-fg-muted));
+    border: 1px solid var(--rule, var(--color-border));
+    border-radius: 4px;
+    padding: 0 0.3rem;
+    line-height: 1.3;
+    flex-shrink: 0;
+  }
+  .sp-phrase-trans-form {
+    margin-top: 0.55rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+  }
+  .sp-phrase-trans-label {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--ink-3, var(--color-fg-muted));
+  }
+  .sp-phrase-trans-input {
+    width: 100%;
+    resize: vertical;
+    min-height: 2.5rem;
+    border-radius: 6px;
+    border: 1px solid var(--rule, var(--color-border));
+    background: var(--bg, var(--color-bg));
+    color: var(--ink, var(--color-fg));
+    padding: 0.4rem 0.5rem;
+    font: inherit;
+  }
+  .sp-phrase-trans-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  .sp-phrase-trans-actions button {
+    padding: 0.3rem 0.7rem;
+    border-radius: 6px;
+    border: 1px solid var(--rule, var(--color-border));
+    background: var(--card, var(--color-bg));
+    color: var(--ink, var(--color-fg));
+    cursor: pointer;
+    font-size: 0.85rem;
+  }
+  .sp-phrase-trans-actions button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
   }
   .sp-head {
     position: relative;
@@ -968,6 +1538,41 @@
   }
   .community-body {
     min-width: 0;
+  }
+  .report-button {
+    margin-left: 0.5rem;
+    padding: 0.05rem 0.4rem;
+    font: inherit;
+    font-size: 0.66rem;
+    color: var(--ink-3, var(--color-fg-muted));
+    border: 1px solid var(--rule, var(--color-border));
+    background: var(--paper, var(--color-bg));
+    border-radius: 999px;
+    cursor: pointer;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .report-button:hover {
+    color: #b91c1c;
+    border-color: #fecaca;
+  }
+  .reported-badge {
+    margin-left: 0.5rem;
+    padding: 0.1rem 0.5rem;
+    font-size: 0.66rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--ink-3, var(--color-fg-muted));
+    background: color-mix(in oklch, var(--ink, var(--color-fg)) 6%, transparent);
+    border-radius: 999px;
+  }
+  .report-toast {
+    margin: 0.4rem 0 0;
+    padding: 0.4rem 0.6rem;
+    font-size: 0.78rem;
+    color: var(--ink-2, var(--color-fg));
+    background: color-mix(in oklch, var(--ink, var(--color-fg)) 4%, transparent);
+    border-radius: 6px;
   }
   .vote-controls {
     flex: 0 0 auto;

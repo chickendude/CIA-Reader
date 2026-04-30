@@ -19,6 +19,10 @@ describe('OpenAPI generator', () => {
     expect(doc.paths['/api/v1/auth/login']?.post).toBeDefined();
     expect(doc.paths['/api/v1/me/profile']?.get).toBeDefined();
     expect(doc.paths['/nlp/process']?.post).toBeDefined();
+    expect(doc.externalDocs).toMatchObject({
+      description: 'Client API reference',
+      url: '/docs/api/',
+    });
     expect(doc['x-api-versioning']).toMatchObject({
       stablePrefix: STABLE_API_PREFIX,
       deprecationHeader: API_DEPRECATION_HEADER,

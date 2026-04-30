@@ -53,6 +53,7 @@ import {
   type JobDispatcher,
 } from './jobs.js';
 import { rebuildChapterSpans } from './phrase-spans.js';
+import { upsertPhraseProposals } from './phrase-proposals.js';
 
 type LemmaIndex = {
   /** `${headword} ${pos}` → id. Strict-POS lookup. */
@@ -368,6 +369,21 @@ async function processChapter(
     chapterId: chapter.id,
     language,
   });
+  // T-14.5a: persist any rule-based phrase proposals the NLP
+  // service emitted. Older NLP service builds may omit
+  // `proposed_phrases` — we default to an empty list so a stale
+  // service version still produces correct (just emptier) data.
+  // The upsert is idempotent on `(chapter_id, surface_normalised,
+  // pattern_id)` so a re-process of the same chapter doesn't
+  // duplicate.
+  const proposals = result.proposed_phrases ?? [];
+  if (proposals.length > 0) {
+    await upsertPhraseProposals({
+      chapterId: chapter.id,
+      language,
+      proposals,
+    });
+  }
   return rows.length;
 }
 

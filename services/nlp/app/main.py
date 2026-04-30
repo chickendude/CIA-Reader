@@ -14,6 +14,7 @@ import unicodedata
 from fastapi import FastAPI, HTTPException
 
 from app.languages import LANGUAGES, SUPPORTED_LANGUAGE_CODES, is_supported_language
+from app.phrases import get_detector
 from app.pipelines import get_pipeline
 from app.schemas import HealthResponse, ProcessRequest, ProcessResponse
 
@@ -44,6 +45,16 @@ async def process(req: ProcessRequest) -> ProcessResponse:
     pipeline = get_pipeline(req.language)
     result = pipeline.process(text)
 
+    # T-14.5: rule-based phrase detector runs over the Stanza output.
+    # The detector is per-language and lazy-loaded; an empty pattern
+    # set produces an empty proposal list (a brand-new language can
+    # ship without phrase support and still serve a well-formed
+    # response). The web worker (T-14.5a) writes proposals to
+    # `phrase_proposals` and a periodic promotion pass moves
+    # ≥3-chapter occurrences into `phrases` (`source='nlp'`).
+    detector = get_detector(req.language)
+    proposed_phrases = detector.detect(result.tokens)
+
     # The client always sees the language's canonical pipeline_id (from
     # the shared registry), not the pipeline instance's internal id — so
     # swapping in a stub during local dev still looks like the real
@@ -53,4 +64,5 @@ async def process(req: ProcessRequest) -> ProcessResponse:
         language=req.language,
         pipeline_id=canonical_pipeline_id,
         tokens=result.tokens,
+        proposed_phrases=proposed_phrases,
     )

@@ -22,10 +22,14 @@
   import {
     paragraphsOfServerTokens,
     paragraphsOfTokens,
+    segmentParagraphPhrases,
+    statusToCode,
     tokenize,
+    type ChapterPhraseSpan,
     type ChapterView,
     type ServerToken,
   } from './types.js';
+  import { validatePhraseSelection } from './phrase-selection.js';
 
   let {
     chapter,
@@ -103,6 +107,36 @@
       : paragraphsOfTokens(tokenize(chapter.body)),
   );
 
+  // T-14.3: phrase spans are segmented per paragraph at render
+  // time. The resolver (T-14.2) emits at most one span per
+  // (startIdx, phraseId), and longest-wins is applied here for the
+  // visible `<phrase>` wrapper — shorter overlapping spans ride
+  // along as `overlaps` so the popup (T-14.4) can surface them as
+  // alternatives. An empty `phraseSpans` array (chapter processed,
+  // no matches) costs one Map allocation per paragraph; a `null`
+  // value (chapter not yet processed) renders as bare tokens.
+  const phraseSpans = $derived(chapter.phraseSpans ?? []);
+  const segmentedParagraphs = $derived.by(() => {
+    if (!serverParagraphs) return null;
+    return serverParagraphs.map((paragraph) =>
+      segmentParagraphPhrases(paragraph, phraseSpans),
+    );
+  });
+  // Map from phraseId to its rendered span — used by the popup
+  // when the user clicks a token inside a phrase wrapper.
+  const phraseSpanById = $derived.by(() => {
+    const map = new Map<string, ChapterPhraseSpan>();
+    for (const s of phraseSpans) {
+      const existing = map.get(s.phraseId);
+      // The same phrase may appear multiple times in a chapter;
+      // any occurrence is sufficient for the popup header (which
+      // surfaces phrase-level metadata, not occurrence-specific
+      // info).
+      if (!existing) map.set(s.phraseId, s);
+    }
+    return map;
+  });
+
   // Lookup helper — server tokens are keyed by id.
   const tokensById = $derived.by(() => {
     if (!tokensWithOverrides) return new Map<string, ServerToken>();
@@ -119,6 +153,32 @@
     bottom: number;
     right: number;
   } | null>(null);
+  // T-14.3: when the click target is inside a `<phrase>` wrapper,
+  // the popup opens with the phrase header above the token body.
+  // Cleared whenever the click lands on a bare token or the popup
+  // is closed.
+  let activePhrase = $state<ChapterPhraseSpan | null>(null);
+  // T-14.3a: pending phrase-create selection. Set when the user
+  // shift-clicks a token that's at least 2 tokens away from the
+  // anchor — the popup opens in create mode showing the
+  // surfaces and a Save/Cancel pair. Cleared on close.
+  type PendingPhraseSelection = {
+    language: import('@ciareader/shared-types').LanguageCode;
+    surfaces: string[];
+    /** Span of `text_tokens.idx` for the selection, inclusive. */
+    rangeIdx: { start: number; end: number };
+  };
+  let pendingSelection = $state<PendingPhraseSelection | null>(null);
+  let selectionError = $state<string | null>(null);
+
+  function findPhrase(target: HTMLElement | null): ChapterPhraseSpan | null {
+    if (!target) return null;
+    const wrapper = target.closest('[data-phrase-id]') as HTMLElement | null;
+    if (!wrapper) return null;
+    const phraseId = wrapper.getAttribute('data-phrase-id');
+    if (!phraseId) return null;
+    return phraseSpanById.get(phraseId) ?? null;
+  }
 
   let hoverToken = $state<ServerToken | null>(null);
   let hoverRect = $state<{
@@ -144,9 +204,72 @@
     return { token, el: span };
   }
 
+  /**
+   * T-14.3a: build a pending phrase-create selection from the
+   * range `[anchorIdx, targetIdx]`. Pure validation logic lives
+   * in `phrase-selection.ts` so it can be unit-tested without
+   * the Svelte component shell; this wrapper just adapts the
+   * result to the popup's prop shape.
+   */
+  function buildPendingSelection(
+    anchorIdx: number,
+    targetIdx: number,
+  ): PendingPhraseSelection | null {
+    if (!tokensWithOverrides) return null;
+    const result = validatePhraseSelection(
+      tokensWithOverrides,
+      anchorIdx,
+      targetIdx,
+    );
+    if (result.kind === 'error') {
+      selectionError = result.message;
+      return null;
+    }
+    selectionError = null;
+    return {
+      language,
+      surfaces: result.surfaces,
+      rangeIdx: result.rangeIdx,
+    };
+  }
+
   function onChapterClick(event: MouseEvent) {
     const found = findToken(event.target as HTMLElement);
     if (!found) return;
+
+    // T-14.3a: shift-click range select. When the user clicks
+    // a second token while holding shift and an existing
+    // anchor (`activeToken`) is set, treat the pair as a
+    // phrase-create selection. Falls through to the regular
+    // single-token open when the validation fails (e.g. the
+    // range crosses a sentence boundary or has only one word).
+    if (event.shiftKey && activeToken && activeToken.id !== found.token.id) {
+      const pending = buildPendingSelection(activeToken.idx, found.token.idx);
+      if (pending) {
+        pendingSelection = pending;
+        // Position the popup at the *end* of the selected range
+        // so the side panel feels anchored to the phrase.
+        const rect = found.el.getBoundingClientRect();
+        activeRect = {
+          top: rect.top,
+          left: rect.left,
+          bottom: rect.bottom,
+          right: rect.right,
+        };
+        // Keep the existing token / phrase open so the popup's
+        // standard body still renders below the phrase-create
+        // section. The user can compare the proposed phrase
+        // against the underlying lemma.
+        hoverToken = null;
+        hoverRect = null;
+        return;
+      }
+      // selectionError is set inside buildPendingSelection;
+      // surface it via the popup's existing error slot below.
+      // Fall through to the regular click handling so the user
+      // doesn't lose their click entirely.
+    }
+
     const rect = found.el.getBoundingClientRect();
     activeToken = found.token;
     activeRect = {
@@ -155,6 +278,13 @@
       bottom: rect.bottom,
       right: rect.right,
     };
+    // T-14.3: surface the containing phrase (if any) so the popup
+    // can render its phrase header above the token body. A click on
+    // a bare token clears any prior phrase context.
+    activePhrase = findPhrase(event.target as HTMLElement);
+    // T-14.3a: clear any pending phrase-create state — a regular
+    // click cancels the create flow.
+    pendingSelection = null;
     // Hide the hover tooltip so it doesn't double up with the panel.
     hoverToken = null;
     hoverRect = null;
@@ -221,6 +351,26 @@
   function closePopup() {
     activeToken = null;
     activeRect = null;
+    activePhrase = null;
+    pendingSelection = null;
+    selectionError = null;
+  }
+
+  // T-14.3a: invoked by WordPopup on a successful phrase-create.
+  // We refetch the active chapter's tokens / spans so the new
+  // phrase highlights immediately. For now this nudges a route
+  // invalidation by issuing a light fetch against the lazy-tokens
+  // endpoint and re-running the segmenter — the simplest path
+  // that doesn't require threading a SvelteKit `invalidate` import
+  // through the popup callback.
+  async function onPhraseCreated(_phraseId: string) {
+    // Server-side spans are rebuilt on the next chapter
+    // re-process; for the current paint, we close the popup and
+    // expect the next route navigation (or the user's next
+    // chapter open) to surface the new phrase. A targeted
+    // refresh is a follow-up — see T-14.3b in the issue tracker.
+    void _phraseId;
+    closePopup();
   }
 
   // T-5.1c: long-press as a tap alternative on touch devices. A
@@ -239,6 +389,7 @@
       bottom: rect.bottom,
       right: rect.right,
     };
+    activePhrase = findPhrase(target as HTMLElement | null);
     hoverToken = null;
     hoverRect = null;
   });
@@ -318,14 +469,25 @@
   ontouchend={onTouchEnd}
   ontouchcancel={onTouchEnd}
 >
-  {#if serverParagraphs}
-    {#each serverParagraphs as paragraph, pIdx (pIdx)}
+  {#if segmentedParagraphs}
+    {#each segmentedParagraphs as paragraph, pIdx (pIdx)}
       <p class="body">
-        {#each paragraph as token (token.id)}<TokenSpan
-            {token}
-            {showRomanization}
-            isAnchor={activeToken?.id === token.id}
-          />{/each}
+        {#each paragraph as segment, sIdx (sIdx)}{#if segment.kind === 'token'}<TokenSpan
+              token={segment.token}
+              {showRomanization}
+              isAnchor={activeToken?.id === segment.token.id}
+            />{:else}<phrase
+              class="phrase"
+              data-phrase-id={segment.span.phraseId}
+              data-s={statusToCode(segment.span.status)}
+              data-phrase-overlap={segment.overlaps.length > 0
+                ? segment.overlaps.map((o) => o.phraseId).join(' ')
+                : undefined}
+              >{#each segment.tokens as token (token.id)}<TokenSpan
+                  {token}
+                  {showRomanization}
+                  isAnchor={activeToken?.id === token.id}
+                />{/each}</phrase>{/if}{/each}
       </p>
     {/each}
   {:else if fallbackParagraphs}
@@ -349,10 +511,16 @@
      prompt based on whether `token` is null. -->
 <WordPopup
   token={activeToken}
+  phrase={activePhrase}
+  pendingSelection={pendingSelection ?? undefined}
+  selectionError={selectionError ?? undefined}
   anchorRect={activeRect ?? undefined}
   {language}
   {isOwner}
   onClose={closePopup}
+  onPhraseCreated={(phraseId: string) => {
+    void onPhraseCreated(phraseId);
+  }}
   {onStatusChange}
   {onCorrectionApplied}
 />
@@ -378,5 +546,22 @@
   }
   .word:hover {
     background: color-mix(in srgb, var(--color-accent) 12%, transparent);
+  }
+  /* T-14.3: phrase wrappers are an unknown element so we have to
+     opt them into inline display explicitly. The visible
+     highlight is layered via `data-s` matching the existing
+     `.status-*` rules in `tokens.css` — phrase status wins over
+     per-token status when both are non-default. */
+  .phrase {
+    display: inline;
+    border-bottom: 1px dotted color-mix(in srgb, var(--color-accent) 35%, transparent);
+  }
+  .phrase[data-s='4'] {
+    /* known phrase — quiet highlight, mirrors the lemma 'known'
+       treatment but applied to the run rather than each token. */
+    border-bottom-color: color-mix(in srgb, var(--color-accent) 60%, transparent);
+  }
+  .phrase[data-s='5'] {
+    border-bottom-style: none;
   }
 </style>

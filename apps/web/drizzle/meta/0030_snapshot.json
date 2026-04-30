@@ -1,5 +1,5 @@
 {
-  "id": "01f313c6-517e-4d3f-b39b-4cddbfec6f52",
+  "id": "e24e4dec-7944-47d2-a659-c22c1c7f7ee6",
   "prevId": "f2c514da-6bd7-4949-b44c-fb410461ff12",
   "version": "7",
   "dialect": "postgresql",
@@ -1229,13 +1229,7 @@
           "name": "lemma_id",
           "type": "uuid",
           "primaryKey": false,
-          "notNull": false
-        },
-        "phrase_id": {
-          "name": "phrase_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
         "editor_id": {
           "name": "editor_id",
@@ -1292,27 +1286,6 @@
           "method": "btree",
           "with": {}
         },
-        "lemma_edit_history_phrase_idx": {
-          "name": "lemma_edit_history_phrase_idx",
-          "columns": [
-            {
-              "expression": "phrase_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "created_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
         "lemma_edit_history_editor_idx": {
           "name": "lemma_edit_history_editor_idx",
           "columns": [
@@ -1336,19 +1309,6 @@
           "tableTo": "lemmas",
           "columnsFrom": [
             "lemma_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "lemma_edit_history_phrase_id_phrases_id_fk": {
-          "name": "lemma_edit_history_phrase_id_phrases_id_fk",
-          "tableFrom": "lemma_edit_history",
-          "tableTo": "phrases",
-          "columnsFrom": [
-            "phrase_id"
           ],
           "columnsTo": [
             "id"
@@ -2672,13 +2632,6 @@
           "notNull": true,
           "default": false
         },
-        "hidden": {
-          "name": "hidden",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -3713,6 +3666,175 @@
         }
       },
       "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "public.translation_reports": {
+      "name": "translation_reports",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "translation_id": {
+          "name": "translation_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "reporter_id": {
+          "name": "reporter_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "reason": {
+          "name": "reason",
+          "type": "translation_report_reason",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "note": {
+          "name": "note",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "status": {
+          "name": "status",
+          "type": "translation_report_status",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'open'"
+        },
+        "resolved_by": {
+          "name": "resolved_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "resolved_at": {
+          "name": "resolved_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "resolution_note": {
+          "name": "resolution_note",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "translation_reports_status_idx": {
+          "name": "translation_reports_status_idx",
+          "columns": [
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "translation_reports_translation_idx": {
+          "name": "translation_reports_translation_idx",
+          "columns": [
+            {
+              "expression": "translation_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "translation_reports_translation_id_translations_id_fk": {
+          "name": "translation_reports_translation_id_translations_id_fk",
+          "tableFrom": "translation_reports",
+          "tableTo": "translations",
+          "columnsFrom": [
+            "translation_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "translation_reports_reporter_id_users_id_fk": {
+          "name": "translation_reports_reporter_id_users_id_fk",
+          "tableFrom": "translation_reports",
+          "tableTo": "users",
+          "columnsFrom": [
+            "reporter_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "translation_reports_resolved_by_users_id_fk": {
+          "name": "translation_reports_resolved_by_users_id_fk",
+          "tableFrom": "translation_reports",
+          "tableTo": "users",
+          "columnsFrom": [
+            "resolved_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "translation_reports_reporter_translation_uq": {
+          "name": "translation_reports_reporter_translation_uq",
+          "nullsNotDistinct": false,
+          "columns": [
+            "reporter_id",
+            "translation_id"
+          ]
+        }
+      },
       "checkConstraints": {}
     },
     "public.translation_votes": {
@@ -4831,13 +4953,7 @@
         "form_delete",
         "lemma_merge",
         "lemma_split",
-        "translation_reorder",
-        "phrase_update",
-        "phrase_lock",
-        "phrase_unlock",
-        "phrase_hide",
-        "phrase_unhide",
-        "phrase_merge"
+        "translation_reorder"
       ]
     },
     "public.lemma_proposal_status": {
@@ -4962,6 +5078,27 @@
         "mark_proper_noun",
         "mark_foreign",
         "mark_not_a_word"
+      ]
+    },
+    "public.translation_report_reason": {
+      "name": "translation_report_reason",
+      "schema": "public",
+      "values": [
+        "spam",
+        "incorrect",
+        "offensive",
+        "duplicate",
+        "other"
+      ]
+    },
+    "public.translation_report_status": {
+      "name": "translation_report_status",
+      "schema": "public",
+      "values": [
+        "open",
+        "resolved_hidden",
+        "resolved_kept",
+        "dismissed"
       ]
     },
     "public.translation_source": {
