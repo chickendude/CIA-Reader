@@ -6,6 +6,11 @@ import {
   upsertUserLanguage,
   withDefaultsForAllLanguages,
 } from '$lib/server/profile.js';
+import {
+  createPersonalApiKey,
+  listPersonalApiKeys,
+  revokePersonalApiKey,
+} from '$lib/server/auth/personal-api-keys.js';
 import { THEME_COOKIE, THEME_COOKIE_MAX_AGE } from '$lib/theme/index.js';
 import {
   LANGUAGES,
@@ -30,10 +35,21 @@ const languageFormSchema = z.object({
   romanizationScheme: z.enum(['iso15919', 'iast', 'hunterian', 'itrans']),
 });
 
+const apiKeyCreateSchema = z.object({
+  name: z.string().trim().min(1).max(80),
+});
+
+const apiKeyRevokeSchema = z.object({
+  keyId: z.string().uuid(),
+});
+
 export const load: PageServerLoad = async ({ locals }) => {
   if (!locals.user) throw redirect(303, '/login?next=/profile');
 
-  const persisted = await listUserLanguages(locals.user.id);
+  const [persisted, apiKeys] = await Promise.all([
+    listUserLanguages(locals.user.id),
+    listPersonalApiKeys(locals.user.id),
+  ]);
   return {
     user: {
       id: locals.user.id,
@@ -49,6 +65,7 @@ export const load: PageServerLoad = async ({ locals }) => {
       script: LANGUAGES[row.code].script,
       supportedRomanizations: LANGUAGES[row.code].supportedRomanizations,
     })),
+    apiKeys,
   };
 };
 
@@ -60,6 +77,9 @@ type ProfileActionResult =
 type LanguageActionResult =
   | { ok: true; section: 'language'; code: string }
   | { ok: false; section: 'language'; code: string | null; message: string };
+type ApiKeyActionResult =
+  | { ok: true; section: 'apiKeys'; key?: string; message: string }
+  | { ok: false; section: 'apiKeys'; message: string };
 
 export const actions: Actions = {
   updateProfile: async ({ cookies, request, locals, url }) => {
@@ -141,5 +161,61 @@ export const actions: Actions = {
       section: 'language',
       code: parsed.data.code,
     } satisfies LanguageActionResult;
+  },
+
+  createApiKey: async ({ request, locals }) => {
+    if (!locals.user) {
+      return fail(401, {
+        ok: false,
+        section: 'apiKeys',
+        message: 'Unauthorized',
+      } satisfies ApiKeyActionResult);
+    }
+    const parsed = apiKeyCreateSchema.safeParse(Object.fromEntries(await request.formData()));
+    if (!parsed.success) {
+      return fail(400, {
+        ok: false,
+        section: 'apiKeys',
+        message: parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; '),
+      } satisfies ApiKeyActionResult);
+    }
+    const created = await createPersonalApiKey(locals.user.id, parsed.data.name);
+    return {
+      ok: true,
+      section: 'apiKeys',
+      key: created.key,
+      message: 'Personal API key created. Copy it now; it will not be shown again.',
+    } satisfies ApiKeyActionResult;
+  },
+
+  revokeApiKey: async ({ request, locals }) => {
+    if (!locals.user) {
+      return fail(401, {
+        ok: false,
+        section: 'apiKeys',
+        message: 'Unauthorized',
+      } satisfies ApiKeyActionResult);
+    }
+    const parsed = apiKeyRevokeSchema.safeParse(Object.fromEntries(await request.formData()));
+    if (!parsed.success) {
+      return fail(400, {
+        ok: false,
+        section: 'apiKeys',
+        message: parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; '),
+      } satisfies ApiKeyActionResult);
+    }
+    const revoked = await revokePersonalApiKey(locals.user.id, parsed.data.keyId);
+    if (!revoked) {
+      return fail(404, {
+        ok: false,
+        section: 'apiKeys',
+        message: 'API key not found or already revoked.',
+      } satisfies ApiKeyActionResult);
+    }
+    return {
+      ok: true,
+      section: 'apiKeys',
+      message: 'Personal API key revoked.',
+    } satisfies ApiKeyActionResult;
   },
 };

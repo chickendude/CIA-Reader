@@ -3,6 +3,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { signAccessToken } from './access-token.js';
 
+const resolvePersonalApiKey = vi.fn();
+
+vi.mock('./personal-api-keys.js', () => ({
+  PERSONAL_API_KEY_PREFIX: 'ciar_pk_',
+  resolvePersonalApiKey: (...args: unknown[]) => resolvePersonalApiKey(...args),
+}));
+
 // Fabricate a minimal db + schema surface covering only the calls these
 // helpers make. Drizzle's query builder returns `this` from almost everything
 // and resolves the chain on await, so a chainable spy works.
@@ -30,15 +37,18 @@ const { resolveUser, requireUser } = await import('./require-user.js');
 
 function makeEvent({
   bearer,
+  apiKey,
   cookie,
   locals,
 }: {
   bearer?: string;
+  apiKey?: string;
   cookie?: string;
   locals?: Record<string, unknown>;
 } = {}) {
   const headers = new Headers();
   if (bearer) headers.set('authorization', `Bearer ${bearer}`);
+  if (apiKey) headers.set('x-api-key', apiKey);
   const cookies = {
     get: vi.fn((name: string) => (name === 'cia_session' ? cookie : undefined)),
     set: vi.fn(),
@@ -56,6 +66,7 @@ function makeEvent({
 describe('resolveUser', () => {
   beforeEach(() => {
     fakeRows.length = 0;
+    resolvePersonalApiKey.mockReset();
     Object.values(chain).forEach((fn) => (fn as ReturnType<typeof vi.fn>).mockClear());
     fakeDb.select.mockClear();
   });
@@ -86,6 +97,25 @@ describe('resolveUser', () => {
 
   it('returns null when neither a bearer nor a cookie is present', async () => {
     expect(await resolveUser(makeEvent())).toBeNull();
+  });
+
+  it('resolves an x-api-key personal key before cookie auth', async () => {
+    resolvePersonalApiKey.mockResolvedValueOnce({ id: 'api-user' });
+
+    const user = await resolveUser(makeEvent({ apiKey: 'ciar_pk_secret', cookie: 'ignored' }));
+
+    expect(user).toMatchObject({ id: 'api-user' });
+    expect(resolvePersonalApiKey).toHaveBeenCalledWith('ciar_pk_secret');
+    expect(fakeDb.select).not.toHaveBeenCalled();
+  });
+
+  it('resolves a personal key supplied as a bearer token', async () => {
+    resolvePersonalApiKey.mockResolvedValueOnce({ id: 'api-user' });
+
+    const user = await resolveUser(makeEvent({ bearer: 'ciar_pk_secret' }));
+
+    expect(user).toMatchObject({ id: 'api-user' });
+    expect(resolvePersonalApiKey).toHaveBeenCalledWith('ciar_pk_secret');
   });
 
   it('falls back to the cookie when there is no Authorization header', async () => {
