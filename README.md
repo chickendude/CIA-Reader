@@ -40,6 +40,24 @@ That boots postgres + redis + the NLP service + the SvelteKit dev server (with h
 - Client API reference: http://localhost:5173/docs/api/
 - API versioning policy: [docs/api-versioning.md](docs/api-versioning.md)
 
+### Custom host ports
+
+If any of the default ports collide with another local service (e.g. another Postgres on `5432`), copy [`infra/.env.example`](infra/.env.example) to `infra/.env` and override only what you need — `docker compose` reads `infra/.env` automatically. Example:
+
+```
+# infra/.env
+POSTGRES_HOST_PORT=55432
+```
+
+When you change the Postgres host port, also point the web app at it via `apps/web/.env`:
+
+```
+# apps/web/.env
+DATABASE_URL=postgres://ciareader:ciareader@localhost:55432/ciareader
+```
+
+Both `.env` files are gitignored.
+
 Smoke test (proves the full pipe works):
 
 ```
