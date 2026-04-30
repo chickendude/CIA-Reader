@@ -34,11 +34,14 @@
     {:else}
       <p class="sub">No language grants. Ask an admin for curator rights.</p>
     {/if}
-    {#if data.isAdmin}
-      <p class="admin-tools">
+    <nav class="mod-nav" aria-label="Moderation sections">
+      <a href="/moderation/translations">Translation reports →</a>
+      <a href="/moderation/parses">Parse reports →</a>
+      <a href="/moderation/stats">Stats →</a>
+      {#if data.isAdmin}
         <a href="/moderation/dictionary/bulk">Bulk tools →</a>
-      </p>
-    {/if}
+      {/if}
+    </nav>
   </header>
 
   {#if data.descriptors.length > 1}
@@ -123,6 +126,21 @@
   }
   .muted {
     color: var(--color-fg-muted);
+  }
+  .mod-nav {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.85rem;
+    font-size: 0.85rem;
+    margin: 0.5rem 0 1.25rem;
+  }
+  .mod-nav a {
+    color: var(--color-fg-muted);
+    text-decoration: none;
+  }
+  .mod-nav a:hover {
+    color: var(--color-fg);
+    text-decoration: underline;
   }
   .lang-picker {
     display: flex;

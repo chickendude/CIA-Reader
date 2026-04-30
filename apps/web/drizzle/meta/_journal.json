@@ -176,6 +176,13 @@
       "when": 1777513538222,
       "tag": "0024_uneven_oracle",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1777514344143,
+      "tag": "0025_sticky_madelyne_pryor",
+      "breakpoints": true
     }
   ]
 }
