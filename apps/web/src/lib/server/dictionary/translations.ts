@@ -104,7 +104,16 @@ async function assertParentBelongsToLemma(
   lemmaId: string,
 ): Promise<void> {
   const [row] = await db
-    .select({ id: schema.translations.id, lemmaId: schema.translations.lemmaId })
+    .select({
+      id: schema.translations.id,
+      // T-14.7a: parent-target check via the polymorphic columns
+      // so the legacy lemma_id column can be dropped. A phrase-
+      // target parent forking onto a lemma is rejected here for
+      // the same reason it was when this used `lemmaId !== ...`
+      // — the customize-fork mechanic is per-target.
+      targetType: schema.translations.targetType,
+      targetId: schema.translations.targetId,
+    })
     .from(schema.translations)
     .where(eq(schema.translations.id, parentId))
     .limit(1);
@@ -114,7 +123,7 @@ async function assertParentBelongsToLemma(
       404,
     );
   }
-  if (row.lemmaId !== lemmaId) {
+  if (row.targetType !== 'lemma' || row.targetId !== lemmaId) {
     throw new TranslationValidationError(
       'parentTranslationId belongs to a different lemma',
     );
@@ -167,11 +176,10 @@ export async function submitUserTranslation(
   const [row] = await db
     .insert(schema.translations)
     .values({
-      lemmaId: input.lemmaId,
-      // T-14.1 polymorphic columns. For lemma-target rows the
-      // canonical (target_type, target_id) pair mirrors the legacy
-      // lemma_id so existing readers keep working during the
-      // overlap window before T-14.7 drops `lemma_id`.
+      // T-14.7a: legacy lemma_id column dropped — inserts now
+      // write only the polymorphic (target_type, target_id)
+      // pair. The reader / popup / export / merge surfaces all
+      // moved to that pair in this PR's read-site sweep.
       targetType: 'lemma',
       targetId: input.lemmaId,
       source: 'user',
@@ -266,7 +274,9 @@ export async function submitUserPhraseTranslation(
   const [row] = await db
     .insert(schema.translations)
     .values({
-      lemmaId: null,
+      // T-14.7a: legacy lemma_id column dropped — phrase-target
+      // inserts have always set lemma_id=null; that field is
+      // gone now and we only write the polymorphic pair.
       targetType: 'phrase',
       targetId: input.phraseId,
       source: 'user',
@@ -371,11 +381,10 @@ export async function deleteUserTranslation(
 export function publicTranslation(row: Translation) {
   return {
     id: row.id,
-    // T-14.1 polymorphic surface. Both the legacy `lemmaId` field
-    // and the new `targetType` / `targetId` are returned during
-    // the overlap window — clients should prefer the latter; we
-    // drop `lemmaId` from this projection in T-14.7.
-    lemmaId: row.lemmaId,
+    // T-14.7a: dropped the legacy `lemmaId` field; clients have
+    // had T-14.1's `targetType` / `targetId` to read from for
+    // months. Phrase-target rows distinguish themselves via
+    // `targetType === 'phrase'`.
     targetType: row.targetType,
     targetId: row.targetId,
     source: row.source,

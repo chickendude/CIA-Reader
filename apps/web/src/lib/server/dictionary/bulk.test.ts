@@ -107,7 +107,8 @@ vi.mock('../db/index.js', () => ({
     },
     translations: {
       id: 'translations.id',
-      lemmaId: 'translations.lemma_id',
+      targetType: 'translations.target_type',
+      targetId: 'translations.target_id',
       source: 'translations.source',
       sourceAttribution: 'translations.source_attribution',
     },
@@ -153,10 +154,10 @@ function lemmaRow(overrides: Record<string, unknown> = {}) {
 function translationRow(overrides: Record<string, unknown> = {}) {
   return {
     id: 'tr-1',
-    lemmaId: 'lemma-1',
-    // T-14.1: bulk operations only run on lemma-target translations;
-    // every fixture row gets the polymorphic columns mirrored from
-    // lemma_id. Phrase-target bulk paths land in T-14.7.
+    // T-14.7a: legacy lemma_id field dropped — fixtures now
+    // carry only the polymorphic (target_type, target_id)
+    // pair. Bulk operations remain lemma-target-only; phrase
+    // bulk paths land in a follow-up under T-14.4a.
     targetType: 'lemma',
     targetId: 'lemma-1',
     source: 'user',
@@ -271,8 +272,12 @@ describe('bulkImportTranslations', () => {
     // 1 translation insert + 1 audit insert.
     expect(insertCalls).toHaveLength(2);
     const trInsert = insertCalls[0]!;
+    // T-14.7a: bulk-import inserts now write the polymorphic
+    // (target_type, target_id) pair instead of the legacy
+    // lemma_id column.
     expect(trInsert.values).toMatchObject({
-      lemmaId: 'lemma-1',
+      targetType: 'lemma',
+      targetId: 'lemma-1',
       source: 'curator',
       submittedBy: ADMIN.id,
       body: 'to speak',
@@ -281,6 +286,9 @@ describe('bulkImportTranslations', () => {
     });
     const auditInsert = insertCalls[1]!;
     expect(auditInsert.values).toMatchObject({
+      // The audit row's `lemma_id` column on lemma_edit_history
+      // is unaffected by T-14.7a — only translations.lemma_id
+      // was dropped.
       lemmaId: 'lemma-1',
       editorId: ADMIN.id,
       changeType: 'translation_insert',
@@ -632,7 +640,8 @@ describe('bulkUpdateAttribution', () => {
     // language-scoped lemma id query → 2 lemmas
     stage([{ id: 'lemma-1' }, { id: 'lemma-2' }]);
     // scoped translation id query → 1 hit
-    stage([{ id: 'tr-1', lemmaId: 'lemma-1' }]);
+    // T-14.7a: scoped row carries the polymorphic target.
+    stage([{ id: 'tr-1', targetType: 'lemma', targetId: 'lemma-1' }]);
     // before snapshot of those rows
     stage([
       translationRow({

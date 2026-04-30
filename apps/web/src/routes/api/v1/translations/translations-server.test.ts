@@ -121,7 +121,6 @@ describe('POST /api/v1/translations', () => {
           "createdAt": "string",
           "hidden": "boolean",
           "id": "string",
-          "lemmaId": "string",
           "parentTranslationId": "null",
           "source": "string",
           "sourceAttribution": "null",

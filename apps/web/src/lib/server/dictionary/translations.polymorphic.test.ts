@@ -62,7 +62,6 @@ vi.mock('../db/index.js', () => ({
     phrases: { id: 'phrases.id' },
     translations: {
       id: 'translations.id',
-      lemmaId: 'translations.lemma_id',
       targetType: 'translations.target_type',
       targetId: 'translations.target_id',
       submittedBy: 'translations.submitted_by',
@@ -93,13 +92,12 @@ afterEach(() => {
 // ---------------------------------------------------------------
 
 describe('submitUserTranslation — polymorphic write shape', () => {
-  it('populates BOTH lemma_id and (target_type=lemma, target_id=lemmaId)', async () => {
+  it('writes only the polymorphic (target_type, target_id) pair (T-14.7a dropped lemma_id)', async () => {
     stage([{ id: 'lemma-1' }]); // existence check
     stage([{ n: 0 }]); // rate-limit count
     stage([
       {
         id: 'tr-1',
-        lemmaId: 'lemma-1',
         targetType: 'lemma',
         targetId: 'lemma-1',
         source: 'user',
@@ -116,11 +114,14 @@ describe('submitUserTranslation — polymorphic write shape', () => {
 
     const insertCall = calls.find((c) => c.kind === 'insert');
     expect(insertCall?.payload).toMatchObject({
-      lemmaId: 'lemma-1',
       targetType: 'lemma',
       targetId: 'lemma-1',
       source: 'user',
     });
+    // T-14.7a: lemma_id is no longer written.
+    expect(
+      (insertCall?.payload as Record<string, unknown> | undefined)?.lemmaId,
+    ).toBeUndefined();
   });
 });
 
@@ -151,11 +152,11 @@ describe('submitUserPhraseTranslation — happy path', () => {
 
     expect(result.targetType).toBe('phrase');
     expect(result.targetId).toBe('phr-1');
-    expect(result.lemmaId).toBeNull();
 
     const insertCall = calls.find((c) => c.kind === 'insert');
+    // T-14.7a: legacy lemma_id field is gone — the insert
+    // payload only carries the polymorphic pair.
     expect(insertCall?.payload).toMatchObject({
-      lemmaId: null,
       targetType: 'phrase',
       targetId: 'phr-1',
       source: 'user',
@@ -163,6 +164,10 @@ describe('submitUserPhraseTranslation — happy path', () => {
       body: 'to wait',
       targetLanguage: 'en',
     });
+    // Sanity: lemma_id is no longer written.
+    expect(
+      (insertCall?.payload as Record<string, unknown> | undefined)?.lemmaId,
+    ).toBeUndefined();
   });
 
   it('rate-limit is shared with the lemma path (same submittedBy window)', async () => {

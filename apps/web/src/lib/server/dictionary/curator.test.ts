@@ -96,7 +96,8 @@ vi.mock('../db/index.js', () => ({
     lemmas: { id: 'lemmas.id', language: 'lemmas.language' },
     translations: {
       id: 'translations.id',
-      lemmaId: 'translations.lemma_id',
+      targetType: 'translations.target_type',
+      targetId: 'translations.target_id',
     },
     lemmaForms: {
       id: 'lemma_forms.id',
@@ -156,10 +157,10 @@ function lemmaRow(overrides: Record<string, unknown> = {}) {
 function translationRow(overrides: Record<string, unknown> = {}) {
   return {
     id: 'tr-1',
-    lemmaId: 'lemma-1',
-    // T-14.1: every translation row in the fixture is lemma-target;
-    // the polymorphic columns mirror lemma_id during the overlap
-    // window. Phrase-target curator flows are tested in T-14.4.
+    // T-14.7a: legacy lemma_id field dropped — fixtures now
+    // carry only the polymorphic (target_type, target_id)
+    // pair. Phrase-target curator flows go through the phrase
+    // editor (T-14.4a).
     targetType: 'lemma',
     targetId: 'lemma-1',
     source: 'user',
@@ -422,7 +423,10 @@ describe('mergeLemmas', () => {
   it('rewires translations + forms, deletes the loser, and audits both sides', async () => {
     stage([lemmaRow({ id: 'lemma-1' })]); // winner
     stage([lemmaRow({ id: 'lemma-2', headword: 'बोल' })]); // loser
-    stage([translationRow({ id: 'tr-1', lemmaId: 'lemma-2' })]); // loser translations
+    // T-14.7a: loser translations carry the polymorphic target.
+    stage([
+      translationRow({ id: 'tr-1', targetType: 'lemma', targetId: 'lemma-2' }),
+    ]); // loser translations
     stage([{ id: 'form-1', lemmaId: 'lemma-2', surface: 'bola' }]); // loser forms
     stage([{ id: 'hist-loser' }]); // audit loser insert
     stage([{ id: 'hist-winner' }]); // audit winner insert
@@ -476,7 +480,11 @@ describe('splitLemma', () => {
 
   it('rejects translation ids that do not belong to the source lemma', async () => {
     stage([lemmaRow({ id: 'lemma-1' })]); // loadLemma
-    stage([{ id: 'tr-1', lemmaId: 'lemma-999' }]); // translation belongs elsewhere
+    // T-14.7a: belongs-elsewhere check reads via the polymorphic
+    // target.
+    stage([
+      { id: 'tr-1', targetType: 'lemma', targetId: 'lemma-999' },
+    ]); // translation belongs elsewhere
     await expect(
       splitLemma(
         ADMIN,
@@ -492,8 +500,10 @@ describe('splitLemma', () => {
 
   it('creates a new curator lemma and moves selected children, auditing both sides', async () => {
     stage([lemmaRow({ id: 'lemma-1', headword: 'सोना' })]); // source
-    stage([{ id: 'tr-1', lemmaId: 'lemma-1' }]); // translation validation
-    stage([{ id: 'form-1', lemmaId: 'lemma-1' }]); // form validation
+    // T-14.7a: translation validation now reads via the
+    // polymorphic columns; staged row mirrors that.
+    stage([{ id: 'tr-1', targetType: 'lemma', targetId: 'lemma-1' }]);
+    stage([{ id: 'form-1', lemmaId: 'lemma-1' }]); // form validation (lemma_forms.lemma_id is unaffected)
     const created = lemmaRow({
       id: 'lemma-new',
       headword: 'सोना',
