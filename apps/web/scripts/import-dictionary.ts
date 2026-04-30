@@ -15,6 +15,10 @@
  * `(language, source, source_id)` and writes a `dictionary_imports`
  * audit row each run.
  */
+import { config as loadEnv } from 'dotenv';
+import { fileURLToPath } from 'node:url';
+import { dirname, resolve } from 'node:path';
+
 import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
 
@@ -22,6 +26,8 @@ import * as schema from '../src/lib/server/db/schema.js';
 import { dictionarySources, findSource } from '../src/lib/server/dictionary/sources/index.js';
 import { DrizzleDictionaryRepo } from '../src/lib/server/dictionary/drizzle-repo.js';
 import { runDictionaryImport } from '../src/lib/server/dictionary/runner.js';
+
+loadEnv({ path: resolve(dirname(fileURLToPath(import.meta.url)), '..', '.env') });
 
 // The runtime `db/index.ts` reads its DATABASE_URL through SvelteKit's
 // `$env/dynamic/private`, which only resolves inside a SvelteKit

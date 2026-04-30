@@ -11,7 +11,13 @@
 // Usage:
 //   node apps/web/scripts/seed-form-overrides.mjs
 
+import { config as loadEnv } from 'dotenv';
+import { fileURLToPath } from 'node:url';
+import { dirname, resolve } from 'node:path';
+
 import postgres from 'postgres';
+
+loadEnv({ path: resolve(dirname(fileURLToPath(import.meta.url)), '..', '.env') });
 
 const DATABASE_URL =
   process.env.DATABASE_URL ??
