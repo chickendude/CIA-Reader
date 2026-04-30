@@ -338,7 +338,7 @@
 </div>
 
 {#if hoverToken && hoverRect}
-  <WordTooltip token={hoverToken} anchorRect={hoverRect} />
+  <WordTooltip token={hoverToken} anchorRect={hoverRect} {language} />
 {/if}
 
 <!-- WordPopup mounts unconditionally so the side panel can stay
