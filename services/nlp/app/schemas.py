@@ -61,7 +61,37 @@ class Token(BaseModel):
     number_forms: NumberForms | None = None
 
 
+class ProposedPhrase(BaseModel):
+    """One rule-based phrase proposal (T-14.5).
+
+    Emitted by the per-language ``PhraseDetector`` after Stanza
+    finishes its pass — a contiguous run of token indices that
+    matches a YAML pattern (e.g. ``NOUN + करना`` for Hindi conjunct
+    verbs). The web worker (T-14.5a) writes proposals to a queue
+    and promotes them to ``phrases`` (``source='nlp'``) once they
+    cross the per-chapter occurrence threshold.
+
+    ``pattern_id`` is the stable ``id`` field from the matched YAML
+    rule so curators can audit which patterns are pulling their
+    weight; ``surfaces`` is the ordered token surfaces (NFC-
+    normalised on the Python side so the worker doesn't have to
+    re-derive ``surface_normalised`` for the dedupe lookup).
+    """
+
+    start_idx: int = Field(..., description="Index of the first matched token (inclusive).")
+    end_idx: int = Field(..., description="Index of the last matched token (inclusive).")
+    pattern_id: str = Field(..., description="YAML rule id that matched.")
+    surfaces: list[str] = Field(
+        ...,
+        description="Ordered token surfaces in the matched run, NFC-normalised.",
+    )
+
+
 class ProcessResponse(BaseModel):
     language: str
     pipeline_id: str
     tokens: list[Token]
+    proposed_phrases: list[ProposedPhrase] = Field(
+        default_factory=list,
+        description="T-14.5: rule-based phrase proposals over the token list.",
+    )
