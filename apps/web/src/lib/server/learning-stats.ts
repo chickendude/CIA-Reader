@@ -24,6 +24,16 @@ export type LanguageStats = {
   /** Distinct lemmas seen at least once across the user's owned
    *  texts in this language. */
   encounteredCount: number;
+  /** T-14.6: parallel counters for phrases (M14). The reader
+   *  surfaces them in a separate "Known phrases" pane alongside
+   *  "Known words" so a learner can see at a glance how their
+   *  multi-word vocabulary is growing. `encounteredPhrasesCount`
+   *  is sourced from `phrase_chapter_spans` joined to texts the
+   *  user owns — paralleling `encounteredCount` for lemmas. */
+  knownPhrasesCount: number;
+  learningPhrasesCount: number;
+  ignoredPhrasesCount: number;
+  encounteredPhrasesCount: number;
 };
 
 export const STATS_DEFAULT_PAGE_SIZE = 50;
@@ -109,11 +119,59 @@ export async function getLanguageStats(
     `),
   );
 
+  // T-14.6: parallel phrase counters. Same shape as the lemma
+  // query above but joined through `user_known_phrases` →
+  // `phrases`. Skipped when the user has no phrase rows yet (the
+  // common case during M14 rollout) — the SUM-of-CASE form
+  // returns NULLs which we coalesce to 0.
+  const phraseCounts = unwrapRows<{
+    known: number;
+    learning: number;
+    ignored: number;
+  }>(
+    await db.execute(sql`
+      SELECT
+        SUM(CASE WHEN ukp.status = 'known' THEN 1 ELSE 0 END)::int AS known,
+        SUM(CASE WHEN ukp.status = 'learning' THEN 1 ELSE 0 END)::int AS learning,
+        SUM(CASE WHEN ukp.status = 'ignored' THEN 1 ELSE 0 END)::int AS ignored
+      FROM user_known_phrases ukp
+      INNER JOIN phrases p ON p.id = ukp.phrase_id
+      WHERE ukp.user_id = ${userId}
+        AND p.language = ${language}
+    `),
+  );
+  const phraseRow = phraseCounts[0] ?? {
+    known: 0,
+    learning: 0,
+    ignored: 0,
+  };
+
+  // Distinct phrases the user has *encountered* — joined through
+  // `phrase_chapter_spans` against texts the user owns. Mirrors
+  // the lemma-encounters query above; rows the worker hasn't
+  // resolved yet (no spans for the chapter) simply don't show up.
+  const encounteredPhrases = unwrapRows<{ n: number }>(
+    await db.execute(sql`
+      SELECT COUNT(DISTINCT pcs.phrase_id)::int AS n
+      FROM phrase_chapter_spans pcs
+      INNER JOIN text_chapters ch ON ch.id = pcs.chapter_id
+      INNER JOIN texts tx ON tx.id = ch.text_id
+      INNER JOIN phrases p ON p.id = pcs.phrase_id
+      WHERE tx.owner_id = ${userId}
+        AND p.language = ${language}
+    `),
+  );
+  const encounteredPhrasesCount = encounteredPhrases[0]?.n ?? 0;
+
   return {
     knownCount: row.known ?? 0,
     learningCount: row.learning ?? 0,
     ignoredCount: row.ignored ?? 0,
     encounteredCount,
+    knownPhrasesCount: phraseRow.known ?? 0,
+    learningPhrasesCount: phraseRow.learning ?? 0,
+    ignoredPhrasesCount: phraseRow.ignored ?? 0,
+    encounteredPhrasesCount,
     listeningMinutes: msToMinutes(listening[0]?.listened_ms),
   };
 }

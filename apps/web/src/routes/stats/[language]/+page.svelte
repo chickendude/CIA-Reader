@@ -64,6 +64,32 @@
     </div>
   </section>
 
+  <!-- T-14.6: phrase counters parallel to the lemma counters above.
+       The pane only renders when the user has at least encountered
+       a phrase in this language so an empty M14 corpus doesn't show
+       four "0" tiles for every learner. -->
+  {#if data.stats.encounteredPhrasesCount > 0 || data.stats.knownPhrasesCount > 0 || data.stats.learningPhrasesCount > 0}
+    <section class="ls-totals" data-testid="phrase-stats">
+      <h2 class="ls-totals-h">Phrases</h2>
+      <div class="ls-tile">
+        <div class="ls-tile-n">{data.stats.knownPhrasesCount.toLocaleString()}</div>
+        <div class="ls-tile-l">Known phrases</div>
+      </div>
+      <div class="ls-tile">
+        <div class="ls-tile-n">{data.stats.learningPhrasesCount.toLocaleString()}</div>
+        <div class="ls-tile-l">Learning</div>
+      </div>
+      <div class="ls-tile">
+        <div class="ls-tile-n">{data.stats.encounteredPhrasesCount.toLocaleString()}</div>
+        <div class="ls-tile-l">Phrases seen in your texts</div>
+      </div>
+      <div class="ls-tile">
+        <div class="ls-tile-n">{data.stats.ignoredPhrasesCount.toLocaleString()}</div>
+        <div class="ls-tile-l">Ignored phrases</div>
+      </div>
+    </section>
+  {/if}
+
   <section class="ls-section">
     <h2>Per-text comprehension</h2>
     {#if data.texts.length === 0}
@@ -190,6 +216,17 @@
     grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
     gap: 0.75rem;
     margin-bottom: 1.75rem;
+  }
+  /* T-14.6: phrase tile pane reuses the lemma totals layout but
+     adds a sub-heading so the two groups read as siblings rather
+     than one merged row. Spans the full grid width. */
+  .ls-totals-h {
+    grid-column: 1 / -1;
+    margin: 0;
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--ink-3, var(--color-fg-muted));
   }
   .ls-tile {
     background: var(--card, var(--color-bg));
