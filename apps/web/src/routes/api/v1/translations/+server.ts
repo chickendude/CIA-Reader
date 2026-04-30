@@ -10,9 +10,16 @@ import { error, json } from '@sveltejs/kit';
 import { z } from 'zod';
 
 import { requireUser } from '$lib/server/auth/require-user.js';
+import {
+  RequestRateLimitError,
+  consumeRateLimit,
+  rateLimitHeaders,
+} from '$lib/server/auth/rate-limits.js';
 import { parseJson } from '../auth/_helpers.js';
 import {
   MAX_BODY_LEN,
+  MAX_PER_USER_PER_WINDOW,
+  WINDOW_MS,
   publicTranslation,
   submitUserTranslation,
   TranslationRateLimitError,
@@ -33,15 +40,23 @@ export const POST: RequestHandler = async (event) => {
   const input = await parseJson(event.request, body);
 
   try {
+    const requestLimit = await consumeRateLimit(event, user.id, {
+      scope: 'translations:create',
+      limit: MAX_PER_USER_PER_WINDOW,
+      windowMs: WINDOW_MS,
+    });
     const translation = await submitUserTranslation(user.id, {
       lemmaId: input.lemmaId,
       body: input.body,
       parentTranslationId: input.parentTranslationId ?? null,
       targetLanguage: input.targetLanguage,
     });
-    return json({ translation: publicTranslation(translation) }, { status: 201 });
+    return json(
+      { translation: publicTranslation(translation) },
+      { status: 201, headers: rateLimitHeaders(requestLimit) },
+    );
   } catch (err) {
-    if (err instanceof TranslationRateLimitError) {
+    if (err instanceof RequestRateLimitError || err instanceof TranslationRateLimitError) {
       return json(
         {
           error: 'rate_limited',
@@ -51,11 +66,16 @@ export const POST: RequestHandler = async (event) => {
         },
         {
           status: 429,
-          headers: {
-            'Retry-After': String(err.retryAfterSeconds),
-            'X-RateLimit-Limit': String(err.limit),
-            'X-RateLimit-Remaining': '0',
-          },
+          headers: rateLimitHeaders(
+            err instanceof RequestRateLimitError
+              ? err
+              : {
+                  limit: err.limit,
+                  remaining: 0,
+                  retryAfterSeconds: err.retryAfterSeconds,
+                  subjectType: 'user',
+                },
+          ),
         },
       );
     }

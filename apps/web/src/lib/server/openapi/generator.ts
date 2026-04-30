@@ -168,6 +168,18 @@ function responsesFor(method: string): JsonSchema {
   const responses: JsonSchema = {
     [successStatus]: {
       description: 'Successful response',
+      ...(method === 'post'
+        ? {
+            headers: {
+              'X-RateLimit-Limit': {
+                $ref: '#/components/headers/X-RateLimit-Limit',
+              },
+              'X-RateLimit-Remaining': {
+                $ref: '#/components/headers/X-RateLimit-Remaining',
+              },
+            },
+          }
+        : {}),
       content: jsonContent,
     },
     '400': { $ref: '#/components/responses/BadRequest' },
@@ -175,6 +187,9 @@ function responsesFor(method: string): JsonSchema {
     '403': { $ref: '#/components/responses/Forbidden' },
     '404': { $ref: '#/components/responses/NotFound' },
   };
+  if (method === 'post') {
+    responses['429'] = { $ref: '#/components/responses/RateLimited' };
+  }
   if (method === 'delete') {
     delete responses[successStatus];
     responses['204'] = { description: 'Deleted' };
@@ -348,6 +363,23 @@ export async function generateOpenApiDocument(): Promise<OpenApiDocument> {
             },
           },
         },
+        RateLimited: {
+          description: 'Request exceeded a per-user, per-device, or per-API-key limit',
+          headers: {
+            'Retry-After': { $ref: '#/components/headers/Retry-After' },
+            'X-RateLimit-Limit': {
+              $ref: '#/components/headers/X-RateLimit-Limit',
+            },
+            'X-RateLimit-Remaining': {
+              $ref: '#/components/headers/X-RateLimit-Remaining',
+            },
+          },
+          content: {
+            'application/json': {
+              schema: { $ref: '#/components/schemas/ErrorEnvelope' },
+            },
+          },
+        },
       },
       headers: {
         [API_DEPRECATION_HEADER]: {
@@ -356,6 +388,18 @@ export async function generateOpenApiDocument(): Promise<OpenApiDocument> {
           schema: { type: 'string' },
           example:
             'deprecated; since="2026-04-30"; sunset="2026-10-30"; replacement="/api/v2/texts"',
+        },
+        'Retry-After': {
+          description: 'Seconds to wait before retrying a rate-limited request.',
+          schema: { type: 'integer', minimum: 1 },
+        },
+        'X-RateLimit-Limit': {
+          description: 'Maximum requests permitted in the current rolling window.',
+          schema: { type: 'integer', minimum: 1 },
+        },
+        'X-RateLimit-Remaining': {
+          description: 'Requests remaining in the current rolling window.',
+          schema: { type: 'integer', minimum: 0 },
         },
       },
       schemas: {

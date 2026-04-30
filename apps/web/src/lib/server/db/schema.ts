@@ -171,6 +171,34 @@ export const personalApiKeys = pgTable(
 );
 
 /**
+ * Rolling-window API rate limit events. The subject hash is derived from the
+ * personal API key secret, per-device id, or user id; raw tokens/device ids are
+ * never stored.
+ */
+export const apiRateLimitEvents = pgTable(
+  'api_rate_limit_events',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    scope: text('scope').notNull(),
+    subjectType: text('subject_type').notNull(),
+    subjectHash: text('subject_hash').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    subjectWindowIdx: index('api_rate_limit_events_subject_window_idx').on(
+      t.scope,
+      t.subjectType,
+      t.subjectHash,
+      t.createdAt,
+    ),
+    userIdx: index('api_rate_limit_events_user_idx').on(t.userId),
+  }),
+);
+
+/**
  * Magic-link login tokens. Single-use. `id` is the SHA-256 of the token; the
  * plaintext only appears in the emailed URL.
  */
@@ -924,6 +952,7 @@ export const textChapters = pgTable(
 export type User = InferSelectModel<typeof users>;
 export type Session = InferSelectModel<typeof sessions>;
 export type PersonalApiKey = InferSelectModel<typeof personalApiKeys>;
+export type ApiRateLimitEvent = InferSelectModel<typeof apiRateLimitEvents>;
 export type RefreshToken = InferSelectModel<typeof refreshTokens>;
 export type MagicLink = InferSelectModel<typeof magicLinks>;
 export type UserLanguage = InferSelectModel<typeof userLanguages>;
