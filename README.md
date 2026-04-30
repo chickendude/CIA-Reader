@@ -36,6 +36,8 @@ That boots postgres + redis + the NLP service + the SvelteKit dev server (with h
 - NLP: http://localhost:8000 (health at `/health`)
 - Postgres: `localhost:5432` (user `ciareader`, password `ciareader`, db `ciareader`)
 - Redis: `localhost:6379`
+- API docs: http://localhost:5173/api/docs
+- API versioning policy: [docs/api-versioning.md](docs/api-versioning.md)
 
 Smoke test (proves the full pipe works):
 

@@ -12,6 +12,13 @@ import { readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import {
+  API_DEPRECATION_HEADER,
+  API_DEPRECATION_MIN_SUPPORT_MONTHS,
+  NEXT_BREAKING_API_PREFIX,
+  STABLE_API_PREFIX,
+} from '$lib/server/api-versioning.js';
+
 const HTTP_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] as const;
 type HttpMethod = (typeof HTTP_METHODS)[number];
 
@@ -26,12 +33,20 @@ export type OpenApiDocument = {
   };
   servers: Array<{ url: string; description: string }>;
   tags: Array<{ name: string; description: string }>;
+  externalDocs: { description: string; url: string };
   components: {
     securitySchemes: Record<string, JsonSchema>;
     schemas: Record<string, JsonSchema>;
     responses: Record<string, JsonSchema>;
+    headers: Record<string, JsonSchema>;
   };
   paths: Record<string, Record<string, JsonSchema>>;
+  'x-api-versioning': {
+    stablePrefix: string;
+    nextBreakingPrefix: string;
+    deprecationHeader: string;
+    minimumDeprecatedV1SupportMonths: number;
+  };
 };
 
 export type RouteOperation = {
@@ -257,6 +272,16 @@ export async function generateOpenApiDocument(): Promise<OpenApiDocument> {
       { url: '/', description: 'CIA Reader web app' },
       { url: 'http://nlp:8000', description: 'NLP service in docker compose' },
     ],
+    externalDocs: {
+      description: 'API versioning and deprecation policy',
+      url: '/docs/api-versioning.md',
+    },
+    'x-api-versioning': {
+      stablePrefix: STABLE_API_PREFIX,
+      nextBreakingPrefix: NEXT_BREAKING_API_PREFIX,
+      deprecationHeader: API_DEPRECATION_HEADER,
+      minimumDeprecatedV1SupportMonths: API_DEPRECATION_MIN_SUPPORT_MONTHS,
+    },
     tags: [
       { name: 'Auth', description: 'Login, registration, token refresh' },
       { name: 'Me', description: 'Authenticated user profile and learning data' },
@@ -315,6 +340,15 @@ export async function generateOpenApiDocument(): Promise<OpenApiDocument> {
               schema: { $ref: '#/components/schemas/ErrorEnvelope' },
             },
           },
+        },
+      },
+      headers: {
+        [API_DEPRECATION_HEADER]: {
+          description:
+            'Present on deprecated v1 routes. Includes since, sunset, and optional replacement metadata. Deprecated v1 endpoints stay supported for at least six months after the v2 replacement ships.',
+          schema: { type: 'string' },
+          example:
+            'deprecated; since="2026-04-30"; sunset="2026-10-30"; replacement="/api/v2/texts"',
         },
       },
       schemas: {
