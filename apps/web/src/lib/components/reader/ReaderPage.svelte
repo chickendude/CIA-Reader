@@ -22,9 +22,10 @@
   import { clampPage, pageCountFor, pageOffset } from './paginate.js';
   import type { ProgressAnchor } from './progress-client.js';
   import {
+    WORD_SELECTOR,
     columnIndexForElement,
     computePctRead,
-    findFirstVisibleWordAnchor,
+    findFirstWordInColumn,
     findTokenElementAtOrAfter,
   } from './reader-progress.js';
   import { classifySwipe } from './touch-gestures.js';
@@ -73,8 +74,11 @@
   let contentW = $state(0);
   let pageInChapter = $state(0);
   let initialTokenApplied = $state(false);
+  let restorePaintReady = $state(false);
   let lastReportedKey = '';
-  const isRestoringInitialToken = $derived(initialTokenIdx > 0 && !initialTokenApplied);
+  const isRestoringInitialToken = $derived(
+    initialTokenIdx > 0 && (!initialTokenApplied || !restorePaintReady),
+  );
 
   const pageCount = $derived(pageCountFor(contentW, pageW));
   const offset = $derived(pageOffset(pageInChapter, pageW));
@@ -86,6 +90,7 @@
     void initialTokenIdx;
     pageInChapter = 0;
     initialTokenApplied = false;
+    restorePaintReady = initialTokenIdx <= 0;
     lastReportedKey = '';
   });
 
@@ -242,21 +247,40 @@
 
   function applyInitialTokenPage() {
     if (initialTokenApplied || !contentEl || pageW <= 0 || pageCount <= 0) return;
-    if (initialTokenIdx > 0) {
-      const tokenEl = findTokenElementAtOrAfter(contentEl, initialTokenIdx);
-      if (tokenEl) {
-        pageInChapter = clampPage(columnIndexForElement(tokenEl, contentEl, pageW), pageCount);
-      }
+    if (initialTokenIdx <= 0) {
+      restorePaintReady = true;
+      initialTokenApplied = true;
+      return;
+    }
+    const tokenEl = findTokenElementAtOrAfter(contentEl, initialTokenIdx);
+    if (tokenEl) {
+      pageInChapter = clampPage(columnIndexForElement(tokenEl, contentEl, pageW), pageCount);
+    } else if (contentEl.querySelector(WORD_SELECTOR) == null) {
+      // The chapter body hasn't laid down word spans yet — stay
+      // masked and let the effect re-run when contentW/pageW settle
+      // again. Marking applied now would strand the user on page 0.
+      return;
     }
     initialTokenApplied = true;
+    void tick().then(() => {
+      window.requestAnimationFrame(() => {
+        restorePaintReady = true;
+      });
+    });
   }
 
   function reportProgress() {
-    if (!onProgress || !viewportEl) return;
-    const anchor = findFirstVisibleWordAnchor(viewportEl, {
-      clip: viewportEl.getBoundingClientRect(),
+    if (!onProgress || !contentEl) return;
+    // Don't fire while the viewport mask is up — the writer would
+    // see an anchor for whatever pageInChapter happens to be before
+    // applyInitialTokenPage jumps to the saved column, and on a
+    // chapter change we'd briefly mirror tokenIdx=0 to the URL.
+    if (isRestoringInitialToken) return;
+    const anchor = findFirstWordInColumn(contentEl, {
+      contentEl,
+      pageWidth: pageW,
+      pageIdx: pageInChapter,
       fallbackChapterIdx: chapterIdx,
-      minVisiblePx: 4,
     });
     if (!anchor) return;
     const next: ProgressAnchor = {

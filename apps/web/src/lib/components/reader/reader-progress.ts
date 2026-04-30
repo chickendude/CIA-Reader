@@ -8,7 +8,7 @@ export type VisibleRect = {
   bottom: number;
 };
 
-const WORD_SELECTOR = '[data-token-id][data-token-idx], .word[data-token-idx]';
+export const WORD_SELECTOR = '[data-token-id][data-token-idx], .word[data-token-idx]';
 
 function visibleSize(a: DOMRect, b: VisibleRect): { width: number; height: number } {
   return {
@@ -108,6 +108,48 @@ export function columnIndexForElement(el: Element, contentEl: Element, pageWidth
   const contentRect = contentEl.getBoundingClientRect();
   const x = Math.max(0, firstRect.left - contentRect.left);
   return Math.max(0, Math.floor((x + 1) / pageWidth));
+}
+
+export function findFirstWordInColumn(
+  root: ParentNode,
+  args: {
+    contentEl: Element;
+    pageWidth: number;
+    pageIdx: number;
+    fallbackChapterIdx: number;
+  },
+): Pick<ProgressAnchor, 'chapterIdx' | 'tokenIdx'> | null {
+  if (args.pageWidth <= 0) return null;
+  let best: {
+    chapterIdx: number;
+    tokenIdx: number;
+    top: number;
+    left: number;
+  } | null = null;
+
+  for (const el of Array.from(root.querySelectorAll<HTMLElement>(WORD_SELECTOR))) {
+    const rawTokenIdx = el.dataset.tokenIdx;
+    if (rawTokenIdx == null) continue;
+    const tokenIdx = Number.parseInt(rawTokenIdx, 10);
+    if (!Number.isFinite(tokenIdx)) continue;
+    if (columnIndexForElement(el, args.contentEl, args.pageWidth) !== args.pageIdx) {
+      continue;
+    }
+
+    const rawChapterIdx = el.closest<HTMLElement>('[data-chapter-idx]')?.dataset.chapterIdx;
+    const chapterIdx =
+      rawChapterIdx == null ? args.fallbackChapterIdx : Number.parseInt(rawChapterIdx, 10);
+    if (!Number.isFinite(chapterIdx)) continue;
+
+    const rect = el.getClientRects()[0] ?? el.getBoundingClientRect();
+    const top = rect.top;
+    const left = rect.left;
+    if (!best || top < best.top || (top === best.top && left < best.left)) {
+      best = { chapterIdx, tokenIdx, top, left };
+    }
+  }
+
+  return best ? { chapterIdx: best.chapterIdx, tokenIdx: best.tokenIdx } : null;
 }
 
 export function computePctRead(

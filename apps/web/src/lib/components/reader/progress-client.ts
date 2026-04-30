@@ -7,8 +7,8 @@
  * has actually changed since the last one.
  *
  * Anonymous viewers of an official text don't have a user_id row to
- * write against; the reader gates calls behind `isOwner` (the only
- * case we currently track progress for) before invoking this.
+ * write against; the reader gates calls behind `canPersistSettings`
+ * before invoking this.
  */
 
 const DEBOUNCE_MS = 1500;
@@ -17,6 +17,15 @@ export type ProgressAnchor = {
   chapterIdx: number;
   tokenIdx: number;
   pctRead: number;
+};
+
+export type ProgressFlushOptions = {
+  /**
+   * Use the browser's keepalive request path. This is important for
+   * pagehide / refresh, where a normal async fetch is commonly
+   * cancelled before the PATCH reaches the server.
+   */
+  keepalive?: boolean;
 };
 
 export class ProgressWriter {
@@ -40,7 +49,7 @@ export class ProgressWriter {
   }
 
   /** Force-flush any pending anchor immediately (e.g. on page hide). */
-  async flush(): Promise<void> {
+  async flush(opts: ProgressFlushOptions = {}): Promise<void> {
     if (this.timer) {
       clearTimeout(this.timer);
       this.timer = null;
@@ -63,6 +72,7 @@ export class ProgressWriter {
         method: 'PATCH',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify(next),
+        keepalive: opts.keepalive === true,
       });
     } catch {
       // Network blips: drop silently. The next debounced flush

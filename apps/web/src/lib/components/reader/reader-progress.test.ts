@@ -4,6 +4,7 @@ import {
   columnIndexForElement,
   computePctRead,
   findFirstVisibleWordAnchor,
+  findFirstWordInColumn,
   findTokenElementAtOrAfter,
   firstTokenPage,
 } from './reader-progress.js';
@@ -102,6 +103,51 @@ describe('reader progress helpers', () => {
     expect(columnIndexForElement(el, content, 300)).toBe(2);
   });
 
+  it('finds the first word in a paginated column without relying on transform visibility', () => {
+    const content = document.createElement('div');
+    content.getBoundingClientRect = () => rect(0, 20, 400, 420);
+    const first = word(8, rect(40, 330, 60, 380), { tokenId: 'a' });
+    const second = word(12, rect(20, 625, 40, 700), { tokenId: 'b' });
+    const third = word(13, rect(80, 625, 100, 700), { tokenId: 'c' });
+    first.getClientRects = () =>
+      ({
+        0: rect(40, 330, 60, 380),
+        length: 1,
+        item: (idx: number) => (idx === 0 ? rect(40, 330, 60, 380) : null),
+        [Symbol.iterator]: function* () {
+          yield rect(40, 330, 60, 380);
+        },
+      }) as DOMRectList;
+    second.getClientRects = () =>
+      ({
+        0: rect(20, 625, 40, 700),
+        length: 1,
+        item: (idx: number) => (idx === 0 ? rect(20, 625, 40, 700) : null),
+        [Symbol.iterator]: function* () {
+          yield rect(20, 625, 40, 700);
+        },
+      }) as DOMRectList;
+    third.getClientRects = () =>
+      ({
+        0: rect(80, 625, 100, 700),
+        length: 1,
+        item: (idx: number) => (idx === 0 ? rect(80, 625, 100, 700) : null),
+        [Symbol.iterator]: function* () {
+          yield rect(80, 625, 100, 700);
+        },
+      }) as DOMRectList;
+    content.append(first, third, second);
+
+    expect(
+      findFirstWordInColumn(content, {
+        contentEl: content,
+        pageWidth: 300,
+        pageIdx: 2,
+        fallbackChapterIdx: 3,
+      }),
+    ).toEqual({ chapterIdx: 3, tokenIdx: 12 });
+  });
+
   it('maps a saved token to the first paged-scroll page that contains it', () => {
     const pages = [
       [[{ idx: 2, isWord: true }], [{ idx: 5, isWord: true }]],
@@ -121,5 +167,59 @@ describe('reader progress helpers', () => {
 
     expect(computePctRead(chapters, 1, 10)).toBe(50);
     expect(computePctRead(chapters, 1, 10, { completedText: true })).toBe(100);
+  });
+
+  it('returns null when the target column has no words (still-laying-out case)', () => {
+    const content = document.createElement('div');
+    content.getBoundingClientRect = () => rect(0, 20, 400, 420);
+    // Both words sit in column 0 — the saved page is column 5.
+    const a = word(1, rect(20, 20, 40, 60), { tokenId: 'a' });
+    const b = word(2, rect(40, 20, 60, 80), { tokenId: 'b' });
+    a.getClientRects = () =>
+      ({
+        0: rect(20, 20, 40, 60),
+        length: 1,
+        item: (i: number) => (i === 0 ? rect(20, 20, 40, 60) : null),
+        [Symbol.iterator]: function* () {
+          yield rect(20, 20, 40, 60);
+        },
+      }) as DOMRectList;
+    b.getClientRects = () =>
+      ({
+        0: rect(40, 20, 60, 80),
+        length: 1,
+        item: (i: number) => (i === 0 ? rect(40, 20, 60, 80) : null),
+        [Symbol.iterator]: function* () {
+          yield rect(40, 20, 60, 80);
+        },
+      }) as DOMRectList;
+    content.append(a, b);
+
+    expect(
+      findFirstWordInColumn(content, {
+        contentEl: content,
+        pageWidth: 300,
+        pageIdx: 5,
+        fallbackChapterIdx: 0,
+      }),
+    ).toBeNull();
+  });
+
+  it('returns null when called with a zero pageWidth (pre-measure)', () => {
+    const content = document.createElement('div');
+    expect(
+      findFirstWordInColumn(content, {
+        contentEl: content,
+        pageWidth: 0,
+        pageIdx: 0,
+        fallbackChapterIdx: 0,
+      }),
+    ).toBeNull();
+  });
+
+  it('findTokenElementAtOrAfter returns null when no token is at or past the saved index', () => {
+    const root = document.createElement('article');
+    root.append(word(3, rect(0, 0, 1, 1)), word(7, rect(0, 0, 1, 1)));
+    expect(findTokenElementAtOrAfter(root, 99)).toBeNull();
   });
 });
