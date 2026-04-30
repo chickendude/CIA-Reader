@@ -18,7 +18,7 @@
  * follow-up. The schema is shaped so that change is a resolver-only
  * change with no migration.
  */
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, eq, inArray, isNull } from 'drizzle-orm';
 
 import { db, schema } from './db/index.js';
 import type {
@@ -242,6 +242,12 @@ export async function createPhrase(
  */
 export async function getPhrase(
   id: string,
+  options: {
+    /** T-14.7: when set true, the loader returns hidden phrases
+     *  too (used by the curator editor in T-14.4a). Default
+     *  false — anonymous + user views never see a hidden phrase. */
+    includeHidden?: boolean;
+  } = {},
 ): Promise<{
   phrase: Phrase;
   tokens: PhraseToken[];
@@ -253,6 +259,10 @@ export async function getPhrase(
     .where(eq(schema.phrases.id, id))
     .limit(1)) as Phrase[];
   if (!phrase) return null;
+  // T-14.7: hidden gate. For default (non-curator) callers,
+  // treat a hidden phrase as if it didn't exist so the
+  // moderation surface stays clean.
+  if (phrase.hidden && !options.includeHidden) return null;
 
   const tokens = (await db
     .select()
@@ -426,9 +436,432 @@ export function publicPhrase(phrase: Phrase, tokens: PhraseToken[]) {
     source: phrase.source,
     sourceAttribution: phrase.sourceAttribution,
     curatorLocked: phrase.curatorLocked,
+    hidden: phrase.hidden,
     createdAt: phrase.createdAt,
     updatedAt: phrase.updatedAt,
   };
+}
+
+// -----------------------------------------------------------------------
+// Curator merge + moderation (T-14.7).
+// -----------------------------------------------------------------------
+
+/**
+ * Status precedence for `mergePhrases`. When the merge collapses
+ * two `user_known_phrases` rows pointing at the dropped phrase
+ * and the kept phrase, the higher status wins so a learner who
+ * marked the dropped phrase 'known' doesn't accidentally lose
+ * their progress to a 'learning' on the keep side.
+ *
+ * Order matches the lemma-side merge convention from T-3.7.
+ */
+const STATUS_RANK: Record<'unknown' | 'learning' | 'known' | 'ignored', number> = {
+  unknown: 0,
+  learning: 1,
+  ignored: 2,
+  known: 3,
+};
+
+function pickHigherStatus(
+  a: 'unknown' | 'learning' | 'known' | 'ignored',
+  b: 'unknown' | 'learning' | 'known' | 'ignored',
+): 'unknown' | 'learning' | 'known' | 'ignored' {
+  return STATUS_RANK[a] >= STATUS_RANK[b] ? a : b;
+}
+
+export type MergePhrasesInput = {
+  /** The phrase that survives — translations / spans / status all
+   *  reassign onto this id. */
+  keepId: string;
+  /** The phrase whose rows move onto `keepId` and whose row is
+   *  deleted at the end. */
+  dropId: string;
+  /** Curator / admin performing the merge. Drives the audit row's
+   *  `editor_id`; the same user must have authority over the
+   *  language at the endpoint layer. */
+  performedBy: string;
+  /** Required curator-edit reason — soft "why" string passed
+   *  through to the audit log. */
+  reason: string;
+};
+
+export type MergePhrasesResult = {
+  keptPhrase: Phrase;
+  droppedPhrase: Phrase;
+  /** Counts the merge moved over. The endpoint surfaces these so
+   *  the curator UI can show a confirmation toast. */
+  moved: {
+    translations: number;
+    spans: number;
+    knownPhraseRows: number;
+  };
+};
+
+export class PhraseMergeMismatchError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'PhraseMergeMismatchError';
+  }
+}
+
+/**
+ * Merge two duplicate phrases. Reassigns every per-phrase row
+ * (`translations` polymorphic targets, `phrase_chapter_spans`,
+ * `user_known_phrases`) from `dropId` onto `keepId`, deletes the
+ * dropped phrase row, and writes one audit row on each side
+ * (the `phrase_merge` change type carries direction-specific
+ * payloads so a future revert can reconstruct).
+ *
+ * Validation:
+ *  - Both phrases must exist.
+ *  - Both phrases must share `language` and `surface_normalised` —
+ *    cross-language or cross-surface merges go through a separate
+ *    "consolidate variants" flow that doesn't ship in T-14.7.
+ *  - `keepId !== dropId`.
+ *
+ * Conflict resolution:
+ *  - `user_known_phrases` collisions: the higher status wins
+ *    (`known` > `ignored` > `learning` > `unknown`).
+ *  - `phrase_chapter_spans` collisions are dropped silently
+ *    (the kept phrase already covers that occurrence).
+ */
+export async function mergePhrases(
+  input: MergePhrasesInput,
+  now: Date = new Date(),
+): Promise<MergePhrasesResult> {
+  if (input.keepId === input.dropId) {
+    throw new PhraseMergeMismatchError(
+      'keepId and dropId must be different phrases',
+    );
+  }
+
+  const [keep] = (await db
+    .select()
+    .from(schema.phrases)
+    .where(eq(schema.phrases.id, input.keepId))
+    .limit(1)) as Phrase[];
+  if (!keep) {
+    throw new PhraseValidationError(
+      `Phrase ${input.keepId} not found`,
+      404,
+    );
+  }
+  const [drop] = (await db
+    .select()
+    .from(schema.phrases)
+    .where(eq(schema.phrases.id, input.dropId))
+    .limit(1)) as Phrase[];
+  if (!drop) {
+    throw new PhraseValidationError(
+      `Phrase ${input.dropId} not found`,
+      404,
+    );
+  }
+
+  if (keep.language !== drop.language) {
+    throw new PhraseMergeMismatchError(
+      `Cannot merge phrases across languages (${keep.language} vs ${drop.language})`,
+    );
+  }
+  if (keep.surfaceNormalised !== drop.surfaceNormalised) {
+    throw new PhraseMergeMismatchError(
+      'Cannot merge phrases whose surface_normalised differs — use the variants flow',
+    );
+  }
+
+  // ---- 1. Reassign translations.target_id (target_type='phrase').
+  // The polymorphic columns are the canonical join key; lemma_id
+  // stays untouched (phrase-target rows have it null already).
+  const translationsBefore = (await db
+    .select({ id: schema.translations.id })
+    .from(schema.translations)
+    .where(
+      and(
+        eq(schema.translations.targetType, 'phrase'),
+        eq(schema.translations.targetId, input.dropId),
+      ),
+    )) as Array<{ id: string }>;
+
+  if (translationsBefore.length > 0) {
+    await db
+      .update(schema.translations)
+      .set({ targetId: input.keepId, updatedAt: now })
+      .where(
+        and(
+          eq(schema.translations.targetType, 'phrase'),
+          eq(schema.translations.targetId, input.dropId),
+        ),
+      );
+  }
+
+  // ---- 2. Reassign phrase_chapter_spans.
+  // Drop side may overlap with keep side at the same
+  // `(chapter_id, start_token_idx)` — pull both sets and keep
+  // only the deltas to avoid a PK collision.
+  const dropSpans = (await db
+    .select()
+    .from(schema.phraseChapterSpans)
+    .where(eq(schema.phraseChapterSpans.phraseId, input.dropId))) as Array<{
+    chapterId: string;
+    startTokenIdx: number;
+    endTokenIdx: number;
+    phraseId: string;
+  }>;
+  let spansMoved = 0;
+  if (dropSpans.length > 0) {
+    const keepSpans = (await db
+      .select({
+        chapterId: schema.phraseChapterSpans.chapterId,
+        startTokenIdx: schema.phraseChapterSpans.startTokenIdx,
+      })
+      .from(schema.phraseChapterSpans)
+      .where(eq(schema.phraseChapterSpans.phraseId, input.keepId))) as Array<{
+      chapterId: string;
+      startTokenIdx: number;
+    }>;
+    const keepKey = new Set(
+      keepSpans.map((s) => `${s.chapterId}:${s.startTokenIdx}`),
+    );
+    const moveable = dropSpans.filter(
+      (s) => !keepKey.has(`${s.chapterId}:${s.startTokenIdx}`),
+    );
+    if (moveable.length > 0) {
+      await db
+        .update(schema.phraseChapterSpans)
+        .set({ phraseId: input.keepId })
+        .where(
+          and(
+            eq(schema.phraseChapterSpans.phraseId, input.dropId),
+            inArray(
+              schema.phraseChapterSpans.chapterId,
+              moveable.map((s) => s.chapterId),
+            ),
+          ),
+        );
+      spansMoved = moveable.length;
+    }
+    // Any remaining drop-side spans (those that collided with keep
+    // spans on the same start) are deleted by the cascade when
+    // the dropped phrase row is removed below.
+  }
+
+  // ---- 3. Reassign user_known_phrases.
+  // For collisions the higher status wins; for non-collisions
+  // we update the row's phrase_id pointer.
+  const dropStatusRows = (await db
+    .select()
+    .from(schema.userKnownPhrases)
+    .where(eq(schema.userKnownPhrases.phraseId, input.dropId))) as Array<{
+    userId: string;
+    phraseId: string;
+    status: 'unknown' | 'learning' | 'known' | 'ignored';
+    updatedAt: Date;
+  }>;
+  let knownRowsMoved = 0;
+  for (const row of dropStatusRows) {
+    const [collision] = (await db
+      .select()
+      .from(schema.userKnownPhrases)
+      .where(
+        and(
+          eq(schema.userKnownPhrases.userId, row.userId),
+          eq(schema.userKnownPhrases.phraseId, input.keepId),
+        ),
+      )
+      .limit(1)) as Array<{
+      userId: string;
+      status: 'unknown' | 'learning' | 'known' | 'ignored';
+    }>;
+    if (collision) {
+      const next = pickHigherStatus(collision.status, row.status);
+      if (next !== collision.status) {
+        await db
+          .update(schema.userKnownPhrases)
+          .set({ status: next, updatedAt: now })
+          .where(
+            and(
+              eq(schema.userKnownPhrases.userId, row.userId),
+              eq(schema.userKnownPhrases.phraseId, input.keepId),
+            ),
+          );
+      }
+      // Drop side row is removed by the cascade when we delete
+      // the dropped phrase below.
+    } else {
+      await db
+        .update(schema.userKnownPhrases)
+        .set({ phraseId: input.keepId, updatedAt: now })
+        .where(
+          and(
+            eq(schema.userKnownPhrases.userId, row.userId),
+            eq(schema.userKnownPhrases.phraseId, input.dropId),
+          ),
+        );
+      knownRowsMoved += 1;
+    }
+  }
+
+  // ---- 4. Bump kept phrase's updated_at so caches invalidate.
+  const [kept] = (await db
+    .update(schema.phrases)
+    .set({ updatedAt: now })
+    .where(eq(schema.phrases.id, input.keepId))
+    .returning()) as Phrase[];
+
+  // ---- 5. Delete dropped phrase. Cascading FKs clean up any
+  // remaining rows on `phrase_tokens`, leftover collision rows
+  // on `phrase_chapter_spans`, and `user_known_phrases`.
+  await db.delete(schema.phrases).where(eq(schema.phrases.id, input.dropId));
+
+  // ---- 6. Audit rows on both sides — see audit.ts for the
+  // change-type enum extension.
+  const { recordPhraseEdit } = await import('./dictionary/audit.js');
+  await recordPhraseEdit({
+    phraseId: input.keepId,
+    editorId: input.performedBy,
+    changeType: 'phrase_merge',
+    change: {
+      direction: 'winner',
+      mergedFrom: {
+        id: drop.id,
+        surfaceNormalised: drop.surfaceNormalised,
+        source: drop.source,
+        sourceAttribution: drop.sourceAttribution,
+      },
+      translationIds: translationsBefore.map((t) => t.id),
+    },
+    reason: input.reason,
+  });
+  // The "loser" row in lemma_edit_history still references the
+  // now-deleted phrase via its phrase_id FK — that FK is
+  // ON DELETE CASCADE, but we record the loser audit *before*
+  // deletion is cascaded so curators can see the merge from
+  // either side. Drizzle's delete in step 5 is a separate
+  // statement; the audit insert succeeds because we run it after
+  // the kept-side audit but referencing the dropped phrase id
+  // would FK-fail. Instead we record the loser-side audit on the
+  // *kept* phrase too with `direction: 'loser'`, so both rows
+  // reference the surviving phrase and the audit reader can group
+  // by the kept phrase's id to see "this row absorbed that one".
+  await recordPhraseEdit({
+    phraseId: input.keepId,
+    editorId: input.performedBy,
+    changeType: 'phrase_merge',
+    change: {
+      direction: 'loser',
+      translationIds: translationsBefore.map((t) => t.id),
+    },
+    reason: input.reason,
+  });
+
+  return {
+    keptPhrase: kept ?? keep,
+    droppedPhrase: drop,
+    moved: {
+      translations: translationsBefore.length,
+      spans: spansMoved,
+      knownPhraseRows: knownRowsMoved,
+    },
+  };
+}
+
+/**
+ * Toggle the `hidden` moderation flag on a phrase. Hidden
+ * phrases stay visible to curators / admins (so they can review
+ * + unhide) but disappear from anonymous and user views. T-14.4
+ * popup `getPhrase` already filters `phrases.hidden=false` for
+ * its translations payload — endpoints layered on top of this
+ * service apply the same filter for the phrase row itself.
+ */
+export async function setPhraseHidden(args: {
+  phraseId: string;
+  hidden: boolean;
+  editorId: string;
+  reason: string;
+  now?: Date;
+}): Promise<Phrase> {
+  const now = args.now ?? new Date();
+  const [existing] = (await db
+    .select()
+    .from(schema.phrases)
+    .where(eq(schema.phrases.id, args.phraseId))
+    .limit(1)) as Phrase[];
+  if (!existing) {
+    throw new PhraseValidationError(
+      `Phrase ${args.phraseId} not found`,
+      404,
+    );
+  }
+  if (existing.hidden === args.hidden) return existing;
+
+  const [updated] = (await db
+    .update(schema.phrases)
+    .set({ hidden: args.hidden, updatedAt: now })
+    .where(eq(schema.phrases.id, args.phraseId))
+    .returning()) as Phrase[];
+  if (!updated) throw new Error('Failed to set hidden flag');
+
+  const { recordPhraseEdit } = await import('./dictionary/audit.js');
+  await recordPhraseEdit({
+    phraseId: args.phraseId,
+    editorId: args.editorId,
+    changeType: args.hidden ? 'phrase_hide' : 'phrase_unhide',
+    change: {
+      before: { hidden: existing.hidden },
+      after: { hidden: args.hidden },
+    },
+    reason: args.reason,
+  });
+  return updated;
+}
+
+/**
+ * Toggle the `curator_locked` flag on a phrase, parallel to the
+ * lemma-side lock from T-3.7. A locked phrase is skipped by the
+ * import path — neither user submissions nor T-14.5a's NLP
+ * promotion can clobber its gloss / frequency / source after a
+ * human has approved it.
+ */
+export async function setPhraseLocked(args: {
+  phraseId: string;
+  locked: boolean;
+  editorId: string;
+  reason: string;
+  now?: Date;
+}): Promise<Phrase> {
+  const now = args.now ?? new Date();
+  const [existing] = (await db
+    .select()
+    .from(schema.phrases)
+    .where(eq(schema.phrases.id, args.phraseId))
+    .limit(1)) as Phrase[];
+  if (!existing) {
+    throw new PhraseValidationError(
+      `Phrase ${args.phraseId} not found`,
+      404,
+    );
+  }
+  if (existing.curatorLocked === args.locked) return existing;
+
+  const [updated] = (await db
+    .update(schema.phrases)
+    .set({ curatorLocked: args.locked, updatedAt: now })
+    .where(eq(schema.phrases.id, args.phraseId))
+    .returning()) as Phrase[];
+  if (!updated) throw new Error('Failed to set lock flag');
+
+  const { recordPhraseEdit } = await import('./dictionary/audit.js');
+  await recordPhraseEdit({
+    phraseId: args.phraseId,
+    editorId: args.editorId,
+    changeType: args.locked ? 'phrase_lock' : 'phrase_unlock',
+    change: {
+      before: { curatorLocked: existing.curatorLocked },
+      after: { curatorLocked: args.locked },
+    },
+    reason: args.reason,
+  });
+  return updated;
 }
 
 // Suppress a noisy unused-import warning when only the typecheck

@@ -428,6 +428,13 @@ export const phrases = pgTable(
     sourceAttribution: text('source_attribution'),
     sourceId: text('source_id'),
     curatorLocked: boolean('curator_locked').notNull().default(false),
+    // T-14.7: moderation flag mirroring the lemma-side translation
+    // hidden bit. A `hidden` phrase is invisible to anonymous and
+    // user-role viewers but still visible to curators / admins so
+    // they can review and unhide. Used both for spam mitigation
+    // and for taking down NLP-promoted phrases that turn out to
+    // be noise.
+    hidden: boolean('hidden').notNull().default(false),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
@@ -666,15 +673,32 @@ export const lemmaEditChangeType = pgEnum('lemma_edit_change_type', [
   // corresponding `after` snapshot so the audit can reconstruct either
   // state.
   'translation_reorder',
+  // T-14.7: phrase-side audit rows ride on the same table — the
+  // `lemma_edit_history` row gets `phrase_id` set instead of
+  // `lemma_id`. Rationale in the table comment below.
+  'phrase_update',
+  'phrase_lock',
+  'phrase_unlock',
+  'phrase_hide',
+  'phrase_unhide',
+  'phrase_merge',
 ]);
 
 export const lemmaEditHistory = pgTable(
   'lemma_edit_history',
   {
     id: uuid('id').primaryKey().defaultRandom(),
-    lemmaId: uuid('lemma_id')
-      .notNull()
-      .references(() => lemmas.id, { onDelete: 'cascade' }),
+    // T-14.7: nullable as of M14 so phrase audit rows live in the
+    // same table without a parallel `phrase_edit_history`. Each
+    // row sets exactly one of `lemmaId` / `phraseId` (enforced
+    // via CHECK in migration 0028); the change-type enum tells
+    // the audit reader which side to interpret.
+    lemmaId: uuid('lemma_id').references(() => lemmas.id, {
+      onDelete: 'cascade',
+    }),
+    phraseId: uuid('phrase_id').references(() => phrases.id, {
+      onDelete: 'cascade',
+    }),
     editorId: uuid('editor_id').references(() => users.id, { onDelete: 'set null' }),
     changeType: lemmaEditChangeType('change_type').notNull(),
     change: jsonb('change').$type<LemmaEditChangePayload>().notNull(),
@@ -683,6 +707,9 @@ export const lemmaEditHistory = pgTable(
   },
   (t) => ({
     lemmaIdx: index('lemma_edit_history_lemma_idx').on(t.lemmaId, t.createdAt),
+    // T-14.7: parallel index for phrase audit lookups so
+    // `selectPhraseHistory(phraseId)` is one indexed scan.
+    phraseIdx: index('lemma_edit_history_phrase_idx').on(t.phraseId, t.createdAt),
     editorIdx: index('lemma_edit_history_editor_idx').on(t.editorId),
   }),
 );

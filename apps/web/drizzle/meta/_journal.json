@@ -211,6 +211,13 @@
       "when": 1777516696178,
       "tag": "0029_massive_vulcan",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1777550228830,
+      "tag": "0030_worthless_expediter",
+      "breakpoints": true
     }
   ]
 }
