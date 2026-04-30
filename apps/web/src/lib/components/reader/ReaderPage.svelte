@@ -22,6 +22,7 @@
   import { clampPage, pageCountFor, pageOffset } from './paginate.js';
   import type { ProgressAnchor } from './progress-client.js';
   import {
+    columnIndexForElement,
     computePctRead,
     findFirstVisibleWordAnchor,
     findTokenElementAtOrAfter,
@@ -73,6 +74,7 @@
   let pageInChapter = $state(0);
   let initialTokenApplied = $state(false);
   let lastReportedKey = '';
+  const isRestoringInitialToken = $derived(initialTokenIdx > 0 && !initialTokenApplied);
 
   const pageCount = $derived(pageCountFor(contentW, pageW));
   const offset = $derived(pageOffset(pageInChapter, pageW));
@@ -240,14 +242,13 @@
 
   function applyInitialTokenPage() {
     if (initialTokenApplied || !contentEl || pageW <= 0 || pageCount <= 0) return;
+    if (initialTokenIdx > 0) {
+      const tokenEl = findTokenElementAtOrAfter(contentEl, initialTokenIdx);
+      if (tokenEl) {
+        pageInChapter = clampPage(columnIndexForElement(tokenEl, contentEl, pageW), pageCount);
+      }
+    }
     initialTokenApplied = true;
-    if (initialTokenIdx <= 0) return;
-    const tokenEl = findTokenElementAtOrAfter(contentEl, initialTokenIdx);
-    if (!tokenEl) return;
-    const tokenRect = tokenEl.getBoundingClientRect();
-    const contentRect = contentEl.getBoundingClientRect();
-    const page = Math.floor(Math.max(0, tokenRect.left - contentRect.left) / pageW);
-    pageInChapter = clampPage(page, pageCount);
   }
 
   function reportProgress() {
@@ -255,6 +256,7 @@
     const anchor = findFirstVisibleWordAnchor(viewportEl, {
       clip: viewportEl.getBoundingClientRect(),
       fallbackChapterIdx: chapterIdx,
+      minVisiblePx: 4,
     });
     if (!anchor) return;
     const next: ProgressAnchor = {
@@ -316,8 +318,16 @@
   </button>
 
   <div class="reader-page-viewport">
-    <div class="reader-page-window" bind:this={viewportEl}>
-      <div class="reader-page-track" style:transform="translateX(-{offset}px)">
+    <div
+      class="reader-page-window"
+      bind:this={viewportEl}
+      data-restoring={isRestoringInitialToken ? '1' : undefined}
+    >
+      <div
+        class="reader-page-track"
+        style:transform="translateX(-{offset}px)"
+        data-restoring={isRestoringInitialToken ? '1' : undefined}
+      >
         <div class="reader-page-content" bind:this={contentEl}>
           {#if current}
             <header class="chapter-h">
@@ -403,6 +413,9 @@
     overflow: hidden;
     position: relative;
   }
+  .reader-page-window[data-restoring='1'] {
+    opacity: 0;
+  }
 
   /* The track is the transform target. We can't translateX a CSS
      multicolumn container directly — Blink renders fragmented column
@@ -413,6 +426,9 @@
     height: 100%;
     transition: transform 200ms ease;
     will-change: transform;
+  }
+  .reader-page-track[data-restoring='1'] {
+    transition: none;
   }
 
   /* Horizontal pagination via CSS multi-column. The content element

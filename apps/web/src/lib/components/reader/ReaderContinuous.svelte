@@ -97,6 +97,10 @@
   let rootEl: HTMLElement | null = $state(null);
   let lastReportedKey = '';
   let reportRaf = 0;
+  let initialAnchorApplied = $state(false);
+  const isRestoringInitialAnchor = $derived(
+    (initialChapterIdx > 0 || initialTokenIdx > 0) && !initialAnchorApplied,
+  );
 
   function bindSection(node: HTMLElement, idx: number) {
     sectionRefs.set(idx, node);
@@ -109,7 +113,10 @@
 
   function scrollToInitialAnchor() {
     const section = sectionRefs.get(initialChapterIdx);
-    if (!section) return;
+    if (!section) {
+      initialAnchorApplied = true;
+      return;
+    }
     const tokenEl =
       initialTokenIdx > 0 ? findTokenElementAtOrAfter(section, initialTokenIdx) : null;
     const target = tokenEl ?? section;
@@ -118,6 +125,7 @@
       top: Math.max(0, window.scrollY + rect.top - readerTopInset()),
       behavior: 'auto',
     });
+    initialAnchorApplied = true;
   }
 
   function isAtDocumentEnd(): boolean {
@@ -130,6 +138,7 @@
     if (!onProgress || !rootEl) return;
     const anchor = findFirstVisibleWordAnchor(rootEl, {
       clip: readableRect(rootEl),
+      minVisiblePx: 4,
     });
     if (!anchor) return;
     const next: ProgressAnchor = {
@@ -201,6 +210,7 @@
   class="reader-continuous"
   data-mode="continuous"
   data-initial-chapter={initialChapterIdx}
+  data-restoring={isRestoringInitialAnchor ? '1' : undefined}
   bind:this={rootEl}
 >
   {#each renderedChapters as chapter (chapter.id)}
@@ -230,6 +240,9 @@
     font-size: var(--reader-font-size, 1.1rem);
     line-height: var(--reader-line-height, 2);
     color: var(--ink, var(--color-fg));
+  }
+  .reader-continuous[data-restoring='1'] {
+    opacity: 0;
   }
   section {
     margin: 1.5rem 0;
