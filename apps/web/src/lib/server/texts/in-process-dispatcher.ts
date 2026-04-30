@@ -52,6 +52,7 @@ import {
   markTextReady,
   type JobDispatcher,
 } from './jobs.js';
+import { rebuildChapterSpans } from './phrase-spans.js';
 
 type LemmaIndex = {
   /** `${headword} ${pos}` → id. Strict-POS lookup. */
@@ -359,6 +360,14 @@ async function processChapter(
   for (let off = 0; off < rows.length; off += BATCH) {
     await db.insert(schema.textTokens).values(rows.slice(off, off + BATCH));
   }
+  // T-14.2: rebuild `phrase_chapter_spans` now that the chapter's
+  // text_tokens are in place. Failures bubble up so a span-resolver
+  // crash flips the text to 'failed' rather than leaving it
+  // half-indexed.
+  await rebuildChapterSpans({
+    chapterId: chapter.id,
+    language,
+  });
   return rows.length;
 }
 
