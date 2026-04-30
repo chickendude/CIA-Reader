@@ -31,13 +31,15 @@ describe('LazyTokenLoader', () => {
       .mockImplementation(async (_textId, idx) => ({
         chapterId: `c-${idx}`,
         chapterIdx: idx,
+        body: `body ${idx}`,
         tokens: fakeTokens(2),
       }));
     const loader = new LazyTokenLoader('text-1', fetcher);
     const a = await loader.load(2);
     const b = await loader.load(2);
-    expect(a).toHaveLength(2);
-    expect(b).toBe(a);
+    expect(a.tokens).toHaveLength(2);
+    expect(a.body).toBe('body 2');
+    expect(b).toEqual(a);
     expect(fetcher).toHaveBeenCalledTimes(1);
   });
 
@@ -50,10 +52,11 @@ describe('LazyTokenLoader', () => {
     const loader = new LazyTokenLoader('t1', fetcher);
     const p1 = loader.load(1);
     const p2 = loader.load(1);
-    resolveFn!({ chapterId: 'c1', chapterIdx: 1, tokens: null });
+    resolveFn!({ chapterId: 'c1', chapterIdx: 1, body: 'body 1', tokens: null });
     const [a, b] = await Promise.all([p1, p2]);
-    expect(a).toBeNull();
-    expect(b).toBeNull();
+    expect(a.tokens).toBeNull();
+    expect(a.body).toBe('body 1');
+    expect(b).toEqual(a);
     expect(fetcher).toHaveBeenCalledTimes(1);
   });
 
@@ -82,10 +85,20 @@ describe('LazyTokenLoader', () => {
     const fetcher = vi.fn().mockResolvedValue({
       chapterId: 'c1',
       chapterIdx: 1,
+      body: 'fallback body',
       tokens: null,
     });
     const loader = new LazyTokenLoader('t1', fetcher);
-    expect(await loader.load(1)).toBeNull();
-    expect(loader.state(1)).toEqual({ kind: 'loaded', tokens: null });
+    expect(await loader.load(1)).toMatchObject({
+      body: 'fallback body',
+      tokens: null,
+    });
+    expect(loader.state(1)).toEqual({
+      kind: 'loaded',
+      chapterId: 'c1',
+      chapterIdx: 1,
+      body: 'fallback body',
+      tokens: null,
+    });
   });
 });

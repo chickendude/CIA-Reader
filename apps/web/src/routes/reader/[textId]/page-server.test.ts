@@ -4,6 +4,11 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import {
+  MOBILE_RESPONSE_BUDGET_BYTES,
+  jsonPayloadBytes,
+} from '$lib/server/payload-budget.js';
+
 const getReadableText = vi.fn();
 const loadChapterTokens = vi.fn();
 
@@ -373,8 +378,10 @@ describe('/reader/[textId] loader', () => {
     });
     loadChapterTokens.mockResolvedValueOnce([tokenRow('t0', 0)]);
     const data = (await callLoad(`http://x/reader/${VALID_ID}`)) as {
-      chapters: Array<{ id: string; tokens: unknown }>;
+      chapters: Array<{ id: string; body: string | null; tokens: unknown }>;
     };
+    expect(data.chapters[0]!.body).toBe('पाठ');
+    expect(data.chapters[1]!.body).toBeNull();
     expect(data.chapters[0]!.tokens).toHaveLength(1);
     expect(data.chapters[1]!.tokens).toBeNull();
     expect(data.chapters[2]!.tokens).toBeNull();
@@ -382,6 +389,29 @@ describe('/reader/[textId] loader', () => {
     // siblings get filled in client-side via the lazy-load endpoint.
     expect(loadChapterTokens).toHaveBeenCalledTimes(1);
     expect(loadChapterTokens).toHaveBeenCalledWith('c0', USER.id);
+  });
+
+  it('keeps sibling chapter bodies out of the SSR payload for mobile (T-12.5)', async () => {
+    const longBody = 'x'.repeat(30_000);
+    const fixture = ownedTextWithChapters(5);
+    getReadableText.mockResolvedValueOnce({
+      ...fixture,
+      chapters: fixture.chapters.map((chapter) => ({
+        ...chapter,
+        body: longBody,
+        tokenCount: 10_000,
+      })),
+    });
+
+    const data = (await callLoad(`http://x/reader/${VALID_ID}`)) as {
+      chapters: Array<{ body: string | null; tokens: unknown }>;
+    };
+
+    expect(data.chapters[0]!.body).toHaveLength(30_000);
+    expect(data.chapters.slice(1).every((chapter) => chapter.body === null)).toBe(
+      true,
+    );
+    expect(jsonPayloadBytes(data)).toBeLessThan(MOBILE_RESPONSE_BUDGET_BYTES);
   });
 
   it('lazy-loads only the requested chapter when ?chapter=N is set (T-5.1a)', async () => {

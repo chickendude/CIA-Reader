@@ -26,6 +26,27 @@ export type LanguageStats = {
   encounteredCount: number;
 };
 
+export const STATS_DEFAULT_PAGE_SIZE = 50;
+export const STATS_MAX_PAGE_SIZE = 100;
+
+export type StatsPageOptions = {
+  limit?: number;
+  offset?: number;
+};
+
+export function clampStatsPage(opts: StatsPageOptions = {}): {
+  limit: number;
+  offset: number;
+} {
+  return {
+    limit: Math.min(
+      Math.max(opts.limit ?? STATS_DEFAULT_PAGE_SIZE, 1),
+      STATS_MAX_PAGE_SIZE,
+    ),
+    offset: Math.max(opts.offset ?? 0, 0),
+  };
+}
+
 function unwrapRows<T>(out: unknown): T[] {
   if (Array.isArray(out)) return out as T[];
   if (out && typeof out === 'object' && 'rows' in out) {
@@ -122,7 +143,9 @@ export type TextStats = {
 export async function listTextStats(
   userId: string,
   language: LanguageCode,
+  opts: StatsPageOptions = {},
 ): Promise<TextStats[]> {
+  const { limit, offset } = clampStatsPage(opts);
   const list = unwrapRows<{
     text_id: string;
     title: string;
@@ -159,6 +182,8 @@ export async function listTextStats(
         AND tx.language = ${language}
       GROUP BY tx.id, tx.title, tx.language
       ORDER BY tx.created_at DESC
+      LIMIT ${limit}
+      OFFSET ${offset}
     `),
   );
   return list.map((r) => ({
@@ -320,7 +345,9 @@ export async function estimatedComprehensionForCollections(
 export async function listCollectionStats(
   userId: string,
   language: LanguageCode,
+  opts: StatsPageOptions = {},
 ): Promise<CollectionStats[]> {
+  const { limit, offset } = clampStatsPage(opts);
   const list = unwrapRows<{
     collection_id: string;
     title: string;
@@ -357,6 +384,8 @@ export async function listCollectionStats(
         AND c.language = ${language}
       GROUP BY c.id, c.title
       ORDER BY c.updated_at DESC
+      LIMIT ${limit}
+      OFFSET ${offset}
     `),
   );
   return list.map((r) => ({

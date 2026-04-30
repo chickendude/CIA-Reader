@@ -19,7 +19,11 @@
   import { onMount, tick, untrack } from 'svelte';
 
   import ChapterBody from './ChapterBody.svelte';
-  import { LazyTokenLoader, type ChapterTokenFetcher } from './lazy-tokens.js';
+  import {
+    LazyTokenLoader,
+    type ChapterTokenFetcher,
+    type ChapterTokensResponse,
+  } from './lazy-tokens.js';
   import type { ProgressAnchor } from './progress-client.js';
   import {
     computePctRead,
@@ -28,7 +32,7 @@
     readableRect,
     readerTopInset,
   } from './reader-progress.js';
-  import type { ChapterView, ServerToken } from './types.js';
+  import type { ChapterView } from './types.js';
 
   let {
     chapters,
@@ -53,11 +57,13 @@
     fetcher?: ChapterTokenFetcher;
   } = $props();
 
-  // Map of chapterIdx → fetched tokens (or `null` if the worker
-  // hasn't run for that chapter — same fallback as the SSR path).
+  // Map of chapterIdx → fetched body + tokens. SSR only includes the
+  // active chapter's body, so siblings hydrate their text on demand.
   // Seeded with the initial chapter so re-renders don't trigger an
   // unnecessary network round-trip for the chapter we already have.
-  let lazyTokens = $state(new Map<number, ServerToken[] | null>());
+  let lazyChapters = $state(
+    new Map<number, Pick<ChapterTokensResponse, 'body' | 'tokens'>>(),
+  );
 
   const loader = $derived(new LazyTokenLoader(textId, fetcher));
 
@@ -65,10 +71,10 @@
   // their tokens patched in once the lazy loader resolves them.
   const renderedChapters = $derived.by(() => {
     return chapters.map((c) => {
-      if (c.tokens != null) return c;
-      const fetched = lazyTokens.get(c.idx);
+      if (c.tokens != null && c.body != null) return c;
+      const fetched = lazyChapters.get(c.idx);
       if (fetched === undefined) return c;
-      return { ...c, tokens: fetched };
+      return { ...c, body: fetched.body, tokens: fetched.tokens };
     });
   });
 
@@ -77,13 +83,13 @@
     // or we've already fetched / are fetching this idx.
     const existing = chapters.find((c) => c.idx === chapterIdx);
     if (!existing || existing.tokens != null) return;
-    if (lazyTokens.has(chapterIdx)) return;
+    if (lazyChapters.has(chapterIdx)) return;
     void loader
       .load(chapterIdx)
-      .then((tokens) => {
-        const next = new Map(untrack(() => lazyTokens));
-        next.set(chapterIdx, tokens);
-        lazyTokens = next;
+      .then((chapter) => {
+        const next = new Map(untrack(() => lazyChapters));
+        next.set(chapterIdx, { body: chapter.body, tokens: chapter.tokens });
+        lazyChapters = next;
       })
       .catch(() => {
         // Swallow — the chapter still renders via the whitespace
