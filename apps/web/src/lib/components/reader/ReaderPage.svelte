@@ -92,6 +92,7 @@
     initialTokenApplied = false;
     restorePaintReady = initialTokenIdx <= 0;
     lastReportedKey = '';
+    displayPct = computePctRead(chapters, chapterIdx, initialTokenIdx);
   });
 
   // Keep pageInChapter in range when pageCount shrinks (e.g. window
@@ -105,17 +106,12 @@
   const hasPrev = $derived(hasPrevPage || hasPrevChapter);
   const hasNext = $derived(hasNextPage || hasNextChapter);
 
-  // Overall progress — fraction of the whole text the user has read.
-  // Fractional pages-in-chapter give a smoother percentage than just
-  // counting whole chapters.
-  const progressPct = $derived(
-    chapters.length > 0
-      ? Math.round(
-          ((chapterIdx + (pageCount > 0 ? (pageInChapter + 1) / pageCount : 0)) / chapters.length) *
-            100,
-        )
-      : 0,
-  );
+  // Overall progress — fraction of the whole text in *words*, not pages.
+  // A page with 10 words must advance the bar less than a page with 500.
+  // Driven by `reportProgress`, which derives the anchor from the first
+  // visible word and runs it through `computePctRead`. Mirrored here so
+  // the footer always matches what we persist to the server.
+  let displayPct = $state(0);
 
   function go(nextIdx: number, opts: { lastPage?: boolean } = {}) {
     void goto(`/reader/${textId}?mode=page&chapter=${nextIdx}`, {
@@ -270,7 +266,7 @@
   }
 
   function reportProgress() {
-    if (!onProgress || !contentEl) return;
+    if (!contentEl) return;
     // Don't fire while the viewport mask is up — the writer would
     // see an anchor for whatever pageInChapter happens to be before
     // applyInitialTokenPage jumps to the saved column, and on a
@@ -289,6 +285,8 @@
         completedText: anchor.chapterIdx >= chapters.length - 1 && pageInChapter >= pageCount - 1,
       }),
     };
+    displayPct = next.pctRead;
+    if (!onProgress) return;
     const key = `${next.chapterIdx}:${next.tokenIdx}:${next.pctRead}`;
     if (key === lastReportedKey) return;
     lastReportedKey = key;
@@ -387,9 +385,9 @@
       Page {pageInChapter + 1} of {pageCount}
       <span class="muted">· Ch. {chapterIdx + 1} / {chapters.length}</span>
     </span>
-    <span class="muted">{progressPct}% through text</span>
+    <span class="muted">{displayPct}% through text</span>
   </div>
-  <div class="reader-foot-bar"><i style="width: {progressPct}%"></i></div>
+  <div class="reader-foot-bar"><i style="width: {displayPct}%"></i></div>
 </footer>
 
 <style>
