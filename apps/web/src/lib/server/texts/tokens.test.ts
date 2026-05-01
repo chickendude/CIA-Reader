@@ -92,7 +92,7 @@ describe('loadChapterTokens', () => {
         surface: '123',
         lemmaId: null,
         numberForms: {
-          value: 123,
+          value: '123',
           digits_latin: '123',
           digits_deva: '१२३',
           digits_orya: '୧୨୩',
@@ -106,7 +106,7 @@ describe('loadChapterTokens', () => {
     expect(result![0]).toMatchObject({
       id: 'num-1',
       numberForms: {
-        value: 123,
+        value: '123',
         digitsLatin: '123',
         digitsDeva: '१२३',
         digitsOrya: '୧୨୩',

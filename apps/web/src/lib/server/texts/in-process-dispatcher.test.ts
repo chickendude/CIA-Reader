@@ -168,7 +168,7 @@ describe('processTextNow', () => {
           is_oov: false,
           romanization: 'bolnā',
           number_forms: {
-            value: 123,
+            value: '123',
             digits_latin: '123',
             digits_deva: '१२३',
             digits_orya: '୧୨୩',
@@ -209,11 +209,11 @@ describe('processTextNow', () => {
       lemmaId: string | null;
       surface: string;
       romanization: string | null;
-      numberForms: { value: number } | null;
+      numberForms: { value: string } | null;
     }>;
     expect(firstInsert[0]!.lemmaId).toBe('lemma-bolnaa');
     expect(firstInsert[0]!.romanization).toBe('bolnā');
-    expect(firstInsert[0]!.numberForms?.value).toBe(123);
+    expect(firstInsert[0]!.numberForms?.value).toBe('123');
 
     const secondInsert = (inserts[1] as Extract<Call, { kind: 'insert' }>).values as Array<{
       lemmaId: string | null;
@@ -360,7 +360,7 @@ describe('processTextNow', () => {
           is_oov: false,
           romanization: '1,013,322',
           number_forms: {
-            value: 1_013_322,
+            value: '1013322',
             digits_latin: '1,013,322',
             digits_deva: '१,०१३,३२२',
             digits_orya: '୧,୦୧୩,୩୨୨',
@@ -385,11 +385,11 @@ describe('processTextNow', () => {
     const tokenInsert = inserts[0]!.values as Array<{
       lemmaId: string | null;
       surface: string;
-      numberForms: { value: number } | null;
+      numberForms: { value: string } | null;
     }>;
     expect(tokenInsert[0]!.lemmaId).toBeNull();
     expect(tokenInsert[0]!.surface).toBe('1,013,322');
-    expect(tokenInsert[0]!.numberForms?.value).toBe(1_013_322);
+    expect(tokenInsert[0]!.numberForms?.value).toBe('1013322');
   });
 
   it('resolves a post-#316 nukta candidate onto an existing pre-#316 lemma row (#320)', async () => {

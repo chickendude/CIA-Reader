@@ -1157,7 +1157,7 @@ export const textTokens = pgTable(
      *  `NumberForms` in the Python NLP service (services/nlp/app/numbers.py)
      *  and is delivered verbatim by the in-process dispatcher. */
     numberForms: jsonb('number_forms').$type<{
-      value: number;
+      value: string;
       digits_latin: string;
       digits_deva: string;
       digits_orya: string;

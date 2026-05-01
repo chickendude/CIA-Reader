@@ -9,9 +9,12 @@ romanization in each of the three MVP languages (Hindi, Marathi, Odia).
 
 Range
 =====
-Non-negative integers from 0 through 10⁷ (one crore) inclusive. Numbers
-larger than that, signed numbers, and decimals fall through (T-2.8a
-will lift those last two).
+Integer-part values from 0 through 10⁷ (one crore) inclusive — the
+sign-and-decimal extensions added in T-2.8a respect the same cap on
+the integer part but accept an arbitrarily long fractional part
+(each digit pronounced individually, English-style). Out-of-range
+integer parts and unsupported shapes (mixed scripts, multiple decimal
+points, lonely sign or decimal point) fall through.
 
 Linguistic notes
 ================
@@ -42,6 +45,7 @@ the same scheme as the rest of the popup.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Literal
 
 from app.romanize import to_roman
@@ -571,10 +575,188 @@ def to_words_or(n: int) -> str:
 
 
 # ----------------------------------------------------------------
+# T-2.8a — sign + decimal extensions
+# ----------------------------------------------------------------
+
+#: Sign component of a parsed numeric token. Always populated even
+#: for unsigned input (defaults to ``"+"``).
+Sign = Literal["+", "-"]
+
+#: Accepted minus characters: ASCII hyphen-minus and U+2212 MINUS SIGN.
+#: Plus signs are not accepted — leading ``+`` falls through.
+_NEG_SIGNS: tuple[str, ...] = ("-", "−")
+
+#: ASCII full stop is the only accepted decimal point. The Devanagari
+#: danda (U+0964) is sentence punctuation, not a decimal separator,
+#: even when surrounded by Devanagari digits.
+_DECIMAL_POINT: str = "."
+
+# Per-language "minus" prefix for negatives. Curator-confirmed before
+# T-2.8a sign-off — these are loanwords from Sanskrit ``ṛṇa`` (debt /
+# negative) common in mathematical registers; ``-3`` in Hindi reads
+# as ``ऋण तीन``.
+_HI_NEG: str = "ऋण"
+_MR_NEG: str = "उणे"
+_OR_NEG: str = "ଋଣ"
+_NEG_WORDS: dict[str, str] = {"hi": _HI_NEG, "mr": _MR_NEG, "or": _OR_NEG}
+
+# Per-language "point" word for decimals. Curator-confirmed.
+# Hindi/Marathi use Sanskrit-derived ``daśamlava`` / ``daśāṁśa``;
+# Odia uses ``daśamika``. Each is the standard mathematical register.
+_HI_POINT: str = "दशमलव"
+_MR_POINT: str = "दशांश"
+_OR_POINT: str = "ଦଶମିକ"
+_POINT_WORDS: dict[str, str] = {"hi": _HI_POINT, "mr": _MR_POINT, "or": _OR_POINT}
+
+
+def parse_number(surface: str) -> tuple[Sign, int, str | None] | None:
+    """Parse a possibly signed and/or decimal numeric surface (T-2.8a).
+
+    Returns ``(sign, integer, fractional)`` where:
+
+    * ``sign`` is ``"+"`` for unsigned input, ``"-"`` when the surface
+      begins with ASCII ``-`` or U+2212 MINUS SIGN.
+    * ``integer`` is the absolute value of the integer part, bounded
+      by :data:`MAX_VALUE`.
+    * ``fractional`` is the fractional digits as a Latin-digit string
+      (so ``"0.001"`` round-trips with the leading zeros intact), or
+      ``None`` when no decimal point was present.
+
+    Returns ``None`` for unparseable, mixed-script, or out-of-range
+    input. ``1,000``-style thousands separators are out of scope here
+    — the unsigned integer path with separators lives in
+    :func:`parse_digits`. ``number_forms`` glues the two together.
+
+    The decimal point is ASCII ``.`` only. Both the integer and
+    fractional parts must each be non-empty and from a single script,
+    and they must both be from the *same* script.
+    """
+    if not surface:
+        return None
+
+    # Sign — single optional leading minus, no leading plus, no
+    # multiple sign characters.
+    sign: Sign = "+"
+    if surface[0] in _NEG_SIGNS:
+        sign = "-"
+        surface = surface[1:]
+        if not surface:
+            return None  # lonely "-" / "−"
+    if any(c in _NEG_SIGNS for c in surface):
+        return None  # "--1", "1-2", trailing "-", etc.
+
+    # Comma-grouping is a separate path; reject here so misuse like
+    # "-1,000" doesn't silently lose the negative.
+    if "," in surface:
+        return None
+
+    # Decimal split. Decimal requires both sides to be non-empty.
+    int_part_str: str
+    frac_part_str: str | None
+    if _DECIMAL_POINT in surface:
+        if surface.count(_DECIMAL_POINT) > 1:
+            return None  # "1.2.3"
+        int_part_str, frac_part_str = surface.split(_DECIMAL_POINT)
+        if not int_part_str or not frac_part_str:
+            return None  # "1." / ".5"
+    else:
+        int_part_str = surface
+        frac_part_str = None
+
+    int_script = _classify_script(int_part_str)
+    if int_script is None:
+        return None
+    if frac_part_str is not None:
+        frac_script = _classify_script(frac_part_str)
+        if frac_script is None or frac_script != int_script:
+            return None  # mixed script across the decimal
+
+    digits = _DIGIT_SETS[int_script]
+    int_value = 0
+    for c in int_part_str:
+        int_value = int_value * 10 + digits.index(c)
+    if int_value > MAX_VALUE:
+        return None
+
+    # Normalize the fractional part to Latin digits for canonical
+    # storage, preserving any leading zeros ("0.001" -> "001").
+    frac_normalized: str | None = None
+    if frac_part_str is not None:
+        frac_normalized = "".join(str(digits.index(c)) for c in frac_part_str)
+
+    return (sign, int_value, frac_normalized)
+
+
+def format_in_script(
+    sign: Sign,
+    integer: int,
+    fractional: str | None,
+    script: DigitScript,
+) -> str:
+    """Render a (possibly signed, possibly decimal) number in the
+    target script's digits. Sign uses ASCII ``-``; decimal point uses
+    ASCII ``.``. The fractional digits are mapped one-for-one — the
+    Latin-digit canonical fractional ``"001"`` becomes ``"००१"`` in
+    Devanagari, ``"୦୦୧"`` in Odia.
+    """
+    out = digits_in_script(integer, script)
+    if fractional is not None:
+        digits = _DIGIT_SETS[script]
+        out = out + _DECIMAL_POINT + "".join(digits[int(c)] for c in fractional)
+    if sign == "-":
+        out = "-" + out
+    return out
+
+
+# ----------------------------------------------------------------
 # Public entry point
 # ----------------------------------------------------------------
 
 _LANG_TO_SCRIPT: dict[str, str] = {"hi": "Deva", "mr": "Deva", "or": "Orya"}
+
+# Per-language 0-9 spelled-out forms — used for fractional digit
+# read-out (English "three point one four" style) so we don't repeat
+# the trickier <100 forms here. Slicing the existing tables keeps the
+# 0-9 source-of-truth in one place.
+_FRAC_DIGIT_WORDS: dict[str, tuple[str, ...]] = {
+    "hi": _HI_BELOW_100[:10],
+    "mr": _MR_BELOW_100[:10],
+    "or": _OR_BELOW_100[:10],
+}
+
+_INT_TO_WORDS: dict[str, Callable[[int], str]] = {
+    "hi": to_words_hi,
+    "mr": to_words_mr,
+    "or": to_words_or,
+}
+
+
+def spell(
+    sign: Sign,
+    integer: int,
+    fractional: str | None,
+    language: str,
+) -> str:
+    """Spell out a (possibly signed, possibly decimal) number in the
+    target language (T-2.8a). Format:
+
+        [<minus-word>] <integer-words> [<point-word> <digit> ...]
+
+    Negatives prefix the language's minus word (e.g. Hindi ``ऋण``).
+    Decimals append the language's point word (e.g. Hindi ``दशमलव``)
+    followed by each fractional digit pronounced individually — so
+    ``-3.14`` in Hindi reads ``ऋण तीन दशमलव एक चार``.
+    """
+    parts: list[str] = []
+    if sign == "-":
+        parts.append(_NEG_WORDS[language])
+    parts.append(_INT_TO_WORDS[language](integer))
+    if fractional is not None:
+        parts.append(_POINT_WORDS[language])
+        digit_words = _FRAC_DIGIT_WORDS[language]
+        for c in fractional:
+            parts.append(digit_words[int(c)])
+    return " ".join(parts)
 
 
 def _romanize(spelled: str, language: str) -> str:
@@ -593,35 +775,64 @@ def _language_form(spelled: str, language: str) -> NumberLanguageForm:
     )
 
 
-def number_forms(surface: str) -> NumberForms | None:
-    """Build the per-language spelled-out + romanized struct for a
-    digit-only token, or ``None`` if the surface doesn't qualify.
+def _canonical_value(sign: Sign, integer: int, fractional: str | None) -> str:
+    """Canonical Latin-digit string for the wire ``value`` field.
+    ``"-3.14"``, ``"0.001"``, ``"123"``."""
+    base = str(integer) if fractional is None else f"{integer}.{fractional}"
+    return f"-{base}" if sign == "-" else base
 
-    Qualifying input: non-empty, all-digit, single-script (Latin /
-    Devanagari / Odia), value in ``[0, MAX_VALUE]``.
-    """
-    value = parse_digits(surface)
-    if value is None:
-        return None
+
+def _build_forms(sign: Sign, integer: int, fractional: str | None) -> NumberForms:
     return NumberForms(
-        value=value,
-        digits_latin=digits_in_script(value, "latin"),
-        digits_deva=digits_in_script(value, "deva"),
-        digits_orya=digits_in_script(value, "orya"),
-        hi=_language_form(to_words_hi(value), "hi"),
-        mr=_language_form(to_words_mr(value), "mr"),
+        value=_canonical_value(sign, integer, fractional),
+        digits_latin=format_in_script(sign, integer, fractional, "latin"),
+        digits_deva=format_in_script(sign, integer, fractional, "deva"),
+        digits_orya=format_in_script(sign, integer, fractional, "orya"),
+        hi=_language_form(spell(sign, integer, fractional, "hi"), "hi"),
+        mr=_language_form(spell(sign, integer, fractional, "mr"), "mr"),
         # Wire field is ISO 639-1 ``or``; Python attribute is ``odia``
         # (``or`` is a reserved keyword).
-        odia=_language_form(to_words_or(value), "or"),
+        odia=_language_form(spell(sign, integer, fractional, "or"), "or"),
     )
+
+
+def number_forms(surface: str) -> NumberForms | None:
+    """Build the per-language spelled-out + romanized struct for a
+    numeric token, or ``None`` if the surface doesn't qualify.
+
+    Two parsing paths feed into this:
+
+    * :func:`parse_digits` — unsigned positive integers, optionally
+      with thousands / lakh comma separators (``"1,000"``, ``"10,00,000"``).
+      This path stays for backward compatibility with the chapter-
+      processor's existing surfaces.
+    * :func:`parse_number` (T-2.8a) — signed and/or decimal forms
+      without separators (``"-12"``, ``"3.14"``, ``"-2.5"``).
+
+    The two paths are tried in order; their accepted surface sets are
+    disjoint by construction (parse_digits rejects sign / decimal,
+    parse_number rejects commas) so the dispatch order doesn't matter
+    for correctness.
+    """
+    simple_value = parse_digits(surface)
+    if simple_value is not None:
+        return _build_forms("+", simple_value, None)
+    parsed = parse_number(surface)
+    if parsed is None:
+        return None
+    return _build_forms(*parsed)
 
 
 __all__ = [
     "MAX_VALUE",
     "DigitScript",
+    "Sign",
     "digits_in_script",
+    "format_in_script",
     "number_forms",
     "parse_digits",
+    "parse_number",
+    "spell",
     "to_words_hi",
     "to_words_mr",
     "to_words_or",

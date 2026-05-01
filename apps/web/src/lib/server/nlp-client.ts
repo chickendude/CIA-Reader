@@ -13,9 +13,14 @@ export interface NumberLanguageForm {
 }
 
 /** Per-token number-form payload populated by the NLP service for
- *  digit-only NUM tokens (T-2.8). Null on every other token. */
+ *  digit-only NUM tokens (T-2.8 / T-2.8a). Null on every other token.
+ *
+ *  `value` is the canonical Latin-digit string form so signed +
+ *  decimal numerals (T-2.8a) round-trip losslessly: `"-3.14"`,
+ *  `"0.001"`, `"123"` are all valid. The integer part is bounded by
+ *  10⁷; the fractional part may be arbitrarily long. */
 export interface NumberForms {
-  value: number;
+  value: string;
   digits_latin: string;
   digits_deva: string;
   digits_orya: string;
