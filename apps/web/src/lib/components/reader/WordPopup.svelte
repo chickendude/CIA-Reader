@@ -971,9 +971,8 @@
       {/if}
       <!-- T-14.4: translations list. The phrase detail endpoint
            (GET /api/v1/phrases/:id) returns visible translations
-           ordered curator > imported > user > vote. We render them
-           with a small attribution chip so the learner can
-           distinguish official entries from user submissions. -->
+           ordered curator > imported > user > vote. -->
+
       <div class="sp-phrase-trans" data-testid="phrase-translations">
         {#if phraseTranslationsError}
           <p class="err small">{phraseTranslationsError}</p>
@@ -984,7 +983,6 @@
             {#each phraseTranslations as t (t.id)}
               <li class="sp-phrase-trans-row" data-source={t.source}>
                 <span class="sp-phrase-trans-body">{t.body}</span>
-                <span class="sp-phrase-trans-tag">{t.source.replace('_', ' ')}</span>
               </li>
             {/each}
           </ul>
@@ -1197,9 +1195,6 @@
         {#each payload.translations.official as t (t.id)}
           <li class="official-row">
             <div class="official-body">
-              <span class="badge tone-{t.provenance.kind}">
-                {t.provenance.attribution ?? t.provenance.kind}
-              </span>
               {t.body}
               {#if customizableIds().has(t.id)}
                 <button
@@ -1556,17 +1551,6 @@
   .sp-phrase-trans-body {
     flex: 1;
   }
-  .sp-phrase-trans-tag {
-    font-size: 0.65rem;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    color: var(--ink-3, var(--color-fg-muted));
-    border: 1px solid var(--rule, var(--color-border));
-    border-radius: 4px;
-    padding: 0 0.3rem;
-    line-height: 1.3;
-    flex-shrink: 0;
-  }
   .sp-phrase-trans-form {
     margin-top: 0.55rem;
     display: flex;
@@ -1878,17 +1862,6 @@
   .row-action[disabled] {
     opacity: 0.5;
     cursor: not-allowed;
-  }
-  .tone-curator {
-    border-color: color-mix(
-      in oklch,
-      var(--green, #197a2f) 60%,
-      transparent
-    );
-    color: var(--green, #197a2f);
-  }
-  .tone-imported {
-    border-color: var(--rule, var(--color-border));
   }
   .tone-community {
     border-color: color-mix(
