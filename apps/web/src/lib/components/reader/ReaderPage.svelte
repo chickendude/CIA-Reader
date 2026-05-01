@@ -27,6 +27,7 @@
     computePctRead,
     findFirstWordInColumn,
     findTokenElementAtOrAfter,
+    pageBoundaryAnchor,
   } from './reader-progress.js';
   import { classifySwipe } from './touch-gestures.js';
   import type { ChapterView } from './types.js';
@@ -92,7 +93,9 @@
     initialTokenApplied = false;
     restorePaintReady = initialTokenIdx <= 0;
     lastReportedKey = '';
-    displayPct = computePctRead(chapters, chapterIdx, initialTokenIdx);
+    const seed = computePctRead(chapters, chapterIdx, initialTokenIdx);
+    startPct = seed;
+    endPct = seed;
   });
 
   // Keep pageInChapter in range when pageCount shrinks (e.g. window
@@ -108,10 +111,14 @@
 
   // Overall progress — fraction of the whole text in *words*, not pages.
   // A page with 10 words must advance the bar less than a page with 500.
-  // Driven by `reportProgress`, which derives the anchor from the first
-  // visible word and runs it through `computePctRead`. Mirrored here so
-  // the footer always matches what we persist to the server.
-  let displayPct = $state(0);
+  // We track two values: `startPct` is the position of the first
+  // visible word on the page (= where you'd resume), `endPct` is the
+  // position of the first word on the *next* page (= what you've read
+  // up through). Footer shows the range. The bar fill follows endPct
+  // and the value persisted to the server is endPct, so the library
+  // card and reader footer always agree.
+  let startPct = $state(0);
+  let endPct = $state(0);
 
   function go(nextIdx: number, opts: { lastPage?: boolean } = {}) {
     void goto(`/reader/${textId}?mode=page&chapter=${nextIdx}`, {
@@ -279,14 +286,37 @@
       fallbackChapterIdx: chapterIdx,
     });
     if (!anchor) return;
+    const nextPageAnchor =
+      pageInChapter < pageCount - 1
+        ? findFirstWordInColumn(contentEl, {
+            contentEl,
+            pageWidth: pageW,
+            pageIdx: pageInChapter + 1,
+            fallbackChapterIdx: chapterIdx,
+          })
+        : null;
+    const boundary = pageBoundaryAnchor({
+      chapters,
+      chapterIdx,
+      pageInChapter,
+      pageCount,
+      currentAnchor: anchor,
+      nextAnchor: nextPageAnchor,
+    });
+    const startPctNext = computePctRead(chapters, anchor.chapterIdx, anchor.tokenIdx);
+    const endPctNext = computePctRead(chapters, boundary.chapterIdx, boundary.tokenIdx, {
+      completedText: boundary.completed,
+    });
+    startPct = startPctNext;
+    endPct = endPctNext;
+    if (!onProgress) return;
+    // Resume position is the first word on this page; pctRead reports
+    // how far the user has READ — i.e. the end-of-page boundary —
+    // so the library card matches the reader footer.
     const next: ProgressAnchor = {
       ...anchor,
-      pctRead: computePctRead(chapters, anchor.chapterIdx, anchor.tokenIdx, {
-        completedText: anchor.chapterIdx >= chapters.length - 1 && pageInChapter >= pageCount - 1,
-      }),
+      pctRead: endPctNext,
     };
-    displayPct = next.pctRead;
-    if (!onProgress) return;
     const key = `${next.chapterIdx}:${next.tokenIdx}:${next.pctRead}`;
     if (key === lastReportedKey) return;
     lastReportedKey = key;
@@ -385,9 +415,15 @@
       Page {pageInChapter + 1} of {pageCount}
       <span class="muted">· Ch. {chapterIdx + 1} / {chapters.length}</span>
     </span>
-    <span class="muted">{displayPct}% through text</span>
+    <span class="muted">
+      {#if startPct === endPct}
+        {endPct}% through text
+      {:else}
+        {startPct}–{endPct}% through text
+      {/if}
+    </span>
   </div>
-  <div class="reader-foot-bar"><i style="width: {displayPct}%"></i></div>
+  <div class="reader-foot-bar"><i style="width: {endPct}%"></i></div>
 </footer>
 
 <style>
