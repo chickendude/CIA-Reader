@@ -784,3 +784,17 @@ describe('viewerHasCollectionShareForText', () => {
     expect(await viewerHasCollectionShareForText('viewer', 't-orphan')).toBe(false);
   });
 });
+
+describe('viewerHasCollectionShare (T-8.4)', () => {
+  it('returns true when the viewer has a share row for the collection', async () => {
+    const { viewerHasCollectionShare } = await import('./collections.js');
+    queue.push([{ collectionId: 'col-1' }]);
+    expect(await viewerHasCollectionShare('viewer-1', 'col-1')).toBe(true);
+  });
+
+  it('returns false when no share row exists', async () => {
+    const { viewerHasCollectionShare } = await import('./collections.js');
+    queue.push([]);
+    expect(await viewerHasCollectionShare('viewer-2', 'col-1')).toBe(false);
+  });
+});

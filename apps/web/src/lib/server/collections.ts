@@ -8,7 +8,7 @@
  * Pure DB-side service — UI lives in routes/collections, /library,
  * and the reader's prev/next-text strip (T-8.3).
  */
-import { and, asc, desc, eq, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
 
 import { db, schema } from './db/index.js';
 import type {
@@ -460,6 +460,71 @@ export async function listCollectionShares(
     .where(
       eq(schema.collectionShares.collectionId, collectionId),
     )) as CollectionShare[];
+}
+
+/**
+ * T-8.4 — share row decorated with the recipient's email + display
+ * name. The bare `CollectionShare` only carries `sharedWithUserId`
+ * which isn't human-readable; the manage-shares UI (and the GET
+ * /shares JSON endpoint) call this so the owner sees who actually
+ * has access. Recipients that have since been deleted come through
+ * with `recipient: null`.
+ */
+export type CollectionShareWithRecipient = CollectionShare & {
+  recipient: {
+    id: string;
+    email: string;
+    displayName: string | null;
+  } | null;
+};
+
+export async function listCollectionSharesWithRecipients(
+  collectionId: string,
+  actor: Pick<User, 'id' | 'role'>,
+): Promise<CollectionShareWithRecipient[]> {
+  const shares = await listCollectionShares(collectionId, actor);
+  if (shares.length === 0) return [];
+  const ids = shares.map((s) => s.sharedWithUserId);
+  const recipients = (await db
+    .select({
+      id: schema.users.id,
+      email: schema.users.email,
+      displayName: schema.users.displayName,
+    })
+    .from(schema.users)
+    .where(inArray(schema.users.id, ids))) as Array<{
+    id: string;
+    email: string;
+    displayName: string | null;
+  }>;
+  const byId = new Map(recipients.map((r) => [r.id, r]));
+  return shares.map((s) => ({
+    ...s,
+    recipient: byId.get(s.sharedWithUserId) ?? null,
+  }));
+}
+
+/**
+ * T-8.4 — does this viewer have a share row for this collection?
+ * Used by the collection detail page (`/collections/:id`) to grant
+ * non-owners view access. Cheap lookup against the
+ * `(collectionId, sharedWithUserId)` unique index.
+ */
+export async function viewerHasCollectionShare(
+  viewerId: string,
+  collectionId: string,
+): Promise<boolean> {
+  const [row] = (await db
+    .select({ collectionId: schema.collectionShares.collectionId })
+    .from(schema.collectionShares)
+    .where(
+      and(
+        eq(schema.collectionShares.collectionId, collectionId),
+        eq(schema.collectionShares.sharedWithUserId, viewerId),
+      ),
+    )
+    .limit(1)) as Array<{ collectionId: string }>;
+  return Boolean(row);
 }
 
 /**

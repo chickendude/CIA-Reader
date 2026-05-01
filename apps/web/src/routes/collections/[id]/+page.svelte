@@ -91,6 +91,48 @@
     );
     if (res.ok) await invalidateAll();
   }
+
+  // T-8.4 — manage sharing. Owner enters a recipient email; the API
+  // looks up the user and inserts a row in `collection_shares`. The
+  // grant also flips visibility from 'private' to 'shared' so the
+  // canReadText fallback path picks it up.
+  let shareEmail = $state('');
+  let sharing = $state(false);
+  let shareError = $state<string | null>(null);
+  async function grantShare(e: Event) {
+    e.preventDefault();
+    const email = shareEmail.trim();
+    if (!email) return;
+    sharing = true;
+    shareError = null;
+    try {
+      const res = await fetch(
+        `/api/v1/collections/${data.collection.id}/shares`,
+        {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ recipientEmail: email }),
+        },
+      );
+      if (!res.ok) {
+        shareError = (await res.text().catch(() => '')) || `HTTP ${res.status}`;
+        return;
+      }
+      shareEmail = '';
+      await invalidateAll();
+    } finally {
+      sharing = false;
+    }
+  }
+
+  async function revokeShare(userId: string) {
+    if (!window.confirm('Revoke this share?')) return;
+    const res = await fetch(
+      `/api/v1/collections/${data.collection.id}/shares/${userId}`,
+      { method: 'DELETE' },
+    );
+    if (res.ok) await invalidateAll();
+  }
 </script>
 
 <svelte:head>
@@ -190,6 +232,51 @@
           onclick={() => goto('/library')}
         >Browse library</button>
       </p>
+    </section>
+
+    <section class="cd-share" data-testid="manage-shares">
+      <h2>Sharing</h2>
+      <p class="cd-muted">
+        Grant another reader access to this collection by email.
+        Sharing also unlocks every member text for that reader.
+      </p>
+      <form onsubmit={grantShare} class="cd-add-form">
+        <input
+          type="email"
+          placeholder="reader@example.com"
+          bind:value={shareEmail}
+          autocomplete="off"
+          data-testid="share-email-input"
+        />
+        <button type="submit" disabled={sharing || !shareEmail.trim()}>
+          {sharing ? 'Sharing…' : 'Grant access'}
+        </button>
+      </form>
+      {#if shareError}
+        <p class="cd-err" role="alert">{shareError}</p>
+      {/if}
+      {#if data.shares.length === 0}
+        <p class="cd-muted">No one else has access yet.</p>
+      {:else}
+        <ul class="cd-share-list">
+          {#each data.shares as s (s.sharedWithUserId)}
+            <li>
+              <span>
+                {s.recipient?.displayName ?? s.recipient?.email ?? s.sharedWithUserId}
+                {#if s.recipient?.displayName}
+                  <span class="cd-muted">· {s.recipient.email}</span>
+                {/if}
+              </span>
+              <button
+                type="button"
+                class="cd-remove"
+                aria-label="Revoke share"
+                onclick={() => revokeShare(s.sharedWithUserId)}
+              >Revoke</button>
+            </li>
+          {/each}
+        </ul>
+      {/if}
     </section>
   {/if}
 </div>
@@ -386,5 +473,39 @@
     cursor: pointer;
     font: inherit;
     text-decoration: underline;
+  }
+  .cd-share {
+    margin-top: 1.5rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--rule, var(--color-border));
+  }
+  .cd-share h2 {
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--ink-3, var(--color-fg-muted));
+    margin: 0 0 0.6rem;
+  }
+  .cd-share-list {
+    list-style: none;
+    margin: 0.6rem 0 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+  }
+  .cd-share-list li {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.6rem;
+    padding: 0.4rem 0.6rem;
+    border: 1px solid var(--rule, var(--color-border));
+    border-radius: 6px;
+    font-size: 0.85rem;
+  }
+  .cd-share-list .cd-remove {
+    color: var(--err, #b94545);
+    font-size: 0.78rem;
   }
 </style>
