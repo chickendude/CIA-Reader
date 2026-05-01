@@ -391,30 +391,6 @@
     </div>
 
     <div class="reader-tools">
-      <div class="mode-switch" role="group" aria-label="Reading mode">
-        <button
-          type="button"
-          data-active={data.mode === 'page' ? '1' : '0'}
-          onclick={() => setMode('page')}
-        >
-          Page
-        </button>
-        <button
-          type="button"
-          data-active={data.mode === 'paged_scroll' ? '1' : '0'}
-          onclick={() => setMode('paged_scroll')}
-        >
-          Scroll
-        </button>
-        <button
-          type="button"
-          data-active={data.mode === 'continuous' ? '1' : '0'}
-          onclick={() => setMode('continuous')}
-        >
-          Continuous
-        </button>
-      </div>
-
       <button
         type="button"
         class="roman-toggle"
@@ -454,7 +430,7 @@
       <button
         type="button"
         class="settings-toggle"
-        onclick={() => (settingsOpen = true)}
+        onclick={() => (settingsOpen = !settingsOpen)}
         aria-label="Reader settings"
         aria-expanded={settingsOpen}
         title="Reader settings"
@@ -548,13 +524,18 @@
   onClose={() => (settingsOpen = false)}
   language={data.text.language as LanguageCode}
   settings={readerSettings}
-  onChange={(next) => (readerSettings = next)}
+  onChange={(next) => {
+    if (next.readerLayoutMode !== data.mode) {
+      setMode(next.readerLayoutMode);
+    }
+    readerSettings = next;
+  }}
   canPersist={data.canPersistSettings}
 />
 
 <style>
   /* CIAR design reader chrome (T-5.9). Paper background + serif title.
-     Stacks on small viewports; mode-switch + romanization sit on the
+     Stacks on small viewports; romanization + settings sit on the
      right at >=640px. */
   .reader {
     background: var(--paper, var(--color-bg));
@@ -714,29 +695,6 @@
     align-items: center;
     gap: 0.5rem;
     flex-wrap: wrap;
-  }
-  .mode-switch {
-    display: inline-flex;
-    background: color-mix(in oklch, var(--ink, var(--color-fg)) 5%, transparent);
-    border-radius: 8px;
-    padding: 2px;
-    gap: 2px;
-  }
-  .mode-switch button {
-    height: 28px;
-    padding: 0 0.7rem;
-    font: inherit;
-    font-size: 0.78rem;
-    color: var(--ink-2, var(--color-fg-muted));
-    background: transparent;
-    border: 0;
-    border-radius: 6px;
-    cursor: pointer;
-  }
-  .mode-switch button[data-active='1'] {
-    background: var(--card, var(--color-bg));
-    color: var(--ink, var(--color-fg));
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
   }
   .roman-toggle {
     width: 32px;
