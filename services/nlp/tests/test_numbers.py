@@ -18,8 +18,11 @@ import pytest
 from app.numbers import (
     MAX_VALUE,
     digits_in_script,
+    format_in_script,
     number_forms,
     parse_digits,
+    parse_number,
+    spell,
     to_words_hi,
     to_words_mr,
     to_words_or,
@@ -289,7 +292,10 @@ def test_below_100_sweep_non_empty(converter) -> None:
 def test_number_forms_for_123() -> None:
     nf = number_forms("123")
     assert isinstance(nf, NumberForms)
-    assert nf.value == 123
+    # T-2.8a: ``value`` is the canonical Latin-digit string form so
+    # signed + decimal numerals can round-trip without floating-point
+    # drift. Unsigned integers serialize as plain digits, no sign.
+    assert nf.value == "123"
     assert nf.digits_latin == "123"
     assert nf.digits_deva == "१२३"
     assert nf.digits_orya == "୧୨୩"
@@ -305,21 +311,21 @@ def test_number_forms_for_123() -> None:
 def test_number_forms_devanagari_input() -> None:
     nf = number_forms("१२३")
     assert nf is not None
-    assert nf.value == 123
+    assert nf.value == "123"
     assert nf.digits_latin == "123"
 
 
 def test_number_forms_odia_input() -> None:
     nf = number_forms("୧୨୩")
     assert nf is not None
-    assert nf.value == 123
+    assert nf.value == "123"
     assert nf.digits_deva == "१२३"
 
 
 def test_number_forms_zero() -> None:
     nf = number_forms("0")
     assert nf is not None
-    assert nf.value == 0
+    assert nf.value == "0"
     assert nf.hi.spelled == "शून्य"
     assert nf.mr.spelled == "शून्य"
     assert nf.odia.spelled == "ଶୂନ୍ୟ"
@@ -328,7 +334,7 @@ def test_number_forms_zero() -> None:
 def test_number_forms_max() -> None:
     nf = number_forms("10000000")
     assert nf is not None
-    assert nf.value == 10_000_000
+    assert nf.value == "10000000"
 
 
 def test_number_forms_serializes_odia_field() -> None:
@@ -348,11 +354,241 @@ def test_number_forms_serializes_odia_field() -> None:
         "",
         "abc",
         "१23",  # mixed
-        "-1",
-        "1.5",
+        # Note: `-1` and `1.5` USED to live here when number_forms only
+        # supported the unsigned-integer path. T-2.8a routes them
+        # through parse_number, so they're accepted now — see the new
+        # decimal/negative tests below.
+        "1.",  # trailing decimal — still rejected
+        ".5",  # leading decimal — still rejected
+        "1.2.3",  # multiple decimals
+        "-",  # lonely sign
+        "−",  # lonely U+2212
         "10000001",  # out of range
         "100000000",
     ],
 )
 def test_number_forms_returns_none_for_non_qualifying(surface: str) -> None:
     assert number_forms(surface) is None
+
+
+# ----------------------------------------------------------------
+# T-2.8a: parse_number — signed / decimal extensions.
+# ----------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "surface,expected",
+    [
+        # Unsigned positive — equivalent to parse_digits (minus the
+        # comma path).
+        ("0", ("+", 0, None)),
+        ("123", ("+", 123, None)),
+        ("9999999", ("+", 9_999_999, None)),
+        ("10000000", ("+", 10_000_000, None)),
+        # Negatives — ASCII hyphen-minus.
+        ("-1", ("-", 1, None)),
+        ("-100", ("-", 100, None)),
+        ("-9999999", ("-", 9_999_999, None)),
+        # Negatives — U+2212 MINUS SIGN.
+        ("−5", ("-", 5, None)),
+        ("−99", ("-", 99, None)),
+        # Decimals — Latin digits.
+        ("0.5", ("+", 0, "5")),
+        ("3.14", ("+", 3, "14")),
+        # Leading-zero fractional preserved (so the wire ``value``
+        # round-trips ``0.001`` rather than collapsing to ``0.1``).
+        ("0.001", ("+", 0, "001")),
+        ("123.456", ("+", 123, "456")),
+        # Negative + decimal.
+        ("-2.5", ("-", 2, "5")),
+        ("−2.5", ("-", 2, "5")),
+        # Native-script digits.
+        ("१२३", ("+", 123, None)),
+        ("-१२३", ("-", 123, None)),
+        ("३.१४", ("+", 3, "14")),  # Devanagari, fractional normalized to Latin
+        ("୧୨୩", ("+", 123, None)),
+        ("-୨", ("-", 2, None)),
+        ("୦.୦୦୧", ("+", 0, "001")),
+    ],
+)
+def test_parse_number_accepts(
+    surface: str, expected: tuple[str, int, str | None]
+) -> None:
+    assert parse_number(surface) == expected
+
+
+@pytest.mark.parametrize(
+    "surface",
+    [
+        "",
+        "-",
+        "−",  # lonely U+2212
+        "--1",
+        "-−1",
+        "1-2",
+        "1.",
+        ".5",
+        "1.2.3",
+        "1,000",  # comma-grouping is the parse_digits path, not this one
+        "-1,000",
+        # Mixed-script across the decimal — Devanagari ``1.२`` mixed
+        # with Latin or different-script fractional.
+        "१.5",
+        "1.२",
+        "१.୨",
+        # Sign on a non-numeric.
+        "-abc",
+        "-",
+        # Out of range integer part.
+        "-10000001",
+        "10000001",
+    ],
+)
+def test_parse_number_rejects(surface: str) -> None:
+    assert parse_number(surface) is None
+
+
+def test_parse_number_accepts_max_integer_with_fractional() -> None:
+    """Boundary: 10⁷ is the inclusive upper bound on the integer part.
+    A decimal at that bound is fine — only the integer part is
+    capped, the fractional part is unbounded."""
+    assert parse_number("10000000.5") == ("+", 10_000_000, "5")
+    assert parse_number("-10000000.5") == ("-", 10_000_000, "5")
+
+
+# ----------------------------------------------------------------
+# T-2.8a: format_in_script — sign + decimal renderer.
+# ----------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "sign,integer,fractional,latin,deva,orya",
+    [
+        ("+", 0, None, "0", "०", "୦"),
+        ("+", 123, None, "123", "१२३", "୧୨୩"),
+        ("-", 12, None, "-12", "-१२", "-୧୨"),
+        ("+", 3, "14", "3.14", "३.१४", "୩.୧୪"),
+        ("-", 2, "5", "-2.5", "-२.५", "-୨.୫"),
+        # Leading-zero fractional preserved per script.
+        ("+", 0, "001", "0.001", "०.००१", "୦.୦୦୧"),
+    ],
+)
+def test_format_in_script(
+    sign: str,
+    integer: int,
+    fractional: str | None,
+    latin: str,
+    deva: str,
+    orya: str,
+) -> None:
+    assert format_in_script(sign, integer, fractional, "latin") == latin  # type: ignore[arg-type]
+    assert format_in_script(sign, integer, fractional, "deva") == deva  # type: ignore[arg-type]
+    assert format_in_script(sign, integer, fractional, "orya") == orya  # type: ignore[arg-type]
+
+
+# ----------------------------------------------------------------
+# T-2.8a: spell — composed sign + decimal output. Pinned reference
+# values in each language so a typo in ऋण / उणे / ଋଣ or दशमलव /
+# दशांश / ଦଶମିକ trips CI rather than ships silently.
+# ----------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "sign,integer,fractional,hi,mr,or_",
+    [
+        ("-", 1, None, "ऋण एक", "उणे एक", "ଋଣ ଏକ"),
+        ("-", 100, None, "ऋण एक सौ", "उणे एकशे", "ଋଣ ଏକ ଶହ"),
+        ("+", 0, "5", "शून्य दशमलव पाँच", "शून्य दशांश पाच", "ଶୂନ୍ୟ ଦଶମିକ ପାଞ୍ଚ"),
+        (
+            "+", 3, "14",
+            "तीन दशमलव एक चार",
+            "तीन दशांश एक चार",
+            "ତିନି ଦଶମିକ ଏକ ଚାରି",
+        ),
+        # Leading-zero fractional pronounces each digit (so 0.001 is
+        # ``... point zero zero one``).
+        (
+            "+", 0, "001",
+            "शून्य दशमलव शून्य शून्य एक",
+            "शून्य दशांश शून्य शून्य एक",
+            "ଶୂନ୍ୟ ଦଶମିକ ଶୂନ୍ୟ ଶୂନ୍ୟ ଏକ",
+        ),
+        # Negative + decimal.
+        (
+            "-", 2, "5",
+            "ऋण दो दशमलव पाँच",
+            "उणे दोन दशांश पाच",
+            "ଋଣ ଦୁଇ ଦଶମିକ ପାଞ୍ଚ",
+        ),
+    ],
+)
+def test_spell_signed_decimal(
+    sign: str,
+    integer: int,
+    fractional: str | None,
+    hi: str,
+    mr: str,
+    or_: str,
+) -> None:
+    assert spell(sign, integer, fractional, "hi") == hi  # type: ignore[arg-type]
+    assert spell(sign, integer, fractional, "mr") == mr  # type: ignore[arg-type]
+    assert spell(sign, integer, fractional, "or") == or_  # type: ignore[arg-type]
+
+
+# ----------------------------------------------------------------
+# T-2.8a: number_forms — full integration for signed / decimal.
+# ----------------------------------------------------------------
+
+
+def test_number_forms_negative() -> None:
+    nf = number_forms("-100")
+    assert nf is not None
+    assert nf.value == "-100"
+    assert nf.digits_latin == "-100"
+    assert nf.digits_deva == "-१००"
+    assert nf.digits_orya == "-୧୦୦"
+    # Spelled-out prefixes the language minus word.
+    assert nf.hi.spelled.startswith("ऋण ")
+    assert nf.mr.spelled.startswith("उणे ")
+    assert nf.odia.spelled.startswith("ଋଣ ")
+
+
+def test_number_forms_decimal() -> None:
+    nf = number_forms("3.14")
+    assert nf is not None
+    assert nf.value == "3.14"
+    assert nf.digits_latin == "3.14"
+    assert nf.digits_deva == "३.१४"
+    assert nf.digits_orya == "୩.୧୪"
+    assert "दशमलव" in nf.hi.spelled
+    assert "दशांश" in nf.mr.spelled
+    assert "ଦଶମିକ" in nf.odia.spelled
+
+
+def test_number_forms_negative_decimal() -> None:
+    nf = number_forms("-2.5")
+    assert nf is not None
+    assert nf.value == "-2.5"
+    assert nf.digits_latin == "-2.5"
+    assert nf.hi.spelled == "ऋण दो दशमलव पाँच"
+    assert nf.mr.spelled == "उणे दोन दशांश पाच"
+    assert nf.odia.spelled == "ଋଣ ଦୁଇ ଦଶମିକ ପାଞ୍ଚ"
+
+
+def test_number_forms_u2212_minus_sign() -> None:
+    """U+2212 MINUS SIGN (the typographically correct minus, often
+    produced by autoformatting word processors) is accepted alongside
+    ASCII hyphen-minus and produces the same canonical wire form."""
+    nf = number_forms("−5")
+    assert nf is not None
+    assert nf.value == "-5"
+    assert nf.digits_latin == "-5"
+
+
+def test_number_forms_decimal_preserves_leading_zeros() -> None:
+    """``0.001`` round-trips with the leading zeros intact — that's
+    why ``value`` is a string."""
+    nf = number_forms("0.001")
+    assert nf is not None
+    assert nf.value == "0.001"
+    assert nf.hi.spelled == "शून्य दशमलव शून्य शून्य एक"

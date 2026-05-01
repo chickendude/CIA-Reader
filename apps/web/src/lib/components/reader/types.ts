@@ -21,26 +21,57 @@ export type ServerCandidate = {
   features: Record<string, string>;
 };
 
-/** T-2.8: cheap surface-level detector — does this token *look* like a
- *  digit-only number, possibly with thousands / lakh separators?
+/** T-2.8 / T-2.8a: cheap surface-level detector — does this token
+ *  *look* like a numeric token? Accepts:
+ *
+ *   - unsigned positive integers, optionally with thousands / lakh
+ *     comma separators (`"123"`, `"1,000"`, `"10,00,000"`);
+ *   - T-2.8a signed integers (`"-12"`, `"−5"` with U+2212);
+ *   - T-2.8a decimals (`"3.14"`, `"0.001"`, `"-2.5"`).
+ *
  *  Latin (0–9), Devanagari (०–९), and Odia (୦–୯) digit ranges all
- *  qualify. Mixed-script doesn't. Used both by the dispatcher (skip
- *  lemma auto-create for these surfaces so the lemmas table doesn't
- *  fill with "1,013,322"-style entries) and by the popup / tooltip
- *  (treat as a number even when the older `numberForms` column is
- *  null because the chapter was processed before the comma fix
- *  landed). The full Python parser in `services/nlp/app/numbers.py`
- *  is the source of truth for actually generating the spelled-out
- *  forms; this helper just gates UI branching on the client. */
-// Each alternation pins a single script across all comma-separated
-// groups so mixed-script input ("1,२३४") doesn't sneak through.
-const _NUMBER_RE =
-  /^(?:[0-9]+(?:,[0-9]+)*|[०-९]+(?:,[०-९]+)*|[୦-୯]+(?:,[୦-୯]+)*)$/u;
+ *  qualify; each alternation pins a single script so mixed-script
+ *  input (`"1,२३४"`, `"१.5"`) doesn't sneak through. Comma separators
+ *  combined with a decimal point (e.g. `"1,000.5"`) are intentionally
+ *  out of scope — neither the unsigned-integer nor the signed-decimal
+ *  parser accepts that shape, and treating it as numeric here would
+ *  desynchronize the UI from the Python parser.
+ *
+ *  Used both by the dispatcher (skip lemma auto-create for these
+ *  surfaces so the lemmas table doesn't fill with "1,013,322"-style
+ *  entries) and by the popup / tooltip (treat as a number even when
+ *  the older `numberForms` column is null because the chapter was
+ *  processed before the comma / sign / decimal support landed). The
+ *  full Python parser in `services/nlp/app/numbers.py` is the source
+ *  of truth for actually generating the spelled-out forms; this
+ *  helper just gates UI branching on the client.
+ */
+// Two alternatives per script:
+//   - integer with optional comma groups (no decimal point)
+//   - integer + decimal point + fractional digits (no commas)
+// Both wrapped in an optional leading sign (ASCII `-` or U+2212).
+const _NUMBER_RE = new RegExp(
+  '^[-−]?(?:' +
+    '[0-9]+(?:,[0-9]+)*|[0-9]+\\.[0-9]+' +
+    '|[०-९]+(?:,[०-९]+)*|[०-९]+\\.[०-९]+' +
+    '|[୦-୯]+(?:,[୦-୯]+)*|[୦-୯]+\\.[୦-୯]+' +
+  ')$',
+  'u',
+);
 export function looksLikeNumberToken(surface: string): boolean {
   if (!surface) return false;
-  // Reject leading / trailing comma without paying for a regex run.
-  if (surface.startsWith(',') || surface.endsWith(',')) return false;
-  if (surface.includes(',,')) return false;
+  // Strip an optional leading sign before the comma-shape checks so
+  // `-,1` and `-1,` etc. still get rejected the same way as `,1` /
+  // `1,`.
+  const body =
+    surface.startsWith('-') || surface.startsWith('−')
+      ? surface.slice(1)
+      : surface;
+  if (!body) return false;
+  // Reject leading / trailing comma + doubled commas without paying
+  // for a regex run.
+  if (body.startsWith(',') || body.endsWith(',')) return false;
+  if (body.includes(',,')) return false;
   return _NUMBER_RE.test(surface);
 }
 
@@ -53,7 +84,10 @@ export type ServerNumberLanguageForm = {
 };
 
 export type ServerNumberForms = {
-  value: number;
+  /** Canonical Latin-digit string form. T-2.8a widened this from
+   *  number to string so signed + decimal numerals (`"-3.14"`,
+   *  `"0.001"`) round-trip without floating-point drift. */
+  value: string;
   digitsLatin: string;
   digitsDeva: string;
   digitsOrya: string;

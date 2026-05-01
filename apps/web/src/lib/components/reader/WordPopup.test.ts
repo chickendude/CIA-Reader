@@ -34,15 +34,18 @@ afterEach(() => {
     .forEach((el) => el.remove());
 });
 
-function makeNumberForms(): ServerNumberForms {
+function makeNumberForms(
+  overrides: Partial<ServerNumberForms> = {},
+): ServerNumberForms {
   return {
-    value: 123,
+    value: '123',
     digitsLatin: '123',
     digitsDeva: '१२३',
     digitsOrya: '୧୨୩',
     hi: { spelled: 'एक सौ तेईस', romanized: 'ek sau teīs' },
     mr: { spelled: 'एकशे तेवीस', romanized: 'ēkaśē tēvīsa' },
     odia: { spelled: 'ଏକ ଶହ ତେଇଶ', romanized: 'ēka śaha tēiśa' },
+    ...overrides,
   };
 }
 
@@ -133,6 +136,49 @@ describe('WordPopup — number-only token block (T-2.8)', () => {
     expect(
       document.body.querySelector('[data-testid="word-popup"]'),
     ).not.toBeNull();
+  });
+
+  it('renders a negative + decimal value end-to-end (T-2.8a)', () => {
+    // The Python parser emits the canonical sign + decimal in
+    // digitsLatin / digitsDeva / digitsOrya, and the spelled-out
+    // form already includes the language minus / point words. The
+    // popup template just renders strings, so a `-3.14` token shows
+    // the signed/decimal Latin digits in the heading and the
+    // "ऋण ... दशमलव ..." spelled-out block in the body.
+    render(WordPopup, {
+      token: makeToken({
+        surface: '-3.14',
+        numberForms: makeNumberForms({
+          value: '-3.14',
+          digitsLatin: '-3.14',
+          digitsDeva: '-३.१४',
+          digitsOrya: '-୩.୧୪',
+          hi: {
+            spelled: 'ऋण तीन दशमलव एक चार',
+            romanized: 'r̥ṇ tīn daśamlav ek cār',
+          },
+          mr: {
+            spelled: 'उणे तीन दशांश एक चार',
+            romanized: 'uṇē tīna daśāṁśa ēka cāra',
+          },
+          odia: {
+            spelled: 'ଋଣ ତିନି ଦଶମିକ ଏକ ଚାରି',
+            romanized: 'r̥ṇa tini daśamika ēka cāri',
+          },
+        }),
+      }),
+      language: 'hi',
+      isOwner: true,
+      onClose: vi.fn(),
+    });
+    const heading = document.body.querySelector('.num-title');
+    // Latin + native digits both carry the sign + decimal point.
+    expect(heading?.textContent).toContain('-3.14');
+    expect(heading?.textContent).toContain('-३.१४');
+    const block = document.body.querySelector('[data-testid="number-forms"]');
+    expect(block?.textContent).toContain('ऋण');
+    expect(block?.textContent).toContain('दशमलव');
+    expect(block?.textContent).toContain('ऋण तीन दशमलव एक चार');
   });
 
   it('shows a reprocess hint for legacy number tokens whose numberForms column is null', () => {

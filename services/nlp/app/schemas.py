@@ -35,9 +35,14 @@ class NumberForms(BaseModel):
     MVP languages so a learner can sound out a numeral without leaving
     the page (T-2.8). ``None`` on the parent :class:`Token` for any
     token that isn't a single-script digit run in ``[0, 10_000_000]``.
+
+    ``value`` carries the canonical Latin-digit string form so signed
+    + decimal numerals round-trip losslessly (T-2.8a). ``"-3.14"``,
+    ``"0.001"``, ``"123"`` are all valid; the integer part is bounded
+    by ``10_000_000`` and the fractional part may be arbitrarily long.
     """
 
-    value: int
+    value: str
     digits_latin: str
     digits_deva: str
     digits_orya: str

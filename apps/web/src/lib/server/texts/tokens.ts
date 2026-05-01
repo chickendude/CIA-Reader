@@ -48,7 +48,10 @@ export type RenderedNumberLanguageForm = {
 };
 
 export type RenderedNumberForms = {
-  value: number;
+  /** Canonical Latin-digit string form. T-2.8a widened this from
+   *  number to string so signed + decimal numerals (`"-3.14"`,
+   *  `"0.001"`) round-trip without floating-point drift. */
+  value: string;
   digitsLatin: string;
   digitsDeva: string;
   digitsOrya: string;

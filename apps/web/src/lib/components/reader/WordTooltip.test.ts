@@ -107,7 +107,7 @@ describe('WordTooltip — number tokens (T-2.8)', () => {
       lemmaId: null,
       romanization: '123',
       numberForms: {
-        value: 123,
+        value: '123',
         digitsLatin: '123',
         digitsDeva: '१२३',
         digitsOrya: '୧୨୩',

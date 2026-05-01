@@ -148,13 +148,55 @@ def test_pipeline_attaches_number_forms_for_digit_tokens(
     tok = _find_number_token(out.tokens, number_surface)
     assert tok is not None, f"no token with surface {number_surface!r} in {out.tokens}"
     assert tok.number_forms is not None
-    # value matches the digit run regardless of source script
-    expected_value = int(number_surface) if number_surface.isascii() else None
+    # T-2.8a widened ``value`` from int to str. For the integer-only
+    # path (no sign, no decimal) the canonical form is the Latin-digit
+    # string of the value — same regardless of source script.
+    expected_value = (
+        str(int(number_surface)) if number_surface.isascii() else None
+    )
     if expected_value is not None:
         assert tok.number_forms.value == expected_value
     # All three language renderings populated.
     assert tok.number_forms.hi.spelled
     assert tok.number_forms.hi.romanized
+    assert tok.number_forms.mr.spelled
+    assert tok.number_forms.odia.spelled
+
+
+# ----------------------------------------------------------------
+# T-2.8a: signed and decimal NUM tokens flow through the pipeline
+# with their negative / decimal payload populated end-to-end.
+# ----------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "language,text,number_surface,expected_value",
+    [
+        # Negative integer.
+        ("hi", "तापमान -12 डिग्री", "-12", "-12"),
+        # Positive decimal.
+        ("hi", "मान 3.14 है", "3.14", "3.14"),
+        # U+2212 MINUS SIGN (typographically correct minus).
+        ("mr", "−5 अंश", "−5", "-5"),
+        # Negative + decimal.
+        ("or", "ତାପମାନ -2.5 ଡିଗ୍ରି", "-2.5", "-2.5"),
+    ],
+)
+def test_pipeline_attaches_number_forms_for_signed_and_decimal_tokens(
+    language: str, text: str, number_surface: str, expected_value: str
+) -> None:
+    pipe = get_pipeline(language)
+    out = pipe.process(text)
+    tok = _find_number_token(out.tokens, number_surface)
+    assert tok is not None, f"no token with surface {number_surface!r} in {out.tokens}"
+    assert tok.number_forms is not None
+    # Canonical wire form normalizes U+2212 to ASCII "-" and preserves
+    # the decimal point.
+    assert tok.number_forms.value == expected_value
+    # All three language renderings still populated for signed / decimal
+    # tokens — the popup needs them regardless of which language the
+    # text is in.
+    assert tok.number_forms.hi.spelled
     assert tok.number_forms.mr.spelled
     assert tok.number_forms.odia.spelled
 
