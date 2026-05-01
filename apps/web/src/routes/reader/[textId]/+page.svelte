@@ -426,16 +426,28 @@
         Aa
       </button>
 
-      {#if data.isAdmin}
+      {#if data.isAdmin || (data.isOwner && liveStatus === 'failed')}
+        <!-- T-11.3: owners get a Retry button when their own text
+             is in the failed state, so a botched upload isn't a
+             dead end. Admins keep the always-on Reprocess affordance
+             for diagnostics + dictionary-update reprocessing. -->
         <button
           type="button"
           class="reprocess-toggle"
           onclick={reprocessText}
           disabled={reprocessing}
-          title="Re-run the NLP pipeline on this text (admin only)"
-          data-testid="admin-reprocess"
+          title={data.isAdmin
+            ? 'Re-run the NLP pipeline on this text (admin)'
+            : 'Retry processing this text'}
+          data-testid={data.isAdmin ? 'admin-reprocess' : 'owner-retry'}
         >
-          {reprocessing ? 'Reprocessing…' : 'Reprocess'}
+          {reprocessing
+            ? data.isAdmin
+              ? 'Reprocessing…'
+              : 'Retrying…'
+            : data.isAdmin
+              ? 'Reprocess'
+              : 'Retry'}
         </button>
       {/if}
 

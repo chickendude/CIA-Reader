@@ -43,6 +43,10 @@
   let pendingListeningMs = 0;
   let pendingListeningAudioId: string | null = null;
   let lastMediaSec: number | null = null;
+  // T-11.3: surface a load failure so a flaky network or a 404 on
+  // the storage backend doesn't leave the player silently stuck.
+  // The retry button calls `audioEl.load()` again.
+  let loadError = $state<string | null>(null);
 
   const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
   const LISTENING_FLUSH_MS = 10_000;
@@ -98,9 +102,28 @@
   }
   function onLoadedMetadata() {
     if (!audioEl) return;
+    loadError = null;
     if (Number.isFinite(audioEl.duration) && audioEl.duration > 0) {
       durationSec = audioEl.duration;
     }
+  }
+
+  function onAudioError() {
+    // The HTMLMediaElement spec assigns numeric error codes; map
+    // the common ones to friendlier wording. Anything else falls
+    // through as a generic failure.
+    const code = audioEl?.error?.code;
+    if (code === 2) loadError = 'Network error while loading audio.';
+    else if (code === 3) loadError = 'Audio file could not be decoded.';
+    else if (code === 4) loadError = 'Audio source not supported.';
+    else loadError = 'Audio failed to load.';
+    isPlaying = false;
+  }
+
+  function retryLoad() {
+    if (!audioEl) return;
+    loadError = null;
+    audioEl.load();
   }
   function onPlay() {
     isPlaying = true;
@@ -203,9 +226,22 @@
     preload="metadata"
     ontimeupdate={onTimeUpdate}
     onloadedmetadata={onLoadedMetadata}
+    onerror={onAudioError}
     onplay={onPlay}
     onpause={onPause}
   ></audio>
+
+  {#if loadError}
+    <!-- T-11.3: load-failure banner with a retry button. Keyboard
+         users can tab to the retry button; screen readers get the
+         message via role="alert". -->
+    <p class="ap-err" role="alert" data-testid="audio-load-error">
+      <span>{loadError}</span>
+      <button type="button" onclick={retryLoad} data-testid="audio-retry">
+        Retry
+      </button>
+    </p>
+  {/if}
 
   <button
     type="button"
@@ -319,6 +355,28 @@
     gap: 0.45rem;
     justify-content: center;
     flex-wrap: wrap;
+  }
+  .ap-err {
+    grid-column: 1 / -1;
+    margin: 0;
+    padding: 0.4rem 0.7rem;
+    border-radius: 6px;
+    background: color-mix(in oklch, var(--err, #b94545) 10%, transparent);
+    color: var(--err, #b94545);
+    font-size: 0.82rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.6rem;
+  }
+  .ap-err button {
+    background: var(--err, #b94545);
+    color: var(--paper, var(--color-bg));
+    border: 0;
+    border-radius: 4px;
+    padding: 0.2rem 0.6rem;
+    font: inherit;
+    cursor: pointer;
   }
   .ap-license {
     background: color-mix(in oklch, var(--ink, var(--color-fg)) 6%, transparent);
