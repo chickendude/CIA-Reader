@@ -4,6 +4,32 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const processTextNow = vi.fn();
 const requireUser = vi.fn();
 
+// Stage rows for the ownership-check db lookup in the non-admin path.
+const staged: Array<unknown[]> = [];
+function stage(rows: unknown[]) {
+  staged.push(rows);
+}
+
+function makeSelectChain() {
+  const chain: Record<string, unknown> = {};
+  chain.from = vi.fn(() => chain);
+  chain.where = vi.fn(() => chain);
+  chain.limit = vi.fn(() => chain);
+  chain.then = (resolve: (v: unknown) => unknown) => {
+    const v = staged.shift();
+    if (!v) throw new Error('Test bug: no staged db result');
+    return resolve(v);
+  };
+  return chain;
+}
+
+vi.mock('$lib/server/db/index.js', () => ({
+  db: { select: () => makeSelectChain() },
+  schema: {
+    texts: { id: 'texts.id', ownerId: 'texts.ownerId' },
+  },
+}));
+
 vi.mock('$lib/server/texts/in-process-dispatcher.js', async () => {
   const actual = await vi.importActual<
     typeof import('$lib/server/texts/in-process-dispatcher.js')
@@ -44,6 +70,7 @@ async function callPost(id = VALID_ID, user: typeof ADMIN | typeof USER | null =
 beforeEach(() => {
   processTextNow.mockReset();
   requireUser.mockReset();
+  staged.length = 0;
 });
 
 afterEach(() => {
@@ -51,7 +78,7 @@ afterEach(() => {
 });
 
 describe('POST /api/v1/admin/texts/:id/reprocess', () => {
-  it('runs the dispatcher and returns the token count', async () => {
+  it('runs the dispatcher and returns the token count for an admin', async () => {
     processTextNow.mockResolvedValueOnce(1234);
     const res = (await callPost()) as Response;
     expect(res.status).toBe(200);
@@ -60,9 +87,29 @@ describe('POST /api/v1/admin/texts/:id/reprocess', () => {
     expect(processTextNow).toHaveBeenCalledWith(VALID_ID);
   });
 
-  it('rejects non-admins with 403', async () => {
+  // T-11.3: owners can retry their own failed text. Non-owners
+  // (even authenticated readers) get a flat 404, matching the rest
+  // of the texts API — we don't leak text existence.
+  it('lets the text owner trigger a reprocess (T-11.3)', async () => {
+    stage([{ id: VALID_ID, ownerId: USER.id }]);
+    processTextNow.mockResolvedValueOnce(99);
+    const res = (await callPost(VALID_ID, USER)) as Response;
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.tokensWritten).toBe(99);
+  });
+
+  it('returns 404 when a non-admin non-owner asks (T-11.3)', async () => {
+    stage([{ id: VALID_ID, ownerId: 'someone-else' }]);
     const res = (await callPost(VALID_ID, USER)) as { status: number };
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(404);
+    expect(processTextNow).not.toHaveBeenCalled();
+  });
+
+  it('returns 404 when the text does not exist for a non-admin', async () => {
+    stage([]);
+    const res = (await callPost(VALID_ID, USER)) as { status: number };
+    expect(res.status).toBe(404);
     expect(processTextNow).not.toHaveBeenCalled();
   });
 
