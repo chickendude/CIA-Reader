@@ -386,6 +386,15 @@
   let newTranslationBody = $state('');
   let savingTranslation = $state(false);
   let addError = $state<string | null>(null);
+  let addTextareaEl = $state<HTMLTextAreaElement | null>(null);
+
+  // Focus the textarea as soon as the form mounts so the user can
+  // start typing immediately after clicking "+ Add my translation".
+  $effect(() => {
+    if (showAddForm && addTextareaEl) {
+      addTextareaEl.focus();
+    }
+  });
 
   // ---- Customize-official flow (T-3.11) ---------------------------
   // Which official translation (id) is currently being forked, if any,
@@ -554,6 +563,19 @@
       newTranslationBody = '';
       addError = null;
     }
+  }
+
+  // The form has no explicit Save/Cancel buttons — losing focus is
+  // the natural "I'm done" signal. Empty content silently closes the
+  // form; non-empty content commits exactly like Enter would.
+  function onAddFormBlur() {
+    if (savingTranslation) return;
+    if (newTranslationBody.trim().length === 0) {
+      showAddForm = false;
+      addError = null;
+      return;
+    }
+    void submitNewTranslation();
   }
 
   // Mirror onAddFormKeydown so Enter/Esc on the customize textarea
@@ -1112,33 +1134,18 @@
             }}
           >
             <textarea
+              bind:this={addTextareaEl}
               bind:value={newTranslationBody}
               placeholder="Your translation (Enter to save, Shift+Enter for a newline, Esc to cancel)"
               rows="2"
               maxlength="500"
               disabled={savingTranslation}
               onkeydown={onAddFormKeydown}
+              onblur={onAddFormBlur}
             ></textarea>
             {#if addError}
               <p class="err small">{addError}</p>
             {/if}
-            <div class="add-row">
-              <button type="submit" disabled={savingTranslation}>
-                {savingTranslation ? 'Saving…' : 'Save'}
-              </button>
-              <button
-                type="button"
-                class="ghost"
-                disabled={savingTranslation}
-                onclick={() => {
-                  showAddForm = false;
-                  newTranslationBody = '';
-                  addError = null;
-                }}
-              >
-                Cancel
-              </button>
-            </div>
           </form>
         {:else}
           <button

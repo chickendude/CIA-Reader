@@ -283,3 +283,161 @@ describe('WordPopup — translation reporting (T-11.1)', () => {
     ).toBeNull();
   });
 });
+
+describe('WordPopup — add-translation form (no buttons, focus, refetch)', () => {
+  function emptyPayload() {
+    return {
+      lemma: { id: 'lem-1', headword: 'पानी', pos: 'NOUN', glossDefault: null },
+      translations: { personal: [], official: [], community: [] },
+    };
+  }
+
+  function payloadWith(personal: { id: string; body: string }[]) {
+    return {
+      lemma: { id: 'lem-1', headword: 'पानी', pos: 'NOUN', glossDefault: null },
+      translations: {
+        personal: personal.map((p) => ({
+          id: p.id,
+          source: 'user',
+          submittedBy: 'me',
+          body: p.body,
+          targetLanguage: 'en',
+          sourceAttribution: null,
+          parentTranslationId: null,
+          provenance: { kind: 'personal', attribution: null },
+          voteScore: 0,
+          viewerVote: null,
+        })),
+        official: [],
+        community: [],
+      },
+    };
+  }
+
+  function jsonResponse(body: unknown, status = 200): Response {
+    return new Response(JSON.stringify(body), {
+      status,
+      headers: { 'content-type': 'application/json' },
+    });
+  }
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('focuses the textarea as soon as "+ Add my translation" is clicked', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(jsonResponse(emptyPayload())),
+    );
+    render(WordPopup, {
+      token: makeToken({ surface: 'पानी', lemmaId: 'lem-1' }),
+      language: 'hi',
+      isOwner: true,
+      onClose: vi.fn(),
+    });
+    const toggle = await waitFor(() => {
+      const el = document.body.querySelector<HTMLButtonElement>('.add-toggle');
+      if (!el) throw new Error('add-toggle missing');
+      return el;
+    });
+    toggle.click();
+    await waitFor(() => {
+      const textarea = document.body.querySelector<HTMLTextAreaElement>(
+        '.add-form textarea',
+      );
+      expect(textarea).not.toBeNull();
+      expect(document.activeElement).toBe(textarea);
+    });
+  });
+
+  it('does not render any Save/Cancel buttons inside the add-translation form', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(jsonResponse(emptyPayload())),
+    );
+    render(WordPopup, {
+      token: makeToken({ surface: 'पानी', lemmaId: 'lem-1' }),
+      language: 'hi',
+      isOwner: true,
+      onClose: vi.fn(),
+    });
+    const toggle = await waitFor(() => {
+      const el = document.body.querySelector<HTMLButtonElement>('.add-toggle');
+      if (!el) throw new Error('add-toggle missing');
+      return el;
+    });
+    toggle.click();
+    const form = await waitFor(() => {
+      const el = document.body.querySelector<HTMLFormElement>('.add-form');
+      if (!el) throw new Error('add-form missing');
+      return el;
+    });
+    expect(form.querySelector('button')).toBeNull();
+  });
+
+  it('shows the newly-added translation in the popup after Enter submits', async () => {
+    const fetchMock = vi
+      .fn()
+      // initial GET — empty payload
+      .mockResolvedValueOnce(jsonResponse(emptyPayload()))
+      // POST /api/v1/translations — server echoes the row back
+      .mockResolvedValueOnce(
+        jsonResponse({
+          translation: {
+            id: 'tr-mine',
+            source: 'user',
+            submittedBy: 'me',
+            body: 'water',
+            targetLanguage: 'en',
+            sourceAttribution: null,
+            parentTranslationId: null,
+            provenance: { kind: 'personal', attribution: null },
+            voteScore: 0,
+            viewerVote: null,
+          },
+        }),
+      )
+      // refetch GET — payload now contains the personal row
+      .mockResolvedValueOnce(
+        jsonResponse(payloadWith([{ id: 'tr-mine', body: 'water' }])),
+      );
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(WordPopup, {
+      token: makeToken({ surface: 'पानी', lemmaId: 'lem-1' }),
+      language: 'hi',
+      isOwner: true,
+      onClose: vi.fn(),
+    });
+    const toggle = await waitFor(() => {
+      const el = document.body.querySelector<HTMLButtonElement>('.add-toggle');
+      if (!el) throw new Error('add-toggle missing');
+      return el;
+    });
+    toggle.click();
+    const textarea = await waitFor(() => {
+      const el = document.body.querySelector<HTMLTextAreaElement>(
+        '.add-form textarea',
+      );
+      if (!el) throw new Error('textarea missing');
+      return el;
+    });
+
+    // Type via the same mechanism Svelte's bind:value listens for.
+    textarea.value = 'water';
+    textarea.dispatchEvent(new Event('input', { bubbles: true }));
+    textarea.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }),
+    );
+
+    // The translations list refreshes and the form collapses back to
+    // the toggle so the user immediately sees what they added.
+    await waitFor(() => {
+      const list = document.body.querySelector('.translations');
+      expect(list?.textContent ?? '').toContain('water');
+      expect(document.body.querySelector('.add-form')).toBeNull();
+      expect(document.body.querySelector('.add-toggle')).not.toBeNull();
+    });
+  });
+});
