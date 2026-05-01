@@ -181,10 +181,42 @@
     });
   }
 
+  // T-11.4: YouTube-style keyboard shortcuts (J/K/L) for the audio
+  // player. Picked these letters specifically because they don't
+  // conflict with browser defaults (Space scrolls the page; arrows
+  // navigate the page) and they're already familiar to users from
+  // video players. K toggles play/pause, J seeks back 5s, L seeks
+  // forward 5s. Intentionally NO-OP when the user is typing in an
+  // input / textarea / contenteditable so reader search and
+  // translation forms stay usable.
+  const SEEK_SECONDS = 5;
+  function isTypingTarget(t: EventTarget | null): boolean {
+    if (!(t instanceof HTMLElement)) return false;
+    const tag = t.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true;
+    return t.isContentEditable;
+  }
+  function onPlayerKeydown(e: KeyboardEvent) {
+    if (e.altKey || e.ctrlKey || e.metaKey) return;
+    if (isTypingTarget(e.target)) return;
+    const key = e.key.toLowerCase();
+    if (key === 'k') {
+      e.preventDefault();
+      toggle();
+    } else if (key === 'j') {
+      e.preventDefault();
+      seekToSec(currentSec - SEEK_SECONDS);
+    } else if (key === 'l') {
+      e.preventDefault();
+      seekToSec(currentSec + SEEK_SECONDS);
+    }
+  }
+
   onMount(() => {
     setAudioState({ audioFileId: audio.id, isPlaying: false, currentTimeMs: 0 });
     window.addEventListener('pagehide', flushListeningOnPageHide);
     window.addEventListener('beforeunload', flushListeningOnPageHide);
+    window.addEventListener('keydown', onPlayerKeydown);
     const controller: AudioController = {
       seekMs: (ms) => seekToSec(ms / 1000),
       play,
@@ -195,6 +227,7 @@
       flushListeningOnPageHide();
       window.removeEventListener('pagehide', flushListeningOnPageHide);
       window.removeEventListener('beforeunload', flushListeningOnPageHide);
+      window.removeEventListener('keydown', onPlayerKeydown);
       setAudioController(null);
       setAudioState({ audioFileId: null, isPlaying: false, currentTimeMs: 0 });
     };
@@ -248,6 +281,8 @@
     class="ap-toggle"
     onclick={toggle}
     aria-label={isPlaying ? 'Pause' : 'Play'}
+    aria-keyshortcuts="K"
+    title={isPlaying ? 'Pause (K)' : 'Play (K)'}
   >
     {isPlaying ? '⏸' : '▶'}
   </button>
