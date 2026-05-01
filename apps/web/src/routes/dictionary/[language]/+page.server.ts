@@ -61,6 +61,10 @@ export const load: PageServerLoad = async ({ params, url }) => {
     // render a hint when an exact-match search missed and we showed
     // the user the closest nukta-stripped match instead.
     usedNuktaFallback: result.usedNuktaFallback,
+    // T-3.12: surface the romanization-transliteration tier so the
+    // page can render "showing matches for किताब (from kitaab)".
+    usedRomanizationTransliteration: result.usedRomanizationTransliteration,
+    effectiveQuery: result.effectiveQuery,
     query: {
       q: q ?? '',
       pos,

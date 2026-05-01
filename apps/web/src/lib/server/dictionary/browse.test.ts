@@ -245,6 +245,67 @@ describe('listDictionaryLemmas', () => {
     const result = await listDictionaryLemmas('hi');
     expect(result.usedNuktaFallback).toBe(false);
   });
+
+  // ---- romanization-aware search (T-3.12) ----------------------------
+
+  it('transliterates a Latin query to native and searches against the strict tier', async () => {
+    // The headline use case from T-3.12: user types `kitaab` in
+    // Latin, the search runs against `किताब` and finds the lemma row.
+    // We don't introspect the WHERE clause directly but we can prove
+    // the tier landed via the `usedRomanizationTransliteration` flag
+    // and the `effectiveQuery` echoed back in the result.
+    stage([lemmaRow({ headword: 'किताब' })]);
+    stage([{ n: 1 }]);
+    const result = await listDictionaryLemmas('hi', { q: 'kitaab' });
+    expect(result.usedRomanizationTransliteration).toBe(true);
+    expect(result.effectiveQuery).toBe('किताब');
+    expect(result.usedNuktaFallback).toBe(false);
+    expect(result.lemmas).toHaveLength(1);
+  });
+
+  it('does not transliterate when the query already contains native script', async () => {
+    stage([lemmaRow({ headword: 'किताब' })]);
+    stage([{ n: 1 }]);
+    const result = await listDictionaryLemmas('hi', { q: 'किताब' });
+    expect(result.usedRomanizationTransliteration).toBe(false);
+    expect(result.effectiveQuery).toBe('किताब');
+  });
+
+  it('echoes the empty effectiveQuery when no q is provided', async () => {
+    stage([lemmaRow()]);
+    stage([{ n: 1 }]);
+    const result = await listDictionaryLemmas('hi');
+    expect(result.usedRomanizationTransliteration).toBe(false);
+    expect(result.effectiveQuery).toBe('');
+  });
+
+  it('preserves the romanization-transliteration flag through the nukta fallback path', async () => {
+    // Strict tier on the transliterated `पढना` misses; the
+    // nukta-agnostic tier picks up `पढ़ना`. The romanization flag
+    // should still be true on the result so the UI can render both
+    // hints.
+    stage([]); // strict rows
+    stage([{ n: 0 }]); // strict count
+    stage([lemmaRow({ headword: 'पढ़ना' })]); // fallback rows
+    stage([{ n: 1 }]); // fallback count
+    const result = await listDictionaryLemmas('hi', { q: 'paDhana' });
+    expect(result.usedRomanizationTransliteration).toBe(true);
+    expect(result.usedNuktaFallback).toBe(true);
+  });
+
+  it('does not advertise transliteration when the helper leaves the input unchanged', async () => {
+    // `123` runs through `latinToNative` cleanly — none of the
+    // ITRANS keys match digits, so the helper returns the input
+    // verbatim. We don't want a misleading "transliterated from"
+    // hint in that case. Stage a strict-tier hit so the fallback
+    // doesn't fire (the digit-shaped query is irrelevant for
+    // headword search but the function still walks the same path).
+    stage([lemmaRow({ headword: '123' })]);
+    stage([{ n: 1 }]);
+    const result = await listDictionaryLemmas('hi', { q: '123' });
+    expect(result.usedRomanizationTransliteration).toBe(false);
+    expect(result.effectiveQuery).toBe('123');
+  });
 });
 
 describe('publicLemma', () => {
