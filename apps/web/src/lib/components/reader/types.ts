@@ -113,6 +113,11 @@ export type ServerToken = {
   /** Canonical short gloss for the lemma — surfaced in the hover
    *  tooltip (T-5.18). Null when there's no lemma or no gloss yet. */
   glossDefault: string | null;
+  /** The viewer's own translation for this lemma, if any. The hover
+   *  tooltip prefers this over `glossDefault` so a reader sees their
+   *  own words for lemmas they've translated. Null when anonymous
+   *  or when the viewer hasn't added a personal translation. */
+  personalGloss: string | null;
   /** T-6.1: alternate-meaning candidates for is_ambiguous tokens.
    *  Empty array when the worker scored only one viable candidate
    *  or hasn't run yet. */

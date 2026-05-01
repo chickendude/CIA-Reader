@@ -60,6 +60,7 @@ function makeToken(overrides: Partial<ServerToken> = {}): ServerToken {
     lemmaId: null,
     romanization: null,
     glossDefault: null,
+    personalGloss: null,
     candidates: [],
     numberForms: null,
     status: 'unknown',
@@ -438,6 +439,274 @@ describe('WordPopup — add-translation form (no buttons, focus, refetch)', () =
       expect(list?.textContent ?? '').toContain('water');
       expect(document.body.querySelector('.add-form')).toBeNull();
       expect(document.body.querySelector('.add-toggle')).not.toBeNull();
+    });
+  });
+});
+
+describe('WordPopup — edit + delete personal translations', () => {
+  function personalRow(id: string, body: string) {
+    return {
+      id,
+      source: 'user' as const,
+      submittedBy: 'me',
+      body,
+      targetLanguage: 'en',
+      sourceAttribution: null,
+      parentTranslationId: null,
+      provenance: { kind: 'personal' as const, attribution: null },
+      voteScore: 0,
+      viewerVote: null,
+    };
+  }
+
+  function payloadOf(personal: { id: string; body: string }[]) {
+    return {
+      lemma: { id: 'lem-1', headword: 'पानी', pos: 'NOUN', glossDefault: null },
+      translations: {
+        personal: personal.map((p) => personalRow(p.id, p.body)),
+        official: [],
+        community: [],
+      },
+    };
+  }
+
+  function jsonResponse(body: unknown, status = 200): Response {
+    return new Response(JSON.stringify(body), {
+      status,
+      headers: { 'content-type': 'application/json' },
+    });
+  }
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it('renders Edit + Delete buttons on each personal row when isOwner=true', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        jsonResponse(payloadOf([{ id: 'tr-1', body: 'water' }])),
+      ),
+    );
+    render(WordPopup, {
+      token: makeToken({ surface: 'पानी', lemmaId: 'lem-1' }),
+      language: 'hi',
+      isOwner: true,
+      onClose: vi.fn(),
+    });
+    await waitFor(() => {
+      expect(
+        document.body.querySelector('[data-testid="edit-personal"]'),
+      ).not.toBeNull();
+      expect(
+        document.body.querySelector('[data-testid="delete-personal"]'),
+      ).not.toBeNull();
+    });
+  });
+
+  it('hides Edit + Delete buttons when isOwner=false', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        jsonResponse(payloadOf([{ id: 'tr-1', body: 'water' }])),
+      ),
+    );
+    render(WordPopup, {
+      token: makeToken({ surface: 'पानी', lemmaId: 'lem-1' }),
+      language: 'hi',
+      isOwner: false,
+      onClose: vi.fn(),
+    });
+    await waitFor(() => {
+      expect(document.body.querySelector('[data-testid="personal-row"]')).not.toBeNull();
+    });
+    expect(document.body.querySelector('[data-testid="edit-personal"]')).toBeNull();
+    expect(document.body.querySelector('[data-testid="delete-personal"]')).toBeNull();
+  });
+
+  it('Edit swaps the row for a focused textarea and PATCHes the body on Enter', async () => {
+    const fetchMock = vi
+      .fn()
+      // initial GET
+      .mockResolvedValueOnce(jsonResponse(payloadOf([{ id: 'tr-1', body: 'water' }])))
+      // PATCH
+      .mockResolvedValueOnce(
+        jsonResponse({ translation: personalRow('tr-1', 'fresh water') }),
+      )
+      // refetch GET
+      .mockResolvedValueOnce(jsonResponse(payloadOf([{ id: 'tr-1', body: 'fresh water' }])));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const onPersonalTranslationChange = vi.fn();
+    render(WordPopup, {
+      token: makeToken({ surface: 'पानी', lemmaId: 'lem-1' }),
+      language: 'hi',
+      isOwner: true,
+      onClose: vi.fn(),
+      onPersonalTranslationChange,
+    });
+
+    const editBtn = await waitFor(() => {
+      const el = document.body.querySelector<HTMLButtonElement>(
+        '[data-testid="edit-personal"]',
+      );
+      if (!el) throw new Error('edit-personal missing');
+      return el;
+    });
+    editBtn.click();
+
+    const textarea = await waitFor(() => {
+      const el = document.body.querySelector<HTMLTextAreaElement>(
+        '[data-testid="edit-personal-form"] textarea',
+      );
+      if (!el) throw new Error('edit textarea missing');
+      return el;
+    });
+    expect(document.activeElement).toBe(textarea);
+    expect(textarea.value).toBe('water');
+
+    textarea.value = 'fresh water';
+    textarea.dispatchEvent(new Event('input', { bubbles: true }));
+    textarea.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }),
+    );
+
+    await waitFor(() => {
+      // Form gone, list shows the new body, parent was notified.
+      expect(
+        document.body.querySelector('[data-testid="edit-personal-form"]'),
+      ).toBeNull();
+      const list = document.body.querySelector('.translations');
+      expect(list?.textContent ?? '').toContain('fresh water');
+      expect(onPersonalTranslationChange).toHaveBeenCalledWith(
+        'lem-1',
+        'fresh water',
+      );
+    });
+
+    // PATCH happened against /api/v1/translations/tr-1.
+    const patchCall = fetchMock.mock.calls.find(
+      ([url, init]) =>
+        typeof url === 'string' &&
+        url.endsWith('/api/v1/translations/tr-1') &&
+        (init as RequestInit | undefined)?.method === 'PATCH',
+    );
+    expect(patchCall).toBeDefined();
+  });
+
+  it('Delete confirms, sends DELETE, and notifies parent that the personal gloss is gone', async () => {
+    const fetchMock = vi
+      .fn()
+      // initial GET
+      .mockResolvedValueOnce(jsonResponse(payloadOf([{ id: 'tr-1', body: 'water' }])))
+      // DELETE — 204 No Content
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+      // refetch GET — empty personal bucket now
+      .mockResolvedValueOnce(jsonResponse(payloadOf([])));
+    vi.stubGlobal('fetch', fetchMock);
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+
+    const onPersonalTranslationChange = vi.fn();
+    render(WordPopup, {
+      token: makeToken({ surface: 'पानी', lemmaId: 'lem-1' }),
+      language: 'hi',
+      isOwner: true,
+      onClose: vi.fn(),
+      onPersonalTranslationChange,
+    });
+
+    const delBtn = await waitFor(() => {
+      const el = document.body.querySelector<HTMLButtonElement>(
+        '[data-testid="delete-personal"]',
+      );
+      if (!el) throw new Error('delete-personal missing');
+      return el;
+    });
+    delBtn.click();
+
+    await waitFor(() => {
+      expect(document.body.querySelector('[data-testid="personal-row"]')).toBeNull();
+      expect(onPersonalTranslationChange).toHaveBeenCalledWith('lem-1', null);
+    });
+
+    const deleteCall = fetchMock.mock.calls.find(
+      ([url, init]) =>
+        typeof url === 'string' &&
+        url.endsWith('/api/v1/translations/tr-1') &&
+        (init as RequestInit | undefined)?.method === 'DELETE',
+    );
+    expect(deleteCall).toBeDefined();
+  });
+
+  it('Delete is a no-op when window.confirm is dismissed', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse(payloadOf([{ id: 'tr-1', body: 'water' }])));
+    vi.stubGlobal('fetch', fetchMock);
+    vi.spyOn(window, 'confirm').mockReturnValue(false);
+
+    render(WordPopup, {
+      token: makeToken({ surface: 'पानी', lemmaId: 'lem-1' }),
+      language: 'hi',
+      isOwner: true,
+      onClose: vi.fn(),
+    });
+
+    const delBtn = await waitFor(() => {
+      const el = document.body.querySelector<HTMLButtonElement>(
+        '[data-testid="delete-personal"]',
+      );
+      if (!el) throw new Error('delete-personal missing');
+      return el;
+    });
+    delBtn.click();
+
+    // Only the initial GET should have fired — no DELETE.
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(
+      document.body.querySelector('[data-testid="personal-row"]'),
+    ).not.toBeNull();
+  });
+
+  it('fires onPersonalTranslationChange after a successful add', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse(payloadOf([])))
+      .mockResolvedValueOnce(jsonResponse({ translation: personalRow('tr-1', 'water') }))
+      .mockResolvedValueOnce(jsonResponse(payloadOf([{ id: 'tr-1', body: 'water' }])));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const onPersonalTranslationChange = vi.fn();
+    render(WordPopup, {
+      token: makeToken({ surface: 'पानी', lemmaId: 'lem-1' }),
+      language: 'hi',
+      isOwner: true,
+      onClose: vi.fn(),
+      onPersonalTranslationChange,
+    });
+
+    const toggle = await waitFor(() => {
+      const el = document.body.querySelector<HTMLButtonElement>('.add-toggle');
+      if (!el) throw new Error('add-toggle missing');
+      return el;
+    });
+    toggle.click();
+    const textarea = await waitFor(() => {
+      const el = document.body.querySelector<HTMLTextAreaElement>(
+        '.add-form textarea',
+      );
+      if (!el) throw new Error('add textarea missing');
+      return el;
+    });
+    textarea.value = 'water';
+    textarea.dispatchEvent(new Event('input', { bubbles: true }));
+    textarea.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }),
+    );
+
+    await waitFor(() => {
+      expect(onPersonalTranslationChange).toHaveBeenCalledWith('lem-1', 'water');
     });
   });
 });

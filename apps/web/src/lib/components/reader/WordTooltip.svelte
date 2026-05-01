@@ -133,14 +133,21 @@
     </div>
   {:else if isLegacyNumber}
     <div class="tip-def empty" data-testid="legacy-number">Number</div>
-  {:else if token.isOov}
+  {:else if token.isOov && !token.personalGloss}
     <!-- T-5.20: surface the top translation when we have one, fall
          back to an italic "No translations" otherwise so the user
          always knows whether the lookup is empty or just absent. The
          tooltip stays no-fetch — it reads `glossDefault` off the token
          row, which the side-panel still backs up with the full
-         hierarchy on click. -->
+         hierarchy on click. A user-supplied translation overrides the
+         OOV copy so words the reader has chosen to translate read in
+         their own words even when the dictionary missed them. -->
     <div class="tip-def empty">No dictionary match</div>
+  {:else if token.personalGloss}
+    <div class="tip-def" data-testid="tip-personal">
+      <span class="tip-mine">yours</span>
+      {token.personalGloss}
+    </div>
   {:else if token.glossDefault}
     <div class="tip-def">{token.glossDefault}</div>
   {:else}
@@ -206,6 +213,21 @@
   .tip-def.empty {
     color: color-mix(in oklch, var(--paper, #fdfaf3) 65%, transparent);
     font-style: italic;
+  }
+  /* Tiny inline badge that flags the gloss as the viewer's own
+     translation rather than the dictionary one. Keeps the bookkeeping
+     visible without making the tooltip noisy. */
+  .tip-mine {
+    display: inline-block;
+    margin-right: 0.35rem;
+    padding: 0 0.35rem;
+    border-radius: 999px;
+    background: color-mix(in oklch, var(--paper, #fdfaf3) 22%, transparent);
+    color: var(--paper, #fdfaf3);
+    font-size: 0.6rem;
+    font-style: normal;
+    text-transform: lowercase;
+    letter-spacing: 0.02em;
   }
   @keyframes fade-in {
     from {

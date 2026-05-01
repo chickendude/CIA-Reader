@@ -30,6 +30,7 @@ function tok(
     lemmaId: null,
     romanization: null,
     glossDefault: null,
+    personalGloss: null,
     candidates: [],
     numberForms: null,
     status: 'unknown',

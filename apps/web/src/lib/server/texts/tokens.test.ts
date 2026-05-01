@@ -44,6 +44,14 @@ vi.mock('../db/index.js', () => ({
       id: 'lemmas.id',
       glossDefault: 'lemmas.gloss_default',
     },
+    translations: {
+      targetType: 'translations.target_type',
+      targetId: 'translations.target_id',
+      source: 'translations.source',
+      submittedBy: 'translations.submitted_by',
+      body: 'translations.body',
+      createdAt: 'translations.created_at',
+    },
   },
 }));
 
@@ -120,6 +128,7 @@ describe('loadChapterTokens', () => {
     stage([]); // token_corrections (T-6.4) — none
     stage([]); // user_known_lemmas → empty
     stage([]); // lemmas (gloss lookup) → empty
+    stage([]); // personal translations → empty
     const result = await loadChapterTokens('chap-1', 'user-1');
     expect(result).not.toBeNull();
     expect(result!.every((t) => t.status === 'unknown')).toBe(true);
@@ -137,6 +146,7 @@ describe('loadChapterTokens', () => {
       { userId: 'user-1', lemmaId: 'lem-learning', status: 'learning' },
     ]);
     stage([]); // lemmas (gloss lookup) — none on file for these lemmas
+    stage([]); // personal translations
     const result = await loadChapterTokens('chap-1', 'user-1');
     expect(result).toEqual([
       expect.objectContaining({ id: 't1', status: 'known' }),
@@ -157,6 +167,7 @@ describe('loadChapterTokens', () => {
       { id: 'lem-a', language: 'hi', headword: 'सुबह', glossDefault: 'morning' },
       { id: 'lem-b', language: 'hi', headword: 'rare', glossDefault: null },
     ]);
+    stage([]); // personal translations
     // T-3.14 sibling fallback: lem-b had no gloss, so the loader runs
     // a sibling lookup. No sibling exists for "rare", so an empty
     // result keeps the null gloss as-is.
@@ -179,6 +190,7 @@ describe('loadChapterTokens', () => {
     stage([
       { id: 'lem-propn', language: 'hi', headword: 'पार्क', glossDefault: null },
     ]);
+    stage([]); // personal translations
     stage([
       { language: 'hi', headword: 'पार्क', glossDefault: 'park' },
     ]);
@@ -191,11 +203,13 @@ describe('loadChapterTokens', () => {
     stage([]); // token_corrections (T-6.4)
     stage([]); // user_known_lemmas
     stage([{ id: 'lem-a', language: 'hi', headword: 'पानी', glossDefault: 'water' }]);
-    // No 5th stage — fallback query must not fire.
+    stage([]); // personal translations
+    // No further stage — fallback query must not fire.
     await loadChapterTokens('chap-1', 'user-1');
     // 1 (tokens) + 1 (token_corrections) + 1 (user_known_lemmas) +
-    // 1 (gloss lookup) = 4, no sibling fallback.
-    expect(selectFn).toHaveBeenCalledTimes(4);
+    // 1 (gloss lookup) + 1 (personal translations) = 5, no sibling
+    // fallback.
+    expect(selectFn).toHaveBeenCalledTimes(5);
   });
 
   it('populates token.candidates with metadata pulled from the lemmas table (T-6.1)', async () => {
@@ -231,6 +245,7 @@ describe('loadChapterTokens', () => {
         glossDefault: 'to read',
       },
     ]);
+    stage([]); // personal translations
     const result = await loadChapterTokens('chap-1', 'user-1');
     expect(result![0]).toMatchObject({
       id: 't1',
@@ -291,6 +306,7 @@ describe('loadChapterTokens', () => {
         glossDefault: 'corrected',
       },
     ]);
+    stage([]); // personal translations
     const result = await loadChapterTokens('chap-1', 'user-1');
     expect(result![0]).toMatchObject({
       id: 't1',
@@ -327,6 +343,7 @@ describe('loadChapterTokens', () => {
         glossDefault: 'placeholder',
       },
     ]);
+    stage([]); // personal translations
     const result = await loadChapterTokens('chap-1', 'user-1');
     expect(result![0]).toMatchObject({
       id: 't1',
@@ -335,6 +352,60 @@ describe('loadChapterTokens', () => {
       isWord: false,
       isOov: false,
     });
+  });
+
+  it("attaches the viewer's own translation as personalGloss for the hover tooltip", async () => {
+    stage([
+      tokenRow({ id: 't1', idx: 0, lemmaId: 'lem-a' }),
+      tokenRow({ id: 't2', idx: 1, lemmaId: 'lem-b' }),
+    ]);
+    stage([]); // token_corrections
+    stage([]); // user_known_lemmas
+    stage([
+      { id: 'lem-a', language: 'hi', headword: 'पानी', glossDefault: 'water' },
+      { id: 'lem-b', language: 'hi', headword: 'सुबह', glossDefault: 'morning' },
+    ]);
+    // The viewer has translated lem-a but not lem-b. Two rows for
+    // lem-a — the loader should pick the OLDER one to stay in sync
+    // with the popup's oldest-first personal ordering.
+    stage([
+      {
+        targetId: 'lem-a',
+        body: 'newer mine',
+        createdAt: new Date('2026-04-30T12:00:00Z'),
+      },
+      {
+        targetId: 'lem-a',
+        body: 'older mine',
+        createdAt: new Date('2026-04-01T12:00:00Z'),
+      },
+    ]);
+    const result = await loadChapterTokens('chap-1', 'user-1');
+    expect(result![0]).toMatchObject({
+      id: 't1',
+      glossDefault: 'water',
+      personalGloss: 'older mine',
+    });
+    expect(result![1]).toMatchObject({
+      id: 't2',
+      glossDefault: 'morning',
+      personalGloss: null,
+    });
+  });
+
+  it('skips the personal-translations SELECT for anonymous viewers', async () => {
+    stage([tokenRow({ id: 't1', idx: 0, lemmaId: 'lem-a' })]);
+    stage([
+      { id: 'lem-a', language: 'hi', headword: 'पानी', glossDefault: 'water' },
+    ]);
+    const result = await loadChapterTokens('chap-1', null);
+    expect(result![0]).toMatchObject({
+      id: 't1',
+      personalGloss: null,
+    });
+    // tokens (1) + lemmas (1) = 2. Personal-translations SELECT does
+    // not fire when there's no viewer.
+    expect(selectFn).toHaveBeenCalledTimes(2);
   });
 
   it('handles anonymous viewers (no user_known_lemmas SELECT, every status=unknown)', async () => {
