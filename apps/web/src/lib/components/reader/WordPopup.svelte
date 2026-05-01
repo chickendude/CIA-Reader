@@ -83,6 +83,7 @@
     onStatusChange,
     onCorrectionApplied,
     onPhraseCreated,
+    onPersonalTranslationChange,
   }: {
     token: ServerToken | null;
     /** T-14.3: surface the longest phrase containing the click
@@ -120,6 +121,15 @@
     /** T-14.3a: fired after a successful phrase-create POST so
      *  the parent can refetch chapter spans / close the popup. */
     onPhraseCreated?: (phraseId: string) => void;
+    /** Fired after a personal translation is added, edited, or
+     *  deleted. The parent uses it to update the chapter's hover
+     *  tooltip without a full reload. `gloss` is the new primary
+     *  personal translation body, or null when the viewer no longer
+     *  has any. */
+    onPersonalTranslationChange?: (
+      lemmaId: string,
+      gloss: string | null,
+    ) => void;
   } = $props();
 
   // T-14.3a: phrase-create state.
@@ -396,6 +406,27 @@
     }
   });
 
+  // ---- Edit / delete personal translation -------------------------
+  // The viewer can revise or remove their own translations inline.
+  // The edit textarea reuses the same Enter-to-save / Esc-to-cancel
+  // ergonomics as the add form. Delete is a single click guarded by
+  // the browser's confirm dialog — translations are short, but
+  // they're still real authored content, so a typo'd click shouldn't
+  // wipe one silently.
+  let editingId = $state<string | null>(null);
+  let editBody = $state('');
+  let savingEdit = $state(false);
+  let editError = $state<string | null>(null);
+  let editTextareaEl = $state<HTMLTextAreaElement | null>(null);
+  let deletingId = $state<string | null>(null);
+  let deleteError = $state<string | null>(null);
+
+  $effect(() => {
+    if (editingId !== null && editTextareaEl) {
+      editTextareaEl.focus();
+    }
+  });
+
   // ---- Customize-official flow (T-3.11) ---------------------------
   // Which official translation (id) is currently being forked, if any,
   // plus the body of the in-progress fork. The eligibility set itself
@@ -525,6 +556,16 @@
     }
   }
 
+  // The hover tooltip caches the chapter payload, so adding /
+  // editing / deleting a personal translation needs to push the new
+  // primary body up to the parent. The "primary" matches the loader's
+  // pick: the oldest personal row (which the popup also lists first).
+  function notifyPersonalChange() {
+    if (!token?.lemmaId) return;
+    const next = payload?.translations.personal[0]?.body ?? null;
+    onPersonalTranslationChange?.(token.lemmaId, next);
+  }
+
   async function submitNewTranslation() {
     if (!token || !token.lemmaId) return;
     const trimmed = newTranslationBody.trim();
@@ -540,6 +581,7 @@
       await refetchPayload(lemmaId);
       newTranslationBody = '';
       showAddForm = false;
+      notifyPersonalChange();
     } catch (e) {
       addError = (e as PostError).message ?? (e as Error).message;
     } finally {
@@ -608,10 +650,107 @@
       await refetchPayload(lemmaId);
       customizingId = null;
       customizeBody = '';
+      notifyPersonalChange();
     } catch (e) {
       customizeError = (e as PostError).message ?? (e as Error).message;
     } finally {
       savingCustomize = false;
+    }
+  }
+
+  function startEditPersonal(t: PublicTranslation) {
+    editingId = t.id;
+    editBody = t.body;
+    editError = null;
+  }
+
+  function cancelEditPersonal() {
+    editingId = null;
+    editBody = '';
+    editError = null;
+  }
+
+  async function submitEditPersonal() {
+    if (!editingId || !token?.lemmaId) return;
+    const trimmed = editBody.trim();
+    if (trimmed.length === 0) {
+      editError = 'Translation cannot be empty.';
+      return;
+    }
+    const lemmaId = token.lemmaId;
+    const id = editingId;
+    savingEdit = true;
+    editError = null;
+    try {
+      const res = await fetch(`/api/v1/translations/${id}`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ body: trimmed }),
+      });
+      if (!res.ok) {
+        const text = await res.text().catch(() => '');
+        editError = text || `Could not save (${res.status})`;
+        return;
+      }
+      await refetchPayload(lemmaId);
+      editingId = null;
+      editBody = '';
+      notifyPersonalChange();
+    } catch (e) {
+      editError = `Network error: ${(e as Error).message}`;
+    } finally {
+      savingEdit = false;
+    }
+  }
+
+  function onEditPersonalKeydown(e: KeyboardEvent) {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      void submitEditPersonal();
+      return;
+    }
+    if (e.key === 'Escape') {
+      e.stopPropagation();
+      e.preventDefault();
+      cancelEditPersonal();
+    }
+  }
+
+  function onEditPersonalBlur() {
+    if (savingEdit) return;
+    if (editBody.trim().length === 0) {
+      cancelEditPersonal();
+      return;
+    }
+    void submitEditPersonal();
+  }
+
+  async function deletePersonal(t: PublicTranslation) {
+    if (!token?.lemmaId) return;
+    if (
+      typeof window !== 'undefined' &&
+      !window.confirm('Delete this translation?')
+    ) {
+      return;
+    }
+    const lemmaId = token.lemmaId;
+    deletingId = t.id;
+    deleteError = null;
+    try {
+      const res = await fetch(`/api/v1/translations/${t.id}`, {
+        method: 'DELETE',
+      });
+      if (!res.ok && res.status !== 204) {
+        const text = await res.text().catch(() => '');
+        deleteError = text || `Could not delete (${res.status})`;
+        return;
+      }
+      await refetchPayload(lemmaId);
+      notifyPersonalChange();
+    } catch (e) {
+      deleteError = `Network error: ${(e as Error).message}`;
+    } finally {
+      deletingId = null;
     }
   }
 
@@ -996,9 +1135,63 @@
 
       <ul class="translations">
         {#each payload.translations.personal as t (t.id)}
-          <li>
-            <span class="badge tone-personal">yours</span>
-            {t.body}
+          <li class="personal-row" data-testid="personal-row">
+            {#if editingId === t.id}
+              <form
+                class="add-form"
+                data-testid="edit-personal-form"
+                onsubmit={(e) => {
+                  e.preventDefault();
+                  void submitEditPersonal();
+                }}
+              >
+                <textarea
+                  bind:this={editTextareaEl}
+                  bind:value={editBody}
+                  rows="2"
+                  maxlength="500"
+                  disabled={savingEdit}
+                  aria-label="Edit your translation"
+                  onkeydown={onEditPersonalKeydown}
+                  onblur={onEditPersonalBlur}
+                ></textarea>
+                {#if editError}
+                  <p class="err small">{editError}</p>
+                {/if}
+              </form>
+            {:else}
+              <div class="personal-body">
+                <span class="badge tone-personal">yours</span>
+                <span class="personal-text">{t.body}</span>
+                {#if isOwner}
+                  <div class="personal-actions">
+                    <button
+                      type="button"
+                      class="row-action"
+                      data-testid="edit-personal"
+                      title="Edit this translation"
+                      disabled={editingId !== null || deletingId !== null}
+                      onclick={() => startEditPersonal(t)}
+                    >
+                      Edit
+                    </button>
+                    <button
+                      type="button"
+                      class="row-action danger"
+                      data-testid="delete-personal"
+                      title="Delete this translation"
+                      disabled={deletingId !== null || editingId !== null}
+                      onclick={() => void deletePersonal(t)}
+                    >
+                      {deletingId === t.id ? 'Deleting…' : 'Delete'}
+                    </button>
+                  </div>
+                {/if}
+              </div>
+              {#if deleteError && deletingId === null}
+                <p class="err small">{deleteError}</p>
+              {/if}
+            {/if}
           </li>
         {/each}
         {#each payload.translations.official as t (t.id)}
@@ -1639,6 +1832,52 @@
       transparent
     );
     color: var(--accent-ink, var(--color-accent));
+  }
+  .personal-row {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+  }
+  .personal-body {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.3rem;
+  }
+  .personal-text {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  .personal-actions {
+    margin-left: auto;
+    display: inline-flex;
+    gap: 0.3rem;
+  }
+  .row-action {
+    padding: 0.1rem 0.55rem;
+    background: transparent;
+    border: 1px solid var(--rule, var(--color-border));
+    border-radius: 999px;
+    font: inherit;
+    font-size: 0.7rem;
+    color: var(--ink-3, var(--color-fg-muted));
+    cursor: pointer;
+  }
+  .row-action:hover:not([disabled]) {
+    color: var(--ink, var(--color-fg));
+    border-color: color-mix(
+      in oklch,
+      var(--ink, var(--color-fg)) 22%,
+      var(--rule, var(--color-border))
+    );
+  }
+  .row-action.danger:hover:not([disabled]) {
+    color: #b91c1c;
+    border-color: #fecaca;
+  }
+  .row-action[disabled] {
+    opacity: 0.5;
+    cursor: not-allowed;
   }
   .tone-curator {
     border-color: color-mix(

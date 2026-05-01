@@ -71,7 +71,11 @@
   // the rendered tokens immediately.
   const correctedTokens = $derived.by(() => {
     if (!current?.tokens) return null;
-    if (statusOverrides.size === 0 && lemmaCorrections.size === 0) {
+    if (
+      statusOverrides.size === 0 &&
+      lemmaCorrections.size === 0 &&
+      personalGlossOverrides.size === 0
+    ) {
       return current.tokens;
     }
     return current.tokens.map((t) => {
@@ -92,6 +96,12 @@
       }
       if (next.lemmaId && statusOverrides.has(next.lemmaId)) {
         next = { ...next, status: statusOverrides.get(next.lemmaId)! };
+      }
+      if (next.lemmaId && personalGlossOverrides.has(next.lemmaId)) {
+        next = {
+          ...next,
+          personalGloss: personalGlossOverrides.get(next.lemmaId) ?? null,
+        };
       }
       return next;
     });
@@ -364,6 +374,20 @@
     lemmaCorrections = next;
   }
 
+  // Live-update personal-gloss override for the hover tooltip after
+  // the popup adds / edits / deletes one of the viewer's translations.
+  let personalGlossOverrides = $state(
+    new Map<string, string | null>(),
+  );
+  function onPersonalTranslationChange(
+    lemmaId: string,
+    gloss: string | null,
+  ) {
+    const next = new Map(personalGlossOverrides);
+    next.set(lemmaId, gloss);
+    personalGlossOverrides = next;
+  }
+
   // T-5.7: ←/→ flip pages within the chapter.
   function isTypingInsideElement(target: EventTarget | null): boolean {
     if (!(target instanceof HTMLElement)) return false;
@@ -467,6 +491,7 @@
     onClose={closePopup}
     {onStatusChange}
     {onCorrectionApplied}
+    {onPersonalTranslationChange}
   />
 {/if}
 

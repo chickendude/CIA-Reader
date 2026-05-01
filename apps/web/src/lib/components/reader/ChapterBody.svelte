@@ -56,12 +56,25 @@
   // T-6.4's loader join; this state is purely for the current
   // session.
   let lemmaCorrections = $state(new Map<string, string>());
+  // Mirror of personal-translation edits made in the popup so the
+  // hover tooltip refreshes without a chapter reload. Value is the
+  // new primary personal body, or null when the viewer has just
+  // deleted their last one for this lemma. Keys with a `null` value
+  // mean "override to no personal gloss"; absent keys defer to the
+  // server-side payload.
+  let personalGlossOverrides = $state(
+    new Map<string, string | null>(),
+  );
 
   // Apply any pending optimistic status flips to the token list
   // before paragraph splitting so the .status-* classes update live.
   const tokensWithOverrides = $derived.by(() => {
     if (!chapter.tokens) return null;
-    if (statusOverrides.size === 0 && lemmaCorrections.size === 0) {
+    if (
+      statusOverrides.size === 0 &&
+      lemmaCorrections.size === 0 &&
+      personalGlossOverrides.size === 0
+    ) {
       return chapter.tokens;
     }
     return chapter.tokens.map((t) => {
@@ -93,6 +106,12 @@
       }
       if (next.lemmaId && statusOverrides.has(next.lemmaId)) {
         next = { ...next, status: statusOverrides.get(next.lemmaId)! };
+      }
+      if (next.lemmaId && personalGlossOverrides.has(next.lemmaId)) {
+        next = {
+          ...next,
+          personalGloss: personalGlossOverrides.get(next.lemmaId) ?? null,
+        };
       }
       return next;
     });
@@ -422,6 +441,15 @@
     statusOverrides = next;
   }
 
+  function onPersonalTranslationChange(
+    lemmaId: string,
+    gloss: string | null,
+  ) {
+    const next = new Map(personalGlossOverrides);
+    next.set(lemmaId, gloss);
+    personalGlossOverrides = next;
+  }
+
   // T-6.2b: after a correction commits, surface a toast offering
   // bulk-apply across the rest of the chapter / text.
   let toastTokenId = $state<string | null>(null);
@@ -523,6 +551,7 @@
   }}
   {onStatusChange}
   {onCorrectionApplied}
+  {onPersonalTranslationChange}
 />
 
 <CorrectionToast

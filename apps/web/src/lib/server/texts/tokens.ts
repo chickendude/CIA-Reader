@@ -77,6 +77,13 @@ export type RenderedToken = {
    *  locking the side panel. Null when the lemma has no glossDefault
    *  on file, or when the token has no lemma id (whitespace, OOV). */
   glossDefault: string | null;
+  /** The viewer's own translation for this lemma, if any. Pulled
+   *  from `translations` where `source = 'user'` and
+   *  `submitted_by = viewerId`. Surfaced in the hover tooltip ahead
+   *  of `glossDefault` so words the user has personally translated
+   *  read in their own words on hover. Null for anonymous viewers
+   *  and for lemmas the viewer hasn't translated. */
+  personalGloss: string | null;
   /** T-6.1: alternate lemma candidates the worker scored. Empty
    *  array when the token has no candidates beyond the top pick
    *  (or when the worker hasn't run). The popup hides the
@@ -236,6 +243,38 @@ export async function loadChapterTokens(
     }
   }
 
+  // The viewer's own personal translations for these lemmas, so the
+  // hover tooltip can show "their" gloss instead of (or alongside)
+  // the dictionary one. We only need the oldest body per lemma —
+  // the popup orders the personal bucket oldest-first, so picking
+  // the same row here keeps the two surfaces in sync. Anonymous
+  // viewers and lemmas without a personal row simply leave
+  // `personalGloss` null below.
+  const personalGlossByLemma = new Map<string, string>();
+  if (viewerId && lemmaIds.length > 0) {
+    const personalRows = (await db
+      .select({
+        targetId: schema.translations.targetId,
+        body: schema.translations.body,
+        createdAt: schema.translations.createdAt,
+      })
+      .from(schema.translations)
+      .where(
+        and(
+          eq(schema.translations.targetType, 'lemma'),
+          eq(schema.translations.source, 'user'),
+          eq(schema.translations.submittedBy, viewerId),
+          inArray(schema.translations.targetId, lemmaIds),
+        ),
+      )) as Array<{ targetId: string; body: string; createdAt: Date }>;
+    personalRows.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+    for (const r of personalRows) {
+      if (!personalGlossByLemma.has(r.targetId)) {
+        personalGlossByLemma.set(r.targetId, r.body);
+      }
+    }
+  }
+
   // Sibling-fallback pass: for any chapter lemma whose own gloss is
   // null, find another lemma with the same (language, headword) that
   // has a non-null gloss and use it. We bucket by (language,
@@ -379,6 +418,9 @@ export async function loadChapterTokens(
       romanization: t.romanization,
       glossDefault: effectiveLemmaId
         ? glossByLemma.get(effectiveLemmaId) ?? null
+        : null,
+      personalGloss: effectiveLemmaId
+        ? personalGlossByLemma.get(effectiveLemmaId) ?? null
         : null,
       candidates,
       numberForms: renderedNumberForms,

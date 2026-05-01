@@ -25,6 +25,7 @@ function makeToken(overrides: Partial<ServerToken> = {}): ServerToken {
     lemmaId: 'lem-1',
     romanization: 'prabhāt',
     glossDefault: null,
+    personalGloss: null,
     candidates: [],
     numberForms: null,
     status: 'unknown',
@@ -76,6 +77,38 @@ describe('WordTooltip — gloss display (T-5.18)', () => {
     const def = document.body.querySelector('.tip-def');
     expect(def?.textContent).toBe('No dictionary match');
     expect(def?.classList.contains('empty')).toBe(true);
+  });
+
+  it('prefers the viewer’s own personalGloss over glossDefault', () => {
+    render(WordTooltip, {
+      token: makeToken({
+        glossDefault: 'morning, dawn',
+        personalGloss: 'sunrise (mine)',
+      }),
+      anchorRect: ANCHOR,
+    });
+    const def = document.body.querySelector(
+      '[data-testid="tip-personal"]',
+    );
+    expect(def?.textContent).toContain('sunrise (mine)');
+    expect(def?.textContent).toContain('yours');
+    // The dictionary gloss is suppressed when the viewer has their own.
+    expect(document.body.textContent).not.toContain('morning, dawn');
+  });
+
+  it('shows the personalGloss even on OOV tokens (the user has translated it themselves)', () => {
+    render(WordTooltip, {
+      token: makeToken({
+        isOov: true,
+        glossDefault: null,
+        personalGloss: 'my coinage',
+      }),
+      anchorRect: ANCHOR,
+    });
+    expect(
+      document.body.querySelector('[data-testid="tip-personal"]')?.textContent,
+    ).toContain('my coinage');
+    expect(document.body.textContent).not.toContain('No dictionary match');
   });
 
   it("treats no-lemma tokens like an empty-translation lemma — italic 'No translations' (T-5.20)", () => {
