@@ -1,5 +1,5 @@
 /**
- * Public lemma-browsing service (T-3.6).
+ * Public lemma-browsing service (T-3.6 + T-3.12).
  *
  * The backing page is `/dictionary/:language` — public, unauthenticated-
  * accessible, rendered server-side so it ranks for "<lemma> meaning"
@@ -7,10 +7,17 @@
  * by the dictionary editor (T-3.7) and the correction modal (T-6.2), so
  * it stays free of HTML concerns.
  *
- * Search is a simple case-insensitive prefix match on the NFC-normalized
- * headword. The client-side `<ScriptAwareInput>` (T-6.2a) is responsible
- * for turning a user's romanized input into the native script before it
- * arrives here — this service does not transliterate.
+ * Search is a case-insensitive prefix match on the NFC-normalized
+ * headword. T-3.12 added romanization-aware search: when the submitted
+ * query is in Latin (`kitaab`), we run the same client-side ITRANS-
+ * flavored `latinToNative` transliterator the `<ScriptAwareInput>`
+ * uses, then prefix-match the resulting native form against the
+ * existing `headword` index. This keeps the change to a pure-server
+ * change — no new index, no NLP-service round trip — and the UX
+ * matches the input field (whatever the user sees as the native
+ * preview is what the server searches for). A future quality bump
+ * could route through aksharamukha server-side, but the ITRANS-based
+ * helper is good enough that "kitaab" → "किताब" finds the headword.
  *
  * Nukta-agnostic fallback (#318): when the user's query has zero
  * exact-prefix hits AND the query strips down to something different
@@ -19,12 +26,19 @@
  * `headword_nukta_stripped` generated column with the query also
  * nukta-stripped. This is **lossy by design** (`ज़रा` and `जरा` collapse
  * to the same key), so the result advertises `usedNuktaFallback` and
- * the UI surfaces a "showing nukta-agnostic results" hint.
+ * the UI surfaces a "showing nukta-agnostic results" hint. The same
+ * pattern applies to the romanization tier: results from a transliterated
+ * query carry `usedRomanizationTransliteration` so the UI can render
+ * "showing matches for किताब (transliterated from kitaab)".
  */
 import { and, asc, count, eq, gte, ilike, inArray, lte, sql } from 'drizzle-orm';
 
 import { db, schema } from '../db/index.js';
 import type { Lemma } from '../db/schema.js';
+import {
+  latinToNative,
+  looksLikeNativeScript,
+} from '$lib/components/input/transliterate.js';
 import { stripNukta, type LanguageCode } from '@ciareader/shared-types';
 
 /**
@@ -64,6 +78,23 @@ export type BrowseResult = {
    * been empty — there's no fallback to advertise).
    */
   usedNuktaFallback: boolean;
+  /**
+   * T-3.12: True when the user submitted a Latin query that we
+   * transliterated to the language's native script before searching.
+   * The UI surfaces "showing matches for `${effectiveQuery}` (from
+   * `${query.q}`)" so the user can see what we actually queried —
+   * useful when the ITRANS-style mapping picks an unexpected glyph
+   * (e.g. typing `S` instead of `Sh`) and a result list looks off.
+   * `effectiveQuery` carries the post-transliteration native string
+   * so the UI doesn't need to re-derive it.
+   */
+  usedRomanizationTransliteration: boolean;
+  /**
+   * T-3.12: The native-script query the search actually ran against.
+   * Equal to the input `q` when no transliteration was needed. Empty
+   * string when `q` itself was empty.
+   */
+  effectiveQuery: string;
 };
 
 /** `%` and `_` are the two wildcards Postgres recognises in LIKE/ILIKE. */
@@ -86,6 +117,36 @@ function normalizeQuery(q: string | null | undefined): string | null {
   if (!q) return null;
   const trimmed = q.normalize('NFC').trim();
   return trimmed.length > 0 ? trimmed : null;
+}
+
+/**
+ * T-3.12: detect a Latin-script query and transliterate to the
+ * language's native script using the same ITRANS-flavored mapping
+ * the `<ScriptAwareInput>` uses on the client. Pure function — no
+ * I/O, no NLP-service round trip — so adding it costs nothing on the
+ * happy path where the query is already in the native script.
+ *
+ * Returns the original query unchanged when (a) the query already
+ * contains native-script characters, or (b) the language's script is
+ * already Latin (no transliteration target), or (c) the transliterator
+ * left the string unchanged (no recognized ITRANS keys hit).
+ */
+function transliterateLatinQuery(
+  q: string,
+  language: LanguageCode,
+): { value: string; transliterated: boolean } {
+  if (looksLikeNativeScript(q, language)) {
+    return { value: q, transliterated: false };
+  }
+  const native = latinToNative(language, q).normalize('NFC');
+  if (native === q) {
+    // Either the language's script is Latin (function returns input
+    // unchanged) or no ITRANS keys matched. Either way the search
+    // can run as-is — no point advertising a transliteration that
+    // didn't change anything.
+    return { value: q, transliterated: false };
+  }
+  return { value: native, transliterated: true };
 }
 
 type SearchClause = ReturnType<typeof ilike> | null;
@@ -111,8 +172,7 @@ function baseConditions(language: LanguageCode, query: BrowseQuery) {
     conditions.push(
       sql`EXISTS (
         SELECT 1 FROM ${schema.translations} t
-        WHERE t.target_type = 'lemma'
-          AND t.target_id = ${schema.lemmas.id}
+        WHERE t.lemma_id = ${schema.lemmas.id}
           AND t.hidden = false
           AND t.source IN ('official_dictionary', 'curator')
       )`,
@@ -181,7 +241,14 @@ export async function listDictionaryLemmas(
 ): Promise<BrowseResult> {
   const limit = clampLimit(query.limit);
   const offset = clampOffset(query.offset);
-  const q = normalizeQuery(query.q);
+  const rawQ = normalizeQuery(query.q);
+
+  // T-3.12: transliterate Latin queries to the native script before
+  // running the strict tier. Empty / native-script queries pass
+  // through unchanged.
+  const { value: q, transliterated } = rawQ
+    ? transliterateLatinQuery(rawQ, language)
+    : { value: '', transliterated: false };
 
   const strictClause: SearchClause = q
     ? ilike(schema.lemmas.headword, `${escapeLikePrefix(q)}%`)
@@ -195,6 +262,8 @@ export async function listDictionaryLemmas(
       limit,
       offset,
       usedNuktaFallback: false,
+      usedRomanizationTransliteration: transliterated,
+      effectiveQuery: q,
     };
   }
 
@@ -227,6 +296,8 @@ export async function listDictionaryLemmas(
       limit,
       offset,
       usedNuktaFallback: false,
+      usedRomanizationTransliteration: transliterated,
+      effectiveQuery: q,
     };
   }
 
@@ -236,6 +307,8 @@ export async function listDictionaryLemmas(
     limit,
     offset,
     usedNuktaFallback: true,
+    usedRomanizationTransliteration: transliterated,
+    effectiveQuery: q,
   };
 }
 

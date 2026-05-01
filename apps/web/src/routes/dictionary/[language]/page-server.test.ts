@@ -111,4 +111,27 @@ describe('GET /dictionary/:language load', () => {
       expect.objectContaining({ pos: ['verb', 'noun'] }),
     );
   });
+
+  it('surfaces T-3.12 transliteration metadata to the page', async () => {
+    listDictionaryLemmas.mockResolvedValueOnce({
+      lemmas: [],
+      totalCount: 0,
+      limit: 50,
+      offset: 0,
+      usedNuktaFallback: false,
+      usedRomanizationTransliteration: true,
+      effectiveQuery: 'किताब',
+    });
+    const data = (await callLoad(
+      'http://x/dictionary/hi?q=kitaab',
+    )) as {
+      usedRomanizationTransliteration: boolean;
+      effectiveQuery: string;
+      query: { q: string };
+    };
+    expect(data.usedRomanizationTransliteration).toBe(true);
+    expect(data.effectiveQuery).toBe('किताब');
+    // Original Latin query echoed back so the UI can show both forms.
+    expect(data.query.q).toBe('kitaab');
+  });
 });

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import ScriptAwareInput from '$lib/components/input/ScriptAwareInput.svelte';
   import type { PageData } from './$types';
   let { data }: { data: PageData } = $props();
 
@@ -41,13 +42,17 @@
     </p>
   </header>
 
-  <form method="get" class="search">
-    <input
-      type="search"
+  <form method="get" class="search" data-testid="dictionary-search-form">
+    <!-- T-3.12: ScriptAwareInput renders an `<input name="q">` whose
+         value flows through the form-GET unchanged. The user can type
+         in either the native script directly OR in ITRANS-flavored
+         Latin (`kitaab`); the server-side transliterator in
+         `listDictionaryLemmas` handles the Latin → native step. -->
+    <ScriptAwareInput
+      language={data.language.code}
       name="q"
       value={data.query.q}
-      placeholder="Type a headword in {data.language.nativeName}…"
-      aria-label="Search {data.language.displayName} headwords"
+      placeholder="Type a headword in {data.language.nativeName} or in Latin (e.g. kitaab)…"
     />
     <label class="checkbox">
       <input
@@ -58,8 +63,40 @@
       />
       Only lemmas with an official translation
     </label>
+    <!-- T-3.12: audio-example filter is on the original T-3.6 spec but
+         the schema doesn't yet model audio examples — that lands with
+         M9 (#82). Render the affordance disabled with a tooltip so the
+         filter shape is visible to users and we don't add a "where
+         did the filter go?" surprise when M9 finally ships. -->
+    <label
+      class="checkbox checkbox-disabled"
+      title="Available once audio examples ship in M9."
+      data-testid="audio-filter-stub"
+    >
+      <input
+        type="checkbox"
+        name="hasAudioExample"
+        value="true"
+        disabled
+        aria-disabled="true"
+      />
+      Only lemmas with an audio example
+      <span class="muted">(coming in M9)</span>
+    </label>
     <button type="submit">Search</button>
   </form>
+
+  {#if data.usedRomanizationTransliteration}
+    <!--
+      T-3.12: the user typed Latin and we transliterated to native
+      before searching. Show what we actually queried so an unexpected
+      ITRANS mapping (e.g. `S` vs `Sh`) is debuggable from the UI.
+    -->
+    <p class="transliteration-hint" role="status" data-testid="transliteration-hint">
+      Showing matches for <strong>{data.effectiveQuery}</strong>
+      <span class="muted">(transliterated from {data.query.q})</span>.
+    </p>
+  {/if}
 
   {#if data.usedNuktaFallback}
     <!--
@@ -138,16 +175,6 @@
     align-items: center;
     margin-bottom: 1.25rem;
   }
-  .search input[type='search'] {
-    grid-column: 1 / 2;
-    padding: 0.6rem 0.75rem;
-    font: inherit;
-    min-height: 44px;
-    border: 1px solid var(--color-border);
-    border-radius: 6px;
-    background: var(--color-bg);
-    color: var(--color-fg);
-  }
   .search .checkbox {
     grid-column: 1 / 2;
     font-size: 0.9rem;
@@ -207,7 +234,8 @@
     margin: 2rem 0;
     color: var(--color-fg-muted);
   }
-  .nukta-fallback {
+  .nukta-fallback,
+  .transliteration-hint {
     margin: 0 0 1rem;
     padding: 0.6rem 0.85rem;
     border-radius: 6px;
@@ -215,6 +243,13 @@
     color: var(--color-info-fg, var(--color-fg));
     border-left: 3px solid var(--color-accent);
     font-size: 0.9rem;
+  }
+  .checkbox-disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
+  .checkbox-disabled input {
+    cursor: not-allowed;
   }
   .pager {
     display: flex;
