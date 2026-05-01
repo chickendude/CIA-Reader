@@ -19,6 +19,11 @@ import { z } from 'zod';
 
 import { requireUser } from '$lib/server/auth/require-user.js';
 import {
+  consumeRateLimit,
+  rateLimitHeaders,
+  RequestRateLimitError,
+} from '$lib/server/auth/rate-limits.js';
+import {
   createPastedText,
   createTxtText,
   TextValidationError,
@@ -28,6 +33,14 @@ import {
 } from '$lib/server/texts/upload.js';
 import type { RequestHandler } from './$types';
 import { parseJson } from '../auth/_helpers.js';
+
+// T-11.2: per-day cap on text uploads. 50/day is generous for an
+// engaged learner uploading a chapter at a time and trips long
+// before a runaway script floods the chunker. Window is exactly
+// 24h so a user who uploads at 11pm doesn't get throttled at 1am
+// of the next calendar day.
+const UPLOADS_PER_DAY = 50;
+const UPLOAD_WINDOW_MS = 24 * 60 * 60 * 1_000;
 
 // One discriminated schema per source type — paste's body cap is
 // stricter than .txt's, and the error message users see should reflect
@@ -52,6 +65,11 @@ export const POST: RequestHandler = async (event) => {
   const user = await requireUser(event);
   const input = await parseJson(event.request, body);
   try {
+    const requestLimit = await consumeRateLimit(event, user.id, {
+      scope: 'texts:create',
+      limit: UPLOADS_PER_DAY,
+      windowMs: UPLOAD_WINDOW_MS,
+    });
     const created =
       input.sourceType === 'txt'
         ? await createTxtText(
@@ -85,9 +103,20 @@ export const POST: RequestHandler = async (event) => {
         },
         chapterCount: created.chapters.length,
       },
-      { status: 201 },
+      { status: 201, headers: rateLimitHeaders(requestLimit) },
     );
   } catch (err) {
+    if (err instanceof RequestRateLimitError) {
+      return json(
+        {
+          error: 'rate_limited',
+          message: 'Daily text upload limit reached. Try again tomorrow.',
+          limit: err.limit,
+          retryAfterSeconds: err.retryAfterSeconds,
+        },
+        { status: 429, headers: rateLimitHeaders(err) },
+      );
+    }
     if (err instanceof TextValidationError) throw error(err.status, err.message);
     throw err;
   }

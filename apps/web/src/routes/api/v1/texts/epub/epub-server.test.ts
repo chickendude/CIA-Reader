@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const createEpubText = vi.fn();
 const requireUser = vi.fn();
+const consumeRateLimit = vi.fn();
 
 vi.mock('$lib/server/texts/upload.js', async () => {
   const actual = await vi.importActual<typeof import('$lib/server/texts/upload.js')>(
@@ -20,6 +21,16 @@ vi.mock('$lib/server/texts/upload.js', async () => {
 vi.mock('$lib/server/auth/require-user.js', () => ({
   requireUser: (...a: unknown[]) => requireUser(...a),
 }));
+
+vi.mock('$lib/server/auth/rate-limits.js', async () => {
+  const actual = await vi.importActual<typeof import('$lib/server/auth/rate-limits.js')>(
+    '$lib/server/auth/rate-limits.js',
+  );
+  return {
+    ...actual,
+    consumeRateLimit: (...a: unknown[]) => consumeRateLimit(...a),
+  };
+});
 
 type PostFn = (typeof import('./+server.js'))['POST'];
 
@@ -63,6 +74,12 @@ async function callPost(
 beforeEach(() => {
   createEpubText.mockReset();
   requireUser.mockReset();
+  consumeRateLimit.mockReset();
+  consumeRateLimit.mockResolvedValue({
+    limit: 10,
+    remaining: 9,
+    subjectType: 'user',
+  });
 });
 
 afterEach(() => {

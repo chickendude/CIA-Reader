@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const writeTokenCorrection = vi.fn();
 const requireUser = vi.fn();
+const consumeRateLimit = vi.fn();
 
 vi.mock('$lib/server/corrections.js', async () => {
   const actual = await vi.importActual<typeof import('$lib/server/corrections.js')>(
@@ -20,6 +21,16 @@ vi.mock('$lib/server/corrections.js', async () => {
 vi.mock('$lib/server/auth/require-user.js', () => ({
   requireUser: (...a: unknown[]) => requireUser(...a),
 }));
+
+vi.mock('$lib/server/auth/rate-limits.js', async () => {
+  const actual = await vi.importActual<typeof import('$lib/server/auth/rate-limits.js')>(
+    '$lib/server/auth/rate-limits.js',
+  );
+  return {
+    ...actual,
+    consumeRateLimit: (...a: unknown[]) => consumeRateLimit(...a),
+  };
+});
 
 type Post = (typeof import('./+server.js'))['POST'];
 
@@ -46,6 +57,12 @@ beforeEach(() => {
   writeTokenCorrection.mockReset();
   requireUser.mockReset();
   requireUser.mockResolvedValue({ id: 'u1' });
+  consumeRateLimit.mockReset();
+  consumeRateLimit.mockResolvedValue({
+    limit: 200,
+    remaining: 199,
+    subjectType: 'user',
+  });
 });
 
 afterEach(() => vi.resetModules());

@@ -22,6 +22,11 @@ import { error, json } from '@sveltejs/kit';
 
 import { requireUser } from '$lib/server/auth/require-user.js';
 import {
+  consumeRateLimit,
+  rateLimitHeaders,
+  RequestRateLimitError,
+} from '$lib/server/auth/rate-limits.js';
+import {
   createEpubText,
   EpubParseError,
   TextValidationError,
@@ -32,6 +37,12 @@ import {
 import type { RequestHandler } from './$types';
 
 const SUPPORTED_LANGS = new Set(['hi', 'mr', 'or']);
+
+// T-11.2: EPUB ingest is expensive (chunking + parsing + chapter
+// fan-out), so the daily quota is tighter than the paste / .txt
+// path. 10/day still covers a learner working through a course.
+const EPUB_UPLOADS_PER_DAY = 10;
+const UPLOAD_WINDOW_MS = 24 * 60 * 60 * 1_000;
 
 export const POST: RequestHandler = async (event) => {
   const user = await requireUser(event);
@@ -75,6 +86,11 @@ export const POST: RequestHandler = async (event) => {
 
   const epubBytes = new Uint8Array(await file.arrayBuffer());
   try {
+    const requestLimit = await consumeRateLimit(event, user.id, {
+      scope: 'texts:epub',
+      limit: EPUB_UPLOADS_PER_DAY,
+      windowMs: UPLOAD_WINDOW_MS,
+    });
     const created = await createEpubText(
       { id: user.id },
       {
@@ -98,9 +114,20 @@ export const POST: RequestHandler = async (event) => {
         },
         chapterCount: created.chapters.length,
       },
-      { status: 201 },
+      { status: 201, headers: rateLimitHeaders(requestLimit) },
     );
   } catch (err) {
+    if (err instanceof RequestRateLimitError) {
+      return json(
+        {
+          error: 'rate_limited',
+          message: 'Daily EPUB upload limit reached. Try again tomorrow.',
+          limit: err.limit,
+          retryAfterSeconds: err.retryAfterSeconds,
+        },
+        { status: 429, headers: rateLimitHeaders(err) },
+      );
+    }
     if (err instanceof TextValidationError) throw error(err.status, err.message);
     if (err instanceof EpubParseError) throw error(400, err.message);
     throw err;
