@@ -8,6 +8,11 @@ import { error, json } from '@sveltejs/kit';
 
 import { requireUser } from '$lib/server/auth/require-user.js';
 import {
+  consumeRateLimit,
+  rateLimitHeaders,
+  RequestRateLimitError,
+} from '$lib/server/auth/rate-limits.js';
+import {
   AudioError,
   listAudioForText,
   uploadAudio,
@@ -17,6 +22,13 @@ import { getReadableText } from '$lib/server/texts/upload.js';
 import type { RequestHandler } from './$types';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+// T-11.2: per-day cap on audio uploads (the per-file size cap lives
+// in `MAX_AUDIO_BYTES`, enforced inside `uploadAudio`). 20/day is
+// generous for chapter-by-chapter narration uploads while keeping
+// storage growth and worker queue depth bounded.
+const AUDIO_UPLOADS_PER_DAY = 20;
+const AUDIO_WINDOW_MS = 24 * 60 * 60 * 1_000;
 
 export const GET: RequestHandler = async (event) => {
   const id = event.params.id;
@@ -55,6 +67,11 @@ export const POST: RequestHandler = async (event) => {
   const acknowledgedRedistribution =
     ackRaw === 'on' || ackRaw === 'true' || ackRaw === '1';
   try {
+    const requestLimit = await consumeRateLimit(event, user.id, {
+      scope: 'audio:upload',
+      limit: AUDIO_UPLOADS_PER_DAY,
+      windowMs: AUDIO_WINDOW_MS,
+    });
     const buf = new Uint8Array(await file.arrayBuffer());
     const audio = await uploadAudio({
       textId: id,
@@ -74,8 +91,22 @@ export const POST: RequestHandler = async (event) => {
       uploader: { id: user.id, role: user.role },
       acknowledgedRedistribution,
     });
-    return json({ audio }, { status: 201 });
+    return json(
+      { audio },
+      { status: 201, headers: rateLimitHeaders(requestLimit) },
+    );
   } catch (e) {
+    if (e instanceof RequestRateLimitError) {
+      return json(
+        {
+          error: 'rate_limited',
+          message: 'Daily audio upload limit reached. Try again tomorrow.',
+          limit: e.limit,
+          retryAfterSeconds: e.retryAfterSeconds,
+        },
+        { status: 429, headers: rateLimitHeaders(e) },
+      );
+    }
     if (e instanceof AudioError) throw error(e.status, e.message);
     throw e;
   }

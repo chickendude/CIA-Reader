@@ -9,6 +9,7 @@ import { jsonContract } from '$lib/test/json-contract.js';
 const createPastedText = vi.fn();
 const createTxtText = vi.fn();
 const requireUser = vi.fn();
+const consumeRateLimit = vi.fn();
 
 vi.mock('$lib/server/texts/upload.js', async () => {
   const actual = await vi.importActual<typeof import('$lib/server/texts/upload.js')>(
@@ -24,6 +25,16 @@ vi.mock('$lib/server/texts/upload.js', async () => {
 vi.mock('$lib/server/auth/require-user.js', () => ({
   requireUser: (...a: unknown[]) => requireUser(...a),
 }));
+
+vi.mock('$lib/server/auth/rate-limits.js', async () => {
+  const actual = await vi.importActual<typeof import('$lib/server/auth/rate-limits.js')>(
+    '$lib/server/auth/rate-limits.js',
+  );
+  return {
+    ...actual,
+    consumeRateLimit: (...a: unknown[]) => consumeRateLimit(...a),
+  };
+});
 
 type PostFn = (typeof import('./+server.js'))['POST'];
 
@@ -58,6 +69,12 @@ beforeEach(() => {
   createPastedText.mockReset();
   createTxtText.mockReset();
   requireUser.mockReset();
+  consumeRateLimit.mockReset();
+  consumeRateLimit.mockResolvedValue({
+    limit: 50,
+    remaining: 49,
+    subjectType: 'user',
+  });
 });
 
 afterEach(() => {
@@ -194,6 +211,25 @@ describe('POST /api/v1/texts', () => {
       null,
     )) as { status: number };
     expect(res.status).toBe(401);
+    expect(createPastedText).not.toHaveBeenCalled();
+  });
+
+  it('returns 429 when the daily upload rate limit is exceeded (T-11.2)', async () => {
+    const { RequestRateLimitError } = await import(
+      '$lib/server/auth/rate-limits.js'
+    );
+    consumeRateLimit.mockRejectedValueOnce(
+      new RequestRateLimitError(86_400, 50, 'user'),
+    );
+    const res = (await callPost({
+      language: 'hi',
+      title: 'X',
+      body: 'hello',
+    })) as Response;
+    expect(res.status).toBe(429);
+    expect(res.headers.get('Retry-After')).toBe('86400');
+    const json = await res.json();
+    expect(json.error).toBe('rate_limited');
     expect(createPastedText).not.toHaveBeenCalled();
   });
 });
