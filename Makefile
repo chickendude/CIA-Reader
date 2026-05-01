@@ -40,10 +40,11 @@ clean:
 # Native dev: data services in docker, web + nlp on the host. Use when
 # docker buildx can't reach pypi/npm registries (corp DNS, VPN, etc.).
 #
-# Each var defers to the caller's environment first (`${VAR:-default}` shell
-# expansion) so you can override any value via `export FOO=...` in your shell
-# or a per-command prefix (`FOO=... make dev-native-db`). The defaults match
-# the docker-compose host-port defaults.
+# Recipes auto-source apps/web/.env first (the same file Vite, drizzle-kit
+# and the standalone scripts read), then fall back to defaults via
+# `${VAR:-default}` shell expansion. So setting DATABASE_URL once in
+# apps/web/.env is enough — no need to export anything in your shell.
+NATIVE_DOTENV = set -a; [ -f apps/web/.env ] && . apps/web/.env; set +a;
 NATIVE_ENV = \
 	NLP_SERVICE_URL=$${NLP_SERVICE_URL:-http://localhost:8000} \
 	DATABASE_URL=$${DATABASE_URL:-postgres://ciareader:ciareader@localhost:5432/ciareader} \
@@ -70,10 +71,10 @@ dev-native-down:
 	docker compose -f infra/docker-compose.yml stop postgres redis mailpit
 
 dev-native-db:
-	cd apps/web && $(NATIVE_ENV) pnpm exec drizzle-kit migrate
+	$(NATIVE_DOTENV) cd apps/web && $(NATIVE_ENV) pnpm exec drizzle-kit migrate
 
 dev-native-nlp:
 	cd services/nlp && PYTHONPATH=../../packages/shared-types/python:. .venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
 dev-native-web:
-	cd apps/web && $(NATIVE_ENV) pnpm dev
+	$(NATIVE_DOTENV) cd apps/web && $(NATIVE_ENV) pnpm dev

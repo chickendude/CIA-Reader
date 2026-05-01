@@ -8,9 +8,15 @@
 // Reads DATABASE_URL + NLP_SERVICE_URL from the environment with the
 // same defaults as $lib/server/env.ts.
 
+import { config as loadEnv } from 'dotenv';
+import { fileURLToPath } from 'node:url';
+import { dirname, resolve } from 'node:path';
+
 import postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { eq } from 'drizzle-orm';
+
+loadEnv({ path: resolve(dirname(fileURLToPath(import.meta.url)), '..', '.env') });
 
 const DATABASE_URL =
   process.env.DATABASE_URL ??
