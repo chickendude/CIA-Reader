@@ -21,6 +21,7 @@
   import { untrack } from 'svelte';
   import Sheet from '../overlay/Sheet.svelte';
   import CorrectionModal from './CorrectionModal.svelte';
+  import PosPill from './PosPill.svelte';
   import ReportTranslationModal from './ReportTranslationModal.svelte';
   import { customizableOfficialIds } from './customize-eligibility.js';
   import type { LanguageCode } from '@ciareader/shared-types';
@@ -406,6 +407,25 @@
     }
   });
 
+  // ---- Primary-translation editor ---------------------------------
+  // The viewer's "selected" translation lives at the top of the
+  // popup, above the learning-status buttons. It mirrors the hover
+  // tooltip's pick (oldest personal row), and clicking it opens an
+  // inline editor — PATCH if a personal row already exists, POST a
+  // new one if not. Multiple personal rows still render in the
+  // translations list below; this is just the prominent "yours" slot.
+  let editingPrimary = $state(false);
+  let primaryBody = $state('');
+  let savingPrimary = $state(false);
+  let primaryError = $state<string | null>(null);
+  let primaryTextareaEl = $state<HTMLTextAreaElement | null>(null);
+
+  $effect(() => {
+    if (editingPrimary && primaryTextareaEl) {
+      primaryTextareaEl.focus();
+    }
+  });
+
   // ---- Edit / delete personal translation -------------------------
   // The viewer can revise or remove their own translations inline.
   // The edit textarea reuses the same Enter-to-save / Esc-to-cancel
@@ -564,6 +584,78 @@
     if (!token?.lemmaId) return;
     const next = payload?.translations.personal[0]?.body ?? null;
     onPersonalTranslationChange?.(token.lemmaId, next);
+  }
+
+  function startEditPrimary() {
+    primaryBody = payload?.translations.personal[0]?.body ?? '';
+    primaryError = null;
+    editingPrimary = true;
+  }
+
+  function cancelEditPrimary() {
+    editingPrimary = false;
+    primaryBody = '';
+    primaryError = null;
+  }
+
+  async function submitPrimary() {
+    if (!token?.lemmaId) return;
+    const trimmed = primaryBody.trim();
+    if (trimmed.length === 0) {
+      cancelEditPrimary();
+      return;
+    }
+    const lemmaId = token.lemmaId;
+    const existing = payload?.translations.personal[0] ?? null;
+    savingPrimary = true;
+    primaryError = null;
+    try {
+      if (existing) {
+        const res = await fetch(`/api/v1/translations/${existing.id}`, {
+          method: 'PATCH',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ body: trimmed }),
+        });
+        if (!res.ok) {
+          const text = await res.text().catch(() => '');
+          primaryError = text || `Could not save (${res.status})`;
+          return;
+        }
+      } else {
+        await postTranslation(trimmed, null);
+      }
+      await refetchPayload(lemmaId);
+      editingPrimary = false;
+      primaryBody = '';
+      notifyPersonalChange();
+    } catch (e) {
+      const err = e as Partial<PostError> & Error;
+      primaryError = err.message ?? `Network error: ${(e as Error).message}`;
+    } finally {
+      savingPrimary = false;
+    }
+  }
+
+  function onPrimaryKeydown(e: KeyboardEvent) {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      void submitPrimary();
+      return;
+    }
+    if (e.key === 'Escape') {
+      e.stopPropagation();
+      e.preventDefault();
+      cancelEditPrimary();
+    }
+  }
+
+  function onPrimaryBlur() {
+    if (savingPrimary) return;
+    if (primaryBody.trim().length === 0) {
+      cancelEditPrimary();
+      return;
+    }
+    void submitPrimary();
   }
 
   async function submitNewTranslation() {
@@ -1079,11 +1171,10 @@
         {#if payload}
           <p class="sp-row">
             <span class="k">Lemma</span>
-            <span class="v">{payload.lemma.headword}</span>
-          </p>
-          <p class="sp-row">
-            <span class="k">Part of speech</span>
-            <span class="v">{payload.lemma.pos}</span>
+            <span class="v sp-headword">
+              <span>{payload.lemma.headword}</span>
+              <PosPill pos={payload.lemma.pos} class="sp-pos-pill" />
+            </span>
           </p>
         {:else if token.isOov}
           <p class="muted">No dictionary match</p>
@@ -1096,6 +1187,53 @@
     </header>
 
     {#if !isNumberToken}
+    {#if isOwner && token.lemmaId && payload}
+      <section class="sp-primary" data-testid="primary-translation">
+        {#if editingPrimary}
+          <form
+            class="sp-primary-form"
+            onsubmit={(e) => {
+              e.preventDefault();
+              void submitPrimary();
+            }}
+          >
+            <textarea
+              bind:this={primaryTextareaEl}
+              bind:value={primaryBody}
+              rows="2"
+              maxlength="500"
+              disabled={savingPrimary}
+              aria-label="Your translation"
+              placeholder="Your translation (Enter to save, Shift+Enter for a newline, Esc to cancel)"
+              onkeydown={onPrimaryKeydown}
+              onblur={onPrimaryBlur}
+            ></textarea>
+            {#if primaryError}
+              <p class="err small">{primaryError}</p>
+            {/if}
+          </form>
+        {:else}
+          <button
+            type="button"
+            class="sp-primary-display"
+            data-testid="primary-translation-edit"
+            data-empty={payload.translations.personal[0] ? '0' : '1'}
+            title={payload.translations.personal[0]
+              ? 'Edit your translation'
+              : 'Add your translation'}
+            onclick={startEditPrimary}
+          >
+            {#if payload.translations.personal[0]}
+              <span class="sp-primary-body">
+                {payload.translations.personal[0].body}
+              </span>
+            {:else}
+              <span class="sp-primary-empty">+ Add your translation</span>
+            {/if}
+          </button>
+        {/if}
+      </section>
+    {/if}
     {#if isOwner && token.lemmaId}
       <div class="sp-status" role="group" aria-label="Mark status">
         <button
@@ -1132,7 +1270,7 @@
       </h3>
 
       <ul class="translations">
-        {#each payload.translations.personal as t (t.id)}
+        {#each payload.translations.personal.slice(1) as t (t.id)}
           <li class="personal-row" data-testid="personal-row">
             {#if editingId === t.id}
               <form
@@ -1377,7 +1515,7 @@
             <li class="alt" data-lemma-id={cand.lemmaId}>
               <div class="alt-head">
                 <span class="alt-h">{cand.headword}</span>
-                <span class="alt-pos">{cand.pos}</span>
+                <PosPill pos={cand.pos} class="alt-pos-pill" />
               </div>
               {#if cand.glossDefault}
                 <p class="alt-gloss">{cand.glossDefault}</p>
@@ -1647,6 +1785,81 @@
     flex: 1;
     color: var(--ink, var(--color-fg));
     font-size: 0.85rem;
+  }
+  .sp-headword {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    flex-wrap: wrap;
+  }
+  :global(.sp-pos-pill) {
+    flex-shrink: 0;
+  }
+
+  .sp-primary {
+    margin: 0.75rem 0 0.6rem;
+  }
+  .sp-primary-display {
+    width: 100%;
+    text-align: left;
+    padding: 0.6rem 0.75rem;
+    background: color-mix(
+      in oklch,
+      var(--accent, var(--color-accent)) 8%,
+      var(--card, var(--color-bg))
+    );
+    border: 1px solid color-mix(
+      in oklch,
+      var(--accent, var(--color-accent)) 22%,
+      var(--rule, var(--color-border))
+    );
+    border-radius: 8px;
+    color: var(--ink, var(--color-fg));
+    font: inherit;
+    font-size: 0.95rem;
+    line-height: 1.35;
+    cursor: text;
+  }
+  .sp-primary-display:hover {
+    border-color: color-mix(
+      in oklch,
+      var(--accent, var(--color-accent)) 50%,
+      var(--rule, var(--color-border))
+    );
+  }
+  .sp-primary-display:focus-visible {
+    outline: 2px solid var(--accent, var(--color-accent));
+    outline-offset: 1px;
+  }
+  .sp-primary-display[data-empty='1'] {
+    background: transparent;
+    border-style: dashed;
+    color: var(--ink-3, var(--color-fg-muted));
+    font-size: 0.82rem;
+    text-align: center;
+  }
+  .sp-primary-empty {
+    display: inline-block;
+  }
+  .sp-primary-form textarea {
+    width: 100%;
+    padding: 0.6rem 0.75rem;
+    font: inherit;
+    font-size: 0.95rem;
+    line-height: 1.35;
+    border: 1px solid color-mix(
+      in oklch,
+      var(--accent, var(--color-accent)) 35%,
+      var(--rule, var(--color-border))
+    );
+    border-radius: 8px;
+    background: var(--card, var(--color-bg));
+    color: var(--ink, var(--color-fg));
+    resize: vertical;
+  }
+  .sp-primary-form textarea:focus-visible {
+    outline: 2px solid var(--accent, var(--color-accent));
+    outline-offset: 1px;
   }
 
   .sp-status {
@@ -2033,11 +2246,8 @@
     font-size: 1.05rem;
     color: var(--ink, var(--color-fg));
   }
-  .alt-pos {
-    font-size: 0.66rem;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    color: var(--ink-3, var(--color-fg-muted));
+  :global(.alt-pos-pill) {
+    flex-shrink: 0;
   }
   .alt-gloss {
     margin: 0 0 0.45rem;
