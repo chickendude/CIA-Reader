@@ -1159,7 +1159,6 @@
               </form>
             {:else}
               <div class="personal-body">
-                <span class="badge tone-personal">yours</span>
                 <span class="personal-text">{t.body}</span>
                 {#if isOwner}
                   <div class="personal-actions">
@@ -1249,7 +1248,6 @@
         {#each payload.translations.community as t (t.id)}
           <li class="community-row">
             <div class="community-body">
-              <span class="badge tone-community">community</span>
               {t.body}
               {#if isOwner}
                 {#if reportedIds.has(t.id)}
@@ -1799,24 +1797,6 @@
     font-size: 0.76rem;
     color: var(--ink-2, var(--color-fg));
   }
-  .badge {
-    display: inline-block;
-    padding: 0.1rem 0.5rem;
-    margin-right: 0.4rem;
-    font-size: 0.66rem;
-    border-radius: 999px;
-    border: 1px solid var(--rule, var(--color-border));
-    color: var(--ink-3, var(--color-fg-muted));
-    background: var(--card, var(--color-bg));
-  }
-  .tone-personal {
-    border-color: color-mix(
-      in oklch,
-      var(--accent, var(--color-accent)) 60%,
-      transparent
-    );
-    color: var(--accent-ink, var(--color-accent));
-  }
   .personal-row {
     display: flex;
     flex-direction: column;
@@ -1862,14 +1842,6 @@
   .row-action[disabled] {
     opacity: 0.5;
     cursor: not-allowed;
-  }
-  .tone-community {
-    border-color: color-mix(
-      in oklch,
-      var(--accent, var(--color-accent)) 40%,
-      transparent
-    );
-    color: var(--ink-3, var(--color-fg-muted));
   }
 
   .muted {
