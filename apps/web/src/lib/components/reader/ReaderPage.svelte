@@ -417,13 +417,19 @@
     </span>
     <span class="muted">
       {#if startPct === endPct}
-        {endPct}% through text
+        {endPct}%
       {:else}
-        {startPct}–{endPct}% through text
+        {startPct}–{endPct}%
       {/if}
     </span>
   </div>
-  <div class="reader-foot-bar"><i style="width: {endPct}%"></i></div>
+  <div class="reader-foot-bar">
+    <i class="read" style="width: {startPct}%"></i>
+    <i
+      class="current"
+      style="left: {startPct}%; width: {Math.max(0, endPct - startPct)}%"
+    ></i>
+  </div>
 </footer>
 
 <style>
@@ -625,10 +631,23 @@
   }
   .reader-foot-bar > i {
     position: absolute;
-    inset: 0 auto 0 0;
-    background: var(--accent, var(--color-accent));
+    top: 0;
+    bottom: 0;
     border-radius: 2px;
-    transition: width 250ms ease;
+    transition:
+      width 250ms ease,
+      left 250ms ease;
+  }
+  /* Words read before the current page — muted accent so the eye
+     reads it as "behind me" rather than "active". */
+  .reader-foot-bar > i.read {
+    left: 0;
+    background: color-mix(in oklch, var(--accent, var(--color-accent)) 45%, transparent);
+  }
+  /* Words on the current page — full-strength accent so the active
+     range stands out as the "you are here" segment. */
+  .reader-foot-bar > i.current {
+    background: var(--accent, var(--color-accent));
   }
 
   /* Respect reduced-motion: skip the page-flip slide. */
