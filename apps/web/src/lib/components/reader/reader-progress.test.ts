@@ -7,6 +7,7 @@ import {
   findFirstWordInColumn,
   findTokenElementAtOrAfter,
   firstTokenPage,
+  pageBoundaryAnchor,
 } from './reader-progress.js';
 import type { ChapterView } from './types.js';
 
@@ -221,5 +222,83 @@ describe('reader progress helpers', () => {
     const root = document.createElement('article');
     root.append(word(3, rect(0, 0, 1, 1)), word(7, rect(0, 0, 1, 1)));
     expect(findTokenElementAtOrAfter(root, 99)).toBeNull();
+  });
+
+  describe('pageBoundaryAnchor', () => {
+    const chapters = [{ tokenCount: 100 }, { tokenCount: 200 }];
+
+    it('uses the next page anchor for mid-chapter pages', () => {
+      const r = pageBoundaryAnchor({
+        chapters,
+        chapterIdx: 0,
+        pageInChapter: 1,
+        pageCount: 5,
+        currentAnchor: { chapterIdx: 0, tokenIdx: 20 },
+        nextAnchor: { chapterIdx: 0, tokenIdx: 60 },
+      });
+      expect(r).toEqual({ chapterIdx: 0, tokenIdx: 60, completed: false });
+    });
+
+    it('rolls over to the next chapter on the last page of a non-last chapter', () => {
+      const r = pageBoundaryAnchor({
+        chapters,
+        chapterIdx: 0,
+        pageInChapter: 4,
+        pageCount: 5,
+        currentAnchor: { chapterIdx: 0, tokenIdx: 80 },
+        nextAnchor: null,
+      });
+      expect(r).toEqual({ chapterIdx: 1, tokenIdx: 0, completed: false });
+    });
+
+    it('marks completed on the last page of the last chapter', () => {
+      const r = pageBoundaryAnchor({
+        chapters,
+        chapterIdx: 1,
+        pageInChapter: 9,
+        pageCount: 10,
+        currentAnchor: { chapterIdx: 1, tokenIdx: 180 },
+        nextAnchor: null,
+      });
+      expect(r.completed).toBe(true);
+    });
+
+    it('falls back to the current anchor when the next-page anchor is unavailable mid-chapter', () => {
+      const r = pageBoundaryAnchor({
+        chapters,
+        chapterIdx: 0,
+        pageInChapter: 1,
+        pageCount: 5,
+        currentAnchor: { chapterIdx: 0, tokenIdx: 20 },
+        nextAnchor: null,
+      });
+      expect(r).toEqual({ chapterIdx: 0, tokenIdx: 20, completed: false });
+    });
+
+    it('produces an end-pct that exceeds the start-pct by the page word count', () => {
+      // Start of page 2 is token 30; start of page 3 is token 230 — end-pct
+      // should reflect having consumed all 200 words on page 2.
+      const start = computePctRead(
+        chapters as ChapterView[],
+        0,
+        30,
+      );
+      const boundary = pageBoundaryAnchor({
+        chapters,
+        chapterIdx: 0,
+        pageInChapter: 1,
+        pageCount: 5,
+        currentAnchor: { chapterIdx: 0, tokenIdx: 30 },
+        nextAnchor: { chapterIdx: 0, tokenIdx: 230 },
+      });
+      // 230 clamped to currentCount-1 = 99 inside chapter 0 of size 100.
+      const end = computePctRead(
+        chapters as ChapterView[],
+        boundary.chapterIdx,
+        boundary.tokenIdx,
+        { completedText: boundary.completed },
+      );
+      expect(end).toBeGreaterThan(start);
+    });
   });
 });

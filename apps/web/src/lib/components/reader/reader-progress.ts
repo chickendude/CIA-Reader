@@ -169,6 +169,44 @@ export function computePctRead(
   return Math.max(0, Math.min(100, Math.round(((before + inChapter) / total) * 100)));
 }
 
+// Resolve the anchor that represents the *end* of the user's reading
+// position on the current page — i.e. the first token they have NOT
+// yet read. Used to drive the displayed progress percentage so a page
+// densely packed with 500 words advances the bar by 500/total, while
+// a sparse page contributes proportionally less. Without this, a page
+// reader anchored to the *first visible word* shows progress that
+// reflects everything before the page but nothing within it, so
+// dense pages register as a single tick the moment you flip past them.
+//
+// `currentAnchor` is the first visible word on the current page (kept
+// for the resume position); `nextAnchor` is the first visible word on
+// the page after, supplied by the caller from a second DOM scan. When
+// the current page is the last in its chapter we roll over to the
+// next chapter's first token; on the very last page of the very last
+// chapter we mark the text completed.
+export function pageBoundaryAnchor(args: {
+  chapters: { tokenCount: number }[];
+  chapterIdx: number;
+  pageInChapter: number;
+  pageCount: number;
+  currentAnchor: { chapterIdx: number; tokenIdx: number };
+  nextAnchor: { chapterIdx: number; tokenIdx: number } | null;
+}): { chapterIdx: number; tokenIdx: number; completed: boolean } {
+  const { chapters, chapterIdx, pageInChapter, pageCount, currentAnchor, nextAnchor } = args;
+  const isLastPage = pageInChapter >= Math.max(0, pageCount - 1);
+  const isLastChapter = chapterIdx >= chapters.length - 1;
+  if (isLastPage && isLastChapter) {
+    return { chapterIdx: currentAnchor.chapterIdx, tokenIdx: currentAnchor.tokenIdx, completed: true };
+  }
+  if (isLastPage) {
+    return { chapterIdx: chapterIdx + 1, tokenIdx: 0, completed: false };
+  }
+  if (nextAnchor) {
+    return { chapterIdx: nextAnchor.chapterIdx, tokenIdx: nextAnchor.tokenIdx, completed: false };
+  }
+  return { chapterIdx: currentAnchor.chapterIdx, tokenIdx: currentAnchor.tokenIdx, completed: false };
+}
+
 export function firstTokenPage<T extends { idx: number; isWord: boolean }>(
   pages: T[][][] | null,
   tokenIdx: number,
