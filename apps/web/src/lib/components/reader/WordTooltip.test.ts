@@ -91,7 +91,6 @@ describe('WordTooltip — gloss display (T-5.18)', () => {
       '[data-testid="tip-personal"]',
     );
     expect(def?.textContent).toContain('sunrise (mine)');
-    expect(def?.textContent).toContain('yours');
     // The dictionary gloss is suppressed when the viewer has their own.
     expect(document.body.textContent).not.toContain('morning, dawn');
   });

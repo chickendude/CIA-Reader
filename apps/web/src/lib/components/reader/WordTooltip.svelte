@@ -145,7 +145,6 @@
     <div class="tip-def empty">No dictionary match</div>
   {:else if token.personalGloss}
     <div class="tip-def" data-testid="tip-personal">
-      <span class="tip-mine">yours</span>
       {token.personalGloss}
     </div>
   {:else if token.glossDefault}
@@ -213,21 +212,6 @@
   .tip-def.empty {
     color: color-mix(in oklch, var(--paper, #fdfaf3) 65%, transparent);
     font-style: italic;
-  }
-  /* Tiny inline badge that flags the gloss as the viewer's own
-     translation rather than the dictionary one. Keeps the bookkeeping
-     visible without making the tooltip noisy. */
-  .tip-mine {
-    display: inline-block;
-    margin-right: 0.35rem;
-    padding: 0 0.35rem;
-    border-radius: 999px;
-    background: color-mix(in oklch, var(--paper, #fdfaf3) 22%, transparent);
-    color: var(--paper, #fdfaf3);
-    font-size: 0.6rem;
-    font-style: normal;
-    text-transform: lowercase;
-    letter-spacing: 0.02em;
   }
   @keyframes fade-in {
     from {
