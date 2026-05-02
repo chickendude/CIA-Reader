@@ -110,6 +110,74 @@ export function columnIndexForElement(el: Element, contentEl: Element, pageWidth
   return Math.max(0, Math.floor((x + 1) / pageWidth));
 }
 
+// Map of word elements to their column index, built once per measure
+// cycle. Each `columnIndexForElement` call forces a layout flush via
+// `getClientRects()`; on a chapter with thousands of word spans this
+// dominates page-flip cost. `findFirstWordInColumn` recomputes the
+// mapping for every call, so a single page flip used to flush layout
+// O(n_tokens) times — twice, once for the current page and once for
+// the next-page boundary. Build it once, reuse for both queries.
+export interface PageWordIndex {
+  pageWidth: number;
+  contentWidth: number;
+  fallbackChapterIdx: number;
+  // Document-order entries — column index is monotonically
+  // non-decreasing in left-to-right column flow, so consumers can
+  // short-circuit once they pass the target column.
+  entries: ReadonlyArray<{ chapterIdx: number; tokenIdx: number; columnIndex: number }>;
+}
+
+export function buildPageWordIndex(args: {
+  root: ParentNode;
+  contentEl: Element;
+  pageWidth: number;
+  contentWidth: number;
+  fallbackChapterIdx: number;
+}): PageWordIndex {
+  const empty: PageWordIndex = {
+    pageWidth: args.pageWidth,
+    contentWidth: args.contentWidth,
+    fallbackChapterIdx: args.fallbackChapterIdx,
+    entries: [],
+  };
+  if (args.pageWidth <= 0) return empty;
+
+  const contentRect = args.contentEl.getBoundingClientRect();
+  const entries: Array<{ chapterIdx: number; tokenIdx: number; columnIndex: number }> = [];
+  for (const el of Array.from(args.root.querySelectorAll<HTMLElement>(WORD_SELECTOR))) {
+    const rawTokenIdx = el.dataset.tokenIdx;
+    if (rawTokenIdx == null) continue;
+    const tokenIdx = Number.parseInt(rawTokenIdx, 10);
+    if (!Number.isFinite(tokenIdx)) continue;
+    const rawChapterIdx = el.closest<HTMLElement>('[data-chapter-idx]')?.dataset.chapterIdx;
+    const chapterIdx =
+      rawChapterIdx == null ? args.fallbackChapterIdx : Number.parseInt(rawChapterIdx, 10);
+    if (!Number.isFinite(chapterIdx)) continue;
+    const firstRect = el.getClientRects()[0] ?? el.getBoundingClientRect();
+    const x = Math.max(0, firstRect.left - contentRect.left);
+    const columnIndex = Math.max(0, Math.floor((x + 1) / args.pageWidth));
+    entries.push({ chapterIdx, tokenIdx, columnIndex });
+  }
+  return {
+    pageWidth: args.pageWidth,
+    contentWidth: args.contentWidth,
+    fallbackChapterIdx: args.fallbackChapterIdx,
+    entries,
+  };
+}
+
+export function firstWordInColumnFromIndex(
+  index: PageWordIndex,
+  pageIdx: number,
+): Pick<ProgressAnchor, 'chapterIdx' | 'tokenIdx'> | null {
+  for (const e of index.entries) {
+    if (e.columnIndex < pageIdx) continue;
+    if (e.columnIndex > pageIdx) return null;
+    return { chapterIdx: e.chapterIdx, tokenIdx: e.tokenIdx };
+  }
+  return null;
+}
+
 export function findFirstWordInColumn(
   root: ParentNode,
   args: {
@@ -152,6 +220,10 @@ export function findFirstWordInColumn(
   return best ? { chapterIdx: best.chapterIdx, tokenIdx: best.tokenIdx } : null;
 }
 
+// Returns a float 0..100 with no rounding. Display sites should pass
+// the result through `formatPct` / `formatPctRange` with a precision
+// derived from `pctPrecisionFor(totalTokens)`. Persisted progress
+// (`pct_read` column, `real`) keeps the full-precision value.
 export function computePctRead(
   chapters: ChapterView[],
   chapterIdx: number,
@@ -166,7 +238,30 @@ export function computePctRead(
     .reduce((sum, c) => sum + Math.max(0, c.tokenCount), 0);
   const currentCount = Math.max(0, chapters[chapterIdx]?.tokenCount ?? 0);
   const inChapter = Math.max(0, Math.min(tokenIdx, Math.max(0, currentCount - 1)));
-  return Math.max(0, Math.min(100, Math.round(((before + inChapter) / total) * 100)));
+  return Math.max(0, Math.min(100, ((before + inChapter) / total) * 100));
+}
+
+// Choose decimal precision for the progress display so flipping one
+// page advances the number by ~1 unit. With ~200 words/page typical:
+// short texts (< 5k tokens) get clean integers, mid-length (5k–50k)
+// get one decimal, and long texts (50k+) get two so the bar isn't
+// "stuck" at 4% for twenty page-flips.
+export function pctPrecisionFor(totalTokens: number): 0 | 1 | 2 {
+  const n = Math.max(0, Math.floor(totalTokens));
+  if (n < 5_000) return 0;
+  if (n < 50_000) return 1;
+  return 2;
+}
+
+export function formatPct(pct: number, precision: 0 | 1 | 2): string {
+  const clamped = Math.max(0, Math.min(100, Number.isFinite(pct) ? pct : 0));
+  return `${clamped.toFixed(precision)}%`;
+}
+
+export function formatPctRange(startPct: number, endPct: number, precision: 0 | 1 | 2): string {
+  const startStr = formatPct(startPct, precision);
+  const endStr = formatPct(endPct, precision);
+  return startStr === endStr ? endStr : `${startStr.replace(/%$/, '')}–${endStr}`;
 }
 
 // Resolve the anchor that represents the *end* of the user's reading

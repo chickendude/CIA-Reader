@@ -1,13 +1,18 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  buildPageWordIndex,
   columnIndexForElement,
   computePctRead,
   findFirstVisibleWordAnchor,
   findFirstWordInColumn,
   findTokenElementAtOrAfter,
   firstTokenPage,
+  firstWordInColumnFromIndex,
+  formatPct,
+  formatPctRange,
   pageBoundaryAnchor,
+  pctPrecisionFor,
 } from './reader-progress.js';
 import type { ChapterView } from './types.js';
 
@@ -299,6 +304,128 @@ describe('reader progress helpers', () => {
         { completedText: boundary.completed },
       );
       expect(end).toBeGreaterThan(start);
+    });
+  });
+
+  describe('pctPrecisionFor', () => {
+    it('uses integers for short texts', () => {
+      expect(pctPrecisionFor(0)).toBe(0);
+      expect(pctPrecisionFor(1_000)).toBe(0);
+      expect(pctPrecisionFor(4_999)).toBe(0);
+    });
+
+    it('uses one decimal for medium-length texts', () => {
+      expect(pctPrecisionFor(5_000)).toBe(1);
+      expect(pctPrecisionFor(20_000)).toBe(1);
+      expect(pctPrecisionFor(49_999)).toBe(1);
+    });
+
+    it('uses two decimals for long texts', () => {
+      expect(pctPrecisionFor(50_000)).toBe(2);
+      expect(pctPrecisionFor(500_000)).toBe(2);
+    });
+  });
+
+  describe('formatPct', () => {
+    it('formats with the requested precision', () => {
+      expect(formatPct(12.3456, 0)).toBe('12%');
+      expect(formatPct(12.3456, 1)).toBe('12.3%');
+      expect(formatPct(12.3456, 2)).toBe('12.35%');
+    });
+
+    it('clamps out-of-range values', () => {
+      expect(formatPct(-5, 0)).toBe('0%');
+      expect(formatPct(150, 1)).toBe('100.0%');
+      expect(formatPct(Number.NaN, 1)).toBe('0.0%');
+    });
+  });
+
+  describe('formatPctRange', () => {
+    it('shows a single value when start and end round to the same string', () => {
+      // Both 12.3% at precision=1.
+      expect(formatPctRange(12.31, 12.34, 1)).toBe('12.3%');
+    });
+
+    it('shows a dashed range when start and end differ at the chosen precision', () => {
+      expect(formatPctRange(1, 12, 0)).toBe('1–12%');
+      expect(formatPctRange(1.2, 11.7, 1)).toBe('1.2–11.7%');
+    });
+
+    it('collapses a true zero range to a single value', () => {
+      expect(formatPctRange(0, 0, 0)).toBe('0%');
+    });
+  });
+
+  describe('buildPageWordIndex / firstWordInColumnFromIndex', () => {
+    function setupContent(words: Array<{ idx: number; left: number }>) {
+      const content = document.createElement('div');
+      content.getBoundingClientRect = () => rect(0, 0, 100, 0);
+      for (const w of words) {
+        const el = word(w.idx, rect(0, w.left, 20, w.left + 18));
+        el.getClientRects = () =>
+          ({
+            0: rect(0, w.left, 20, w.left + 18),
+            length: 1,
+            item: (i: number) => (i === 0 ? rect(0, w.left, 20, w.left + 18) : null),
+            [Symbol.iterator]: function* () {
+              yield rect(0, w.left, 20, w.left + 18);
+            },
+          }) as DOMRectList;
+        content.append(el);
+      }
+      return content;
+    }
+
+    it('builds a per-token column map using one DOM pass', () => {
+      // pageWidth=50: x∈[0,50)→col0, x∈[50,100)→col1, x∈[100,150)→col2.
+      const content = setupContent([
+        { idx: 0, left: 0 },
+        { idx: 1, left: 25 },
+        { idx: 2, left: 60 },
+        { idx: 3, left: 110 },
+      ]);
+      const index = buildPageWordIndex({
+        root: content,
+        contentEl: content,
+        pageWidth: 50,
+        contentWidth: 150,
+        fallbackChapterIdx: 4,
+      });
+      expect(index.entries.map((e) => e.columnIndex)).toEqual([0, 0, 1, 2]);
+      expect(index.entries.every((e) => e.chapterIdx === 4)).toBe(true);
+    });
+
+    it('returns the first word in the requested column', () => {
+      const content = setupContent([
+        { idx: 0, left: 0 },
+        { idx: 1, left: 25 },
+        { idx: 2, left: 60 },
+        { idx: 3, left: 110 },
+      ]);
+      const index = buildPageWordIndex({
+        root: content,
+        contentEl: content,
+        pageWidth: 50,
+        contentWidth: 150,
+        fallbackChapterIdx: 0,
+      });
+      expect(firstWordInColumnFromIndex(index, 0)).toEqual({ chapterIdx: 0, tokenIdx: 0 });
+      expect(firstWordInColumnFromIndex(index, 1)).toEqual({ chapterIdx: 0, tokenIdx: 2 });
+      expect(firstWordInColumnFromIndex(index, 2)).toEqual({ chapterIdx: 0, tokenIdx: 3 });
+      expect(firstWordInColumnFromIndex(index, 5)).toBeNull();
+    });
+
+    it('returns an empty index when pageWidth is zero (pre-measure)', () => {
+      const content = setupContent([{ idx: 0, left: 0 }]);
+      const index = buildPageWordIndex({
+        root: content,
+        contentEl: content,
+        pageWidth: 0,
+        contentWidth: 0,
+        fallbackChapterIdx: 0,
+      });
+      expect(index.entries).toHaveLength(0);
+      expect(firstWordInColumnFromIndex(index, 0)).toBeNull();
     });
   });
 });
