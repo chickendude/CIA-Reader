@@ -23,11 +23,15 @@
   import type { ProgressAnchor } from './progress-client.js';
   import {
     WORD_SELECTOR,
+    buildPageWordIndex,
     columnIndexForElement,
     computePctRead,
-    findFirstWordInColumn,
     findTokenElementAtOrAfter,
+    firstWordInColumnFromIndex,
+    formatPctRange,
     pageBoundaryAnchor,
+    pctPrecisionFor,
+    type PageWordIndex,
   } from './reader-progress.js';
   import { classifySwipe } from './touch-gestures.js';
   import type { ChapterView } from './types.js';
@@ -93,6 +97,7 @@
     initialTokenApplied = false;
     restorePaintReady = initialTokenIdx <= 0;
     lastReportedKey = '';
+    columnIndexCache = null;
     const seed = computePctRead(chapters, chapterIdx, initialTokenIdx);
     startPct = seed;
     endPct = seed;
@@ -119,6 +124,16 @@
   // card and reader footer always agree.
   let startPct = $state(0);
   let endPct = $state(0);
+
+  const totalTokens = $derived(chapters.reduce((sum, c) => sum + Math.max(0, c.tokenCount), 0));
+  const pctPrecision = $derived(pctPrecisionFor(totalTokens));
+
+  // Per-measure cache of word→column mapping. `findFirstWordInColumn`
+  // forces a layout flush per token; building once per measure and
+  // serving both the current-page and next-page anchors from the same
+  // index drops the page-flip cost in half (and keeps it constant
+  // regardless of how many additional anchors we ever query).
+  let columnIndexCache: PageWordIndex | null = null;
 
   function go(nextIdx: number, opts: { lastPage?: boolean } = {}) {
     void goto(`/reader/${textId}?mode=page&chapter=${nextIdx}`, {
@@ -221,6 +236,7 @@
     const total = contentEl.scrollWidth;
     pageW = w;
     contentW = total;
+    columnIndexCache = null;
   }
 
   onMount(() => {
@@ -272,6 +288,25 @@
     });
   }
 
+  function ensureColumnIndex(): PageWordIndex | null {
+    if (!contentEl) return null;
+    if (
+      !columnIndexCache ||
+      columnIndexCache.pageWidth !== pageW ||
+      columnIndexCache.contentWidth !== contentW ||
+      columnIndexCache.fallbackChapterIdx !== chapterIdx
+    ) {
+      columnIndexCache = buildPageWordIndex({
+        root: contentEl,
+        contentEl,
+        pageWidth: pageW,
+        contentWidth: contentW,
+        fallbackChapterIdx: chapterIdx,
+      });
+    }
+    return columnIndexCache;
+  }
+
   function reportProgress() {
     if (!contentEl) return;
     // Don't fire while the viewport mask is up — the writer would
@@ -279,21 +314,13 @@
     // applyInitialTokenPage jumps to the saved column, and on a
     // chapter change we'd briefly mirror tokenIdx=0 to the URL.
     if (isRestoringInitialToken) return;
-    const anchor = findFirstWordInColumn(contentEl, {
-      contentEl,
-      pageWidth: pageW,
-      pageIdx: pageInChapter,
-      fallbackChapterIdx: chapterIdx,
-    });
+    const index = ensureColumnIndex();
+    if (!index) return;
+    const anchor = firstWordInColumnFromIndex(index, pageInChapter);
     if (!anchor) return;
     const nextPageAnchor =
       pageInChapter < pageCount - 1
-        ? findFirstWordInColumn(contentEl, {
-            contentEl,
-            pageWidth: pageW,
-            pageIdx: pageInChapter + 1,
-            fallbackChapterIdx: chapterIdx,
-          })
+        ? firstWordInColumnFromIndex(index, pageInChapter + 1)
         : null;
     const boundary = pageBoundaryAnchor({
       chapters,
@@ -415,13 +442,7 @@
       Page {pageInChapter + 1} of {pageCount}
       <span class="muted">· Ch. {chapterIdx + 1} / {chapters.length}</span>
     </span>
-    <span class="muted">
-      {#if startPct === endPct}
-        {endPct}%
-      {:else}
-        {startPct}–{endPct}%
-      {/if}
-    </span>
+    <span class="muted">{formatPctRange(startPct, endPct, pctPrecision)}</span>
   </div>
   <div class="reader-foot-bar">
     <i class="read" style="width: {startPct}%"></i>
