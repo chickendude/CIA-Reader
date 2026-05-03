@@ -1205,6 +1205,7 @@
               disabled={savingPrimary}
               aria-label="Your translation"
               placeholder="Type your translation"
+              title={'Enter to save\nShift+Enter for a newline\nEsc to cancel'}
               onkeydown={onPrimaryKeydown}
               onblur={onPrimaryBlur}
             ></textarea>
@@ -1461,6 +1462,7 @@
               bind:this={addTextareaEl}
               bind:value={newTranslationBody}
               placeholder="Type your translation"
+              title={'Enter to save\nShift+Enter for a newline\nEsc to cancel'}
               rows="2"
               maxlength="500"
               disabled={savingTranslation}
