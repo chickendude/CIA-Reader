@@ -1,0 +1,198 @@
+name: ciareader-prod
+
+# Production stack. Boots on a single Hetzner CX/CCX box. Caddy is the
+# only service that binds host ports (80/443); everything else lives on
+# the internal network. Pair with infra/.env for secrets and
+# infra/Caddyfile for the reverse-proxy config.
+#
+# Operate:
+#   docker compose -f infra/docker-compose.prod.yml --env-file infra/.env up -d --build
+#   docker compose -f infra/docker-compose.prod.yml down
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-ciareader}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in infra/.env}
+      POSTGRES_DB: ${POSTGRES_DB:-ciareader}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - internal
+    deploy:
+      resources:
+        limits:
+          memory: 2g
+          cpus: "1.0"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-ciareader} -d ${POSTGRES_DB:-ciareader}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: always
+    # AOF off, RDB snapshot every 60s if ≥1 key changed. Loglevel
+    # warning to keep the journal small (BullMQ is chatty at notice).
+    command:
+      - redis-server
+      - --save
+      - "60"
+      - "1"
+      - --loglevel
+      - warning
+    volumes:
+      - redis-data:/data
+    networks:
+      - internal
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+          cpus: "0.25"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
+  nlp:
+    build:
+      context: ..
+      dockerfile: services/nlp/Dockerfile
+    restart: always
+    # Override the Dockerfile's dev-style `--reload` CMD with a
+    # production worker pool. Two workers fits CX32 / CCX13 headroom
+    # and keeps Stanza models pinned per process.
+    command:
+      - uvicorn
+      - app.main:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+      - --workers
+      - "2"
+    networks:
+      - internal
+    environment:
+      PYTHONPATH: /opt/shared-types:/srv/nlp
+    deploy:
+      resources:
+        limits:
+          memory: 2500m
+          cpus: "1.5"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health').read()"
+      interval: 15s
+      timeout: 5s
+      retries: 10
+
+  web:
+    build:
+      context: ..
+      dockerfile: apps/web/Dockerfile.prod
+    restart: always
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      nlp:
+        condition: service_healthy
+    env_file:
+      - ./.env
+    environment:
+      # Service-network URLs — overrides anything in env_file so a
+      # forgotten dev-style entry there can't accidentally leak.
+      NLP_SERVICE_URL: http://nlp:8000
+      DATABASE_URL: postgres://${POSTGRES_USER:-ciareader}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-ciareader}
+      REDIS_URL: redis://redis:6379
+      AUDIO_LOCAL_ROOT: /srv/audio
+    volumes:
+      - audio-data:/srv/audio
+    networks:
+      - internal
+    deploy:
+      resources:
+        limits:
+          memory: 1500m
+          cpus: "1.0"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - "node -e \"require('http').get('http://localhost:5173/api/v1/smoke', (r) => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))\""
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  caddy:
+    image: caddy:2-alpine
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp" # HTTP/3
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    networks:
+      - internal
+      - public
+    depends_on:
+      web:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+          cpus: "0.25"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+# Two networks so postgres / redis / nlp / web stay invisible to the
+# public side. Only caddy bridges both.
+networks:
+  internal:
+    driver: bridge
+  public:
+    driver: bridge
+
+volumes:
+  postgres-data: {}
+  redis-data: {}
+  caddy-data: {}    # ACME state (T-13.2 will rely on this surviving restarts)
+  caddy-config: {}
+  audio-data: {}    # Object storage backend lives here for the local-fs
+                    # mode. Switching to Hetzner Object Storage (S3 API)
+                    # is a follow-up — env hooks (AUDIO_S3_*) are already
+                    # documented in .env.prod.example.
