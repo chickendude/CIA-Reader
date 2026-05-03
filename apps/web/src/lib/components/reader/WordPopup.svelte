@@ -1200,7 +1200,7 @@
             <textarea
               bind:this={primaryTextareaEl}
               bind:value={primaryBody}
-              rows="2"
+              rows="1"
               maxlength="500"
               disabled={savingPrimary}
               aria-label="Your translation"
@@ -1800,6 +1800,8 @@
     margin: 0.75rem 0 0.6rem;
   }
   .sp-primary-display {
+    box-sizing: border-box;
+    display: block;
     width: 100%;
     text-align: left;
     padding: 0.6rem 0.75rem;
@@ -1842,10 +1844,17 @@
     display: inline-block;
   }
   .sp-primary-form textarea {
+    /* Match the dashed empty-state button's footprint exactly so
+     * clicking "+ Add your translation" swaps the placeholder for
+     * an editor of the same size — no jump in height or font.
+     * The user can still drag the resize handle if they need more
+     * room for a long body. */
+    box-sizing: border-box;
+    display: block;
     width: 100%;
     padding: 0.6rem 0.75rem;
     font: inherit;
-    font-size: 0.95rem;
+    font-size: 0.82rem;
     line-height: 1.35;
     border: 1px solid color-mix(
       in oklch,
