@@ -190,6 +190,23 @@
   let pendingSelection = $state<PendingPhraseSelection | null>(null);
   let selectionError = $state<string | null>(null);
 
+  // T-14.3b: while the user is constructing a phrase via shift-
+  // click, paint every word token whose idx falls inside the
+  // proposed range with the `pending` highlight. We compute a Set
+  // of ids (rather than re-checking inclusion at each TokenSpan)
+  // so large chapters stay O(N) on every selection nudge.
+  const pendingTokenIdSet = $derived.by(() => {
+    const set = new Set<string>();
+    if (!pendingSelection || !tokensWithOverrides) return set;
+    const { start, end } = pendingSelection.rangeIdx;
+    for (const t of tokensWithOverrides) {
+      if (t.idx < start || t.idx > end) continue;
+      if (!t.isWord) continue;
+      set.add(t.id);
+    }
+    return set;
+  });
+
   function findPhrase(target: HTMLElement | null): ChapterPhraseSpan | null {
     if (!target) return null;
     const wrapper = target.closest('[data-phrase-id]') as HTMLElement | null;
@@ -504,6 +521,7 @@
               token={segment.token}
               {showRomanization}
               isAnchor={activeToken?.id === segment.token.id}
+              isInPendingSelection={pendingTokenIdSet.has(segment.token.id)}
             />{:else}<phrase
               class="phrase"
               data-phrase-id={segment.span.phraseId}
@@ -515,6 +533,7 @@
                   {token}
                   {showRomanization}
                   isAnchor={activeToken?.id === token.id}
+                  isInPendingSelection={pendingTokenIdSet.has(token.id)}
                 />{/each}</phrase>{/if}{/each}
       </p>
     {/each}
@@ -576,21 +595,49 @@
   .word:hover {
     background: color-mix(in srgb, var(--color-accent) 12%, transparent);
   }
-  /* T-14.3: phrase wrappers are an unknown element so we have to
-     opt them into inline display explicitly. The visible
-     highlight is layered via `data-s` matching the existing
-     `.status-*` rules in `tokens.css` — phrase status wins over
-     per-token status when both are non-default. */
+  /* T-14.3 / T-14.3b: phrase wrappers are an unknown element so we
+     have to opt them into inline display explicitly. The visible
+     highlight is a soft accent fill behind the run plus a
+     continuous bottom-bar — both painted via box-shadow so the
+     wrapper doesn't claim line-box height (a real `border-bottom`
+     would). `box-decoration-break: clone` ensures each line-
+     fragment gets the full decoration when a phrase wraps mid-
+     line, so "इंतज़ार करना" split across two lines reads as one
+     unit rather than two stranded underlines. The per-token
+     status tints from tokens.css still paint *above* this layer
+     (the inner `<span>`s have their own background), so a known
+     lemma inside an unknown phrase keeps its colour. */
   .phrase {
     display: inline;
-    border-bottom: 1px dotted color-mix(in srgb, var(--color-accent) 35%, transparent);
+    background: color-mix(in oklch, var(--accent, var(--color-accent)) 8%, transparent);
+    box-shadow: inset 0 -2px 0
+      color-mix(in oklch, var(--accent, var(--color-accent)) 40%, transparent);
+    border-radius: 3px;
+    /* Tiny horizontal padding so the pill extends a hair past the
+       outer characters; the negative margin keeps the layout
+       advance unchanged. */
+    padding: 0 1px;
+    margin: 0 -1px;
+    box-decoration-break: clone;
+    -webkit-box-decoration-break: clone;
+  }
+  .phrase[data-s='2'] {
+    /* learning phrase — slightly stronger fill so it reads as
+       active progress rather than passive grouping. */
+    background: color-mix(in oklch, var(--accent, var(--color-accent)) 14%, transparent);
+    box-shadow: inset 0 -2px 0
+      color-mix(in oklch, var(--accent, var(--color-accent)) 55%, transparent);
   }
   .phrase[data-s='4'] {
-    /* known phrase — quiet highlight, mirrors the lemma 'known'
-       treatment but applied to the run rather than each token. */
-    border-bottom-color: color-mix(in srgb, var(--color-accent) 60%, transparent);
+    /* known phrase — quietest fill, no bottom bar. The user has
+       learnt this expression; we still want the grouping cue but
+       not the "draw your eye here" emphasis. */
+    background: color-mix(in oklch, var(--accent, var(--color-accent)) 4%, transparent);
+    box-shadow: none;
   }
   .phrase[data-s='5'] {
-    border-bottom-style: none;
+    /* ignored — drop the highlight entirely. */
+    background: transparent;
+    box-shadow: none;
   }
 </style>
