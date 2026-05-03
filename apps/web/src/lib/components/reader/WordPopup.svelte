@@ -1219,9 +1219,7 @@
             class="sp-primary-display"
             data-testid="primary-translation-edit"
             data-empty={payload.translations.personal[0] ? '0' : '1'}
-            title={payload.translations.personal[0]
-              ? 'Edit your translation'
-              : 'Add your translation'}
+            title={'Enter to save\nShift+Enter for a newline\nEsc to cancel'}
             onclick={startEditPrimary}
           >
             {#if payload.translations.personal[0]}
