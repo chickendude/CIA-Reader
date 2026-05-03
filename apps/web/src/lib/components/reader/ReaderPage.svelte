@@ -183,7 +183,6 @@
   function onKeydown(e: KeyboardEvent) {
     if (e.metaKey || e.ctrlKey || e.altKey) return;
     if (isTypingInsideElement(e.target)) return;
-    if (document.querySelector('[data-testid="word-popup"]')) return;
     if (e.key === 'ArrowLeft' && hasPrev) {
       e.preventDefault();
       prevPage();

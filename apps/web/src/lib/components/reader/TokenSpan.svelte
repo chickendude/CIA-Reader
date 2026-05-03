@@ -110,10 +110,13 @@
   }
   /* Anchor: the word currently locked in the side panel. Outline
      instead of fill so the user can still see the underlying status
-     tint underneath. */
+     tint underneath. Negative offset tucks the outline against the
+     border-edge so it can't bleed past column edges (where
+     overflow:hidden would clip an outline on the leftmost word in
+     a page). */
   .word.anchor {
     outline: 2px solid var(--accent, var(--color-accent));
-    outline-offset: 1px;
+    outline-offset: -2px;
     border-radius: 3px;
   }
 </style>
