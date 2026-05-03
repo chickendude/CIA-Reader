@@ -822,6 +822,30 @@ describe('WordPopup — primary translation editor (above status buttons)', () =
     expect(personalRows.length).toBe(0);
   });
 
+  it('opens the editor at the same single-row size as the empty placeholder (no growth on click)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(jsonResponse(payloadOf([]))),
+    );
+    render(WordPopup, {
+      token: makeToken({ surface: 'पानी', lemmaId: 'lem-1' }),
+      language: 'hi',
+      isOwner: true,
+      onClose: vi.fn(),
+    });
+    const slot = await awaitElement<HTMLButtonElement>(
+      '[data-testid="primary-translation-edit"]',
+    );
+    slot.click();
+    const textarea = await awaitElement<HTMLTextAreaElement>(
+      '.sp-primary-form textarea',
+    );
+    // rows=1 keeps the textarea the same height as the dashed
+    // placeholder it replaced; the user can drag-resize if they
+    // need more vertical room.
+    expect(textarea.rows).toBe(1);
+  });
+
   it('clicking the empty slot opens an autofocused textarea and POSTs a new personal translation', async () => {
     const fetchMock = vi
       .fn()
