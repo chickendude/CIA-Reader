@@ -129,6 +129,9 @@ services:
       DATABASE_URL: postgres://${POSTGRES_USER:-ciareader}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-ciareader}
       REDIS_URL: redis://redis:6379
       AUDIO_LOCAL_ROOT: /srv/audio
+      # adapter-node defaults to PORT=3000; we standardize on 5173
+      # across dev + prod so EXPOSE / healthcheck / Caddy all line up.
+      PORT: "5173"
     volumes:
       - audio-data:/srv/audio
     networks:
