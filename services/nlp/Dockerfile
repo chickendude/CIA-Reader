@@ -7,8 +7,17 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /srv/nlp
 
+# unicodedata2 (transitive via indic-nlp-library) has no prebuilt wheel
+# for aarch64-linux, so pip compiles it from C source. The slim base
+# image doesn't ship a compiler — install gcc + headers, do the install,
+# then purge in the same RUN so the final layer doesn't carry them.
 COPY services/nlp/pyproject.toml /srv/nlp/pyproject.toml
-RUN pip install -U pip && pip install -e '.[dev,models]'
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends gcc libc6-dev \
+ && pip install -U pip \
+ && pip install -e '.[dev,models]' \
+ && apt-get purge -y --auto-remove gcc libc6-dev \
+ && rm -rf /var/lib/apt/lists/*
 
 COPY services/nlp/app /srv/nlp/app
 COPY services/nlp/tests /srv/nlp/tests
