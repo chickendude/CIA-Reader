@@ -1,0 +1,20 @@
+# Caddy reverse-proxy for the production stack (T-13.1 placeholder).
+#
+# This file is HTTP-only on :80 so the prod stack can boot end-to-end
+# during initial deploy. T-13.2 will replace this with auto-TLS using
+# Let's Encrypt against the real production domain.
+
+{
+	# Disable the local admin endpoint — production uses
+	# `docker compose exec caddy caddy reload` for config changes.
+	admin off
+}
+
+:80 {
+	encode gzip zstd
+
+	# All app traffic goes to the SvelteKit web service. The audio /
+	# api routes are sub-paths handled inside the same SvelteKit app,
+	# so a single proxy rule covers them.
+	reverse_proxy web:5173
+}

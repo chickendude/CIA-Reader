@@ -1,0 +1,74 @@
+# Production image for the SvelteKit web app.
+#
+# Two stages:
+#   1. builder — install full deps, run `pnpm --filter @ciareader/web build`.
+#      adapter-node emits a self-contained Node app at apps/web/build/.
+#   2. runtime — install prod deps in a fresh layer (avoids copying pnpm's
+#      symlinked node_modules across stages, which is fragile), copy the
+#      build output + drizzle migrations + migrate-prod.mjs, drop privs.
+#
+# Startup command runs migrations against the live DB before booting the
+# server, so a fresh deploy is a single `docker compose up -d` away.
+
+# ---- builder ----
+FROM node:20.18-slim AS builder
+
+ENV PNPM_HOME=/usr/local/pnpm \
+    PATH=/usr/local/pnpm:$PATH \
+    COREPACK_ENABLE_DOWNLOAD_PROMPT=0
+RUN corepack enable && corepack prepare pnpm@9.12.0 --activate
+
+WORKDIR /srv/build
+
+# Copy lockfile and metadata first for a cached pnpm install on
+# subsequent rebuilds when only source changes.
+COPY pnpm-workspace.yaml pnpm-lock.yaml package.json ./
+COPY apps/web/package.json apps/web/package.json
+COPY packages/shared-types/package.json packages/shared-types/package.json
+
+RUN pnpm install --frozen-lockfile
+
+COPY apps/web apps/web
+COPY packages/shared-types packages/shared-types
+
+RUN pnpm --filter @ciareader/web build
+
+# ---- runtime ----
+FROM node:20.18-slim AS runtime
+
+ENV NODE_ENV=production \
+    PNPM_HOME=/usr/local/pnpm \
+    PATH=/usr/local/pnpm:$PATH \
+    COREPACK_ENABLE_DOWNLOAD_PROMPT=0
+RUN corepack enable && corepack prepare pnpm@9.12.0 --activate
+
+WORKDIR /srv/app
+
+COPY pnpm-workspace.yaml pnpm-lock.yaml package.json ./
+COPY apps/web/package.json apps/web/package.json
+COPY packages/shared-types/package.json packages/shared-types/package.json
+
+# Production-only deps for the runtime — drizzle-orm/postgres-js for
+# migrate-prod.mjs, @node-rs/argon2 + jose for auth at request time, etc.
+# adapter-node's build output references these at runtime by `import`.
+RUN pnpm install --frozen-lockfile --prod
+
+# Bundled SvelteKit app from the build stage.
+COPY --from=builder /srv/build/apps/web/build apps/web/build
+# Migration assets — needed by the startup migrate step.
+COPY --from=builder /srv/build/apps/web/drizzle apps/web/drizzle
+COPY --from=builder /srv/build/apps/web/scripts/migrate-prod.mjs apps/web/scripts/migrate-prod.mjs
+# shared-types' source — adapter-node bundles direct imports, but
+# anything that re-exports types via $env or runtime requires the
+# package present on the resolution path.
+COPY --from=builder /srv/build/packages/shared-types packages/shared-types
+
+# Run as non-root.
+RUN groupadd --system --gid 10001 app && \
+    useradd  --system --uid 10001 --gid app --home-dir /srv/app --shell /sbin/nologin app && \
+    chown -R app:app /srv/app
+USER app
+
+EXPOSE 5173
+
+CMD ["sh", "-c", "node apps/web/scripts/migrate-prod.mjs && node apps/web/build/index.js"]

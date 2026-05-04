@@ -73,6 +73,27 @@ make smoke
 - `make dev` / `make dev-down` — start / stop the dev stack
 - `make install-nlp` — create `.venv` for the NLP service (for running `pytest` directly)
 
+## Production deployment
+
+The production stack is a separate compose file: [`infra/docker-compose.prod.yml`](infra/docker-compose.prod.yml). It boots `web`, `nlp`, `postgres`, `redis`, and `caddy` on a single Hetzner CX/CCX box. Caddy is the only service that binds host ports (80 / 443); everything else stays on the internal docker network.
+
+On the deploy host:
+
+```
+cp infra/.env.prod.example infra/.env
+# edit infra/.env — fill POSTGRES_PASSWORD, AUTH_SECRET, SMTP_*, APP_BASE_URL
+docker compose -f infra/docker-compose.prod.yml --env-file infra/.env up -d --build
+```
+
+The web service's startup command runs `apps/web/scripts/migrate-prod.mjs` (drizzle-orm's migrator — no drizzle-kit dependency at runtime) before starting the SvelteKit server, so a fresh deploy applies any pending migrations automatically.
+
+The other M13 tickets layer on top of this:
+
+- **T-13.2** — Caddyfile + auto-TLS (replaces the HTTP-only placeholder in [`infra/Caddyfile`](infra/Caddyfile))
+- **T-13.3** — nightly backups (postgres-data + audio-data volumes)
+- **T-13.4** — deploy script (rsync + `docker compose pull` + restart)
+- **T-13.5** — monitoring-lite
+
 ## Status
 
 Early. See [GitHub Issues](https://github.com/chickendude/CIA-Reader/issues) — each milestone is an epic with child tickets.
