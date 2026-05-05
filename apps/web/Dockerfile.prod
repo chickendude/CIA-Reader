@@ -63,7 +63,11 @@ COPY apps/web/package.json apps/web/package.json
 COPY packages/shared-types/package.json packages/shared-types/package.json
 
 # Full deps — see file header for why we include dev deps too.
-RUN pnpm install --frozen-lockfile
+# `--prod=false` is needed because `NODE_ENV=production` (set above)
+# would otherwise make pnpm v9 skip devDependencies regardless of the
+# absence of an explicit `--prod` flag. We need tsx + drizzle-kit +
+# dotenv at runtime for admin scripts, so override.
+RUN pnpm install --frozen-lockfile --prod=false
 
 # Bundled SvelteKit app from the build stage.
 COPY --from=builder /srv/build/apps/web/build apps/web/build
