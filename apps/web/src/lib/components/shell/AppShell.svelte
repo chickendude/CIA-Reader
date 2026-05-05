@@ -18,6 +18,7 @@
     visibleTabs,
     type Tab,
     type TabIcon,
+    type ViewerRole,
   } from './tabs.js';
   import {
     isImmersiveAttributeSet,
@@ -35,7 +36,13 @@
   }
 
   interface Props {
-    user: { id: string; displayName: string | null; email: string } | null;
+    user: {
+      id: string;
+      displayName: string | null;
+      email: string;
+      /** T-3.14: drives the curator/admin-gated nav entries (Moderation). */
+      role: ViewerRole;
+    } | null;
     /** Active language for the current visit. Drives the rail indicator
      *  + per-screen filters (T-5.25). Null when the user has no
      *  language data yet (anonymous fresh visitor). */
@@ -116,7 +123,12 @@
     }
   }
 
-  const tabs = $derived<Tab[]>(visibleTabs(TABS, user !== null));
+  const tabs = $derived<Tab[]>(
+    visibleTabs(TABS, {
+      authenticated: user !== null,
+      role: user?.role ?? null,
+    }),
+  );
   const activeId = $derived(getActiveTabId($page.url.pathname, tabs));
   const groups = $derived(groupTabsBySection(tabs));
 
@@ -161,6 +173,8 @@
       'M4 20a8 8 0 0116 0',
     ],
     signin: ['M11 8V5a2 2 0 012-2h6a2 2 0 012 2v14a2 2 0 01-2 2h-6a2 2 0 01-2-2v-3', 'M3 12h12', 'M9 8l-4 4 4 4'],
+    // T-3.14: shield outline for the curator/admin moderation tab.
+    moderation: ['M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6l8-3z'],
   };
 </script>
 

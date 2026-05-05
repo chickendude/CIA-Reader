@@ -5,10 +5,22 @@
  * Groups, Collections, …) means adding an entry here, not editing every
  * layout file that references navigation.
  *
- * `auth`: 'any' shows to everyone, 'authenticated' only to signed-in users,
- *          'anonymous' only to signed-out users.
+ * `auth`:
+ *   - `any`: shown to everyone
+ *   - `authenticated`: only signed-in users
+ *   - `anonymous`: only signed-out users
+ *   - `curator-or-admin`: signed-in users with role `curator` or `admin`
+ *     (T-3.14 — exposes the moderation surface in the rail without
+ *     forcing a separate "admin section" UI)
  */
-export type TabAuth = 'any' | 'authenticated' | 'anonymous';
+export type TabAuth = 'any' | 'authenticated' | 'anonymous' | 'curator-or-admin';
+
+export type ViewerRole = 'user' | 'curator' | 'admin' | null;
+
+export interface Viewer {
+  authenticated: boolean;
+  role: ViewerRole;
+}
 
 /** Icon names supported by the shell. New entries map to a glyph in
  * `AppShell.svelte`'s icon switch. */
@@ -18,7 +30,8 @@ export type TabIcon =
   | 'upload'
   | 'words'
   | 'profile'
-  | 'signin';
+  | 'signin'
+  | 'moderation';
 
 /** Section heading the tab clusters under in the desktop rail (T-5.11).
  * `null` (the default) renders the tab outside any section, above the
@@ -77,6 +90,19 @@ export const TABS: readonly Tab[] = [
     section: 'You',
   },
   {
+    // T-3.14: top-level entry into the moderation surface so curators
+    // and admins don't have to hand-type `/moderation/...` URLs.
+    // Lands on the dictionary editor; the page itself surfaces
+    // admin-only sub-links (Bulk tools, Sources) in its sub-nav.
+    id: 'moderation',
+    label: 'Moderation',
+    href: '/moderation/dictionary',
+    auth: 'curator-or-admin',
+    match: ['/moderation'],
+    icon: 'moderation',
+    section: 'You',
+  },
+  {
     id: 'signin',
     label: 'Sign in',
     href: '/login',
@@ -86,11 +112,21 @@ export const TABS: readonly Tab[] = [
   },
 ];
 
-export function visibleTabs(tabs: readonly Tab[], isAuthenticated: boolean): Tab[] {
+export function visibleTabs(tabs: readonly Tab[], viewer: Viewer): Tab[] {
   return tabs.filter((t) => {
-    if (t.auth === 'any') return true;
-    if (t.auth === 'authenticated') return isAuthenticated;
-    return !isAuthenticated;
+    switch (t.auth) {
+      case 'any':
+        return true;
+      case 'authenticated':
+        return viewer.authenticated;
+      case 'anonymous':
+        return !viewer.authenticated;
+      case 'curator-or-admin':
+        return (
+          viewer.authenticated &&
+          (viewer.role === 'curator' || viewer.role === 'admin')
+        );
+    }
   });
 }
 
