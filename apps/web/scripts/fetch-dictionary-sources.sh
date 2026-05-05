@@ -185,6 +185,7 @@ case "${1-all}" in
     fetch_kaikki kaikki-odia Odia
     fetch_kaikki_en_translations
     fetch_dbnary dbnary-hi hin
+    fetch_dbnary dbnary-mr mar
     ;;
   kaikki-hindi)
     fetch_kaikki kaikki-hindi Hindi
@@ -201,9 +202,12 @@ case "${1-all}" in
   dbnary-hi)
     fetch_dbnary dbnary-hi hin
     ;;
+  dbnary-mr)
+    fetch_dbnary dbnary-mr mar
+    ;;
   *)
     echo "unknown source: $1" >&2
-    echo "available: kaikki-hindi, kaikki-marathi, kaikki-odia, kaikki-en-translations, dbnary-hi" >&2
+    echo "available: kaikki-hindi, kaikki-marathi, kaikki-odia, kaikki-en-translations, dbnary-hi, dbnary-mr" >&2
     exit 1
     ;;
 esac
