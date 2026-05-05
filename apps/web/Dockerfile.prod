@@ -34,7 +34,11 @@ COPY pnpm-workspace.yaml pnpm-lock.yaml package.json ./
 COPY apps/web/package.json apps/web/package.json
 COPY packages/shared-types/package.json packages/shared-types/package.json
 
-RUN pnpm install --frozen-lockfile
+# BuildKit cache mount keeps the pnpm store across rebuilds, so even
+# when this layer is invalidated (e.g. lockfile change) the actual
+# download is fast.
+RUN --mount=type=cache,id=pnpm,target=/root/.local/share/pnpm/store \
+    pnpm install --frozen-lockfile
 
 COPY apps/web apps/web
 COPY packages/shared-types packages/shared-types
@@ -52,9 +56,12 @@ RUN corepack enable && corepack prepare pnpm@9.12.0 --activate
 
 # curl + ca-certificates for fetch-dictionary-sources.sh (the one
 # script in apps/web/scripts that shells out instead of running JS).
-RUN apt-get update \
- && apt-get install -y --no-install-recommends curl ca-certificates \
- && rm -rf /var/lib/apt/lists/*
+# BuildKit cache mounts make repeat rebuilds ~instant.
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    rm -f /etc/apt/apt.conf.d/docker-clean \
+ && apt-get update \
+ && apt-get install -y --no-install-recommends curl ca-certificates
 
 WORKDIR /srv/app
 
@@ -67,15 +74,28 @@ COPY packages/shared-types/package.json packages/shared-types/package.json
 # would otherwise make pnpm v9 skip devDependencies regardless of the
 # absence of an explicit `--prod` flag. We need tsx + drizzle-kit +
 # dotenv at runtime for admin scripts, so override.
-RUN pnpm install --frozen-lockfile --prod=false
+#
+# Cache mount keeps the pnpm package store across rebuilds — the
+# layer that this RUN produces still gets invalidated when source
+# changes, but the ~hundreds-of-MB download is a one-time cost.
+RUN --mount=type=cache,id=pnpm,target=/root/.local/share/pnpm/store \
+    pnpm install --frozen-lockfile --prod=false
 
 # Bundled SvelteKit app from the build stage.
 COPY --from=builder /srv/build/apps/web/build apps/web/build
 # Migration assets — needed by the startup migrate step.
 COPY --from=builder /srv/build/apps/web/drizzle apps/web/drizzle
+COPY --from=builder /srv/build/apps/web/drizzle.config.ts apps/web/drizzle.config.ts
 # The whole scripts/ dir — admin / ops scripts run via
 # `docker compose exec web pnpm <script>`.
 COPY --from=builder /srv/build/apps/web/scripts apps/web/scripts
+# Source tree — admin scripts (import-dictionary.ts, seed-admin.ts)
+# import from `../src/lib/server/...` via tsx, so src/ has to be on
+# disk at runtime. The serving path (adapter-node + apps/web/build)
+# doesn't reference src/; this copy is purely for tsx to resolve
+# script-side imports.
+COPY --from=builder /srv/build/apps/web/src apps/web/src
+COPY --from=builder /srv/build/apps/web/svelte.config.js apps/web/svelte.config.js
 # shared-types' source — adapter-node bundles direct imports, but
 # anything that re-exports types via $env or runtime requires the
 # package present on the resolution path.
