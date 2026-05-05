@@ -239,6 +239,13 @@
       "when": 1777555343432,
       "tag": "0033_calm_smasher",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1777998658759,
+      "tag": "0034_smiling_mockingbird",
+      "breakpoints": true
     }
   ]
 }

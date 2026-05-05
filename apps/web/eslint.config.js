@@ -75,6 +75,14 @@ export default [
         HTMLAudioElement: 'readonly',
         // Alignment highlighter (T-9.3) — uses CSS.escape.
         CSS: 'readonly',
+        // Polling on the admin sources page (T-3.14).
+        setInterval: 'readonly',
+        clearInterval: 'readonly',
+        setTimeout: 'readonly',
+        clearTimeout: 'readonly',
+        queueMicrotask: 'readonly',
+        confirm: 'readonly',
+        SubmitEvent: 'readonly',
       },
     },
   },

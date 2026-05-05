@@ -87,6 +87,32 @@ that ships forms will add duplicate rows if the upstream source ships
 the same form twice. The dedup pass is deliberately deferred to
 post-MVP; today we'd rather over-include than lose a form.
 
+## Admin UI (T-3.14)
+
+`/moderation/dictionary/sources` is an admin-only page that surfaces
+the cache + import state of every registered importer. Each row shows:
+
+- **Raw cache**: presence + size + line count + mtime of
+  `apps/web/data/dictionaries/<slug>/raw.jsonl`. A `partial` state
+  means a `.tmp` file is present without a final `raw.jsonl` — someone
+  interrupted a fetch.
+- **Last import**: most recent `dictionary_imports` row for the slug
+  (succeeded / failed, run-at, error message if any, triggering user).
+- **Contribution**: live count of lemmas + translations whose
+  `source_attribution` matches the importer's attribution string.
+
+Per-row actions: **Re-fetch** (shells out to
+`scripts/fetch-dictionary-sources.sh <slug> --force` in the background),
+**Re-import** (runs the in-process importer against the cached file and
+writes a `dictionary_imports` audit row, including a `failed` row with
+`error_message` if the iterator throws), and **Delete cache** (`unlink`
+the canonical `raw.jsonl`). A global **Fetch all missing** triggers a
+fetch for every row currently in `Not cached`.
+
+Job state is tracked in-process (single web replica in prod). The page
+polls `/api/v1/admin/dictionary-sources` every 2 s while any row has a
+running job; idle pages don't poll.
+
 ## Attribution surface
 
 Every imported lemma and translation stores a `source_attribution` string

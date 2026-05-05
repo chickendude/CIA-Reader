@@ -40,6 +40,7 @@
       <a href="/moderation/stats">Stats →</a>
       {#if data.isAdmin}
         <a href="/moderation/dictionary/bulk">Bulk tools →</a>
+        <a href="/moderation/dictionary/sources">Sources →</a>
       {/if}
     </nav>
   </header>

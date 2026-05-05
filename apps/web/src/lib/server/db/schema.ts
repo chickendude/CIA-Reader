@@ -662,6 +662,13 @@ export const translationReports = pgTable(
  * Audit row per dictionary-import run. One row written per `runImport(...)`
  * invocation so we can answer "when did we last pull Hindi WordNet and
  * what changed?" without re-reading the source file or scanning lemmas.
+ *
+ * T-3.14 added `triggered_by_user_id`, `status`, and `error_message` so
+ * the admin sources page can show "who kicked it off" and surface a
+ * failure without scraping logs. CLI runs via
+ * `pnpm dictionary:import` leave `triggered_by_user_id` null — they're
+ * still recorded as `succeeded` (or `failed`) so the page's "last
+ * import" cell is honest about CLI activity too.
  */
 export const dictionaryImports = pgTable(
   'dictionary_imports',
@@ -676,9 +683,15 @@ export const dictionaryImports = pgTable(
     translationsCreated: integer('translations_created').notNull().default(0),
     translationsUpdated: integer('translations_updated').notNull().default(0),
     notes: text('notes'),
+    triggeredByUserId: uuid('triggered_by_user_id').references(() => users.id, {
+      onDelete: 'set null',
+    }),
+    status: text('status').notNull().default('succeeded'),
+    errorMessage: text('error_message'),
   },
   (t) => ({
     languageIdx: index('dictionary_imports_language_idx').on(t.language, t.runAt),
+    sourceLatestIdx: index('dictionary_imports_source_latest_idx').on(t.sourceName, t.runAt),
   }),
 );
 
