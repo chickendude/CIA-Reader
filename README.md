@@ -104,9 +104,22 @@ Staging certs aren't browser-trusted (you'll see a security warning) but the rat
 
 The `backup` service runs as a sidecar in the prod compose stack. Cron jobs `pg_dump` the DB nightly and tar the audio volume weekly, uploading both via `rclone` to whatever remote you've configured (Dropbox, B2, Hetzner Storage Box, etc.). Setup walkthrough + restore procedure: [`infra/backup/README.md`](infra/backup/README.md).
 
+### Deploying a change
+
+Once `infra/.env` exists on the box and the stack is running, deploys are a single command from your laptop:
+
+```
+./scripts/deploy.sh                   # deploy origin/main
+./scripts/deploy.sh <branch-or-sha>   # deploy a specific ref (preview branches, hotfixes)
+./scripts/deploy.sh --dry-run         # print the plan without touching the box
+```
+
+The script SSHes to the box, fast-forwards the repo at `/opt/ciareader`, runs `docker compose up -d --build`, prunes dangling images, and then polls `https://parhiba.com/api/v1/smoke` from the laptop side until it returns 200. On health-check timeout it prints the last 50 lines of web logs and exits non-zero, so a failed deploy is loud and diagnosable.
+
+Override host / path with env vars: `DEPLOY_HOST=root@example.com ./scripts/deploy.sh`.
+
 ### M13 roadmap
 
-- **T-13.4** — deploy script (rsync + `docker compose pull` + restart)
 - **T-13.5** — monitoring-lite
 
 ## Status
