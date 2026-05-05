@@ -151,12 +151,40 @@ fetch_kaikki_en_translations() {
     --speed-limit 102400
 }
 
+fetch_dbnary() {
+  # T-3.10b/e: Dbnary publishes per-language Turtle dumps as
+  # <lang3>_dbnary_ontolex.ttl.bz2 at the kaiko.getalp.org "latest"
+  # path. We download to <slug>/raw.ttl.bz2 and bunzip2 in-place to
+  # raw.ttl so the importer (which streams a Turtle file) reads a
+  # stable filename. bunzip2 is part of bzip2 — every Linux base
+  # image and every modern macOS already has it, so no new system
+  # dep here.
+  local slug="$1"     # e.g. dbnary-hi
+  local lang3="$2"    # ISO 639-3 (hin, mar, …) — Dbnary's URL convention
+  local out="$DATA_ROOT/$slug"
+  mkdir -p "$out"
+  if skip_if_fresh "$slug" "$out/raw.ttl"; then return; fi
+  local url="https://kaiko.getalp.org/static/ontolex/latest/${lang3}_dbnary_ontolex.ttl.bz2"
+  local bz="$out/raw.ttl.bz2"
+  echo "[fetch] $slug  $url -> $bz"
+  curl --fail --location \
+    --output "${bz}.tmp" \
+    --retry 5 --retry-delay 5 --retry-all-errors \
+    "$url"
+  mv "${bz}.tmp" "$bz"
+  echo "[fetch] $slug  decompressing"
+  bunzip2 -kf "$bz"
+  rm -f "$bz"
+  echo "[fetch] $slug  ready ($(wc -l <"$out/raw.ttl") lines, $(du -h "$out/raw.ttl" | cut -f1))"
+}
+
 case "${1-all}" in
   all)
     fetch_kaikki kaikki-hindi Hindi
     fetch_kaikki kaikki-marathi Marathi
     fetch_kaikki kaikki-odia Odia
     fetch_kaikki_en_translations
+    fetch_dbnary dbnary-hi hin
     ;;
   kaikki-hindi)
     fetch_kaikki kaikki-hindi Hindi
@@ -170,9 +198,12 @@ case "${1-all}" in
   kaikki-en-translations)
     fetch_kaikki_en_translations
     ;;
+  dbnary-hi)
+    fetch_dbnary dbnary-hi hin
+    ;;
   *)
     echo "unknown source: $1" >&2
-    echo "available: kaikki-hindi, kaikki-marathi, kaikki-odia, kaikki-en-translations" >&2
+    echo "available: kaikki-hindi, kaikki-marathi, kaikki-odia, kaikki-en-translations, dbnary-hi" >&2
     exit 1
     ;;
 esac
