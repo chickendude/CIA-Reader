@@ -1,7 +1,18 @@
 #!/bin/bash
 # Validates required env, persists it for cron children (cron's own
 # shell starts with a near-empty env), then exec crond in foreground.
+#
+# If args are passed (e.g. `docker compose run --rm -it backup
+# rclone config`), exec them directly without the validation/cron
+# path. This is the standard "ENTRYPOINT pass-through" pattern —
+# lets operators run one-off commands like the rclone OAuth setup
+# without the entrypoint blocking on the very config it's about to
+# create.
 set -euo pipefail
+
+if [ "$#" -gt 0 ]; then
+  exec "$@"
+fi
 
 require() {
   # Prints the *name* if missing — never the value.
