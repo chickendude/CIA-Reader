@@ -53,6 +53,14 @@
 	header Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
 }
 
+# Treat the apex as canonical and 301 www → apex. Caddy will issue a
+# separate Let's Encrypt cert for www, so DNS A/AAAA for www must point
+# at this box before first boot (or use a CNAME at www → APP_DOMAIN).
+# If you don't want a www variant at all, comment this block out.
+www.{$APP_DOMAIN} {
+	redir https://{$APP_DOMAIN}{uri} permanent
+}
+
 # When the API moves to its own subdomain (CORS scoping + separate
 # caching, per the original T-13.2 spec), set API_DOMAIN in infra/.env
 # and uncomment this block. Frontend fetch() URLs need to be updated
