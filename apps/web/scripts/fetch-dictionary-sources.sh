@@ -178,6 +178,25 @@ fetch_dbnary() {
   echo "[fetch] $slug  ready ($(wc -l <"$out/raw.ttl") lines, $(du -h "$out/raw.ttl" | cut -f1))"
 }
 
+manual_dump_check() {
+  # Sources that require registration / manual download (e.g.
+  # CFILT WordNets behind a research-use form). Verifies the
+  # operator has placed the file at the expected path; if not,
+  # prints a one-line pointer to the project README.
+  local slug="$1"
+  local expected="$2"
+  local doc_url="$3"
+  local out="$DATA_ROOT/$slug"
+  mkdir -p "$out"
+  if [[ -s "$out/$expected" ]]; then
+    echo "[fetch] $slug  manual artifact present at $out/$expected ($(wc -l <"$out/$expected") lines, $(du -h "$out/$expected" | cut -f1))"
+    return
+  fi
+  echo "[fetch] $slug  requires a manual download — see $doc_url"
+  echo "[fetch] $slug  expected file: $out/$expected"
+  return 1
+}
+
 case "${1-all}" in
   all)
     fetch_kaikki kaikki-hindi Hindi
@@ -186,6 +205,9 @@ case "${1-all}" in
     fetch_kaikki_en_translations
     fetch_dbnary dbnary-hi hin
     fetch_dbnary dbnary-mr mar
+    # `all` skips the registration-gated WordNets so a fresh box
+    # boots with what's freely available; trigger them explicitly
+    # by name.
     ;;
   kaikki-hindi)
     fetch_kaikki kaikki-hindi Hindi
@@ -205,9 +227,13 @@ case "${1-all}" in
   dbnary-mr)
     fetch_dbnary dbnary-mr mar
     ;;
+  hindi-wordnet)
+    manual_dump_check hindi-wordnet synsets.tsv \
+      "docs/dictionary-sources.md (Hindi WordNet section) — CFILT IIT-Bombay distribution requires registration"
+    ;;
   *)
     echo "unknown source: $1" >&2
-    echo "available: kaikki-hindi, kaikki-marathi, kaikki-odia, kaikki-en-translations, dbnary-hi, dbnary-mr" >&2
+    echo "available: kaikki-hindi, kaikki-marathi, kaikki-odia, kaikki-en-translations, dbnary-hi, dbnary-mr, hindi-wordnet" >&2
     exit 1
     ;;
 esac
