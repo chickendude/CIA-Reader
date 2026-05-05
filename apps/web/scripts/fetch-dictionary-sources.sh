@@ -243,9 +243,13 @@ case "${1-all}" in
     manual_dump_check odia-wordnet synsets.tsv \
       "docs/dictionary-sources.md (Odia WordNet section) — ISI Kolkata distribution requires registration"
     ;;
+  odianlp)
+    manual_dump_check odianlp curated.jsonl \
+      "docs/dictionary-sources.md (OdiaNLP section) — assemble curated.jsonl with per-entry licenses; the importer fails loudly on unrecognized licenses"
+    ;;
   *)
     echo "unknown source: $1" >&2
-    echo "available: kaikki-hindi, kaikki-marathi, kaikki-odia, kaikki-en-translations, dbnary-hi, dbnary-mr, hindi-wordnet, marathi-wordnet, molesworth, odia-wordnet" >&2
+    echo "available: kaikki-hindi, kaikki-marathi, kaikki-odia, kaikki-en-translations, dbnary-hi, dbnary-mr, hindi-wordnet, marathi-wordnet, molesworth, odia-wordnet, odianlp" >&2
     exit 1
     ;;
 esac

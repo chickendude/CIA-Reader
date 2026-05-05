@@ -20,6 +20,7 @@ import { hindiSeedSource } from './hindi-seed.js';
 import { hindiWordnetSource } from './hindi-wordnet.js';
 import { marathiWordnetSource } from './marathi-wordnet.js';
 import { molesworthSource } from './molesworth.js';
+import { odiaNlpSource } from './odianlp.js';
 import { odiaWordnetSource } from './odia-wordnet.js';
 import { kaikkiEnTranslationsHindiSource } from './kaikki-en-translations-hindi.js';
 import { kaikkiEnTranslationsMarathiSource } from './kaikki-en-translations-marathi.js';
@@ -56,6 +57,7 @@ export const dictionarySources: RegistryEntry[] = [
   { name: marathiWordnetSource.name, source: marathiWordnetSource },
   { name: molesworthSource.name, source: molesworthSource },
   { name: odiaWordnetSource.name, source: odiaWordnetSource },
+  { name: odiaNlpSource.name, source: odiaNlpSource },
 ];
 
 export function findSource(name: string): DictionaryImportSource | undefined {
