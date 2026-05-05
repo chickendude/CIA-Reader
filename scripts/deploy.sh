@@ -4,18 +4,16 @@
 #   ./scripts/deploy.sh                  # deploy origin/main
 #   ./scripts/deploy.sh <ref>            # deploy a specific branch / tag / sha
 #   ./scripts/deploy.sh --dry-run        # print what we would run, do nothing
+#   ./scripts/deploy.sh --no-build       # force-skip the rebuild (fastest)
+#   ./scripts/deploy.sh --build          # force a rebuild even if auto-detect skips
 #   DEPLOY_HOST=root@... ./scripts/deploy.sh
 #
-# What it does:
-#   1. SSH to the prod box.
-#   2. git fetch + reset to the requested ref (detached HEAD).
-#   3. docker compose up -d --build (web's startup applies pending
-#      migrations; #408's backup service stays up across deploys).
-#   4. Prune unused images so /var/lib/docker doesn't grow without
-#      bound on a small CX/CCX disk.
-#   5. From the laptop side, poll the public health endpoint until
-#      it returns 200 or HEALTH_TIMEOUT elapses.
-#   6. On timeout, fetch the last 50 lines of web logs and exit 1.
+# Build mode is `auto` by default — the box-side step diffs OLD_HEAD vs
+# the new ref and only passes `--build` when files in any image's
+# context changed (apps/, services/, packages/, infra/backup/,
+# pnpm-lock.yaml, etc.). Pure docs / scripts / compose-config changes
+# skip the rebuild entirely and the deploy collapses from minutes to
+# a few seconds.
 set -euo pipefail
 
 DEPLOY_HOST="${DEPLOY_HOST:-root@parhiba.com}"
@@ -26,12 +24,15 @@ COMPOSE_FILE="infra/docker-compose.prod.yml"
 ENV_FILE="infra/.env"
 
 DRY_RUN=0
+BUILD_MODE="auto"   # auto | force | skip
 REF=""
 for arg in "$@"; do
   case "$arg" in
     --dry-run|-n) DRY_RUN=1 ;;
+    --build|-b)   BUILD_MODE="force" ;;
+    --no-build|-B) BUILD_MODE="skip" ;;
     --help|-h)
-      sed -n '2,15p' "$0" | sed 's/^#//; s/^ //'
+      sed -n '2,16p' "$0" | sed 's/^#//; s/^ //'
       exit 0
       ;;
     -*)
@@ -60,6 +61,7 @@ cat <<EOF
     ref:           $REF  ($LOCAL_SHA)
     health URL:    $HEALTH_URL
     health budget: ${HEALTH_TIMEOUT}s
+    build mode:    $BUILD_MODE
 EOF
 
 if [ "$DRY_RUN" = "1" ]; then
@@ -72,14 +74,17 @@ fi
 ssh -o StrictHostKeyChecking=accept-new \
     -o ConnectTimeout=10 \
     "$DEPLOY_HOST" \
-    bash -s -- "$REF" "$DEPLOY_PATH" "$COMPOSE_FILE" "$ENV_FILE" <<'REMOTE_SCRIPT'
+    bash -s -- "$REF" "$DEPLOY_PATH" "$COMPOSE_FILE" "$ENV_FILE" "$BUILD_MODE" <<'REMOTE_SCRIPT'
 set -euo pipefail
 REF="$1"
 DEPLOY_PATH="$2"
 COMPOSE_FILE="$3"
 ENV_FILE="$4"
+BUILD_MODE="$5"
 
 cd "$DEPLOY_PATH"
+
+OLD_HEAD="$(git rev-parse HEAD 2>/dev/null || echo "")"
 
 echo "[box] $(hostname): fetching origin"
 git fetch origin --tags --quiet
@@ -93,11 +98,44 @@ else
 fi
 git --no-pager log --oneline -1
 
-echo "[box] docker compose up -d --build"
-docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" up -d --build
+NEW_HEAD="$(git rev-parse HEAD)"
 
-echo "[box] pruning dangling images"
-docker image prune -f >/dev/null
+# Decide whether to rebuild images. Building is the slow part
+# (~30-60s per service even with cache hits, because BuildKit
+# re-exports manifests with new digests and that triggers
+# container recreation). Skip it when nothing in any image's
+# build context changed.
+case "$BUILD_MODE" in
+  force)
+    BUILD_ARG="--build"
+    echo "[box] build: --build (forced)"
+    ;;
+  skip)
+    BUILD_ARG=""
+    echo "[box] build: skipped (forced)"
+    ;;
+  auto)
+    if [ -z "$OLD_HEAD" ] || [ "$OLD_HEAD" = "$NEW_HEAD" ]; then
+      BUILD_ARG=""
+      echo "[box] build: skipped (no commits to apply)"
+    elif git diff --name-only "$OLD_HEAD" "$NEW_HEAD" \
+           | grep -qE '^(apps/|services/|packages/|infra/backup/|pnpm-lock\.yaml|pnpm-workspace\.yaml|package\.json)' ; then
+      BUILD_ARG="--build"
+      echo "[box] build: --build (image-relevant files changed)"
+    else
+      BUILD_ARG=""
+      echo "[box] build: skipped (only docs/scripts/compose-config changed)"
+    fi
+    ;;
+esac
+
+echo "[box] docker compose up -d $BUILD_ARG"
+docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" up -d $BUILD_ARG
+
+if [ -n "$BUILD_ARG" ]; then
+  echo "[box] pruning dangling images"
+  docker image prune -f >/dev/null
+fi
 
 echo "[box] deploy step complete"
 REMOTE_SCRIPT
