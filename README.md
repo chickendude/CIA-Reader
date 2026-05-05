@@ -114,13 +114,24 @@ Once `infra/.env` exists on the box and the stack is running, deploys are a sing
 ./scripts/deploy.sh --dry-run         # print the plan without touching the box
 ```
 
-The script SSHes to the box, fast-forwards the repo at `/opt/ciareader`, runs `docker compose up -d --build`, prunes dangling images, and then polls `https://parhiba.com/api/v1/smoke` from the laptop side until it returns 200. On health-check timeout it prints the last 50 lines of web logs and exits non-zero, so a failed deploy is loud and diagnosable.
+The script SSHes to the box, fast-forwards the repo at `/opt/ciareader`, runs `docker compose up -d --build` (auto-skips `--build` when no image-relevant files changed), prunes dangling images, and then polls `https://parhiba.com/healthz` from the laptop side until it returns 200. On health-check timeout it prints the last 50 lines of web logs and exits non-zero, so a failed deploy is loud and diagnosable.
 
 Override host / path with env vars: `DEPLOY_HOST=root@example.com ./scripts/deploy.sh`.
 
-### M13 roadmap
+### Monitoring
 
-- **T-13.5** — monitoring-lite
+Each service exposes `/healthz`:
+
+- **`https://parhiba.com/healthz`** — web. 200 + `{status:"ok"}` when the process is up and can reach Postgres; 503 if the DB is unreachable.
+- **NLP `/healthz`** (internal `http://nlp:8000/healthz`) — alias of the existing `/health`. 200 + the supported language list.
+
+The prod stack also runs an [Uptime Kuma](https://github.com/louislam/uptime-kuma) sidecar at `https://status.<APP_DOMAIN>` (e.g. `https://status.parhiba.com`). DNS prerequisite: an A (and ideally AAAA) record for `status.<APP_DOMAIN>` pointing at the deploy host before first boot — Caddy issues a separate Let's Encrypt cert for it via the same auto-TLS pipeline.
+
+First-time setup is two clicks: visit `https://status.<APP_DOMAIN>` to create the admin account, then add monitors for `https://<APP_DOMAIN>/healthz` and any other endpoints worth tracking. Notification channels (email, Discord, Slack, Telegram, etc.) are configured in Kuma's UI; nothing in this repo to wire.
+
+If you'd rather use an external SaaS (UptimeRobot, BetterStack), comment out the `kuma` service + the `status.{$APP_DOMAIN}` block in the Caddyfile and point the SaaS at `https://parhiba.com/healthz`.
+
+Logs: docker's json-file driver is rotated at 10 MB × 5 files per service in [`infra/docker-compose.prod.yml`](infra/docker-compose.prod.yml), so `/var/lib/docker` doesn't grow without bound. View live logs via `docker compose -f infra/docker-compose.prod.yml --env-file infra/.env logs -f <service>`.
 
 ## Status
 

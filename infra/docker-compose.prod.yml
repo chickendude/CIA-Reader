@@ -103,7 +103,7 @@ services:
     healthcheck:
       test:
         - CMD-SHELL
-        - python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health').read()"
+        - python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz').read()"
       interval: 15s
       timeout: 5s
       retries: 10
@@ -147,9 +147,12 @@ services:
         max-size: "10m"
         max-file: "5"
     healthcheck:
+      # Hits /healthz (lighter than /api/v1/smoke — no NLP round-trip,
+      # just a 1ms DB ping). Container is "healthy" when web can reach
+      # postgres and serve a request.
       test:
         - CMD-SHELL
-        - "node -e \"require('http').get('http://localhost:5173/api/v1/smoke', (r) => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))\""
+        - "node -e \"require('http').get('http://localhost:5173/healthz', (r) => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))\""
       interval: 30s
       timeout: 10s
       retries: 5
@@ -237,6 +240,29 @@ services:
         max-size: "10m"
         max-file: "5"
 
+  # Uptime Kuma (T-13.5) — self-hosted monitor that pings the public
+  # health endpoints and notifies via email / Discord / Slack / etc.
+  # Lives only on the internal network; Caddy proxies the admin UI
+  # at status.<APP_DOMAIN>. Persisted state in `kuma-data` so monitor
+  # configs + notification channels survive container recreation.
+  kuma:
+    image: louislam/uptime-kuma:1
+    restart: always
+    volumes:
+      - kuma-data:/app/data
+    networks:
+      - internal
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+          cpus: "0.25"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
 # Two networks so postgres / redis / nlp / web stay invisible to the
 # public side. Only caddy bridges both.
 networks:
@@ -257,3 +283,4 @@ volumes:
   rclone-config: {} # Backup service's rclone config (Dropbox/B2/etc OAuth
                     # token). Survives container recreation so re-auth
                     # isn't needed after every deploy.
+  kuma-data: {}     # Uptime Kuma's monitor configs + notification channels.

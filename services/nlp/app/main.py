@@ -21,12 +21,19 @@ from app.schemas import HealthResponse, ProcessRequest, ProcessResponse
 app = FastAPI(title="CIA Reader NLP", version="0.0.0")
 
 
-@app.get("/health", response_model=HealthResponse)
-async def health() -> HealthResponse:
+async def _health() -> HealthResponse:
     return HealthResponse(
         status="ok",
         languages=list(SUPPORTED_LANGUAGE_CODES),
     )
+
+
+# /health is the legacy name; /healthz is the canonical one aligned
+# with the rest of the stack (T-13.5 monitoring). Both are backed by
+# the same handler so existing callers (the dev compose's Dockerfile
+# healthcheck) keep working unchanged.
+app.add_api_route("/health", _health, response_model=HealthResponse, methods=["GET"])
+app.add_api_route("/healthz", _health, response_model=HealthResponse, methods=["GET"])
 
 
 @app.post("/process", response_model=ProcessResponse)

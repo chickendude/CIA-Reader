@@ -18,7 +18,7 @@ set -euo pipefail
 
 DEPLOY_HOST="${DEPLOY_HOST:-root@parhiba.com}"
 DEPLOY_PATH="${DEPLOY_PATH:-/opt/ciareader}"
-HEALTH_URL="${HEALTH_URL:-https://parhiba.com/api/v1/smoke}"
+HEALTH_URL="${HEALTH_URL:-https://parhiba.com/healthz}"
 HEALTH_TIMEOUT="${HEALTH_TIMEOUT:-180}"
 COMPOSE_FILE="infra/docker-compose.prod.yml"
 ENV_FILE="infra/.env"
