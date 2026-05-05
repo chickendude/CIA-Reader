@@ -1,20 +1,76 @@
-# Caddy reverse-proxy for the production stack (T-13.1 placeholder).
+# Caddy reverse-proxy for the production stack.
 #
-# This file is HTTP-only on :80 so the prod stack can boot end-to-end
-# during initial deploy. T-13.2 will replace this with auto-TLS using
-# Let's Encrypt against the real production domain.
+# Auto-TLS via Let's Encrypt: Caddy fetches a cert on first request to
+# {$APP_DOMAIN}, renews automatically, and stores ACME state in the
+# `caddy-data` volume so restarts don't trigger re-issuance. DNS for
+# {$APP_DOMAIN} must point at this box BEFORE first boot — otherwise
+# the HTTP-01 challenge fails and Caddy retries with backoff.
+#
+# Set ACME_CA in infra/.env to override the CA. Defaults to
+# Let's Encrypt production. For first-deploy testing, point it at
+# staging so botched DNS doesn't burn through LE rate limits:
+#   ACME_CA=https://acme-staging-v02.api.letsencrypt.org/directory
 
 {
+	# Account email for Let's Encrypt — used for expiry-warning emails.
+	email {$ACME_EMAIL}
+
+	# CA endpoint. Compose sets ACME_CA to LE production by default;
+	# override in infra/.env to point at LE staging while testing.
+	acme_ca {$ACME_CA}
+
 	# Disable the local admin endpoint — production uses
 	# `docker compose exec caddy caddy reload` for config changes.
 	admin off
 }
 
-:80 {
-	encode gzip zstd
+{$APP_DOMAIN} {
+	# zstd = zstandard, gzip = legacy fallback. Caddy negotiates by
+	# Accept-Encoding so old clients still get gzip. Brotli isn't in
+	# the standard caddy:2-alpine image — adding it requires an
+	# xcaddy-built custom image, deferred to a follow-up. zstd's
+	# compression ratio is comparable to brotli for text content
+	# anyway, and a CDN in front (Cloudflare etc.) handles edge
+	# brotli for browsers that prefer it.
+	encode zstd gzip
 
-	# All app traffic goes to the SvelteKit web service. The audio /
-	# api routes are sub-paths handled inside the same SvelteKit app,
-	# so a single proxy rule covers them.
-	reverse_proxy web:5173
+	# Reverse-proxy preserves the request URI as-is so SvelteKit sees
+	# the same paths it sees in dev. Range requests (used by the audio
+	# player for byte-range seeks) pass through unchanged — Caddy
+	# forwards them and adapter-node + the /audio/[key] route handle
+	# the response.
+	reverse_proxy web:5173 {
+		# Forward the real client info so SvelteKit's logging /
+		# rate-limit / cookie-secure logic sees the right values
+		# instead of the docker network's internal IP.
+		header_up X-Forwarded-Proto {scheme}
+		header_up X-Forwarded-Host  {host}
+	}
+
+	# Belt-and-braces HSTS. Caddy already redirects HTTP -> HTTPS;
+	# this layers a year-long preload so once a browser has hit us
+	# over HTTPS it'll never try plaintext again.
+	header Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
 }
+
+# Treat the apex as canonical and 301 www → apex. Caddy will issue a
+# separate Let's Encrypt cert for www, so DNS A/AAAA for www must point
+# at this box before first boot (or use a CNAME at www → APP_DOMAIN).
+# If you don't want a www variant at all, comment this block out.
+www.{$APP_DOMAIN} {
+	redir https://{$APP_DOMAIN}{uri} permanent
+}
+
+# When the API moves to its own subdomain (CORS scoping + separate
+# caching, per the original T-13.2 spec), set API_DOMAIN in infra/.env
+# and uncomment this block. Frontend fetch() URLs need to be updated
+# to point at it too — that's deferred to keep this PR focused on
+# TLS for the main domain.
+#
+# {$API_DOMAIN} {
+#   encode zstd gzip
+#   reverse_proxy web:5173
+#   header Access-Control-Allow-Origin "https://{$APP_DOMAIN}"
+#   header Access-Control-Allow-Credentials "true"
+#   header Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+# }

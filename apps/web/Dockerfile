@@ -1,5 +1,5 @@
 # Development-only image. Production image lands in M13.
-FROM node:20.18-slim
+FROM node:22-slim
 
 ENV PNPM_HOME=/usr/local/pnpm \
     PATH=/usr/local/pnpm:$PATH \

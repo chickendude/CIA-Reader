@@ -77,19 +77,31 @@ make smoke
 
 The production stack is a separate compose file: [`infra/docker-compose.prod.yml`](infra/docker-compose.prod.yml). It boots `web`, `nlp`, `postgres`, `redis`, and `caddy` on a single Hetzner CX/CCX box. Caddy is the only service that binds host ports (80 / 443); everything else stays on the internal docker network.
 
+**Before first deploy:** point your DNS A (and ideally AAAA) record for `APP_DOMAIN` at the deploy host's public IP. Caddy fetches the Let's Encrypt cert via an HTTP-01 challenge against that record, so wrong DNS = no cert and a Let's Encrypt rate-limit you don't want to hit twice.
+
 On the deploy host:
 
 ```
 cp infra/.env.prod.example infra/.env
-# edit infra/.env — fill POSTGRES_PASSWORD, AUTH_SECRET, SMTP_*, APP_BASE_URL
+# edit infra/.env — fill POSTGRES_PASSWORD, AUTH_SECRET, SMTP_*, APP_BASE_URL,
+# APP_DOMAIN, ACME_EMAIL
 docker compose -f infra/docker-compose.prod.yml --env-file infra/.env up -d --build
 ```
 
 The web service's startup command runs `apps/web/scripts/migrate-prod.mjs` (drizzle-orm's migrator — no drizzle-kit dependency at runtime) before starting the SvelteKit server, so a fresh deploy applies any pending migrations automatically.
 
-The other M13 tickets layer on top of this:
+### TLS / first-deploy safety
 
-- **T-13.2** — Caddyfile + auto-TLS (replaces the HTTP-only placeholder in [`infra/Caddyfile`](infra/Caddyfile))
+For the very first deploy, set `ACME_CA` to Let's Encrypt staging in `infra/.env`:
+
+```
+ACME_CA=https://acme-staging-v02.api.letsencrypt.org/directory
+```
+
+Staging certs aren't browser-trusted (you'll see a security warning) but the rate limit is 100× higher, so a misconfiguration can't lock you out for a week. Once you've confirmed Caddy successfully issues a staging cert, comment that line out and `docker compose -f infra/docker-compose.prod.yml --env-file infra/.env up -d` again — Caddy will swap to production. The `caddy-data` volume persists the new cert across restarts.
+
+### M13 roadmap
+
 - **T-13.3** — nightly backups (postgres-data + audio-data volumes)
 - **T-13.4** — deploy script (rsync + `docker compose pull` + restart)
 - **T-13.5** — monitoring-lite

@@ -171,6 +171,21 @@ services:
     depends_on:
       web:
         condition: service_healthy
+    environment:
+      # Substituted into Caddyfile at boot. APP_DOMAIN must match the
+      # DNS A/AAAA record pointing at this box; ACME_EMAIL is the
+      # contact for Let's Encrypt account / renewal warnings.
+      APP_DOMAIN: ${APP_DOMAIN:?APP_DOMAIN must be set in infra/.env}
+      ACME_EMAIL: ${ACME_EMAIL:?ACME_EMAIL must be set in infra/.env}
+      # ACME endpoint. Caddy errors on an empty `acme_ca` directive,
+      # so we default to LE production here in compose rather than
+      # inside the Caddyfile. Override to staging in infra/.env to
+      # rate-limit-safely test a fresh deploy.
+      ACME_CA: ${ACME_CA:-https://acme-v02.api.letsencrypt.org/directory}
+      # Future-proofing: the API-subdomain block in the Caddyfile is
+      # commented out by default, so this var can stay unset until the
+      # frontend is updated to call api.<APP_DOMAIN> directly.
+      API_DOMAIN: ${API_DOMAIN:-}
     deploy:
       resources:
         limits:
