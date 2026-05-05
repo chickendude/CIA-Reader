@@ -197,6 +197,41 @@ services:
         max-size: "10m"
         max-file: "5"
 
+  backup:
+    build:
+      context: ./backup
+      dockerfile: Dockerfile
+    restart: always
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - internal
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-ciareader}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in infra/.env}
+      POSTGRES_DB: ${POSTGRES_DB:-ciareader}
+      RCLONE_REMOTE: ${RCLONE_REMOTE:?RCLONE_REMOTE must be set in infra/.env, e.g. dropbox:ciareader-backups}
+      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-14}
+      AUDIO_RETENTION_DAYS: ${AUDIO_RETENTION_DAYS:-}
+    volumes:
+      # Read-only mount of the audio volume so the weekly tar can
+      # see uploads without touching them.
+      - audio-data:/var/audio:ro
+      # Persists the rclone OAuth token across container recreation.
+      # First-time setup: see infra/backup/README.md.
+      - rclone-config:/config/rclone
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+          cpus: "0.25"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
 # Two networks so postgres / redis / nlp / web stay invisible to the
 # public side. Only caddy bridges both.
 networks:
@@ -208,9 +243,12 @@ networks:
 volumes:
   postgres-data: {}
   redis-data: {}
-  caddy-data: {}    # ACME state (T-13.2 will rely on this surviving restarts)
+  caddy-data: {}    # ACME state — survives restarts so cert renewal is seamless.
   caddy-config: {}
   audio-data: {}    # Object storage backend lives here for the local-fs
                     # mode. Switching to Hetzner Object Storage (S3 API)
                     # is a follow-up — env hooks (AUDIO_S3_*) are already
                     # documented in .env.prod.example.
+  rclone-config: {} # Backup service's rclone config (Dropbox/B2/etc OAuth
+                    # token). Survives container recreation so re-auth
+                    # isn't needed after every deploy.
