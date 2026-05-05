@@ -18,6 +18,7 @@ import { dbnaryHindiSource } from './dbnary-hi.js';
 import { dbnaryMarathiSource } from './dbnary-mr.js';
 import { hindiSeedSource } from './hindi-seed.js';
 import { hindiWordnetSource } from './hindi-wordnet.js';
+import { marathiWordnetSource } from './marathi-wordnet.js';
 import { kaikkiEnTranslationsHindiSource } from './kaikki-en-translations-hindi.js';
 import { kaikkiEnTranslationsMarathiSource } from './kaikki-en-translations-marathi.js';
 import { kaikkiEnTranslationsOdiaSource } from './kaikki-en-translations-odia.js';
@@ -50,6 +51,7 @@ export const dictionarySources: RegistryEntry[] = [
   { name: dbnaryHindiSource.name, source: dbnaryHindiSource },
   { name: dbnaryMarathiSource.name, source: dbnaryMarathiSource },
   { name: hindiWordnetSource.name, source: hindiWordnetSource },
+  { name: marathiWordnetSource.name, source: marathiWordnetSource },
 ];
 
 export function findSource(name: string): DictionaryImportSource | undefined {

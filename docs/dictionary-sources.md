@@ -31,7 +31,7 @@ coverage; Dbnary fills in glosses and translations.
 
 | Source | Publisher | License | Status |
 |---|---|---|---|
-| Marathi WordNet | CFILT, IIT Bombay | Research use, distributable with attribution | Planned |
+| Marathi WordNet | CFILT, IIT Bombay | Research use, distributable with attribution | **Importer landed (T-3.10c, 2026-05-05)** — same shared CFILT TSV parser as `hindi-wordnet` (`indo-wordnet.ts`); instantiation differs only in language tag, sourceId prefix (`mwn`), and default file path. Place dump at `apps/web/data/dictionaries/marathi-wordnet/synsets.tsv`. |
 | *Molesworth's A Dictionary, Marathi and English* (1857) | Public domain (DDSA) | Public domain | Planned — historical orthography will need light normalization |
 | [Dbnary Marathi-English](http://kaiko.getalp.org/about-dbnary/) | GETALP / Univ. Grenoble Alpes | CC-BY-SA 3.0 | **Imported (T-3.10e, 2026-05-05)** — same shared Turtle parser as `dbnary-hi`; instantiation differs only in language tag and on-disk path |
 | [Wiktionary Marathi (via Kaikki.org)](https://kaikki.org/dictionary/Marathi/) | Wiktionary contributors | CC-BY-SA 3.0 | **Imported (T-3.10, 2026-04-28)** — fetched via `scripts/fetch-dictionary-sources.sh kaikki-marathi`; thinner than Hindi (~5k entries) but a solid bootstrap before Marathi WordNet + Molesworth land |
