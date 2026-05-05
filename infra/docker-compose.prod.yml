@@ -202,6 +202,11 @@ services:
       context: ./backup
       dockerfile: Dockerfile
     restart: always
+    # Run tini as PID 1 so dcron (which runs as crond's child) can
+    # successfully setpgid. Without this, busybox dcron exits at
+    # startup with `setpgid: Operation not permitted` (kernel rule:
+    # PID 1 cannot change its process group).
+    init: true
     depends_on:
       postgres:
         condition: service_healthy
