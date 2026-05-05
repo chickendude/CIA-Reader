@@ -3,12 +3,20 @@
 # Two stages:
 #   1. builder — install full deps, run `pnpm --filter @ciareader/web build`.
 #      adapter-node emits a self-contained Node app at apps/web/build/.
-#   2. runtime — install prod deps in a fresh layer (avoids copying pnpm's
+#   2. runtime — install full deps in a fresh layer (avoids copying pnpm's
 #      symlinked node_modules across stages, which is fragile), copy the
-#      build output + drizzle migrations + migrate-prod.mjs, drop privs.
+#      build output + drizzle migrations + the whole scripts/ dir, drop
+#      privs.
 #
-# Startup command runs migrations against the live DB before booting the
-# server, so a fresh deploy is a single `docker compose up -d` away.
+# The runtime image is intentionally NOT a `--prod`-only install: it
+# includes tsx + drizzle-kit + dotenv so admin scripts (dictionary
+# import, seed-admin, reprocess-text) can be run via `docker compose
+# exec web pnpm <script>` without a separate ops image. The size cost
+# is ~150-200MB, traded for being able to do every operational task
+# the dev workflow can.
+#
+# Startup command runs migrations against the live DB before booting
+# the server, so a fresh deploy is a single `docker compose up -d`.
 
 # ---- builder ----
 FROM node:20.18-slim AS builder
@@ -42,22 +50,28 @@ ENV NODE_ENV=production \
     COREPACK_ENABLE_DOWNLOAD_PROMPT=0
 RUN corepack enable && corepack prepare pnpm@9.12.0 --activate
 
+# curl + ca-certificates for fetch-dictionary-sources.sh (the one
+# script in apps/web/scripts that shells out instead of running JS).
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends curl ca-certificates \
+ && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /srv/app
 
 COPY pnpm-workspace.yaml pnpm-lock.yaml package.json ./
 COPY apps/web/package.json apps/web/package.json
 COPY packages/shared-types/package.json packages/shared-types/package.json
 
-# Production-only deps for the runtime — drizzle-orm/postgres-js for
-# migrate-prod.mjs, @node-rs/argon2 + jose for auth at request time, etc.
-# adapter-node's build output references these at runtime by `import`.
-RUN pnpm install --frozen-lockfile --prod
+# Full deps — see file header for why we include dev deps too.
+RUN pnpm install --frozen-lockfile
 
 # Bundled SvelteKit app from the build stage.
 COPY --from=builder /srv/build/apps/web/build apps/web/build
 # Migration assets — needed by the startup migrate step.
 COPY --from=builder /srv/build/apps/web/drizzle apps/web/drizzle
-COPY --from=builder /srv/build/apps/web/scripts/migrate-prod.mjs apps/web/scripts/migrate-prod.mjs
+# The whole scripts/ dir — admin / ops scripts run via
+# `docker compose exec web pnpm <script>`.
+COPY --from=builder /srv/build/apps/web/scripts apps/web/scripts
 # shared-types' source — adapter-node bundles direct imports, but
 # anything that re-exports types via $env or runtime requires the
 # package present on the resolution path.
