@@ -100,9 +100,12 @@ ACME_CA=https://acme-staging-v02.api.letsencrypt.org/directory
 
 Staging certs aren't browser-trusted (you'll see a security warning) but the rate limit is 100× higher, so a misconfiguration can't lock you out for a week. Once you've confirmed Caddy successfully issues a staging cert, comment that line out and `docker compose -f infra/docker-compose.prod.yml --env-file infra/.env up -d` again — Caddy will swap to production. The `caddy-data` volume persists the new cert across restarts.
 
+### Backups
+
+The `backup` service runs as a sidecar in the prod compose stack. Cron jobs `pg_dump` the DB nightly and tar the audio volume weekly, uploading both via `rclone` to whatever remote you've configured (Dropbox, B2, Hetzner Storage Box, etc.). Setup walkthrough + restore procedure: [`infra/backup/README.md`](infra/backup/README.md).
+
 ### M13 roadmap
 
-- **T-13.3** — nightly backups (postgres-data + audio-data volumes)
 - **T-13.4** — deploy script (rsync + `docker compose pull` + restart)
 - **T-13.5** — monitoring-lite
 

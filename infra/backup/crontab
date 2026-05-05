@@ -1,0 +1,12 @@
+# Backup schedule. Times are UTC (TZ pinned in the Dockerfile).
+#
+# Each line sources /etc/backup-env (written by the entrypoint) so
+# the script sees POSTGRES_*, RCLONE_REMOTE, *_RETENTION_DAYS — cron
+# starts children with a near-empty env. Output is redirected to
+# crond's stdout/stderr (PID 1) so it lands in `docker compose logs`.
+
+# Postgres dump nightly at 03:05 UTC.
+5 3 * * * /bin/bash -c '. /etc/backup-env && /usr/local/bin/backup-db.sh' > /proc/1/fd/1 2> /proc/1/fd/2
+
+# Audio tarball every Sunday at 04:05 UTC.
+5 4 * * 0 /bin/bash -c '. /etc/backup-env && /usr/local/bin/backup-audio.sh' > /proc/1/fd/1 2> /proc/1/fd/2
