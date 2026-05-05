@@ -45,7 +45,7 @@ launch.
 
 | Source | Publisher | License | Status |
 |---|---|---|---|
-| Odia WordNet | ISI Kolkata | Research use, distributable with attribution | Planned — the seed for T-2.3a's custom pipeline already draws from this |
+| Odia WordNet | ISI Kolkata | Research use, distributable with attribution | **Importer landed (T-3.10f, 2026-05-05)** — same shared CFILT TSV parser as `hindi-wordnet` / `marathi-wordnet` (`indo-wordnet.ts`); instantiation differs only in language tag, script (`Orya`), sourceId prefix (`own`), and default file path. The seed for T-2.3a's custom NLP pipeline draws from the same dump; place at `apps/web/data/dictionaries/odia-wordnet/synsets.tsv`. |
 | OdiaNLP resources | Community / various | Mixed (MIT / CC-BY) | Planned — curated subset only, per-entry license check required |
 | [Wiktionary Odia (via Kaikki.org)](https://kaikki.org/dictionary/Odia/) | Wiktionary contributors | CC-BY-SA 3.0 | **Imported (T-3.10, 2026-04-28)** — fetched via `scripts/fetch-dictionary-sources.sh kaikki-odia`; the smallest Kaikki dump of the three MVP languages (~2k entries) but the first real Odia lexical data — proves the script-aware path works end-to-end with `Orya` |
 | [Wiktionary English Translations sections (via Kaikki.org)](https://kaikki.org/dictionary/English/) | Wiktionary contributors | CC-BY-SA 3.0 | **Imported (T-3.10, 2026-04-28)** — inverted from English entries' `translations[]`; biggest Odia coverage uplift since Wiktionary's Odia sub-corpus is tiny but the English-side Translations sections include Odia targets generously |

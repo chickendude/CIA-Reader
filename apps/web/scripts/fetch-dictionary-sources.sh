@@ -239,9 +239,13 @@ case "${1-all}" in
     manual_dump_check molesworth dsal.xml \
       "docs/dictionary-sources.md (Molesworth section) — DSAL XML; place dsal.xml at apps/web/data/dictionaries/molesworth/"
     ;;
+  odia-wordnet)
+    manual_dump_check odia-wordnet synsets.tsv \
+      "docs/dictionary-sources.md (Odia WordNet section) — ISI Kolkata distribution requires registration"
+    ;;
   *)
     echo "unknown source: $1" >&2
-    echo "available: kaikki-hindi, kaikki-marathi, kaikki-odia, kaikki-en-translations, dbnary-hi, dbnary-mr, hindi-wordnet, marathi-wordnet, molesworth" >&2
+    echo "available: kaikki-hindi, kaikki-marathi, kaikki-odia, kaikki-en-translations, dbnary-hi, dbnary-mr, hindi-wordnet, marathi-wordnet, molesworth, odia-wordnet" >&2
     exit 1
     ;;
 esac
