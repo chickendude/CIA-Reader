@@ -15,6 +15,16 @@ def test_health_ok():
     assert set(body["languages"]) == {"hi", "mr", "or"}
 
 
+def test_healthz_alias_returns_same_payload():
+    # /healthz is the canonical name (T-13.5); /health stays as a
+    # backwards-compat alias for callers like the dev compose
+    # Dockerfile healthcheck.
+    resp_health = client.get("/health")
+    resp_healthz = client.get("/healthz")
+    assert resp_healthz.status_code == 200
+    assert resp_healthz.json() == resp_health.json()
+
+
 def test_process_hindi_canned():
     resp = client.post("/process", json={"language": "hi", "text": "नमस्ते दुनिया"})
     assert resp.status_code == 200

@@ -18,7 +18,7 @@ set -euo pipefail
 
 DEPLOY_HOST="${DEPLOY_HOST:-root@parhiba.com}"
 DEPLOY_PATH="${DEPLOY_PATH:-/opt/ciareader}"
-HEALTH_URL="${HEALTH_URL:-https://parhiba.com/api/v1/smoke}"
+HEALTH_URL="${HEALTH_URL:-https://parhiba.com/healthz}"
 HEALTH_TIMEOUT="${HEALTH_TIMEOUT:-180}"
 COMPOSE_FILE="infra/docker-compose.prod.yml"
 ENV_FILE="infra/.env"
@@ -131,6 +131,19 @@ esac
 
 echo "[box] docker compose up -d $BUILD_ARG"
 docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" up -d $BUILD_ARG
+
+# The Caddyfile is bind-mounted (./Caddyfile:/etc/caddy/Caddyfile),
+# so a `git reset --hard` updates the file on disk but compose has
+# no reason to recreate the caddy container — its image and
+# compose-config are unchanged. Caddy keeps running with the in-
+# memory config it loaded at boot, and any new site blocks (new
+# subdomains, header changes) silently don't take effect.
+# Detect Caddyfile-touching diffs and restart caddy explicitly.
+if [ -n "$OLD_HEAD" ] && [ "$OLD_HEAD" != "$NEW_HEAD" ] && \
+   git diff --name-only "$OLD_HEAD" "$NEW_HEAD" | grep -q '^infra/Caddyfile$'; then
+  echo "[box] Caddyfile changed, restarting caddy to pick it up"
+  docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" restart caddy
+fi
 
 if [ -n "$BUILD_ARG" ]; then
   echo "[box] pruning dangling images"
