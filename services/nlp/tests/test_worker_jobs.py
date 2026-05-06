@@ -125,8 +125,10 @@ async def test_process_text_writes_tokens_for_each_chapter():
 
     assert "ch-1" in token_store.tokens_by_chapter
     # The real Odia pipeline should produce non-empty tokens for a
-    # recognised greeting.
-    assert len(token_store.tokens_by_chapter["ch-1"]) == 2
+    # recognised greeting (two words plus the whitespace gap between
+    # them — the gap is preserved so the reader can break lines).
+    word_tokens = [t for t in token_store.tokens_by_chapter["ch-1"] if t.is_word]
+    assert len(word_tokens) == 2
 
 
 @pytest.mark.asyncio

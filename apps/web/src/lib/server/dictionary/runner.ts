@@ -25,9 +25,19 @@ import type { LanguageCode } from '@ciareader/shared-types';
 import type { DictionaryRepo } from './repo.js';
 import type { DictionaryImportSource, ImportEntry, ImportResult } from './types.js';
 
+export type RunImportOptions = {
+  /**
+   * T-3.14: when the admin sources page kicks off an import, the
+   * triggering user is recorded on the `dictionary_imports` audit row.
+   * CLI runs (`pnpm dictionary:import`) leave this undefined.
+   */
+  triggeredByUserId?: string | null;
+};
+
 export async function runDictionaryImport(
   repo: DictionaryRepo,
   source: DictionaryImportSource,
+  opts: RunImportOptions = {},
 ): Promise<ImportResult> {
   const result: ImportResult = {
     sourceName: source.name,
@@ -53,6 +63,8 @@ export async function runDictionaryImport(
     lemmasSkippedCuratorLocked: result.lemmasSkippedCuratorLocked,
     translationsCreated: result.translationsCreated,
     translationsUpdated: result.translationsUpdated,
+    triggeredByUserId: opts.triggeredByUserId ?? null,
+    status: 'succeeded',
   });
 
   return result;

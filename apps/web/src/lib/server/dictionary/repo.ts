@@ -61,6 +61,20 @@ export type ImportRunAudit = {
   translationsCreated: number;
   translationsUpdated: number;
   notes?: string;
+  /**
+   * T-3.14: who kicked off this run from the admin sources page.
+   * Null for CLI imports (`pnpm dictionary:import`) — the column
+   * stays nullable in the schema.
+   */
+  triggeredByUserId?: string | null;
+  /**
+   * T-3.14: 'succeeded' (default) or 'failed'. The runner only emits
+   * 'succeeded' itself; the admin job wrapper writes a 'failed' row
+   * when the iterator throws so the page can show the error.
+   */
+  status?: 'succeeded' | 'failed';
+  /** T-3.14: short error message when status='failed'. */
+  errorMessage?: string | null;
 };
 
 /**

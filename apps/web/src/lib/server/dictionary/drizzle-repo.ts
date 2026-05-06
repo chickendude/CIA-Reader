@@ -169,6 +169,9 @@ export class DrizzleDictionaryRepo implements DictionaryRepo {
       translationsCreated: audit.translationsCreated,
       translationsUpdated: audit.translationsUpdated,
       notes: audit.notes,
+      triggeredByUserId: audit.triggeredByUserId ?? null,
+      status: audit.status ?? 'succeeded',
+      errorMessage: audit.errorMessage ?? null,
     });
   }
 }

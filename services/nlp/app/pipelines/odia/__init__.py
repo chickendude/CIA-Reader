@@ -91,10 +91,50 @@ class OdiaPipeline(Pipeline):
         self._lemmas = lemmas
 
     def process(self, text: str) -> PipelineResult:
+        # Walk the original text alongside the tokenizer's output so the
+        # whitespace between tokens is preserved as `is_word=False` gap
+        # tokens. Without this the reader has no break opportunities and
+        # CSS multi-column flow can't fragment a long paragraph, which
+        # makes it overflow past the column edge. Mirrors the offset-walk
+        # in :class:`StanzaUDPipeline._tokens_from_doc`.
         tokens: list[Token] = []
-        for idx, surface in enumerate(s for s in self._tokenizer(text) if s):
+        idx = 0
+        cursor = 0
+        for surface in self._tokenizer(text):
+            if not surface:
+                continue
+            start = text.find(surface, cursor)
+            if start == -1:
+                # Tokenizer mutated the surface (NFC, escape tweaks, …).
+                # Emit the token as-is and advance the cursor by its
+                # length so we don't loop the same gap forever.
+                tokens.append(self._build_token(idx, surface))
+                idx += 1
+                cursor += len(surface)
+                continue
+            if start > cursor:
+                tokens.append(self._make_gap_token(idx, text[cursor:start]))
+                idx += 1
             tokens.append(self._build_token(idx, surface))
+            idx += 1
+            cursor = start + len(surface)
+        if cursor < len(text):
+            tail = text[cursor:]
+            if tail:
+                tokens.append(self._make_gap_token(idx, tail))
         return PipelineResult(pipeline_id=self.pipeline_id, tokens=tokens)
+
+    @staticmethod
+    def _make_gap_token(idx: int, surface: str) -> Token:
+        return Token(
+            idx=idx,
+            surface=surface,
+            is_word=False,
+            candidates=[],
+            is_ambiguous=False,
+            is_oov=False,
+            romanization=None,
+        )
 
     def _build_token(self, idx: int, surface: str) -> Token:
         if _is_punctuation(surface):
