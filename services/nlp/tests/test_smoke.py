@@ -41,7 +41,11 @@ def test_process_odia_canned():
     body = resp.json()
     assert body["language"] == "or"
     assert body["pipeline_id"] == "custom-or"
-    assert len(body["tokens"]) == 2
+    # Two words plus a whitespace gap token between them — the gap is
+    # required so the reader can break lines (otherwise the chapter
+    # renders as one unbreakable run).
+    word_tokens = [t for t in body["tokens"] if t["is_word"]]
+    assert len(word_tokens) == 2
 
 
 def test_process_rejects_unsupported_language():

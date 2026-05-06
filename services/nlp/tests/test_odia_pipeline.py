@@ -23,6 +23,9 @@ from app.pipelines.odia.lemmas import OdiaLemma, OdiaLemmaTable
 
 
 def _split(text: str) -> list[str]:
+    # Mirrors IndicNLP's ``trivial_tokenize`` shape — returns words and
+    # punctuation only, drops whitespace. The pipeline reconstructs the
+    # whitespace gaps by walking the original text.
     return text.split()
 
 
@@ -51,7 +54,37 @@ def test_token_indexes_are_contiguous():
         ବହି=OdiaLemma(headword="ବହି", pos="NOUN"),
     )
     result = _pipe(lemmas).process("ଘର ବହି ଘର")
-    assert [t.idx for t in result.tokens] == [0, 1, 2]
+    # Word + gap + word + gap + word.
+    assert [t.idx for t in result.tokens] == [0, 1, 2, 3, 4]
+
+
+def test_emits_whitespace_tokens_between_words():
+    """Without gap tokens the reader has no break opportunities and a
+    long paragraph overflows the column. Mirrors the offset-walk in
+    :class:`StanzaUDPipeline._tokens_from_doc`."""
+    lemmas = _table(
+        ଘର=OdiaLemma(headword="ଘର", pos="NOUN"),
+        ବହି=OdiaLemma(headword="ବହି", pos="NOUN"),
+    )
+    result = _pipe(lemmas).process("ଘର  ବହି")
+    surfaces = [t.surface for t in result.tokens]
+    is_word = [t.is_word for t in result.tokens]
+    # The double space between the two words is preserved verbatim so
+    # the reader's render matches the original text layout.
+    assert surfaces == ["ଘର", "  ", "ବହି"]
+    assert is_word == [True, False, True]
+    gap = result.tokens[1]
+    assert gap.candidates == []
+    assert gap.is_oov is False
+    assert gap.is_ambiguous is False
+
+
+def test_preserves_leading_and_trailing_whitespace():
+    result = _pipe(
+        _table(ଘର=OdiaLemma(headword="ଘର", pos="NOUN"))
+    ).process(" ଘର\n")
+    surfaces = [t.surface for t in result.tokens]
+    assert surfaces == [" ", "ଘର", "\n"]
 
 
 def test_known_lemma_exact_match_is_not_oov_and_not_ambiguous():
@@ -83,7 +116,7 @@ def test_unknown_surface_is_oov_with_fallback_candidate():
 def test_latin_only_surface_is_plain_text_not_oov_word():
     lemmas = _table(ଘର=OdiaLemma(headword="ଘର", pos="NOUN", gloss="house"))
     result = _pipe(lemmas).process("Edit ଘର")
-    english, odia = result.tokens
+    english, _gap, odia = result.tokens
     assert english.surface == "Edit"
     assert english.is_word is False
     assert english.is_oov is False
@@ -121,16 +154,15 @@ def test_multiple_analyses_set_is_ambiguous():
 
 def test_punctuation_is_not_a_word_and_not_oov():
     result = _pipe().process("ନମସ୍କାର ।")
-    words = result.tokens
-    assert len(words) == 2
+    word, _gap, danda = result.tokens
     # First token is OOV (empty lemma table) but is a word.
-    assert words[0].is_word is True
-    assert words[0].is_oov is True
+    assert word.is_word is True
+    assert word.is_oov is True
     # Danda punctuation: is_word=False, is_oov=False (matches Stanza path).
-    assert words[1].surface == "।"
-    assert words[1].is_word is False
-    assert words[1].is_oov is False
-    assert words[1].candidates[0].pos == "PUNCT"
+    assert danda.surface == "।"
+    assert danda.is_word is False
+    assert danda.is_oov is False
+    assert danda.candidates[0].pos == "PUNCT"
 
 
 def test_drops_empty_surfaces_from_tokenizer():
