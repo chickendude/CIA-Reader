@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  groupPendingSegments,
   segmentParagraphPhrases,
   type ChapterPhraseSpan,
+  type ParagraphSegment,
   type ServerToken,
 } from './types.js';
 
@@ -129,5 +131,70 @@ describe('segmentParagraphPhrases', () => {
     expect(out).toHaveLength(2);
     expect(out[0]?.kind).toBe('phrase');
     expect(out[1]?.kind).toBe('phrase');
+  });
+});
+
+describe('groupPendingSegments (T-14.3b)', () => {
+  it('returns every segment as plain when the range is null', () => {
+    const segments: ParagraphSegment[] = [
+      { kind: 'token', token: tok(0, 'a') },
+      { kind: 'token', token: tok(1, 'b') },
+    ];
+    const out = groupPendingSegments(segments, null);
+    expect(out).toEqual([
+      { kind: 'plain', segment: segments[0] },
+      { kind: 'plain', segment: segments[1] },
+    ]);
+  });
+
+  it('brackets a contiguous run of in-range tokens under one pending group', () => {
+    const segments: ParagraphSegment[] = [
+      { kind: 'token', token: tok(0, 'a') },
+      { kind: 'token', token: tok(1, 'b') },
+      { kind: 'token', token: tok(2, 'c') },
+      { kind: 'token', token: tok(3, 'd') },
+    ];
+    const out = groupPendingSegments(segments, { start: 1, end: 2 });
+    expect(out).toHaveLength(3);
+    expect(out[0]).toEqual({ kind: 'plain', segment: segments[0] });
+    expect(out[1]?.kind).toBe('pending');
+    if (out[1]?.kind !== 'pending') throw new Error('unreachable');
+    expect(out[1].segments).toEqual([segments[1], segments[2]]);
+    expect(out[2]).toEqual({ kind: 'plain', segment: segments[3] });
+  });
+
+  it('groups a phrase segment when any of its tokens are in range', () => {
+    const phraseSeg: ParagraphSegment = {
+      kind: 'phrase',
+      span: span('phr-x', 1, 2),
+      tokens: [tok(1, 'इंतज़ार'), tok(2, 'करना')],
+      overlaps: [],
+    };
+    const segments: ParagraphSegment[] = [
+      { kind: 'token', token: tok(0, 'a') },
+      phraseSeg,
+      { kind: 'token', token: tok(3, 'd') },
+    ];
+    // Pending range starts mid-phrase — the whole phrase still
+    // groups, since the phrase wrapper is the smallest renderable
+    // unit and we'd otherwise have to break it mid-run.
+    const out = groupPendingSegments(segments, { start: 2, end: 3 });
+    expect(out).toHaveLength(2);
+    expect(out[0]).toEqual({ kind: 'plain', segment: segments[0] });
+    expect(out[1]?.kind).toBe('pending');
+    if (out[1]?.kind !== 'pending') throw new Error('unreachable');
+    expect(out[1].segments).toEqual([phraseSeg, segments[2]]);
+  });
+
+  it('emits an empty list for an empty paragraph', () => {
+    expect(groupPendingSegments([], { start: 0, end: 5 })).toEqual([]);
+  });
+
+  it('keeps an out-of-range segment plain even when range is set', () => {
+    const segments: ParagraphSegment[] = [
+      { kind: 'token', token: tok(0, 'a') },
+    ];
+    const out = groupPendingSegments(segments, { start: 5, end: 9 });
+    expect(out).toEqual([{ kind: 'plain', segment: segments[0] }]);
   });
 });

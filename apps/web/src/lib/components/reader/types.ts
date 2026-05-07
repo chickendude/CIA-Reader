@@ -364,3 +364,56 @@ export function segmentParagraphPhrases(
   }
   return out;
 }
+
+/**
+ * T-14.3b: a paragraph's segments after pending-selection grouping.
+ * Either an untouched segment (`kind: 'plain'`) or a contiguous run
+ * of segments that fall inside the user's in-progress shift-click
+ * range (`kind: 'pending'`). The renderer wraps the latter in a
+ * single `<phrase>`-like element so the highlight (including the
+ * whitespace between words) reads as one continuous pill — same
+ * shape as the committed `<phrase>` wrapper, so a pending selection
+ * visually resolves into a phrase highlight once saved.
+ */
+export type RenderGroup =
+  | { kind: 'plain'; segment: ParagraphSegment }
+  | { kind: 'pending'; segments: ParagraphSegment[] };
+
+/**
+ * Walk a paragraph's segments and bracket any contiguous run that
+ * intersects the pending range under a single `pending` group. A
+ * `phrase` segment counts as in-range if any of its tokens fall
+ * inside `[start, end]` — partial overlap with an existing phrase
+ * still groups the whole phrase, since the phrase wrapper is the
+ * smallest renderable unit and we'd otherwise have to break it
+ * mid-run. With `range = null` every segment passes through as
+ * `plain` (the common case when no shift-click is in flight).
+ */
+export function groupPendingSegments(
+  segments: ParagraphSegment[],
+  range: { start: number; end: number } | null,
+): RenderGroup[] {
+  if (!range) return segments.map((s) => ({ kind: 'plain', segment: s }));
+  const { start, end } = range;
+  const inRange = (s: ParagraphSegment): boolean => {
+    if (s.kind === 'token') return s.token.idx >= start && s.token.idx <= end;
+    return s.tokens.some((t) => t.idx >= start && t.idx <= end);
+  };
+  const out: RenderGroup[] = [];
+  let buffer: ParagraphSegment[] = [];
+  const flush = () => {
+    if (buffer.length === 0) return;
+    out.push({ kind: 'pending', segments: buffer });
+    buffer = [];
+  };
+  for (const s of segments) {
+    if (inRange(s)) {
+      buffer.push(s);
+    } else {
+      flush();
+      out.push({ kind: 'plain', segment: s });
+    }
+  }
+  flush();
+  return out;
+}

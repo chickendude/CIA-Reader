@@ -20,7 +20,6 @@
     token,
     showRomanization = false,
     isAnchor = false,
-    isInPendingSelection = false,
   }: {
     token: ServerToken;
     showRomanization?: boolean;
@@ -28,11 +27,6 @@
      *  panel — gets an outline so the user remembers which word the
      *  panel is bound to. */
     isAnchor?: boolean;
-    /** T-14.3b: true while the user is mid-shift-click constructing
-     *  a phrase and this token's idx falls inside the proposed
-     *  range. Drives the `.pending` class so the user can see the
-     *  selection before they confirm in the popup. */
-    isInPendingSelection?: boolean;
   } = $props();
 
   // OOV tokens get a distinct visual state (T-5.4a) — dashed
@@ -45,7 +39,6 @@
     if (token.isOov) classes.push('oov');
     if (token.isAmbiguous) classes.push('ambiguous');
     if (isAnchor) classes.push('anchor');
-    if (isInPendingSelection) classes.push('pending');
     return classes.join(' ');
   });
 
@@ -125,16 +118,5 @@
     outline: 2px solid var(--accent, var(--color-accent));
     outline-offset: -2px;
     border-radius: 3px;
-  }
-  /* T-14.3b: in-progress phrase selection. The user has shift-
-     clicked an anchor and is hovering toward the target — every
-     word in the proposed range gets a soft accent fill so the
-     selection is visible before the popup commits it. Mirrors the
-     committed `.phrase` wrapper styling in ChapterBody so a
-     pending selection visually resolves into a phrase highlight
-     once saved. */
-  .word.pending {
-    background: color-mix(in oklch, var(--accent, var(--color-accent)) 18%, transparent);
-    box-shadow: inset 0 -2px 0 color-mix(in oklch, var(--accent, var(--color-accent)) 55%, transparent);
   }
 </style>
