@@ -225,6 +225,82 @@ def test_process_marks_punctuation_as_non_word():
     assert tokens[1].is_word is False
 
 
+def test_process_splits_glued_danda_off_preceding_word():
+    # Stanza's `hi_hdtb` model leaves the danda glued to the
+    # preceding word when the writer types "अवस्थिति।" with no
+    # whitespace — common in Wikipedia / web text. The pipeline must
+    # split the punctuation off so the popup looks up the clean stem.
+    doc = FakeDoc(
+        sentences=[
+            FakeSentence(
+                words=[
+                    # Stanza's OOV fallback returns the surface as the
+                    # lemma in this glued case — the model's lemma
+                    # table never has "word + danda".
+                    FakeWord(
+                        text="अवस्थिति।",
+                        lemma="अवस्थिति।",
+                        upos="NOUN",
+                    ),
+                ]
+            )
+        ]
+    )
+    pipe, _ = _pipe(doc)
+    tokens = pipe.process("x").tokens
+    assert [t.surface for t in tokens] == ["अवस्थिति", "।"]
+    assert [t.is_word for t in tokens] == [True, False]
+    # The danda token mirrors what Stanza would have emitted on its
+    # own — PUNCT pos, lemma == surface, is_oov is False.
+    assert tokens[1].candidates[0].pos == "PUNCT"
+    assert tokens[1].candidates[0].lemma == "।"
+    assert tokens[1].is_oov is False
+    # Idx sequence stays contiguous across the synthesized split.
+    assert [t.idx for t in tokens] == [0, 1]
+    # The word-side lemma drops the glued mark too so the dictionary
+    # path doesn't have to deal with "word + danda" surfaces.
+    assert tokens[0].candidates[0].lemma == "अवस्थिति"
+
+
+def test_process_splits_double_danda_and_question_marks_off_words():
+    # Same fix applies to ॥ (Devanagari double danda) and the Latin
+    # `?` / `!` that creep in via translated content.
+    doc = FakeDoc(
+        sentences=[
+            FakeSentence(
+                words=[
+                    FakeWord(text="समाप्त॥", lemma="समाप्त॥", upos="ADJ"),
+                    FakeWord(text="कैसे?", lemma="कैसा", upos="ADV"),
+                    FakeWord(text="वाह!", lemma="वाह!", upos="INTJ"),
+                ]
+            )
+        ]
+    )
+    pipe, _ = _pipe(doc)
+    surfaces = [t.surface for t in pipe.process("x").tokens]
+    assert surfaces == ["समाप्त", "॥", "कैसे", "?", "वाह", "!"]
+
+
+def test_process_leaves_standalone_punctuation_unchanged():
+    # Stanza split correctly already — the surface is *just* the mark.
+    # Splitting again would emit a zero-length surface and would mark
+    # the empty string as a word. Guard via the len < 2 check in the
+    # helper.
+    doc = FakeDoc(
+        sentences=[
+            FakeSentence(
+                words=[
+                    FakeWord(text="नमस्ते", lemma="नमस्ते", upos="INTJ"),
+                    FakeWord(text="।", lemma="।", upos="PUNCT"),
+                ]
+            )
+        ]
+    )
+    pipe, _ = _pipe(doc)
+    tokens = pipe.process("x").tokens
+    assert [t.surface for t in tokens] == ["नमस्ते", "।"]
+
+
 def test_process_marks_coordinate_fragments_as_non_words():
     # Stanza may split a DMS coordinate like "113°43′6″W" into
     # "113°43" + "′6″W" and tag the first chunk as PROPN. The reader
