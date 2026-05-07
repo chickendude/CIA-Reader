@@ -45,6 +45,17 @@ NON_OOV_UPOS: frozenset[str] = frozenset({"PUNCT", "SYM", "NUM", "PROPN", "X"})
 # skip these when counting known-words and when rendering the pop-up.
 NON_WORD_UPOS: frozenset[str] = frozenset({"PUNCT", "SYM"})
 
+# Sentence-end punctuation that Stanza occasionally fails to split off
+# the preceding word. The Hindi `hi_hdtb` model in particular leaves
+# the danda glued when no whitespace separates them — common in
+# user-generated Wikipedia / web text where a writer types
+# "अवस्थिति।" rather than "अवस्थिति ।". Split-on-output keeps the
+# popup pointed at a clean stem instead of an OOV "word + danda"
+# blob the dictionary will never match. The marks are limited to
+# end-of-sentence punctuation so we don't accidentally split numerals
+# at decimals or comma-joined phrases.
+_TRAILING_SPLIT_MARKS: tuple[str, ...] = ("।", "॥", "?", "!")
+
 _SCRIPT_RANGES: dict[str, tuple[tuple[int, int], ...]] = {
     "Deva": ((0x0900, 0x097F),),
     "Orya": ((0x0B00, 0x0B7F),),
@@ -100,6 +111,23 @@ def should_treat_as_word(surface: str, upos: str, *, script: str | None) -> bool
     if _has_letter(surface) and not _has_target_script(surface, script):
         return False
     return True
+
+
+def _trailing_split_mark(surface: str) -> str | None:
+    """Return the trailing sentence-end mark to peel off, or None.
+
+    A surface that is *only* the mark (Stanza already split it
+    correctly) is left alone; we only intervene when the mark is
+    glued to a non-trivial preceding word. Multi-character marks
+    aren't part of the current set, so a single character match
+    is sufficient.
+    """
+    if len(surface) < 2:
+        return None
+    last = surface[-1]
+    if last in _TRAILING_SPLIT_MARKS:
+        return last
+    return None
 
 
 def parse_feats(feats: str | None) -> dict[str, str]:
@@ -188,7 +216,22 @@ class StanzaUDPipeline(Pipeline):
                         tokens.append(self._make_gap_token(idx, gap))
                         idx += 1
                 surface = word.text
+                # Split a trailing sentence-end mark off the surface
+                # before the per-word Token shaping. Stanza's Hindi
+                # tokenizer occasionally glues the danda to its
+                # preceding word when there's no whitespace between
+                # them, leaving the dictionary lookup with no chance
+                # of matching. See `_TRAILING_SPLIT_MARKS`.
+                trailing_mark = _trailing_split_mark(surface)
                 lemma = word.lemma or surface
+                if trailing_mark:
+                    # Recompute lemma + surface for the word part. If
+                    # Stanza's lemma was the glued form (the OOV
+                    # fallback path), strip the same mark from it so
+                    # downstream dictionary lookup sees a clean stem.
+                    surface = surface[: -len(trailing_mark)]
+                    if lemma.endswith(trailing_mark):
+                        lemma = lemma[: -len(trailing_mark)]
                 upos = (word.upos or "X").upper()
                 features = parse_feats(word.feats)
                 is_word = should_treat_as_word(
@@ -217,6 +260,31 @@ class StanzaUDPipeline(Pipeline):
                     )
                 )
                 idx += 1
+                if trailing_mark:
+                    # Emit the punctuation as its own Token so the
+                    # reader paints it as a non-word boundary marker
+                    # and the phrase-create logic refuses to span
+                    # across sentence ends.
+                    tokens.append(
+                        Token(
+                            idx=idx,
+                            surface=trailing_mark,
+                            is_word=False,
+                            candidates=[
+                                LemmaCandidate(
+                                    lemma=trailing_mark,
+                                    pos="PUNCT",
+                                    score=1.0,
+                                    features={},
+                                ),
+                            ],
+                            is_ambiguous=False,
+                            is_oov=False,
+                            romanization=None,
+                            number_forms=None,
+                        )
+                    )
+                    idx += 1
                 if has_offsets and end is not None:
                     cursor = end
         # Trailing whitespace after the last word — only when we
@@ -269,6 +337,7 @@ __all__ = [
     "NON_WORD_UPOS",
     "StanzaLike",
     "StanzaUDPipeline",
+    "_trailing_split_mark",
     "parse_feats",
     "should_treat_as_word",
 ]
