@@ -72,6 +72,13 @@ export interface HealthResponse {
   languages: string[];
 }
 
+export interface RomanizeResponse {
+  /** One entry per input surface, same order. `null` when the input
+   *  was empty / on an unsupported script — caller leaves the row's
+   *  romanization NULL in those cases. */
+  romanizations: Array<string | null>;
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(new URL(path, NLP_SERVICE_URL), {
     ...init,
@@ -95,6 +102,12 @@ export const nlpClient = {
     return request<ProcessResponse>('/process', {
       method: 'POST',
       body: JSON.stringify({ language, text }),
+    });
+  },
+  romanize(language: string, surfaces: string[]): Promise<RomanizeResponse> {
+    return request<RomanizeResponse>('/romanize', {
+      method: 'POST',
+      body: JSON.stringify({ language, surfaces }),
     });
   },
 };

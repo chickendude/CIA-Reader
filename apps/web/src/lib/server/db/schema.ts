@@ -80,6 +80,15 @@ export const languageBaseline = pgEnum('language_baseline', [
   'intermediate',
 ]);
 
+// Origin tag on a `lemma_forms` row. Drives regenerate semantics:
+// `curator` rows survive a paradigm regenerate, the others do not.
+export const lemmaFormSource = pgEnum('lemma_form_source', [
+  'import',
+  'pipeline',
+  'curator',
+  'generator',
+]);
+
 export const users = pgTable(
   'users',
   {
@@ -348,6 +357,16 @@ export const lemmas = pgTable(
       .generatedAlwaysAs(
         sql`translate(normalize("headword", NFD), '़', '')`,
       ),
+    // A lemma may opt into a paradigm (e.g. "Odia regular verb"). When set,
+    // the form-editor's "regenerate forms" action wipes generator-created
+    // and import-created form rows for this lemma and re-derives them from
+    // the paradigm's slot suffixes appended to `stem`. Curator-edited
+    // forms survive regenerate. Both columns are nullable: a lemma with
+    // no paradigm assignment is the default and behaves exactly as before.
+    paradigmId: uuid('paradigm_id').references((): AnyPgColumn => paradigms.id, {
+      onDelete: 'set null',
+    }),
+    stem: text('stem'),
   },
   (t) => ({
     // T-3.10: per-source duplication is allowed by design — Kaikki and
@@ -394,11 +413,136 @@ export const lemmaForms = pgTable(
     surface: text('surface').notNull(),
     features: jsonb('features').$type<Record<string, string>>().notNull().default({}),
     romanization: text('romanization'),
+    // Provenance of this row. Affects regenerate behaviour: only
+    // `curator` rows survive a paradigm regenerate. All pre-existing
+    // rows are backfilled to `'import'` in the same migration that
+    // adds the column.
+    createdBy: lemmaFormSource('created_by').notNull().default('import'),
+    // When the row was generated from a paradigm slot, points at the
+    // slot it came from. NULL for rows whose `created_by` ≠ 'generator'
+    // (or for legacy generator rows pre-dating this column). FK is
+    // SET NULL on delete so removing a slot orphans the rows rather
+    // than wiping curator-relevant data.
+    paradigmSlotId: uuid('paradigm_slot_id').references(
+      (): AnyPgColumn => paradigmSlots.id,
+      { onDelete: 'set null' },
+    ),
+    // Quarantine flags. Junk imports (Wiktionary template names like
+    // `hi-ndecl`, IAST that should have been in `romanization`, etc.)
+    // are flagged here in a one-shot migration. The dispatcher's
+    // surface-lookup tier filters `WHERE quarantined_at IS NULL` so
+    // quarantined rows can't poison resolution. A future admin page
+    // will let curators review, salvage, or hard-delete the queue.
+    quarantinedAt: timestamp('quarantined_at', { withTimezone: true }),
+    quarantineReason: text('quarantine_reason'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({
     lemmaIdx: index('lemma_forms_lemma_idx').on(t.lemmaId),
     surfaceIdx: index('lemma_forms_surface_idx').on(t.surface),
+    // Hot-path index for the dispatcher's surface→lemma resolution.
+    // Filtered (`WHERE quarantined_at IS NULL`) so the index is small
+    // and the dispatcher's query reads only live rows.
+    surfaceLookupIdx: index('lemma_forms_surface_lookup_idx')
+      .on(t.surface, t.lemmaId)
+      .where(sql`quarantined_at IS NULL`),
+  }),
+);
+
+/**
+ * A conjugation/declension pattern. A lemma opts in by setting its
+ * `paradigm_id` + `stem`; the form-editor's regenerate action then
+ * derives form rows from this paradigm's slots (`paradigm_slots`).
+ *
+ * Scoped per (language, pos): an "Odia regular verb" paradigm only
+ * applies to Odia VERBs. The editor filters its paradigm picker by
+ * the lemma's language + pos so curators don't see irrelevant rows.
+ */
+export const paradigms = pgTable(
+  'paradigms',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    language: language('language').notNull(),
+    pos: text('pos').notNull(),
+    name: text('name').notNull(),
+    description: text('description'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    languagePosIdx: index('paradigms_language_pos_idx').on(t.language, t.pos),
+    languagePosNameUq: unique('paradigms_language_pos_name_uq').on(
+      t.language,
+      t.pos,
+      t.name,
+    ),
+  }),
+);
+
+/**
+ * One cell in a paradigm. Each slot defines:
+ *  - `slot_key`: a stable handle ("pres_hab_1sg", "inf"), unique per
+ *    paradigm. Used by tests + the editor to address a slot without
+ *    its UUID.
+ *  - `features`: UD-shaped morphology emitted onto the generated
+ *    `lemma_forms.features` blob. The grammar_features table
+ *    translates these to the popup's pill labels.
+ *  - `suffix`: appended to the lemma's `stem` to produce the surface
+ *    form. Sandhi (vowel joins like ରହ+ଉଛି→ରହୁଛି) is handled by a
+ *    per-language combine() helper in the generator, not by encoding
+ *    sandhi rules into the suffix.
+ *  - `sort_order`: drives the editor's display ordering — slots
+ *    grouped by `features.Tense` then ordered by `sort_order`.
+ */
+export const paradigmSlots = pgTable(
+  'paradigm_slots',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    paradigmId: uuid('paradigm_id')
+      .notNull()
+      .references(() => paradigms.id, { onDelete: 'cascade' }),
+    slotKey: text('slot_key').notNull(),
+    features: jsonb('features').$type<Record<string, string>>().notNull().default({}),
+    suffix: text('suffix').notNull().default(''),
+    sortOrder: integer('sort_order').notNull().default(0),
+  },
+  (t) => ({
+    paradigmIdx: index('paradigm_slots_paradigm_idx').on(t.paradigmId),
+    paradigmKeyUq: unique('paradigm_slots_paradigm_key_uq').on(
+      t.paradigmId,
+      t.slotKey,
+    ),
+  }),
+);
+
+/**
+ * Lookup table that turns raw UD feature key/value pairs into the
+ * compact + long labels the popup renders ("past" hover→"past tense").
+ *
+ * Seeded once via migration; the dispatcher / popup don't write to
+ * this table at runtime. `pos_scope` filters which POSes the row
+ * applies to — Tense=Past tags `[VERB]`, Number=Sing tags
+ * `[NOUN, ADJ, VERB, PRON]`, etc. NULL/empty array means "all POSes"
+ * (we use the array-not-null + may-be-empty convention; the lookup
+ * helper treats empty as universal).
+ */
+export const grammarFeatures = pgTable(
+  'grammar_features',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    featKey: text('feat_key').notNull(),
+    featValue: text('feat_value').notNull(),
+    posScope: text('pos_scope').array().notNull().default(sql`ARRAY[]::text[]`),
+    shortLabel: text('short_label').notNull(),
+    longLabel: text('long_label').notNull(),
+    sortOrder: integer('sort_order').notNull().default(0),
+  },
+  (t) => ({
+    keyValueUq: unique('grammar_features_key_value_uq').on(
+      t.featKey,
+      t.featValue,
+    ),
+    keyIdx: index('grammar_features_key_idx').on(t.featKey),
   }),
 );
 
@@ -2002,3 +2146,6 @@ export const audioAlignments = pgTable(
 export type AudioFile = InferSelectModel<typeof audioFiles>;
 export type UserAudioListening = InferSelectModel<typeof userAudioListening>;
 export type AudioAlignment = InferSelectModel<typeof audioAlignments>;
+export type Paradigm = InferSelectModel<typeof paradigms>;
+export type ParadigmSlot = InferSelectModel<typeof paradigmSlots>;
+export type GrammarFeature = InferSelectModel<typeof grammarFeatures>;

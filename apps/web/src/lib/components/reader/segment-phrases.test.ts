@@ -34,6 +34,7 @@ function tok(idx: number, surface: string): ServerToken {
     glossDefault: null,
     personalGloss: null,
     candidates: [],
+    features: {},
     numberForms: null,
     status: 'unknown',
   };

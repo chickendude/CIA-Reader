@@ -80,10 +80,6 @@
         Default attribution (optional — used when a row omits it)
         <input name="defaultAttribution" placeholder="e.g. CIA Reader curators" />
       </label>
-      <label>
-        Reason
-        <input name="reason" required minlength="3" placeholder="Why this import?" />
-      </label>
       <button type="submit">Import rows</button>
     </form>
   </section>
@@ -127,10 +123,6 @@
 bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
           required
         ></textarea>
-      </label>
-      <label>
-        Reason
-        <input name="reason" required minlength="3" placeholder="e.g. endorsing top-voted Hindi gloss" />
       </label>
       <button type="submit">Promote to curator</button>
     </form>
@@ -181,10 +173,6 @@ bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
           <option value="mr">Marathi</option>
           <option value="or">Odia</option>
         </select>
-      </label>
-      <label>
-        Reason
-        <input name="reason" required minlength="3" placeholder="e.g. upstream rebrand 2026" />
       </label>
       <button type="submit" class="danger">Rewrite attribution</button>
     </form>

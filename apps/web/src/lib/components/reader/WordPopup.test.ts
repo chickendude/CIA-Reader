@@ -62,6 +62,7 @@ function makeToken(overrides: Partial<ServerToken> = {}): ServerToken {
     glossDefault: null,
     personalGloss: null,
     candidates: [],
+    features: {},
     numberForms: null,
     status: 'unknown',
     ...overrides,
@@ -112,6 +113,7 @@ describe('WordPopup — number-only token block (T-2.8)', () => {
     render(WordPopup, {
       token: makeToken({
         lemmaId: 'should-not-matter',
+        features: {},
         numberForms: makeNumberForms(),
       }),
       language: 'hi',
@@ -149,6 +151,7 @@ describe('WordPopup — number-only token block (T-2.8)', () => {
     render(WordPopup, {
       token: makeToken({
         surface: '-3.14',
+        features: {},
         numberForms: makeNumberForms({
           value: '-3.14',
           digitsLatin: '-3.14',
@@ -190,6 +193,7 @@ describe('WordPopup — number-only token block (T-2.8)', () => {
       token: makeToken({
         surface: '1,013,322',
         lemmaId: 'auto-created-lem',
+        features: {},
         numberForms: null,
       }),
       language: 'hi',
@@ -281,6 +285,92 @@ describe('WordPopup — translation reporting (T-11.1)', () => {
     });
     expect(
       document.body.querySelector('[data-testid="report-button"]'),
+    ).toBeNull();
+  });
+});
+
+describe('WordPopup — feature pills', () => {
+  function makePayload() {
+    return {
+      lemma: { id: 'lem-rahiba', headword: 'ରହିବା', pos: 'VERB', glossDefault: null },
+      translations: { personal: [], official: [], community: [] },
+    };
+  }
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('renders pills for the token features in catalog order', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify(makePayload()), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        }),
+      ),
+    );
+    render(WordPopup, {
+      token: makeToken({
+        surface: 'ରହିଲି',
+        lemmaId: 'lem-rahiba',
+        features: { Tense: 'Past', Person: '1', Number: 'Sing' },
+      }),
+      language: 'or',
+      isOwner: true,
+      onClose: vi.fn(),
+    });
+    const row = await waitFor(() => {
+      const el = document.body.querySelector('[data-testid="feature-pills"]');
+      if (!el) throw new Error('no pills row');
+      return el;
+    });
+    const pills = Array.from(row.querySelectorAll('[data-testid="feat-pill"]'));
+    // Tense (sortOrder=20) → Person (70) → Number (80) — pills sort by category.
+    expect(pills.map((p) => p.getAttribute('data-feat-key'))).toEqual([
+      'Tense',
+      'Person',
+      'Number',
+    ]);
+    // Hover-tooltip text comes through as the long label.
+    expect(pills[0]!.querySelector('[role="tooltip"]')?.textContent).toBe(
+      'past tense',
+    );
+    expect(pills[1]!.querySelector('[role="tooltip"]')?.textContent).toBe(
+      'first person',
+    );
+    expect(pills[2]!.querySelector('[role="tooltip"]')?.textContent).toBe(
+      'singular',
+    );
+  });
+
+  it('hides the pill row when the token has no features', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify(makePayload()), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        }),
+      ),
+    );
+    render(WordPopup, {
+      token: makeToken({
+        surface: 'ରହିବା',
+        lemmaId: 'lem-rahiba',
+        features: {},
+      }),
+      language: 'or',
+      isOwner: true,
+      onClose: vi.fn(),
+    });
+    // Wait for the lemma row so we know the popup payload resolved.
+    await waitFor(() => {
+      expect(document.body.querySelector('.sp-headword')).not.toBeNull();
+    });
+    expect(
+      document.body.querySelector('[data-testid="feature-pills"]'),
     ).toBeNull();
   });
 });

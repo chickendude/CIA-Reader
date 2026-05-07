@@ -130,7 +130,6 @@ const {
   updateTranslation,
 } = await import('./curator.js');
 
-const { MissingReasonError } = await import('./audit.js');
 const { ForbiddenError } = await import('./permissions.js');
 
 const ADMIN = { id: 'admin-1', role: 'admin' as const };
@@ -196,12 +195,26 @@ afterEach(() => {
 // -----------------------------------------------------------------------
 
 describe('updateLemma', () => {
-  it('rejects an empty reason (via MissingReasonError on audit)', async () => {
+  it('accepts an empty reason and writes the audit row with the placeholder', async () => {
     stage([lemmaRow()]); // loadLemma
     stage([{ ...lemmaRow(), glossDefault: 'updated' }]); // update .returning
-    await expect(
-      updateLemma(ADMIN, 'lemma-1', { glossDefault: 'updated' }, '  '),
-    ).rejects.toBeInstanceOf(MissingReasonError);
+    stage([{ id: 'edit-1' }]); // audit insert .returning
+    const out = await updateLemma(
+      ADMIN,
+      'lemma-1',
+      { glossDefault: 'updated' },
+      '  ',
+    );
+    expect(out).toBeDefined();
+    // The audit insert is the last `insert`-kind call. Its `values`
+    // payload carries the persisted reason — empty/whitespace-only
+    // input falls through to the placeholder.
+    const auditInsert = [...calls]
+      .reverse()
+      .find((c): c is Extract<Call, { kind: 'insert' }> => c.kind === 'insert');
+    expect((auditInsert?.values as { reason?: string } | undefined)?.reason).toBe(
+      '(no reason given)',
+    );
   });
 
   it('returns 404 when the lemma does not exist', async () => {
@@ -591,12 +604,6 @@ describe('getLemmaEditorView', () => {
 // -----------------------------------------------------------------------
 
 describe('reorderTranslations', () => {
-  it('rejects an empty reason', async () => {
-    await expect(
-      reorderTranslations(ADMIN, 'lemma-1', ['tr-1', 'tr-2'], '  '),
-    ).rejects.toBeInstanceOf(MissingReasonError);
-  });
-
   it('rejects an empty order list', async () => {
     await expect(
       reorderTranslations(ADMIN, 'lemma-1', [], 'pinning curated meanings up top'),

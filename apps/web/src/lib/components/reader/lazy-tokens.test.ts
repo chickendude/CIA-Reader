@@ -20,6 +20,7 @@ function fakeTokens(n: number): ServerToken[] {
     glossDefault: null,
     personalGloss: null,
     candidates: [],
+    features: {},
     numberForms: null,
     status: 'unknown',
   }));

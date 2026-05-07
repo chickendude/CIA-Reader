@@ -122,6 +122,10 @@ export type ServerToken = {
    *  Empty array when the worker scored only one viable candidate
    *  or hasn't run yet. */
   candidates: ServerCandidate[];
+  /** Morphology features on the resolved candidate. Drives the
+   *  popup's "past · 1sg" pill row. Empty object when the worker
+   *  emitted nothing for this token. */
+  features: Record<string, string>;
   /** T-2.8: digit-only NUM tokens (e.g. "123" / "१२३" / "୧୨୩")
    *  carry a per-language spelled-out form + ISO-15919 romanization.
    *  Null on every other token. The popup uses this to replace the

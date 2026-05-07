@@ -78,7 +78,7 @@ vi.mock('../db/index.js', () => ({
   },
 }));
 
-const { MissingReasonError, listLemmaHistory, recordLemmaEdit } = await import(
+const { NO_REASON_PLACEHOLDER, listLemmaHistory, recordLemmaEdit } = await import(
   './audit.js'
 );
 
@@ -137,42 +137,43 @@ describe('recordLemmaEdit', () => {
     expect(insertCall?.payload).toMatchObject({ reason: 'unlock for re-import' });
   });
 
-  it('throws MissingReasonError for an empty reason', async () => {
-    await expect(
-      recordLemmaEdit({
-        lemmaId: 'lemma-1',
-        editorId: 'curator-1',
-        changeType: 'lemma_update',
-        change: {},
-        reason: '',
-      }),
-    ).rejects.toBeInstanceOf(MissingReasonError);
-    expect(insertFn).not.toHaveBeenCalled();
+  it('substitutes the placeholder when reason is empty (no throw)', async () => {
+    stage([{ id: 'edit-1' }]);
+    await recordLemmaEdit({
+      lemmaId: 'lemma-1',
+      editorId: 'curator-1',
+      changeType: 'lemma_update',
+      change: {},
+      reason: '',
+    });
+    const insertCall = calls.find((c) => c.kind === 'insert');
+    expect(insertCall?.payload).toMatchObject({ reason: NO_REASON_PLACEHOLDER });
   });
 
-  it('throws MissingReasonError for a whitespace-only reason', async () => {
-    await expect(
-      recordLemmaEdit({
-        lemmaId: 'lemma-1',
-        editorId: 'curator-1',
-        changeType: 'lemma_update',
-        change: {},
-        reason: '   \t\n  ',
-      }),
-    ).rejects.toBeInstanceOf(MissingReasonError);
-    expect(insertFn).not.toHaveBeenCalled();
+  it('substitutes the placeholder when reason is whitespace-only', async () => {
+    stage([{ id: 'edit-1' }]);
+    await recordLemmaEdit({
+      lemmaId: 'lemma-1',
+      editorId: 'curator-1',
+      changeType: 'lemma_update',
+      change: {},
+      reason: '   \t\n  ',
+    });
+    const insertCall = calls.find((c) => c.kind === 'insert');
+    expect(insertCall?.payload).toMatchObject({ reason: NO_REASON_PLACEHOLDER });
   });
 
-  it('throws MissingReasonError for a reason shorter than the minimum', async () => {
-    await expect(
-      recordLemmaEdit({
-        lemmaId: 'lemma-1',
-        editorId: 'curator-1',
-        changeType: 'lemma_update',
-        change: {},
-        reason: 'ok',
-      }),
-    ).rejects.toBeInstanceOf(MissingReasonError);
+  it('accepts a short reason verbatim (no minimum length any more)', async () => {
+    stage([{ id: 'edit-1' }]);
+    await recordLemmaEdit({
+      lemmaId: 'lemma-1',
+      editorId: 'curator-1',
+      changeType: 'lemma_update',
+      change: {},
+      reason: 'ok',
+    });
+    const insertCall = calls.find((c) => c.kind === 'insert');
+    expect(insertCall?.payload).toMatchObject({ reason: 'ok' });
   });
 });
 

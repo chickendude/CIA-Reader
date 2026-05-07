@@ -21,8 +21,10 @@
   import { untrack } from 'svelte';
   import Sheet from '../overlay/Sheet.svelte';
   import CorrectionModal from './CorrectionModal.svelte';
+  import FeaturePill from './FeaturePill.svelte';
   import PosPill from './PosPill.svelte';
   import ReportTranslationModal from './ReportTranslationModal.svelte';
+  import { getFeaturePills } from './feature-labels.js';
   import { customizableOfficialIds } from './customize-eligibility.js';
   import type { LanguageCode } from '@ciareader/shared-types';
   import { looksLikeNumberToken, type ServerToken } from './types.js';
@@ -1178,6 +1180,21 @@
               <PosPill pos={payload.lemma.pos} class="sp-pos-pill" />
             </span>
           </p>
+          {@const featurePills = getFeaturePills(payload.lemma.pos, token?.features ?? {})}
+          {#if featurePills.length > 0}
+            <p class="sp-row sp-feats-row" data-testid="feature-pills">
+              <span class="k">Form</span>
+              <span class="v sp-feats">
+                {#each featurePills as pill (pill.featKey + pill.featValue)}
+                  <FeaturePill
+                    short={pill.shortLabel}
+                    long={pill.longLabel}
+                    featKey={pill.featKey}
+                  />
+                {/each}
+              </span>
+            </p>
+          {/if}
         {:else if token.isOov}
           <p class="muted">No dictionary match</p>
         {:else if loadError}
@@ -1750,6 +1767,15 @@
   }
   :global(.sp-pos-pill) {
     flex-shrink: 0;
+  }
+  .sp-feats {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    flex-wrap: wrap;
+  }
+  .sp-feats-row {
+    margin-top: 0.15rem;
   }
 
   .sp-primary {

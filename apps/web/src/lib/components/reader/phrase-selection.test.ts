@@ -32,6 +32,7 @@ function tok(
     glossDefault: null,
     personalGloss: null,
     candidates: [],
+    features: {},
     numberForms: null,
     status: 'unknown',
   };

@@ -17,6 +17,13 @@ const setTranslationHidden = vi.fn();
 const mergeLemmas = vi.fn();
 const splitLemma = vi.fn();
 const reorderTranslations = vi.fn();
+const listFormsForLemma = vi.fn();
+const createForm = vi.fn();
+const updateForm = vi.fn();
+const deleteForm = vi.fn();
+const setLemmaParadigm = vi.fn();
+const regenerateForms = vi.fn();
+const listParadigmsForLemma = vi.fn();
 
 vi.mock('$lib/server/dictionary/curator.js', async () => {
   const actual = await vi.importActual<
@@ -34,6 +41,19 @@ vi.mock('$lib/server/dictionary/curator.js', async () => {
     reorderTranslations: (...a: unknown[]) => reorderTranslations(...a),
   };
 });
+
+vi.mock('$lib/server/dictionary/lemma-forms.js', () => ({
+  listFormsForLemma: (...a: unknown[]) => listFormsForLemma(...a),
+  createForm: (...a: unknown[]) => createForm(...a),
+  updateForm: (...a: unknown[]) => updateForm(...a),
+  deleteForm: (...a: unknown[]) => deleteForm(...a),
+  setLemmaParadigm: (...a: unknown[]) => setLemmaParadigm(...a),
+  regenerateForms: (...a: unknown[]) => regenerateForms(...a),
+}));
+
+vi.mock('$lib/server/dictionary/paradigms.js', () => ({
+  listParadigmsForLemma: (...a: unknown[]) => listParadigmsForLemma(...a),
+}));
 
 type Mod = typeof import('./+page.server.js');
 
@@ -79,6 +99,17 @@ beforeEach(() => {
   mergeLemmas.mockReset();
   splitLemma.mockReset();
   reorderTranslations.mockReset();
+  // Form-section mocks default to empty results so existing tests
+  // that don't care about the form section keep working.
+  listFormsForLemma.mockReset();
+  listFormsForLemma.mockResolvedValue([]);
+  listParadigmsForLemma.mockReset();
+  listParadigmsForLemma.mockResolvedValue([]);
+  createForm.mockReset();
+  updateForm.mockReset();
+  deleteForm.mockReset();
+  setLemmaParadigm.mockReset();
+  regenerateForms.mockReset();
 });
 
 afterEach(() => {
@@ -88,7 +119,7 @@ afterEach(() => {
 describe('moderation lemma editor loader', () => {
   it('returns the editor view on success', async () => {
     const view = {
-      lemma: { id: LEMMA_ID, headword: 'बोलना' },
+      lemma: { id: LEMMA_ID, headword: 'बोलना', language: 'hi', pos: 'VERB' },
       translations: [],
       forms: [],
       history: [],
@@ -137,20 +168,23 @@ describe('moderation lemma editor actions', () => {
     );
   });
 
-  it('updateLemma fail on short reason', async () => {
+  it('updateLemma accepts an empty reason now (forwarded as-is to the service)', async () => {
+    updateLemma.mockResolvedValueOnce({ id: LEMMA_ID });
     const res = await callAction('updateLemma', {
-      headword: 'x',
-      pos: 'v',
+      headword: 'बोलना',
+      pos: 'VERB',
       glossDefault: '',
       frequencyRank: '',
       sourceAttribution: '',
-      reason: 'no',
+      // No reason field at all — schema defaults to ''.
     });
-    // SvelteKit's fail() wraps the body in { status, data }; our helper returns
-    // the ActionFailure, so inspect `.data` for the section/message shape.
-    expect((res as { status: number }).status).toBe(400);
-    expect((res as { data: { ok: boolean } }).data.ok).toBe(false);
-    expect(updateLemma).not.toHaveBeenCalled();
+    expect(res).toEqual({ ok: true, section: 'lemma' });
+    expect(updateLemma).toHaveBeenCalledWith(
+      USER,
+      LEMMA_ID,
+      expect.any(Object),
+      '',
+    );
   });
 
   it('merge forwards winnerId from params and loserId from form', async () => {

@@ -246,6 +246,41 @@
       "when": 1777998658759,
       "tag": "0034_smiling_mockingbird",
       "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1778118614943,
+      "tag": "0035_unknown_major_mapleleaf",
+      "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1778118614944,
+      "tag": "0036_seed_grammar_features",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1778118614945,
+      "tag": "0037_seed_odia_regular_verb_paradigm",
+      "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1778118614946,
+      "tag": "0038_quarantine_lemma_form_junk",
+      "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1778170100000,
+      "tag": "0039_extend_odia_verb_politeness",
+      "breakpoints": true
     }
   ]
 }

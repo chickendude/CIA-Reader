@@ -27,6 +27,7 @@ function makeToken(overrides: Partial<ServerToken> = {}): ServerToken {
     glossDefault: null,
     personalGloss: null,
     candidates: [],
+    features: {},
     numberForms: null,
     status: 'unknown',
     ...overrides,
@@ -138,6 +139,7 @@ describe('WordTooltip — number tokens (T-2.8)', () => {
       surface: '123',
       lemmaId: null,
       romanization: '123',
+      features: {},
       numberForms: {
         value: '123',
         digitsLatin: '123',
@@ -213,6 +215,7 @@ describe('WordTooltip — number tokens (T-2.8)', () => {
         // the legacy detection the tooltip would fall through to "No
         // translations" (lemmaId set + glossDefault null).
         lemmaId: 'auto-created-lem',
+        features: {},
         numberForms: null,
       }),
       anchorRect: ANCHOR,
