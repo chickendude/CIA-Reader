@@ -230,6 +230,9 @@
         glossDefault: null,
         personalGloss: null,
         candidates: [],
+        // Synthetic phrase token has no morphology features — the
+        // popup's features-pill row is a no-op for this case.
+        features: {},
         numberForms: null,
         status: 'unknown',
       };

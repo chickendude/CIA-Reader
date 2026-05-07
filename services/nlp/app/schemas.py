@@ -13,6 +13,28 @@ class ProcessRequest(BaseModel):
     text: str = Field(..., min_length=1)
 
 
+class RomanizeRequest(BaseModel):
+    """Batch romanization request — feeds the curator form-editor's
+    "regenerate forms from paradigm" action so generated surfaces land
+    with their canonical (language-default scheme) romanization
+    pre-filled. Avoids spinning up a one-token /process call per slot.
+    """
+
+    language: str = Field(..., description="ISO 639-1 language code.")
+    surfaces: list[str] = Field(
+        ..., description="Native-script surfaces to romanize, in caller order.",
+    )
+
+
+class RomanizeResponse(BaseModel):
+    """One romanization per input surface, in the same order. ``None``
+    entries indicate the surface couldn't be transliterated (empty
+    string, unsupported script, etc.) — the caller leaves the row's
+    romanization NULL in those cases."""
+
+    romanizations: list[str | None]
+
+
 class LemmaCandidate(BaseModel):
     lemma: str
     pos: str

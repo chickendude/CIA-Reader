@@ -20,6 +20,11 @@ function nextStaged(): unknown[] {
 function makeSelectChain() {
   const chain: Record<string, unknown> = {};
   chain.from = vi.fn(() => chain);
+  // innerJoin / leftJoin land on the chain alongside `where` so the
+  // dispatcher's `lemma_forms ⋈ lemmas` surface preload can run
+  // against the same mock seam.
+  chain.innerJoin = vi.fn(() => chain);
+  chain.leftJoin = vi.fn(() => chain);
   chain.where = vi.fn(() => chain);
   chain.limit = vi.fn(() => chain);
   chain.orderBy = vi.fn(() => chain);
@@ -90,6 +95,11 @@ vi.mock('../db/index.js', () => ({
       contextSignature: 'form_lemma_overrides.context_signature',
       language: 'form_lemma_overrides.language',
     },
+    lemmaForms: {
+      surface: 'lemma_forms.surface',
+      lemmaId: 'lemma_forms.lemma_id',
+      quarantinedAt: 'lemma_forms.quarantined_at',
+    },
   },
 }));
 
@@ -155,6 +165,7 @@ describe('processTextNow', () => {
     ]);
     // form_lemma_overrides preload (T-2.7) — empty for this test.
     stage([]);
+    stage([]); // lemma_forms surface preload — empty for this test.
 
     nlpProcess.mockResolvedValueOnce({
       language: 'hi',
@@ -234,6 +245,7 @@ describe('processTextNow', () => {
     stage([{ id: 'chap-1', body: 'unfamiliar word' }]);
     stage([]); // lemma index — no rows
     stage([]); // form_lemma_overrides — no rows
+    stage([]); // lemma_forms surface preload — empty for this test.
     // ensureLemma's onConflictDoNothing(...).returning() chain
     // pulls one staged row.
     stage([{ id: 'lemma-new', headword: 'नमस्ते', pos: 'INTJ' }]);
@@ -297,6 +309,7 @@ describe('processTextNow', () => {
         contextSignature: '',
       },
     ]);
+    stage([]); // lemma_forms surface preload — empty for this test.
 
     nlpProcess.mockResolvedValueOnce({
       language: 'hi',
@@ -335,6 +348,54 @@ describe('processTextNow', () => {
     expect(tokenInsert[0]!.surface).toBe('है');
   });
 
+  it('resolves a surface via the lemma_forms tier when Stanza guesses a wrong lemma', async () => {
+    // The dispatcher's new tier: a recorded `lemma_forms.surface →
+    // lemma_id` mapping wins over Stanza's per-candidate lemma
+    // guesses (but loses to the context-aware overrides tier above
+    // it). Here Stanza emits the wrong base form for an inflected
+    // surface — without the surface tier we'd auto-create a junk
+    // lemma. With the tier, the recorded form mapping resolves to
+    // the parent lemma instead.
+    stage([{ id: 'text-1', language: 'or' }]);
+    stage([{ id: 'chap-1', body: 'ମୁଁ ଘରେ ରହିଲି।' }]);
+    stage([{ id: 'lemma-rahiba', headword: 'ରହିବା', pos: 'VERB' }]);
+    stage([]); // overrides — empty
+    stage([
+      { surface: 'ରହିଲି', lemmaId: 'lemma-rahiba' },
+    ]);
+
+    nlpProcess.mockResolvedValueOnce({
+      language: 'or',
+      pipeline_id: 'stanza-or',
+      tokens: [
+        {
+          idx: 0,
+          surface: 'ରହିଲି',
+          is_word: true,
+          is_ambiguous: false,
+          is_oov: false,
+          romanization: 'rahili',
+          number_forms: null,
+          // Stanza's wrong guess: bare surface, no real lemma.
+          candidates: [
+            { lemma: 'ରହିଲି', pos: 'VERB', score: 1.0, features: { Tense: 'Past' } },
+          ],
+        },
+      ],
+    });
+
+    await processTextNow('text-1');
+
+    const inserts = calls.filter(
+      (c): c is Extract<Call, { kind: 'insert' }> => c.kind === 'insert',
+    );
+    // No auto-create — the surface tier matched ahead of ensureLemma.
+    expect(inserts).toHaveLength(1);
+    const tokenInsert = inserts[0]!.values as Array<{ lemmaId: string | null; surface: string }>;
+    expect(tokenInsert[0]!.lemmaId).toBe('lemma-rahiba');
+    expect(tokenInsert[0]!.surface).toBe('ରହିଲି');
+  });
+
   it('does not auto-create a lemma row for digit-only number tokens (T-2.8)', async () => {
     // Stanza tags "1,013,322" as NUM with lemma=surface. Without the
     // looksLikeNumberToken short-circuit, ensureLemma would write a
@@ -347,6 +408,7 @@ describe('processTextNow', () => {
     stage([{ id: 'chap-1', body: 'about 1,013,322 people' }]);
     stage([]); // empty lemma index
     stage([]); // empty overrides
+    stage([]); // lemma_forms surface preload — empty for this test.
 
     nlpProcess.mockResolvedValueOnce({
       language: 'hi',
@@ -403,6 +465,7 @@ describe('processTextNow', () => {
     // lemma index: only the pre-#316 row exists.
     stage([{ id: 'lemma-padhna-old', headword: 'पढना', pos: 'VERB' }]);
     stage([]); // form_lemma_overrides
+    stage([]); // lemma_forms surface preload — empty for this test.
 
     nlpProcess.mockResolvedValueOnce({
       language: 'hi',
@@ -450,6 +513,7 @@ describe('processTextNow', () => {
     stage([{ id: 'chap-1', body: 'पढती है।' }]);
     stage([{ id: 'lemma-padhna-canon', headword: 'पढ़ना', pos: 'VERB' }]);
     stage([]); // overrides
+    stage([]); // lemma_forms surface preload — empty for this test.
 
     nlpProcess.mockResolvedValueOnce({
       language: 'hi',
@@ -499,6 +563,7 @@ describe('processTextNow', () => {
       { id: 'lemma-padhna-canon', headword: 'पढ़ना', pos: 'VERB' },
     ]);
     stage([]); // overrides
+    stage([]); // lemma_forms surface preload — empty for this test.
 
     nlpProcess.mockResolvedValueOnce({
       language: 'hi',
@@ -535,6 +600,7 @@ describe('processTextNow', () => {
     stage([{ id: 'chap-1', body: 'oops' }]);
     stage([]); // empty lemma map
     stage([]); // empty form_lemma_overrides
+    stage([]); // lemma_forms surface preload — empty for this test.
     nlpProcess.mockRejectedValueOnce(new Error('NLP service 500'));
 
     await expect(processTextNow('text-1')).rejects.toThrow(/NLP service 500/);
@@ -557,6 +623,7 @@ describe('processTextNow', () => {
     stage([{ id: 'chap-1', body: 'one' }]); // chapters
     stage([{ id: 'lemma-bolnaa', headword: 'बोलना', pos: 'verb' }]); // lemmas
     stage([]); // form_lemma_overrides preload
+    stage([]); // lemma_forms surface preload — empty for this test.
 
     nlpProcess.mockResolvedValueOnce({
       language: 'hi',
@@ -596,6 +663,7 @@ describe('processTextNow', () => {
       { id: 'lemma-karnaa', headword: 'करना', pos: 'VERB' },
     ]);
     stage([]); // overrides
+    stage([]); // lemma_forms surface preload — empty for this test.
 
     nlpProcess.mockResolvedValueOnce({
       language: 'hi',
@@ -656,7 +724,8 @@ describe('processTextNow', () => {
     stage([{ id: 'text-1', language: 'hi' }]);
     stage([{ id: 'chap-1', body: 'one' }]);
     stage([{ id: 'lemma-bolnaa', headword: 'बोलना', pos: 'verb' }]);
-    stage([]);
+    stage([]); // form_lemma_overrides preload
+    stage([]); // lemma_forms surface preload — empty for this test.
     nlpProcess.mockResolvedValueOnce({
       language: 'hi',
       pipeline_id: 'hi/stub',

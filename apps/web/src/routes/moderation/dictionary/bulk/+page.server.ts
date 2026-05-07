@@ -58,7 +58,7 @@ export const load: PageServerLoad = async ({ locals }) => {
 
 const importSchema = z.object({
   csv: z.string().min(1, 'paste at least one row'),
-  reason: z.string().min(3).max(500),
+  reason: z.string().max(500).optional().default(''),
   defaultAttribution: z
     .string()
     .max(500)
@@ -68,7 +68,7 @@ const importSchema = z.object({
 
 const promoteSchema = z.object({
   ids: z.string().min(1, 'paste at least one id'),
-  reason: z.string().min(3).max(500),
+  reason: z.string().max(500).optional().default(''),
 });
 
 const attributionSchema = z.object({
@@ -83,7 +83,7 @@ const attributionSchema = z.object({
     .optional()
     .transform((s) => (s && s.length > 0 ? s : undefined)),
   clearAttribution: z.string().optional().transform((s) => s === 'true'),
-  reason: z.string().min(3).max(500),
+  reason: z.string().max(500).optional().default(''),
 });
 
 /**

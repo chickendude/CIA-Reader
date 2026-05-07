@@ -56,6 +56,8 @@ export class InMemoryDictionaryRepo implements DictionaryRepo {
       | 'curatorLocked'
       | 'id'
       | 'headwordNuktaStripped'
+      | 'paradigmId'
+      | 'stem'
     > & {
       id?: string;
     },
@@ -76,6 +78,8 @@ export class InMemoryDictionaryRepo implements DictionaryRepo {
       createdAt: nowUtc(),
       updatedAt: nowUtc(),
       headwordNuktaStripped: stripNukta(key.headword),
+      paradigmId: null,
+      stem: null,
     };
     this.lemmas.set(id, row);
     return row;
@@ -111,6 +115,8 @@ export class InMemoryDictionaryRepo implements DictionaryRepo {
       createdAt: nowUtc(),
       updatedAt: nowUtc(),
       headwordNuktaStripped: stripNukta(payload.headword),
+      paradigmId: null,
+      stem: null,
     };
     this.lemmas.set(id, row);
     return row;

@@ -33,7 +33,7 @@
  * duplicates into the canonical with-nukta row and the tier becomes
  * a no-op.
  */
-import { and, eq } from 'drizzle-orm';
+import { and, eq, isNull } from 'drizzle-orm';
 
 import { stripNukta } from '@ciareader/shared-types';
 
@@ -76,6 +76,15 @@ type LemmaIndex = {
    * once T-6.7's aggregation worker is wired.
    */
   overridesBySurface: Map<string, string>;
+  /**
+   * `surface` → lemma id derived from live (non-quarantined)
+   * `lemma_forms` rows. Sits between the curator-context override
+   * tier and Stanza's candidates: a recorded form mapping is more
+   * trustworthy than a Stanza guess but less specific than a
+   * context-keyed override. Pre-loaded once per chapter run, like
+   * the headword tiers.
+   */
+  bySurface: Map<string, string>;
 };
 
 /**
@@ -136,11 +145,34 @@ async function loadLemmaIndex(
       overridesBySurface.set(r.surfaceNfc, r.chosenLemmaId);
     }
   }
+  // Live `lemma_forms` surface → lemma_id mappings for this language.
+  // The filtered index `lemma_forms_surface_lookup_idx` makes this
+  // load cheap and excludes quarantined junk rows automatically (the
+  // index has `WHERE quarantined_at IS NULL`); we still ask for it
+  // explicitly here so the planner has no excuse to use a wider scan.
+  const formRows = (await db
+    .select({
+      surface: schema.lemmaForms.surface,
+      lemmaId: schema.lemmaForms.lemmaId,
+    })
+    .from(schema.lemmaForms)
+    .innerJoin(schema.lemmas, eq(schema.lemmas.id, schema.lemmaForms.lemmaId))
+    .where(
+      and(
+        eq(schema.lemmas.language, language),
+        isNull(schema.lemmaForms.quarantinedAt),
+      ),
+    )) as Array<{ surface: string; lemmaId: string }>;
+  const bySurface = new Map<string, string>();
+  for (const r of formRows) {
+    if (!bySurface.has(r.surface)) bySurface.set(r.surface, r.lemmaId);
+  }
   return {
     byHeadwordPos,
     byHeadword,
     byNuktaStrippedHeadword,
     overridesBySurface,
+    bySurface,
   };
 }
 
@@ -273,6 +305,16 @@ async function pickLemmaId(
   // disambiguation UI ships.
   const override = index.overridesBySurface.get(token.surface);
   if (override) return override;
+  // `lemma_forms` surface tier. A recorded inflected form (curator-
+  // added or paradigm-generated, with quarantined junk filtered out)
+  // resolves the surface directly to its parent lemma — beats
+  // Stanza's candidate guesses because the form-table mapping has
+  // already been vetted (or generated from a paradigm a curator
+  // signed off on). Sits below the context-aware override tier
+  // because that one can encode "this surface in *this* sentence
+  // means X" while this one is unconditional.
+  const fromForms = index.bySurface.get(token.surface);
+  if (fromForms) return fromForms;
   // Strict-POS lookup first across every candidate. Real Stanza
   // output usually hits this path.
   for (const c of token.candidates) {

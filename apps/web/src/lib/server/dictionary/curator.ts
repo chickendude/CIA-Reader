@@ -258,6 +258,44 @@ export async function setLemmaLock(
 }
 
 // -----------------------------------------------------------------------
+// deleteLemma — destructive op behind the moderation Operations menu.
+// -----------------------------------------------------------------------
+
+/**
+ * Delete a lemma row. Cascades through the FKs in the schema:
+ *
+ *   - `lemma_forms` (ON DELETE CASCADE) — every inflected form goes
+ *   - `translations` where `target_id = lemmaId` AND `target_type = 'lemma'`
+ *     (deleted explicitly below — the `target_id` column has no FK because
+ *     it points at lemmas OR phrases)
+ *   - `lemma_edit_history` (ON DELETE CASCADE) — audit rows die with
+ *     the lemma. We accept that loss; preserving cross-cascade history
+ *     would require a `phrase_id`-style nullable column on the audit
+ *     row, which is more plumbing than this destructive-rare-op needs.
+ *
+ * No audit row is written for the delete itself — there's nothing to
+ * point a `lemma_id` FK at by the time the row would land.
+ */
+export async function deleteLemma(
+  editor: Editor,
+  lemmaId: string,
+): Promise<void> {
+  const existing = await loadLemma(lemmaId);
+  await requireCanEditDictionary(editor, existing.language);
+  await db.transaction(async (tx) => {
+    await tx
+      .delete(schema.translations)
+      .where(
+        and(
+          eq(schema.translations.targetType, 'lemma'),
+          eq(schema.translations.targetId, lemmaId),
+        ),
+      );
+    await tx.delete(schema.lemmas).where(eq(schema.lemmas.id, lemmaId));
+  });
+}
+
+// -----------------------------------------------------------------------
 // updateTranslation (curator edit)
 // -----------------------------------------------------------------------
 
@@ -442,7 +480,6 @@ export async function reorderTranslations(
   reason: string,
   now: Date = new Date(),
 ): Promise<Translation[]> {
-  if (!reason || reason.trim().length < 3) throw new MissingReasonError();
   if (orderedTranslationIds.length === 0) {
     throw new CuratorValidationError(
       'Reorder requires at least one translation id',
@@ -570,7 +607,6 @@ export async function mergeLemmas(
   input: MergeLemmasInput,
   reason: string,
 ): Promise<MergeLemmasResult> {
-  if (!reason || reason.trim().length < 3) throw new MissingReasonError();
   if (input.winnerId === input.loserId) {
     throw new CuratorValidationError('Cannot merge a lemma into itself');
   }
@@ -705,7 +741,6 @@ export async function splitLemma(
   input: SplitLemmaInput,
   reason: string,
 ): Promise<SplitLemmaResult> {
-  if (!reason || reason.trim().length < 3) throw new MissingReasonError();
   const source = await loadLemma(input.fromLemmaId);
   await requireCanEditDictionary(editor, source.language);
 

@@ -3,8 +3,16 @@
  *
  * `recordLemmaEdit` is the single write path into `lemma_edit_history`.
  * The editor UI (T-3.7) + moderation queue (T-6.6) never write that
- * table directly — they call through here so the before/after diff,
- * required reason, and enum discriminator stay consistent.
+ * table directly — they call through here so the before/after diff
+ * and enum discriminator stay consistent.
+ *
+ * Reason was previously required (min 3 chars) — the requirement was
+ * dropped because in a small-team / solo curator setup the friction
+ * outweighed the audit value, and the field was being filled with
+ * `"x"` / `"fix"` to bypass anyway. Empty/missing reasons now write
+ * a `'(no reason given)'` placeholder so the audit chain stays
+ * unbroken; `MissingReasonError` is kept exported for backwards-
+ * compat with existing call sites + tests, but is never thrown.
  *
  * T-14.7: phrase audit rows live in the same table — `recordPhraseEdit`
  * is the parallel write path, setting `phrase_id` and leaving
@@ -34,6 +42,9 @@ export type RecordPhraseEditInput = {
   reason: string;
 };
 
+/** Kept exported for backwards-compat with call sites that still
+ *  catch it. `recordLemmaEdit` / `recordPhraseEdit` no longer throw
+ *  this — empty reasons fall through to the placeholder. */
 export class MissingReasonError extends Error {
   constructor() {
     super('A reason is required for every curator edit');
@@ -41,15 +52,20 @@ export class MissingReasonError extends Error {
   }
 }
 
-const MIN_REASON_LEN = 3;
+/** Placeholder used when the caller doesn't supply a reason. Keeps
+ *  the audit row's `reason` non-empty so the editor's history list
+ *  has something to render. */
+export const NO_REASON_PLACEHOLDER = '(no reason given)';
+
+function normalizeReason(raw: string | null | undefined): string {
+  const trimmed = raw?.trim() ?? '';
+  return trimmed.length > 0 ? trimmed : NO_REASON_PLACEHOLDER;
+}
 
 export async function recordLemmaEdit(
   input: RecordLemmaEditInput,
 ): Promise<LemmaEditHistoryEntry> {
-  const reason = input.reason?.trim() ?? '';
-  if (reason.length < MIN_REASON_LEN) {
-    throw new MissingReasonError();
-  }
+  const reason = normalizeReason(input.reason);
   const [row] = await db
     .insert(schema.lemmaEditHistory)
     .values({
@@ -91,10 +107,7 @@ export async function listLemmaHistory(
 export async function recordPhraseEdit(
   input: RecordPhraseEditInput,
 ): Promise<LemmaEditHistoryEntry> {
-  const reason = input.reason?.trim() ?? '';
-  if (reason.length < MIN_REASON_LEN) {
-    throw new MissingReasonError();
-  }
+  const reason = normalizeReason(input.reason);
   const [row] = await db
     .insert(schema.lemmaEditHistory)
     .values({

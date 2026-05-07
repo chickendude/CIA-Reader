@@ -89,6 +89,14 @@ export type RenderedToken = {
    *  (or when the worker hasn't run). The popup hides the
    *  alternate-meanings affordance when this is empty. */
   candidates: RenderedCandidate[];
+  /** Morphology features on the resolved candidate (the one whose
+   *  lemma the token's lemma_id points at). Stored on
+   *  `text_tokens.features` at process time so the popup can show
+   *  pills like "past · 1sg" without re-running Stanza or scanning
+   *  the candidate list. Empty object when the worker emitted no
+   *  features for this token (e.g. punctuation, OOV, the stub
+   *  pipeline). */
+  features: Record<string, string>;
   /** T-2.8: digit-only NUM tokens carry a per-language spelled-out
    *  form + romanization. Null on every other token. */
   numberForms: RenderedNumberForms | null;
@@ -423,6 +431,7 @@ export async function loadChapterTokens(
         ? personalGlossByLemma.get(effectiveLemmaId) ?? null
         : null,
       candidates,
+      features: t.features,
       numberForms: renderedNumberForms,
       status,
     };
