@@ -20,6 +20,7 @@
   import { LongPressDetector } from './touch-gestures.js';
   import type { LanguageCode } from '@ciareader/shared-types';
   import {
+    groupPendingSegments,
     paragraphsOfServerTokens,
     paragraphsOfTokens,
     segmentParagraphPhrases,
@@ -27,6 +28,7 @@
     tokenize,
     type ChapterPhraseSpan,
     type ChapterView,
+    type ParagraphSegment,
     type ServerToken,
   } from './types.js';
   import { validatePhraseSelection } from './phrase-selection.js';
@@ -190,6 +192,51 @@
   let pendingSelection = $state<PendingPhraseSelection | null>(null);
   let selectionError = $state<string | null>(null);
 
+  // T-14.3b: while the user is constructing a phrase via shift-
+  // click, bracket the contiguous run of segments whose tokens
+  // fall inside the proposed range under a single `pending` group.
+  // The renderer wraps that group in a `<phrase>`-like element so
+  // the highlight reads as one continuous pill including the
+  // whitespace between words — a per-token `.pending` class would
+  // leave gaps where the spaces sit. With no pending selection,
+  // every segment passes through as plain.
+  const displayParagraphs = $derived.by(() => {
+    if (!segmentedParagraphs) return null;
+    const range = pendingSelection?.rangeIdx ?? null;
+    return segmentedParagraphs.map((paragraph) =>
+      groupPendingSegments(paragraph, range),
+    );
+  });
+
+  // T-14.3b: while pending is active the popup renders the proposed
+  // phrase as if it were a single multi-word lemma — same body
+  // shape, headword = joined surfaces. WordPopup short-circuits its
+  // translations fetch on `lemmaId === null`, so the body shows the
+  // surface header + an empty translations list rather than the
+  // anchor word's data. Phrase persistence + lemma-style writes
+  // (status flips, add-translation) are followups; for now the
+  // popup is a read-only view of the proposed phrase.
+  const popupToken = $derived.by<ServerToken | null>(() => {
+    if (pendingSelection) {
+      return {
+        id: `pending:${pendingSelection.rangeIdx.start}-${pendingSelection.rangeIdx.end}`,
+        idx: pendingSelection.rangeIdx.start,
+        surface: pendingSelection.surfaces.join(' '),
+        isWord: true,
+        isAmbiguous: false,
+        isOov: false,
+        lemmaId: null,
+        romanization: null,
+        glossDefault: null,
+        personalGloss: null,
+        candidates: [],
+        numberForms: null,
+        status: 'unknown',
+      };
+    }
+    return activeToken;
+  });
+
   function findPhrase(target: HTMLElement | null): ChapterPhraseSpan | null {
     if (!target) return null;
     const wrapper = target.closest('[data-phrase-id]') as HTMLElement | null;
@@ -250,6 +297,21 @@
       surfaces: result.surfaces,
       rangeIdx: result.rangeIdx,
     };
+  }
+
+  // T-14.3b: shift-click in a browser would otherwise extend the
+  // native text selection from the previous caret position to the
+  // click target, drawing the system selection colour over our
+  // pending-phrase highlight. Suppressing the gesture on
+  // mousedown — when there's already an anchor and the target is
+  // a different word token — stops that selection from forming;
+  // the regular `onChapterClick` still fires afterwards and
+  // promotes the gesture into a phrase-create.
+  function onChapterMousedown(event: MouseEvent) {
+    if (!event.shiftKey || !activeToken) return;
+    const found = findToken(event.target as HTMLElement);
+    if (!found || found.token.id === activeToken.id) return;
+    event.preventDefault();
   }
 
   function onChapterClick(event: MouseEvent) {
@@ -479,6 +541,23 @@
   void applyEverywhereLocally; // referenced in toast onApplied wiring
 </script>
 
+{#snippet renderSegment(segment: ParagraphSegment)}{#if segment.kind === 'token'}<TokenSpan
+      token={segment.token}
+      {showRomanization}
+      isAnchor={!pendingSelection && activeToken?.id === segment.token.id}
+    />{:else}<phrase
+      class="phrase"
+      data-phrase-id={segment.span.phraseId}
+      data-s={statusToCode(segment.span.status)}
+      data-phrase-overlap={segment.overlaps.length > 0
+        ? segment.overlaps.map((o) => o.phraseId).join(' ')
+        : undefined}
+      >{#each segment.tokens as token (token.id)}<TokenSpan
+          {token}
+          {showRomanization}
+          isAnchor={!pendingSelection && activeToken?.id === token.id}
+        />{/each}</phrase>{/if}{/snippet}
+
 <!-- The hover tooltip is decorative chrome — keyboard / focus users get
      the full side panel via Enter on a focused word. mouseover/mouseout
      are paired with focusin/focusout (the bubbling versions of focus /
@@ -487,6 +566,7 @@
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <!-- svelte-ignore a11y_mouse_events_have_key_events -->
 <div
+  onmousedown={onChapterMousedown}
   onclick={onChapterClick}
   onmouseover={showHoverTooltip}
   onmouseout={hideHoverTooltip}
@@ -497,25 +577,13 @@
   ontouchend={onTouchEnd}
   ontouchcancel={onTouchEnd}
 >
-  {#if segmentedParagraphs}
-    {#each segmentedParagraphs as paragraph, pIdx (pIdx)}
+  {#if displayParagraphs}
+    {#each displayParagraphs as paragraph, pIdx (pIdx)}
       <p class="body">
-        {#each paragraph as segment, sIdx (sIdx)}{#if segment.kind === 'token'}<TokenSpan
-              token={segment.token}
-              {showRomanization}
-              isAnchor={activeToken?.id === segment.token.id}
-            />{:else}<phrase
-              class="phrase"
-              data-phrase-id={segment.span.phraseId}
-              data-s={statusToCode(segment.span.status)}
-              data-phrase-overlap={segment.overlaps.length > 0
-                ? segment.overlaps.map((o) => o.phraseId).join(' ')
-                : undefined}
-              >{#each segment.tokens as token (token.id)}<TokenSpan
-                  {token}
-                  {showRomanization}
-                  isAnchor={activeToken?.id === token.id}
-                />{/each}</phrase>{/if}{/each}
+        {#each paragraph as group, gIdx (gIdx)}{#if group.kind === 'plain'}{@render renderSegment(group.segment)}{:else}<phrase
+              class="phrase pending-phrase"
+              data-testid="pending-phrase"
+              >{#each group.segments as segment, sIdx (sIdx)}{@render renderSegment(segment)}{/each}</phrase>{/if}{/each}
       </p>
     {/each}
   {:else if fallbackParagraphs}
@@ -538,7 +606,7 @@
      itself decides whether to render its full body or an empty-state
      prompt based on whether `token` is null. -->
 <WordPopup
-  token={activeToken}
+  token={popupToken}
   phrase={activePhrase}
   pendingSelection={pendingSelection ?? undefined}
   selectionError={selectionError ?? undefined}
@@ -576,21 +644,70 @@
   .word:hover {
     background: color-mix(in srgb, var(--color-accent) 12%, transparent);
   }
-  /* T-14.3: phrase wrappers are an unknown element so we have to
-     opt them into inline display explicitly. The visible
-     highlight is layered via `data-s` matching the existing
-     `.status-*` rules in `tokens.css` — phrase status wins over
-     per-token status when both are non-default. */
+  /* T-14.3 / T-14.3b: phrase wrappers are an unknown element so we
+     have to opt them into inline display explicitly. The visible
+     highlight is a soft accent fill behind the run plus a
+     continuous bottom-bar — both painted via box-shadow so the
+     wrapper doesn't claim line-box height (a real `border-bottom`
+     would). `box-decoration-break: clone` ensures each line-
+     fragment gets the full decoration when a phrase wraps mid-
+     line, so "इंतज़ार करना" split across two lines reads as one
+     unit rather than two stranded underlines. The per-token
+     status tints from tokens.css still paint *above* this layer
+     (the inner `<span>`s have their own background), so a known
+     lemma inside an unknown phrase keeps its colour. */
   .phrase {
     display: inline;
-    border-bottom: 1px dotted color-mix(in srgb, var(--color-accent) 35%, transparent);
+    background: color-mix(in oklch, var(--accent, var(--color-accent)) 8%, transparent);
+    box-shadow: inset 0 -2px 0
+      color-mix(in oklch, var(--accent, var(--color-accent)) 40%, transparent);
+    border-radius: 3px;
+    /* Tiny horizontal padding so the pill extends a hair past the
+       outer characters; the negative margin keeps the layout
+       advance unchanged. */
+    padding: 0 1px;
+    margin: 0 -1px;
+    box-decoration-break: clone;
+    -webkit-box-decoration-break: clone;
+  }
+  .phrase[data-s='2'] {
+    /* learning phrase — slightly stronger fill so it reads as
+       active progress rather than passive grouping. */
+    background: color-mix(in oklch, var(--accent, var(--color-accent)) 14%, transparent);
+    box-shadow: inset 0 -2px 0
+      color-mix(in oklch, var(--accent, var(--color-accent)) 55%, transparent);
   }
   .phrase[data-s='4'] {
-    /* known phrase — quiet highlight, mirrors the lemma 'known'
-       treatment but applied to the run rather than each token. */
-    border-bottom-color: color-mix(in srgb, var(--color-accent) 60%, transparent);
+    /* known phrase — quietest fill, no bottom bar. The user has
+       learnt this expression; we still want the grouping cue but
+       not the "draw your eye here" emphasis. */
+    background: color-mix(in oklch, var(--accent, var(--color-accent)) 4%, transparent);
+    box-shadow: none;
   }
   .phrase[data-s='5'] {
-    border-bottom-style: none;
+    /* ignored — drop the highlight entirely. */
+    background: transparent;
+    box-shadow: none;
+  }
+  /* T-14.3b: in-progress shift-click selection. Soft accent fill
+     plus a 2px outer accent ring so the proposed range reads as
+     one clear unit — the per-word anchor outline is suppressed
+     while pending is active (see `isAnchor` wiring in this file),
+     so this ring is the primary "your selection" indicator. The
+     ring uses the same accent the committed `.phrase` bottom-bar
+     uses, so the visual resolves smoothly into the saved-phrase
+     look once the user clicks Save.
+
+     `box-decoration-break: slice` overrides the `.phrase` base
+     (which uses `clone` for its bottom-bar — each line wants its
+     own bar). For a phrase-as-range, `slice` is the right
+     convention: the ring opens on the right at a mid-line wrap
+     and opens on the left where the run continues, signaling
+     continuity instead of looking like two separate selections. */
+  .phrase.pending-phrase {
+    background: color-mix(in oklch, var(--accent, var(--color-accent)) 22%, transparent);
+    box-shadow: 0 0 0 2px var(--accent, var(--color-accent));
+    box-decoration-break: slice;
+    -webkit-box-decoration-break: slice;
   }
 </style>

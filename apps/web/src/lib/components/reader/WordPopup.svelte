@@ -133,37 +133,6 @@
     ) => void;
   } = $props();
 
-  // T-14.3a: phrase-create state.
-  let phraseCreateSubmitting = $state(false);
-  let phraseCreateError = $state<string | null>(null);
-
-  async function submitPhraseCreate() {
-    if (!pendingSelection) return;
-    phraseCreateSubmitting = true;
-    phraseCreateError = null;
-    try {
-      const res = await fetch('/api/v1/phrases', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          language: pendingSelection.language,
-          tokens: pendingSelection.surfaces,
-        }),
-      });
-      if (res.ok) {
-        const json = (await res.json()) as { phrase: { id: string } };
-        onPhraseCreated?.(json.phrase.id);
-      } else {
-        const text = await res.text().catch(() => '');
-        phraseCreateError = text || `Could not create phrase (${res.status})`;
-      }
-    } catch (e) {
-      phraseCreateError = `Network error: ${(e as Error).message}`;
-    } finally {
-      phraseCreateSubmitting = false;
-    }
-  }
-
   // T-14.3: optimistic phrase status, mirroring the lemma path.
   // Re-syncs from the prop whenever the user clicks into a
   // different phrase. The PATCH happens against
@@ -532,6 +501,71 @@
     body: string,
     parentTranslationId: string | null,
   ): Promise<PublicTranslation> {
+    // T-14.3b: when the popup is showing a pending phrase selection
+    // (lemmaId is null because the synthetic token in ChapterBody
+    // stands in for a not-yet-saved phrase), route the submission
+    // through the phrase create-or-reuse endpoint and then attach
+    // the translation to that phrase. The popup still presents the
+    // single-word UI; the user just sees their translation save
+    // and the popup close as the chapter refreshes around the new
+    // phrase. parentTranslationId is dropped on this path — the
+    // fork-an-official-translation flow only applies to lemma rows
+    // today and there's no phrase translation to fork from yet.
+    if (pendingSelection && !token?.lemmaId) {
+      const phraseRes = await fetch('/api/v1/phrases', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          language: pendingSelection.language,
+          tokens: pendingSelection.surfaces,
+        }),
+      });
+      if (!phraseRes.ok) {
+        const text = await phraseRes.text().catch(() => '');
+        throw {
+          message: text || `Could not create phrase (${phraseRes.status})`,
+          status: phraseRes.status,
+        } as PostError;
+      }
+      const phraseJson = (await phraseRes.json()) as {
+        phrase: { id: string };
+      };
+      const phraseId = phraseJson.phrase.id;
+      const transRes = await fetch(
+        `/api/v1/phrases/${phraseId}/translations`,
+        {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ body }),
+        },
+      );
+      if (!transRes.ok) {
+        const text = await transRes.text().catch(() => '');
+        throw {
+          message: text || `Could not save translation (${transRes.status})`,
+          status: transRes.status,
+        } as PostError;
+      }
+      // Trigger the chapter-level refresh so the new phrase span
+      // picks up on the next render and the popup transitions out
+      // of pending mode.
+      onPhraseCreated?.(phraseId);
+      // The lemma-shaped caller doesn't actually use the returned
+      // PublicTranslation when pending — the popup closes via
+      // onPhraseCreated. Return a stub of the right shape so the
+      // type system stays happy.
+      return {
+        id: '',
+        body,
+        targetLanguage: 'en',
+        source: 'user',
+        sourceAttribution: null,
+        parentTranslationId: null,
+        upvotes: 0,
+        downvotes: 0,
+        createdAt: new Date().toISOString(),
+      } as unknown as PublicTranslation;
+    }
     if (!token || !token.lemmaId) throw new Error('Missing lemma id');
     const res = await fetch('/api/v1/translations', {
       method: 'POST',
@@ -659,7 +693,11 @@
   }
 
   async function submitNewTranslation() {
-    if (!token || !token.lemmaId) return;
+    if (!token) return;
+    // T-14.3b: pending phrase has no lemmaId; postTranslation
+    // routes that case through the phrase create-or-reuse path
+    // and the popup closes via onPhraseCreated.
+    if (!token.lemmaId && !pendingSelection) return;
     const trimmed = newTranslationBody.trim();
     if (trimmed.length === 0) {
       addError = 'Translation cannot be empty.';
@@ -670,10 +708,15 @@
     addError = null;
     try {
       await postTranslation(trimmed, null);
-      await refetchPayload(lemmaId);
+      // Skip the lemma-payload refetch on the pending path — there's
+      // no lemma to refetch, and the chapter-level callback closes
+      // the popup so the next open will see the committed phrase.
+      if (lemmaId) {
+        await refetchPayload(lemmaId);
+        notifyPersonalChange();
+      }
       newTranslationBody = '';
       showAddForm = false;
-      notifyPersonalChange();
     } catch (e) {
       addError = (e as PostError).message ?? (e as Error).message;
     } finally {
@@ -970,48 +1013,7 @@
      The panel is always open on desktop (static right column) and
      conditional on mobile (slides up only when a word is picked). -->
 <Sheet open={sheetOpen} onClose={onClose} title="" dimmed={false}>
-  {#if pendingSelection}
-    <!-- T-14.3a: phrase-create banner. Shown when the user
-         shift-clicked across two or more tokens; lists the
-         selected surfaces and offers Save (POSTs to
-         /api/v1/phrases) and Cancel. The popup's underlying
-         token + phrase rendering still shows below so the user
-         can compare the proposed phrase against the lemma it
-         covers. -->
-    <section class="sp-phrase-create" data-testid="word-popup-phrase-create">
-      <header class="sp-phrase-create-head">
-        <span class="sp-phrase-eyebrow">Create phrase</span>
-        <p class="sp-phrase-create-words">
-          {#each pendingSelection.surfaces as s, i (i)}<span
-              class="sp-phrase-create-word">{s}</span>{#if i < pendingSelection.surfaces.length - 1}<span
-                class="sp-phrase-create-sep"> · </span>{/if}{/each}
-        </p>
-      </header>
-      <div class="sp-phrase-create-actions">
-        <button
-          type="button"
-          data-testid="phrase-create-save"
-          disabled={phraseCreateSubmitting}
-          onclick={() => {
-            void submitPhraseCreate();
-          }}
-        >
-          {phraseCreateSubmitting ? 'Saving…' : 'Save phrase'}
-        </button>
-        <button
-          type="button"
-          data-testid="phrase-create-cancel"
-          disabled={phraseCreateSubmitting}
-          onclick={onClose}
-        >
-          Cancel
-        </button>
-        {#if phraseCreateError}
-          <span class="err small">{phraseCreateError}</span>
-        {/if}
-      </div>
-    </section>
-  {:else if selectionError}
+  {#if selectionError}
     <p class="err small sp-phrase-select-err">{selectionError}</p>
   {/if}
   {#if phrase}
@@ -1447,41 +1449,51 @@
         <p class="err small">Could not save vote: {voteError}</p>
       {/if}
 
-      {#if isOwner}
-        {#if showAddForm}
-          <form
-            class="add-form"
-            onsubmit={(e) => {
-              e.preventDefault();
-              void submitNewTranslation();
-            }}
-          >
-            <textarea
-              bind:this={addTextareaEl}
-              bind:value={newTranslationBody}
-              placeholder="Type your translation"
-              title={'Enter to save\nShift+Enter for a newline\nEsc to cancel'}
-              rows="2"
-              maxlength="500"
-              disabled={savingTranslation}
-              onkeydown={onAddFormKeydown}
-              onblur={onAddFormBlur}
-            ></textarea>
-            {#if addError}
-              <p class="err small">{addError}</p>
-            {/if}
-          </form>
-        {:else}
-          <button
-            type="button"
-            class="add-toggle"
-            onclick={() => {
-              showAddForm = true;
-            }}
-          >
-            + Add my translation
-          </button>
-        {/if}
+    {/if}
+
+    <!-- T-14.3b: "+ Add my translation" sits outside the
+         `{#if payload}` block so it surfaces both for normal lemma
+         tokens (after the lemma fetch resolves) and for the
+         synthetic pending-phrase token (where there's no lemmaId
+         and so no payload at all — the form's submit routes
+         through phrase create-or-reuse + phrase translation
+         POST). On the pending path the popup closes via the
+         chapter-level onPhraseCreated callback rather than
+         re-rendering its own translations list. -->
+    {#if isOwner && (payload || pendingSelection)}
+      {#if showAddForm}
+        <form
+          class="add-form"
+          onsubmit={(e) => {
+            e.preventDefault();
+            void submitNewTranslation();
+          }}
+        >
+          <textarea
+            bind:this={addTextareaEl}
+            bind:value={newTranslationBody}
+            placeholder="Type your translation"
+            title={'Enter to save\nShift+Enter for a newline\nEsc to cancel'}
+            rows="2"
+            maxlength="500"
+            disabled={savingTranslation}
+            onkeydown={onAddFormKeydown}
+            onblur={onAddFormBlur}
+          ></textarea>
+          {#if addError}
+            <p class="err small">{addError}</p>
+          {/if}
+        </form>
+      {:else}
+        <button
+          type="button"
+          class="add-toggle"
+          onclick={() => {
+            showAddForm = true;
+          }}
+        >
+          + Add my translation
+        </button>
       {/if}
     {/if}
 
@@ -1600,62 +1612,6 @@
   }
   .sp-phrase-status {
     margin-top: 0.5rem;
-  }
-  /* T-14.3a: phrase-create banner shown above the regular
-     popup body while a multi-token selection is pending Save /
-     Cancel. */
-  .sp-phrase-create {
-    margin: 0 0 1rem;
-    padding: 0.55rem 0.75rem 0.7rem;
-    border-radius: 8px;
-    background: color-mix(
-      in srgb,
-      var(--color-accent) 10%,
-      transparent
-    );
-    border: 1px dashed
-      color-mix(in srgb, var(--color-accent) 35%, transparent);
-  }
-  .sp-phrase-create-head {
-    display: flex;
-    flex-direction: column;
-    gap: 0.2rem;
-  }
-  .sp-phrase-create-words {
-    margin: 0;
-    font-size: 1rem;
-  }
-  .sp-phrase-create-word {
-    background: color-mix(
-      in srgb,
-      var(--color-accent) 14%,
-      transparent
-    );
-    border-radius: 4px;
-    padding: 0.05rem 0.25rem;
-  }
-  .sp-phrase-create-sep {
-    color: var(--ink-3, var(--color-fg-muted));
-  }
-  .sp-phrase-create-actions {
-    margin-top: 0.55rem;
-    display: flex;
-    align-items: center;
-    gap: 0.4rem;
-    flex-wrap: wrap;
-  }
-  .sp-phrase-create-actions button {
-    padding: 0.3rem 0.7rem;
-    border-radius: 6px;
-    border: 1px solid var(--rule, var(--color-border));
-    background: var(--card, var(--color-bg));
-    color: var(--ink, var(--color-fg));
-    cursor: pointer;
-    font-size: 0.85rem;
-  }
-  .sp-phrase-create-actions button:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
   }
   .sp-phrase-select-err {
     margin: 0 0 0.75rem;
