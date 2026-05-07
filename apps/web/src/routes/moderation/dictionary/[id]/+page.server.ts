@@ -168,7 +168,6 @@ const FIELD_NAMES = [
   'frequencyRank',
   'sourceAttribution',
 ] as const;
-type FieldName = (typeof FIELD_NAMES)[number];
 const fieldPatchSchema = z.object({
   field: z.enum(FIELD_NAMES),
   value: z.string().max(500),

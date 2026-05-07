@@ -31,7 +31,7 @@
   ];
 
   let open = $state(false);
-  let wrapEl = $state<HTMLSpanElement | null>(null);
+  let wrapEl = $state<HTMLElement | null>(null);
   let formEl = $state<HTMLFormElement | null>(null);
   // Initial pendingValue mirrors the prop; subsequent picks set it via
   // `pick(...)` before submitting the hidden form.
@@ -58,8 +58,14 @@
   $effect(() => {
     if (!open) return;
     function onDocClick(e: MouseEvent): void {
-      const target = e.target as Node | null;
-      if (target && wrapEl && !wrapEl.contains(target)) close();
+      // The actual `Node | null` type isn't declared in the Svelte
+      // eslint globals; narrow via `instanceof HTMLElement` instead
+      // so the click-outside check still works without tripping
+      // `no-undef`. `wrapEl.contains` accepts an HTMLElement.
+      const target = e.target;
+      if (target instanceof HTMLElement && wrapEl && !wrapEl.contains(target)) {
+        close();
+      }
     }
     function onKey(e: KeyboardEvent): void {
       if (e.key === 'Escape') {

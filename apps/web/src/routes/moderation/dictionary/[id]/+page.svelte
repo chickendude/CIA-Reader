@@ -14,21 +14,6 @@
   const formsList = $derived(data.forms ?? []);
   const availableParadigms = $derived(data.availableParadigms ?? []);
 
-  /**
-   * Provenance counts for the Forms section header. Curator / generator
-   * / imported / pipeline / quarantined — the chip row mirrors the
-   * grid's per-cell dots so the curator can see "how much of this
-   * paradigm is hand-edited?" at a glance.
-   */
-  const provCounts = $derived.by(() => {
-    const c = { curator: 0, generator: 0, import: 0, pipeline: 0, quarantined: 0 };
-    for (const f of formsList) {
-      if (f.quarantinedAt !== null) c.quarantined += 1;
-      else c[f.createdBy] += 1;
-    }
-    return c;
-  });
-
   function msgFor(section: string): string | null {
     if (!form) return null;
     if (form.section !== section) return null;
@@ -763,7 +748,7 @@
                 <span class="pcol-h">SINGULAR</span>
                 <span class="pcol-h">PLURAL</span>
                 {#each split.rows as row (row.key)}
-                  <span class="prow-l">{@html row.label}</span>
+                  <span class="prow-l">{row.label}</span>
                   <div class="pgrid-cell">
                     {#each row.sing as f (f.id)}
                       {@render formCellRow(f, true)}

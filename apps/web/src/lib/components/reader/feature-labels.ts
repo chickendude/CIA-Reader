@@ -155,5 +155,13 @@ export function getFeaturePills(
     }
   }
   out.sort((a, b) => a.sortOrder - b.sortOrder);
-  return out.map(({ sortOrder: _drop, ...rest }) => rest);
+  // Strip the internal `sortOrder` field — it was only used to
+  // sort and shouldn't leak to consumers (the catalog already
+  // hand-orders by category).
+  return out.map((p) => ({
+    featKey: p.featKey,
+    featValue: p.featValue,
+    shortLabel: p.shortLabel,
+    longLabel: p.longLabel,
+  }));
 }

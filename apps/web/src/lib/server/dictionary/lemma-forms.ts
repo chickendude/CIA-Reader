@@ -29,7 +29,7 @@ import { and, asc, desc, eq, ilike, isNull, ne, or, sql } from 'drizzle-orm';
 import { db, schema } from '../db/index.js';
 import { nlpClient } from '../nlp-client.js';
 import type { LanguageCode } from '@ciareader/shared-types';
-import type { Lemma, LemmaForm, ParadigmSlot } from '../db/schema.js';
+import type { Lemma, LemmaForm } from '../db/schema.js';
 
 import { generateForms, loadParadigm } from './paradigms.js';
 

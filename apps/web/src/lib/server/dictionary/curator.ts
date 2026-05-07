@@ -24,7 +24,7 @@
 import { and, asc, eq, inArray } from 'drizzle-orm';
 
 import { db, schema } from '../db/index.js';
-import { recordLemmaEdit, MissingReasonError } from './audit.js';
+import { recordLemmaEdit } from './audit.js';
 import { requireCanEditDictionary } from './permissions.js';
 import type {
   Lemma,

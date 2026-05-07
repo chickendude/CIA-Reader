@@ -96,5 +96,10 @@ export async function getFeaturePills(
     }
   }
   pills.sort((a, b) => a.sortOrder - b.sortOrder);
-  return pills.map(({ sortOrder: _drop, ...rest }) => rest);
+  return pills.map((p) => ({
+    featKey: p.featKey,
+    featValue: p.featValue,
+    shortLabel: p.shortLabel,
+    longLabel: p.longLabel,
+  }));
 }
