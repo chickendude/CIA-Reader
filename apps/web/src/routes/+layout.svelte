@@ -1,10 +1,16 @@
 <script lang="ts">
   import '$lib/styles/tokens.css';
   import AppShell from '$lib/components/shell/AppShell.svelte';
+  import VerifyEmailBanner from '$lib/components/auth/VerifyEmailBanner.svelte';
   import type { LayoutData } from './$types';
 
   let { data, children }: { data: LayoutData; children: import('svelte').Snippet } = $props();
 </script>
+
+<!-- T-11.7: renders only when locals.user.emailVerifiedAt is null.
+     Sits above AppShell so it spans full width across desktop rail +
+     mobile top strip layouts. -->
+<VerifyEmailBanner user={data.user} />
 
 <AppShell
   user={data.user}

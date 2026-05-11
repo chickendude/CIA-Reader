@@ -21,6 +21,7 @@ vi.mock('$lib/server/dictionary/translations.js', async () => {
 
 vi.mock('$lib/server/auth/require-user.js', () => ({
   requireUser: (...a: unknown[]) => requireUser(...a),
+  requireVerifiedUser: (...a: unknown[]) => requireUser(...a),
 }));
 
 type PatchFn = (typeof import('./+server.js'))['PATCH'];

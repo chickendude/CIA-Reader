@@ -57,7 +57,7 @@ describe('root +layout.server.ts load', () => {
     expect(userLanguageRows).not.toHaveBeenCalled();
   });
 
-  it('serializes only the four public user fields when signed in', async () => {
+  it('serializes only the public user fields when signed in', async () => {
     const data = await load(
       makeEvent({
         locals: {
@@ -66,6 +66,7 @@ describe('root +layout.server.ts load', () => {
             email: 'a@b.c',
             displayName: 'Alex',
             role: 'user',
+            emailVerifiedAt: new Date('2026-01-01T00:00:00Z'),
             // Fields that must NOT leak via the layout loader — these live on
             // the full User type but are not safe to send to every page.
             passwordHash: 'secret',
@@ -80,6 +81,8 @@ describe('root +layout.server.ts load', () => {
       email: 'a@b.c',
       displayName: 'Alex',
       role: 'user',
+      // T-11.7: layout exposes a boolean flag, not the raw timestamp.
+      emailVerified: true,
     });
   });
 

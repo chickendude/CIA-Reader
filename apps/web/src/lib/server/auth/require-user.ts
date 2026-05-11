@@ -55,3 +55,25 @@ export async function requireUser(event: RequestEvent): Promise<User> {
   if (!user) throw error(401, 'Unauthorized');
   return user;
 }
+
+/**
+ * Stable error-body message thrown by `requireVerifiedUser`. The
+ * frontend matches on this exact string to swap the generic 403 for
+ * an inline "resend verification" CTA. Matches the existing
+ * codebase convention of using `error(status, 'STABLE_CODE')`.
+ */
+export const EMAIL_NOT_VERIFIED = 'EMAIL_NOT_VERIFIED';
+
+/**
+ * Like `requireUser`, but additionally rejects users whose
+ * `email_verified_at` is null. Used to gate content-creating actions
+ * (translations, votes, reports) so a brand-new signup can't post
+ * publicly-visible content under an unverified email (T-11.7).
+ */
+export async function requireVerifiedUser(event: RequestEvent): Promise<User> {
+  const user = await requireUser(event);
+  if (!user.emailVerifiedAt) {
+    throw error(403, EMAIL_NOT_VERIFIED);
+  }
+  return user;
+}
