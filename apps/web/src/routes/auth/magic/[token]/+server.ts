@@ -14,7 +14,10 @@ import { isSecureRequest } from '../../../api/v1/auth/_helpers.js';
 export const GET: RequestHandler = async ({ params, cookies, url }) => {
   const user = await consumeMagicLink(params.token);
   if (!user) {
-    throw redirect(303, '/?auth_error=invalid_magic_link');
+    // Land back on /login (not /) so the inline error has a sensible
+    // place to render AND the user can immediately request a fresh
+    // link from the same page (T-11.7).
+    throw redirect(303, '/login?auth_error=invalid_magic_link');
   }
   const session = await createSession(user.id);
   setSessionCookie(cookies, session.token, session.expiresAt, isSecureRequest(url));

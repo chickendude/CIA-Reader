@@ -43,11 +43,25 @@ function readNext(url: URL): string {
   return raw;
 }
 
+/**
+ * Surfaces an inline message when the user arrives via a stale
+ * magic-link redirect (e.g. /auth/magic/<token> resolved to expired
+ * / already-used / invalid). The +server.ts that handles the magic
+ * URL forwards here with ?auth_error=invalid_magic_link.
+ */
+function readAuthError(url: URL): string | null {
+  const code = url.searchParams.get('auth_error');
+  if (code === 'invalid_magic_link') {
+    return 'That sign-in link is invalid or has expired. Request a new one below.';
+  }
+  return null;
+}
+
 export const load: PageServerLoad = ({ locals, url }) => {
   if (locals.user) {
     throw redirect(303, readNext(url));
   }
-  return { next: readNext(url) };
+  return { next: readNext(url), authError: readAuthError(url) };
 };
 
 export const actions: Actions = {

@@ -34,6 +34,10 @@
     </p>
   </header>
 
+  {#if data.authError}
+    <p class="err" role="alert">{data.authError}</p>
+  {/if}
+
   {#if passwordError}
     <p class="err" role="alert">{passwordError}</p>
   {/if}
