@@ -52,7 +52,7 @@ function readNext(url: URL): string {
 function readAuthError(url: URL): string | null {
   const code = url.searchParams.get('auth_error');
   if (code === 'invalid_magic_link') {
-    return 'That sign-in link is invalid or has expired. Request a new one below.';
+    return 'That sign-in link is invalid or has expired. Request a new one using the link at the top of the page.';
   }
   return null;
 }

@@ -34,9 +34,7 @@
     </header>
     <p class="err" role="alert">{data.authError}</p>
     <p class="sub">
-      You're still signed in. <a href={data.next}>Continue to the app</a>,
-      or use the "Verify your email" button at the top of any page to
-      request a fresh link.
+      Go to the <a href="/library">library</a> or request a new link.
     </p>
   {:else}
   <header>
