@@ -58,10 +58,17 @@ function readAuthError(url: URL): string | null {
 }
 
 export const load: PageServerLoad = ({ locals, url }) => {
-  if (locals.user) {
+  const authError = readAuthError(url);
+  // A logged-in visitor who hit /login by accident gets bounced to
+  // their post-login target. Exception: if they got here via a stale
+  // magic-link redirect (auth_error set), we render so they can see
+  // *why* the link they clicked didn't work — otherwise the failure
+  // is invisible and they'll keep wondering why "click the email" is
+  // doing nothing.
+  if (locals.user && !authError) {
     throw redirect(303, readNext(url));
   }
-  return { next: readNext(url), authError: readAuthError(url) };
+  return { next: readNext(url), authError };
 };
 
 export const actions: Actions = {
