@@ -20,7 +20,7 @@
  */
 import { error, json } from '@sveltejs/kit';
 
-import { requireUser } from '$lib/server/auth/require-user.js';
+import { requireVerifiedUser } from '$lib/server/auth/require-user.js';
 import {
   consumeRateLimit,
   rateLimitHeaders,
@@ -45,7 +45,7 @@ const EPUB_UPLOADS_PER_DAY = 10;
 const UPLOAD_WINDOW_MS = 24 * 60 * 60 * 1_000;
 
 export const POST: RequestHandler = async (event) => {
-  const user = await requireUser(event);
+  const user = await requireVerifiedUser(event);
   let fd: FormData;
   try {
     fd = await event.request.formData();

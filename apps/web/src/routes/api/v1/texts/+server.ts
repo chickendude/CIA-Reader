@@ -17,7 +17,7 @@
 import { error, json } from '@sveltejs/kit';
 import { z } from 'zod';
 
-import { requireUser } from '$lib/server/auth/require-user.js';
+import { requireVerifiedUser } from '$lib/server/auth/require-user.js';
 import {
   consumeRateLimit,
   rateLimitHeaders,
@@ -62,7 +62,7 @@ const txtSchema = z.object({
 const body = z.union([txtSchema, pasteSchema]);
 
 export const POST: RequestHandler = async (event) => {
-  const user = await requireUser(event);
+  const user = await requireVerifiedUser(event);
   const input = await parseJson(event.request, body);
   try {
     const requestLimit = await consumeRateLimit(event, user.id, {
