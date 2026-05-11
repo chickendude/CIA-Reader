@@ -158,8 +158,18 @@ describe('/login loader', () => {
     const data = (await callLoad(
       'http://x/login?auth_error=invalid_magic_link',
       { id: 'logged-in-user' },
-    )) as { authError: string | null };
+    )) as { authError: string | null; alreadySignedIn: boolean };
     expect(data.authError).toMatch(/invalid or has expired/i);
+    expect(data.alreadySignedIn).toBe(true);
+  });
+
+  it('signals alreadySignedIn=false for anonymous visitors so the forms render', async () => {
+    const data = (await callLoad('http://x/login')) as {
+      authError: string | null;
+      alreadySignedIn: boolean;
+    };
+    expect(data.alreadySignedIn).toBe(false);
+    expect(data.authError).toBeNull();
   });
 
   it('ignores unknown ?auth_error values without crashing', async () => {

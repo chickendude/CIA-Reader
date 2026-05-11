@@ -64,11 +64,18 @@ export const load: PageServerLoad = ({ locals, url }) => {
   // magic-link redirect (auth_error set), we render so they can see
   // *why* the link they clicked didn't work — otherwise the failure
   // is invisible and they'll keep wondering why "click the email" is
-  // doing nothing.
+  // doing nothing. The template branches on `alreadySignedIn` so
+  // those users see the error + a "continue to library" link,
+  // not the password / magic-link forms which would be redundant
+  // for them.
   if (locals.user && !authError) {
     throw redirect(303, readNext(url));
   }
-  return { next: readNext(url), authError };
+  return {
+    next: readNext(url),
+    authError,
+    alreadySignedIn: locals.user !== null,
+  };
 };
 
 export const actions: Actions = {
