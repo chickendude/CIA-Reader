@@ -9,7 +9,7 @@
 import { error, json } from '@sveltejs/kit';
 import { z } from 'zod';
 
-import { requireUser } from '$lib/server/auth/require-user.js';
+import { requireVerifiedUser } from '$lib/server/auth/require-user.js';
 import {
   deleteUserTranslation,
   publicTranslation,
@@ -34,7 +34,7 @@ function mapTranslationError(err: unknown): never {
 }
 
 export const PATCH: RequestHandler = async (event) => {
-  const user = await requireUser(event);
+  const user = await requireVerifiedUser(event);
   const id = event.params.id;
   if (!id || !UUID_RE.test(id)) throw error(400, 'Invalid translation id');
   const input = await parseJson(event.request, patchBody);
@@ -47,7 +47,7 @@ export const PATCH: RequestHandler = async (event) => {
 };
 
 export const DELETE: RequestHandler = async (event) => {
-  const user = await requireUser(event);
+  const user = await requireVerifiedUser(event);
   const id = event.params.id;
   if (!id || !UUID_RE.test(id)) throw error(400, 'Invalid translation id');
   try {

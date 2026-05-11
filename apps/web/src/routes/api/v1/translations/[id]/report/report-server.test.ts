@@ -23,6 +23,7 @@ vi.mock('$lib/server/moderation/reports.js', async () => {
 
 vi.mock('$lib/server/auth/require-user.js', () => ({
   requireUser: (...a: unknown[]) => requireUser(...a),
+  requireVerifiedUser: (...a: unknown[]) => requireUser(...a),
 }));
 
 type PostFn = (typeof import('./+server.js'))['POST'];

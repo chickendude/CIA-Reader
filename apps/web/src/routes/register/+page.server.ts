@@ -12,7 +12,10 @@ import { z } from 'zod';
 
 import { db, schema } from '$lib/server/db/index.js';
 import { hashPassword } from '$lib/server/auth/password.js';
+import { createMagicLink } from '$lib/server/auth/magic-link.js';
 import { createSession, setSessionCookie } from '$lib/server/auth/sessions.js';
+import { buildMagicLinkEmail, sendMail } from '$lib/server/email/index.js';
+import { APP_BASE_URL } from '$lib/server/env.js';
 import {
   emailSchema,
   isSecureRequest,
@@ -95,6 +98,20 @@ export const actions: Actions = {
 
     const session = await createSession(created.id);
     setSessionCookie(cookies, session.token, session.expiresAt, isSecureRequest(url));
+
+    // Send a verification magic-link (T-11.7). The same magic-link
+    // consumer in $lib/server/auth/magic-link.ts sets
+    // email_verified_at on click, so this email doubles as both
+    // "welcome" and "click to verify your email." Failures are
+    // logged but don't block signup — the user can resend later
+    // via /api/v1/auth/verify-email/resend.
+    try {
+      const token = await createMagicLink(created.id);
+      const verifyUrl = `${APP_BASE_URL}/auth/magic/${encodeURIComponent(token)}`;
+      await sendMail(buildMagicLinkEmail(created.email, verifyUrl));
+    } catch (err) {
+      console.error('Failed to send verification email on register:', err);
+    }
 
     throw redirect(303, readNext(url));
   },

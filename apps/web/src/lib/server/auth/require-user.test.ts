@@ -33,7 +33,7 @@ vi.mock('../db/index.js', () => ({
 }));
 
 // Import SUT after the mock registration.
-const { resolveUser, requireUser } = await import('./require-user.js');
+const { resolveUser, requireUser, requireVerifiedUser } = await import('./require-user.js');
 
 function makeEvent({
   bearer,
@@ -143,5 +143,33 @@ describe('requireUser', () => {
 
   it('throws 401 when the caller is unauthenticated', async () => {
     await expect(requireUser(makeEvent())).rejects.toMatchObject({ status: 401 });
+  });
+});
+
+describe('requireVerifiedUser', () => {
+  it('returns the user when emailVerifiedAt is set', async () => {
+    const verified = {
+      id: 'u1',
+      emailVerifiedAt: new Date(),
+    } as unknown as Awaited<ReturnType<typeof requireVerifiedUser>>;
+    const user = await requireVerifiedUser(makeEvent({ locals: { user: verified } }));
+    expect(user).toBe(verified);
+  });
+
+  it('throws 403 with EMAIL_NOT_VERIFIED when emailVerifiedAt is null', async () => {
+    const unverified = {
+      id: 'u2',
+      emailVerifiedAt: null,
+    } as unknown as Awaited<ReturnType<typeof requireVerifiedUser>>;
+    await expect(
+      requireVerifiedUser(makeEvent({ locals: { user: unverified } })),
+    ).rejects.toMatchObject({
+      status: 403,
+      body: { message: 'EMAIL_NOT_VERIFIED' },
+    });
+  });
+
+  it('falls through to requireUser 401 when unauthenticated', async () => {
+    await expect(requireVerifiedUser(makeEvent())).rejects.toMatchObject({ status: 401 });
   });
 });

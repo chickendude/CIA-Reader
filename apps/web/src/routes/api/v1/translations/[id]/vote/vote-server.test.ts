@@ -6,6 +6,7 @@ const setTranslationVote = vi.fn();
 
 vi.mock('$lib/server/auth/require-user.js', () => ({
   requireUser: (...a: unknown[]) => requireUser(...a),
+  requireVerifiedUser: (...a: unknown[]) => requireUser(...a),
 }));
 
 vi.mock('$lib/server/dictionary/votes.js', () => {

@@ -49,6 +49,10 @@ export const load: LayoutServerLoad = async ({ locals, cookies }) => {
           email: locals.user.email,
           displayName: locals.user.displayName,
           role: locals.user.role,
+          // T-11.7: layout drives the VerifyEmailBanner. Boolean
+          // (rather than the timestamp) to keep the page-data
+          // surface small and serializable-friendly.
+          emailVerified: locals.user.emailVerifiedAt !== null,
         }
       : null,
     currentLanguage,

@@ -24,6 +24,7 @@ vi.mock('$lib/server/texts/upload.js', async () => {
 
 vi.mock('$lib/server/auth/require-user.js', () => ({
   requireUser: (...a: unknown[]) => requireUser(...a),
+  requireVerifiedUser: (...a: unknown[]) => requireUser(...a),
 }));
 
 vi.mock('$lib/server/auth/rate-limits.js', async () => {

@@ -25,6 +25,18 @@
 </svelte:head>
 
 <div class="page">
+  {#if data.alreadySignedIn && data.authError}
+    <!-- Signed-in user landed here via a stale magic-link redirect.
+         Skip the sign-in forms entirely — they're redundant. Just
+         show the error and a way back to the app. -->
+    <header>
+      <h1>Link expired</h1>
+    </header>
+    <p class="err" role="alert">{data.authError}</p>
+    <p class="sub">
+      Go to the <a href="/library">library</a> or request a new link.
+    </p>
+  {:else}
   <header>
     <h1>Sign in</h1>
     <p class="sub">
@@ -33,6 +45,10 @@
       </a>.
     </p>
   </header>
+
+  {#if data.authError}
+    <p class="err" role="alert">{data.authError}</p>
+  {/if}
 
   {#if passwordError}
     <p class="err" role="alert">{passwordError}</p>
@@ -88,6 +104,7 @@
       <button type="submit" class="secondary">Email me a link</button>
     </form>
   </section>
+  {/if}
 </div>
 
 <style>

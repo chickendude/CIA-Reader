@@ -43,11 +43,39 @@ function readNext(url: URL): string {
   return raw;
 }
 
+/**
+ * Surfaces an inline message when the user arrives via a stale
+ * magic-link redirect (e.g. /auth/magic/<token> resolved to expired
+ * / already-used / invalid). The +server.ts that handles the magic
+ * URL forwards here with ?auth_error=invalid_magic_link.
+ */
+function readAuthError(url: URL): string | null {
+  const code = url.searchParams.get('auth_error');
+  if (code === 'invalid_magic_link') {
+    return 'That sign-in link is invalid or has expired. Request a new one using the link at the top of the page.';
+  }
+  return null;
+}
+
 export const load: PageServerLoad = ({ locals, url }) => {
-  if (locals.user) {
+  const authError = readAuthError(url);
+  // A logged-in visitor who hit /login by accident gets bounced to
+  // their post-login target. Exception: if they got here via a stale
+  // magic-link redirect (auth_error set), we render so they can see
+  // *why* the link they clicked didn't work — otherwise the failure
+  // is invisible and they'll keep wondering why "click the email" is
+  // doing nothing. The template branches on `alreadySignedIn` so
+  // those users see the error + a "continue to library" link,
+  // not the password / magic-link forms which would be redundant
+  // for them.
+  if (locals.user && !authError) {
     throw redirect(303, readNext(url));
   }
-  return { next: readNext(url) };
+  return {
+    next: readNext(url),
+    authError,
+    alreadySignedIn: locals.user !== null,
+  };
 };
 
 export const actions: Actions = {

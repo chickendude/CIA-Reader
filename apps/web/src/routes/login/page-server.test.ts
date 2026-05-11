@@ -143,6 +143,46 @@ describe('/login loader', () => {
     expect(res.status).toBe(303);
     expect(res.location).toBe('/library');
   });
+
+  it('surfaces ?auth_error=invalid_magic_link as a friendly inline message (T-11.7)', async () => {
+    const data = (await callLoad(
+      'http://x/login?auth_error=invalid_magic_link',
+    )) as { next: string; authError: string | null };
+    expect(data.authError).toMatch(/invalid or has expired/i);
+  });
+
+  it('renders (does NOT redirect) when a logged-in user lands here with auth_error', async () => {
+    // Without this, an unverified user who clicks an expired
+    // verification link gets bounced to /library and never finds out
+    // the link failed.
+    const data = (await callLoad(
+      'http://x/login?auth_error=invalid_magic_link',
+      { id: 'logged-in-user' },
+    )) as { authError: string | null; alreadySignedIn: boolean };
+    expect(data.authError).toMatch(/invalid or has expired/i);
+    expect(data.alreadySignedIn).toBe(true);
+  });
+
+  it('signals alreadySignedIn=false for anonymous visitors so the forms render', async () => {
+    const data = (await callLoad('http://x/login')) as {
+      authError: string | null;
+      alreadySignedIn: boolean;
+    };
+    expect(data.alreadySignedIn).toBe(false);
+    expect(data.authError).toBeNull();
+  });
+
+  it('ignores unknown ?auth_error values without crashing', async () => {
+    const data = (await callLoad('http://x/login?auth_error=bogus')) as {
+      authError: string | null;
+    };
+    expect(data.authError).toBeNull();
+  });
+
+  it('returns authError: null when no error param is present', async () => {
+    const data = (await callLoad('http://x/login')) as { authError: string | null };
+    expect(data.authError).toBeNull();
+  });
 });
 
 describe('/login signin action', () => {
