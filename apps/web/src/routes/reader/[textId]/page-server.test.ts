@@ -174,7 +174,11 @@ describe('/reader/[textId] loader', () => {
       mode: string;
       isOwner: boolean;
     };
-    expect(data.anchor).toEqual({ chapterIdx: 0, tokenIdx: 0 });
+    expect(data.anchor).toEqual({
+      chapterIdx: 0,
+      tokenIdx: 0,
+      endOfChapter: false,
+    });
     // Default reader_layout_mode is 'page' (matches the user_languages
     // column default — T-5.1b's loader reads through to that default).
     expect(data.mode).toBe('page');
@@ -185,8 +189,27 @@ describe('/reader/[textId] loader', () => {
     getReadableText.mockResolvedValueOnce(ownedTextWithChapters(5));
     const data = (await callLoad(
       `http://x/reader/${VALID_ID}?chapter=2&token=10`,
-    )) as { anchor: { chapterIdx: number; tokenIdx: number } };
-    expect(data.anchor).toEqual({ chapterIdx: 2, tokenIdx: 10 });
+    )) as { anchor: { chapterIdx: number; tokenIdx: number; endOfChapter: boolean } };
+    expect(data.anchor).toEqual({
+      chapterIdx: 2,
+      tokenIdx: 10,
+      endOfChapter: false,
+    });
+  });
+
+  it('honors ?endOfChapter=1 by landing on the last chapter', async () => {
+    getReadableText.mockResolvedValueOnce(ownedTextWithChapters(5));
+    const data = (await callLoad(
+      `http://x/reader/${VALID_ID}?endOfChapter=1`,
+    )) as { anchor: { chapterIdx: number; tokenIdx: number; endOfChapter: boolean } };
+    // 5 chapters → last index is 4. The reader component then
+    // jumps to the last *page* of that chapter via its own
+    // `pendingJumpToLast` effect.
+    expect(data.anchor).toEqual({
+      chapterIdx: 4,
+      tokenIdx: 0,
+      endOfChapter: true,
+    });
   });
 
   it('clamps a chapter param above the chapter count to the last chapter', async () => {

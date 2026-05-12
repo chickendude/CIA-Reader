@@ -1,0 +1,1 @@
+ALTER TYPE "public"."text_source_type" ADD VALUE 'zip';

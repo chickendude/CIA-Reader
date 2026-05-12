@@ -85,7 +85,7 @@
       const body = (await res.json()) as { tokensWritten: number };
       reprocessFeedback = {
         kind: 'ok',
-        text: `Reprocessed — ${body.tokensWritten} tokens written.`,
+        text: `Reprocessed — ${body.tokensWritten} words written.`,
       };
       // Refresh the page-data so the new tokens render in place
       // without a full reload.
@@ -351,7 +351,10 @@
             {data.collectionContext.collectionTitle}
           </a>
           <span class="reader-coll-pos">
-            {data.collectionContext.position + 1}/{data.collectionContext.totalCount}
+            Chapter {data.collectionContext.position + 1} of {data.collectionContext.totalCount}
+            <span class="reader-coll-tokens">
+              · {data.chapters[data.anchor.chapterIdx]?.tokenCount?.toLocaleString() ?? 0} words
+            </span>
           </span>
           <span class="reader-coll-nav">
             {#if data.collectionContext.prevTextId}
@@ -488,6 +491,11 @@
       lineSpacing={readerSettings.lineSpacing}
       fontFamily={readerSettings.fontFamily}
       readingWidth={readerSettings.readingWidth}
+      prevTextId={data.collectionContext?.prevTextId ?? null}
+      nextTextId={data.collectionContext?.nextTextId ?? null}
+      collectionPosition={data.collectionContext?.position ?? null}
+      collectionTotal={data.collectionContext?.totalCount ?? null}
+      startAtEndOfChapter={data.anchor.endOfChapter ?? false}
     />
   {:else if data.mode === 'paged_scroll'}
     <ReaderScroll
@@ -629,6 +637,9 @@
   .reader-coll-pos {
     font-family: var(--font-mono-display, var(--font-mono));
     font-feature-settings: 'tnum';
+  }
+  .reader-coll-tokens {
+    color: var(--ink-3, var(--color-fg-muted));
   }
   .reader-coll-nav {
     display: flex;

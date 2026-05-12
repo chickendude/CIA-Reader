@@ -1018,6 +1018,7 @@ export const textSourceType = pgEnum('text_source_type', [
   'paste',
   'txt',
   'epub',
+  'zip',
 ]);
 
 export const textStatus = pgEnum('text_status', [
@@ -1949,6 +1950,14 @@ export const collectionItems = pgTable(
       .notNull()
       .references(() => texts.id, { onDelete: 'cascade' }),
     position: integer('position').notNull(),
+    // Optional parent-section label sourced from the publisher's
+    // EPUB navigation document. When the source TOC nests chapters
+    // under a Part heading (e.g. "Part 1: Make It Obvious"), each
+    // member chapter records its parent here so the collection
+    // detail page can render the same grouping. Null when the
+    // chapter has no parent section (flat books, manually-curated
+    // collections, etc.).
+    sectionTitle: text('section_title'),
     createdAt: timestamp('created_at', { withTimezone: true })
       .notNull()
       .defaultNow(),

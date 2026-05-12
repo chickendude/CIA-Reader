@@ -75,6 +75,7 @@ vi.mock('./db/index.js', () => ({
 const {
   CollectionError,
   createCollection,
+  createChapterBookCollection,
   updateCollection,
   deleteCollection,
   addCollectionItem,
@@ -177,6 +178,129 @@ describe('createCollection', () => {
     await expect(
       createCollection({ ownerId: OWNER.id, language: 'hi', title: 't' }),
     ).rejects.toThrow(/insert returned no row/);
+  });
+});
+
+describe('createChapterBookCollection', () => {
+  /** Per-chapter draft used across the happy-path tests. */
+  const draft = (idx: number, title: string | null = null) => ({
+    idx,
+    title,
+    body: `body of chapter ${idx}.`,
+    tokenCount: 4,
+  });
+
+  it('creates collection + N texts + N items + N nlp jobs in one transaction', async () => {
+    // Queue stages: collection insert, then per chapter (text, textChapter,
+    // collectionItem, nlpJob) × 2 = 9 entries.
+    queue.push([{ ...baseCollection, id: 'col-1' }]);
+    queue.push([{ id: 'text-1', ownerId: OWNER.id, language: 'hi' }]);
+    queue.push([{ id: 'chap-1', textId: 'text-1', idx: 0 }]);
+    queue.push([{ collectionId: 'col-1', textId: 'text-1', position: 0 }]);
+    queue.push([{ id: 'job-1', textId: 'text-1', status: 'pending' }]);
+    queue.push([{ id: 'text-2', ownerId: OWNER.id, language: 'hi' }]);
+    queue.push([{ id: 'chap-2', textId: 'text-2', idx: 0 }]);
+    queue.push([{ collectionId: 'col-1', textId: 'text-2', position: 1 }]);
+    queue.push([{ id: 'job-2', textId: 'text-2', status: 'pending' }]);
+
+    const result = await createChapterBookCollection({
+      ownerId: OWNER.id,
+      language: 'hi',
+      title: 'My book',
+      sourceType: 'epub',
+      chapters: [draft(0, 'Chapter One'), draft(1, 'Chapter Two')],
+    });
+
+    expect(result.collection.id).toBe('col-1');
+    expect(result.texts.map((t) => t.id)).toEqual(['text-1', 'text-2']);
+    expect(result.items.map((i) => i.position)).toEqual([0, 1]);
+    expect(fakeDb.transaction).toHaveBeenCalledOnce();
+  });
+
+  it('uses each chapter draft title, falling back to "Untitled"', async () => {
+    queue.push([{ ...baseCollection, id: 'col-1' }]);
+    // chapter without title → fallback "Untitled"
+    queue.push([{ id: 'text-1' }]);
+    queue.push([{ id: 'chap-1' }]);
+    queue.push([{ collectionId: 'col-1', textId: 'text-1', position: 0 }]);
+    queue.push([{ id: 'job-1' }]);
+    // chapter with title → preserved verbatim
+    queue.push([{ id: 'text-2' }]);
+    queue.push([{ id: 'chap-2' }]);
+    queue.push([{ collectionId: 'col-1', textId: 'text-2', position: 1 }]);
+    queue.push([{ id: 'job-2' }]);
+
+    await createChapterBookCollection({
+      ownerId: OWNER.id,
+      language: 'hi',
+      title: 'My book',
+      sourceType: 'zip',
+      chapters: [draft(0, null), draft(1, 'Real Title')],
+    });
+
+    // chain.values is called for every insert. The text inserts are
+    // 2 and 6 in zero-indexed order: collection, text1, chap1, item1,
+    // job1, text2, chap2, item2, job2.
+    const textInserts = chain.values.mock.calls
+      .map((c) => c[0] as Record<string, unknown>)
+      .filter((v) => v.sourceType === 'zip');
+    expect(textInserts).toHaveLength(2);
+    expect(textInserts[0]!.title).toBe('Untitled');
+    expect(textInserts[1]!.title).toBe('Real Title');
+  });
+
+  it('prepends the chapter title to the body so NLP tokenizes it for lookup', async () => {
+    queue.push([{ ...baseCollection, id: 'col-1' }]);
+    queue.push([{ id: 'text-1' }]);
+    queue.push([{ id: 'chap-1' }]);
+    queue.push([{ collectionId: 'col-1', textId: 'text-1', position: 0 }]);
+    queue.push([{ id: 'job-1' }]);
+
+    await createChapterBookCollection({
+      ownerId: OWNER.id,
+      language: 'hi',
+      title: 'Book',
+      sourceType: 'epub',
+      chapters: [
+        { idx: 0, title: 'Compound Effect', body: 'Body content here.', tokenCount: 3 },
+      ],
+    });
+
+    // text_chapters insert is the only `.values()` call with a
+    // `body` field. Pull it out and check the body now leads with
+    // the title separated by a blank line.
+    const chapterInsert = chain.values.mock.calls
+      .map((c) => c[0] as Record<string, unknown>)
+      .find((v) => typeof v.body === 'string');
+    expect(chapterInsert).toBeDefined();
+    expect(chapterInsert!.body).toBe('Compound Effect\n\nBody content here.');
+    // tokenCount should reflect the title's words too, not just the
+    // original body's.
+    expect(chapterInsert!.tokenCount).toBeGreaterThan(3);
+  });
+
+  it('rejects an empty chapter list', async () => {
+    await expect(
+      createChapterBookCollection({
+        ownerId: OWNER.id,
+        language: 'hi',
+        title: 'X',
+        sourceType: 'epub',
+        chapters: [],
+      }),
+    ).rejects.toBeInstanceOf(CollectionError);
+  });
+
+  it('rejects a blank title', async () => {
+    await expect(
+      createChapterBookCollection({
+        ownerId: OWNER.id,
+        language: 'hi',
+        title: '   ',
+        sourceType: 'epub',
+        chapters: [draft(0)],
+      }),
+    ).rejects.toBeInstanceOf(CollectionError);
   });
 });
 
@@ -286,11 +410,33 @@ describe('deleteCollection', () => {
     ).rejects.toMatchObject({ status: 403 });
   });
 
-  it('issues a delete for the owner', async () => {
-    queue.push([baseCollection]); // loadCollection
+  it('issues a delete for the owner of a non-chapter-book collection', async () => {
+    queue.push([{ ...baseCollection, kind: 'course' }]); // loadCollection
     queue.push([]); // delete().where() resolution
     await deleteCollection({ collectionId: 'col-1', actor: OWNER });
     expect(fakeDb.delete).toHaveBeenCalledOnce();
+    // Single tx-less delete — non-chapter-book path.
+    expect(fakeDb.transaction).not.toHaveBeenCalled();
+  });
+
+  it('cascades to member texts when deleting a chapter_book', async () => {
+    queue.push([{ ...baseCollection, kind: 'chapter_book' }]); // loadCollection
+    queue.push([{ textId: 'text-1' }, { textId: 'text-2' }, { textId: 'text-3' }]); // member ids
+    queue.push([]); // tx delete collection
+    queue.push([]); // tx delete texts
+    await deleteCollection({ collectionId: 'col-1', actor: OWNER });
+    expect(fakeDb.transaction).toHaveBeenCalledOnce();
+    // Two deletes inside the tx: collection + texts.
+    expect(fakeDb.delete).toHaveBeenCalledTimes(2);
+  });
+
+  it('skips the texts-delete when the chapter book is empty', async () => {
+    queue.push([{ ...baseCollection, kind: 'chapter_book' }]);
+    queue.push([]); // no member ids
+    queue.push([]); // tx delete collection
+    await deleteCollection({ collectionId: 'col-1', actor: OWNER });
+    expect(fakeDb.transaction).toHaveBeenCalledOnce();
+    expect(fakeDb.delete).toHaveBeenCalledTimes(1);
   });
 });
 

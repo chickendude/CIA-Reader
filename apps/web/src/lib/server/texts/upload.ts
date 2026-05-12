@@ -29,17 +29,19 @@ import { eq } from 'drizzle-orm';
 
 import { db, schema } from '../db/index.js';
 import type { LanguageCode } from '@ciareader/shared-types';
-import { isSupportedLanguage } from '@ciareader/shared-types';
-import type { Text, TextChapter, User } from '../db/schema.js';
+import { isSupportedLanguage, LANGUAGES } from '@ciareader/shared-types';
+import type { Collection, Text, TextChapter, User } from '../db/schema.js';
 import {
   splitIntoChapters,
   estimateTokenCount,
   type ChapterDraft,
 } from './chunking.js';
 import { parseEpub, EpubParseError } from './epub.js';
+import { parseChapterZip, ZipParseError } from './zip.js';
 import { enqueueNlpJob } from './jobs.js';
+import { createChapterBookCollection } from '../collections.js';
 
-export { EpubParseError };
+export { EpubParseError, ZipParseError };
 
 export class TextValidationError extends Error {
   constructor(
@@ -48,6 +50,44 @@ export class TextValidationError extends Error {
   ) {
     super(message);
     this.name = 'TextValidationError';
+  }
+}
+
+/**
+ * Thrown when an EPUB's `<dc:language>` is one of our supported codes
+ * but doesn't match the language the user selected at upload time.
+ * The form/API layer surfaces the message so the user can fix the
+ * dropdown without re-picking the file.
+ */
+export class EpubLanguageMismatchError extends TextValidationError {
+  constructor(
+    public readonly declaredLanguage: LanguageCode,
+    public readonly selectedLanguage: string,
+  ) {
+    const declaredName = LANGUAGES[declaredLanguage].displayName;
+    const selectedName = LANGUAGES[selectedLanguage as LanguageCode]?.displayName
+      ?? selectedLanguage;
+    super(
+      `This EPUB declares its language as ${declaredName} (${declaredLanguage}),` +
+        ` but you selected ${selectedName}. Re-select the language or upload a different file.`,
+    );
+    this.name = 'EpubLanguageMismatchError';
+  }
+}
+
+/**
+ * Thrown when an EPUB's `<dc:language>` is set to something outside
+ * the supported set (Hindi / Marathi / Odia). MVP only handles three
+ * languages — an English / French / etc. EPUB would tokenize as
+ * garbage if we just trusted the user's dropdown.
+ */
+export class EpubLanguageUnsupportedError extends TextValidationError {
+  constructor(public readonly declaredLanguage: string) {
+    super(
+      `This EPUB is declared as language '${declaredLanguage}', which isn't supported yet ` +
+        `(only Hindi / Marathi / Odia are available).`,
+    );
+    this.name = 'EpubLanguageUnsupportedError';
   }
 }
 
@@ -68,12 +108,17 @@ export const MAX_TXT_BYTES = 10_000_000;
  * embedded video / audio that we can't use anyway. */
 export const MAX_EPUB_BYTES = 50_000_000;
 
+/** Hard cap on a chapter-book ZIP upload. Same envelope as EPUB —
+ * a few MB of `.txt` files compress trivially, but we don't want the
+ * surface area for someone to bury a multi-gig archive in the form. */
+export const MAX_ZIP_BYTES = 50_000_000;
+
 /** Hard cap on the visible title; the library card and `<title>` tag
  * both render this without truncation. */
 export const MAX_TITLE_LEN = 200;
 export const MIN_TITLE_LEN = 1;
 
-export type SourceType = 'paste' | 'txt' | 'epub';
+export type SourceType = 'paste' | 'txt' | 'epub' | 'zip';
 
 export type CreatePastedTextInput = {
   language: string;
@@ -257,32 +302,136 @@ export async function createTxtText(
   });
 }
 
-export type CreateEpubTextInput = {
+export type CreateChapterBookFromEpubInput = {
   language: string;
   title: string;
   /** Raw EPUB archive bytes. */
   epubBytes: ArrayBuffer | Uint8Array;
 };
 
+export type CreateChapterBookFromZipInput = {
+  language: string;
+  title: string;
+  /** Raw ZIP archive bytes. */
+  zipBytes: ArrayBuffer | Uint8Array;
+};
+
 /**
- * Create a text from an EPUB upload (T-4.3).
+ * Result of the EPUB/ZIP chapter-book creators. Two shapes because
+ * the single-chapter case falls back to a plain `texts` row (a 1-item
+ * collection is awkward UX — the reader page goes straight there).
  *
- * EPUB chapter structure is authored — the spine is the canonical
- * order, each spine item is a chapter — so we feed the parsed
- * chapters straight into `text_chapters` without going through the
- * paragraph auto-splitter. The chunker WOULD fire only if a single
- * EPUB chapter is itself enormous (>50k tokens), which essentially
- * never happens in real publishing.
- *
- * Per-chapter NFC normalization happens here rather than in the
- * parser so the parser stays a pure XML/HTML utility usable elsewhere
- * (e.g. an admin re-import path later).
+ * Callers branch on `kind` to redirect the user to either
+ * `/reader/<id>` (plain text) or `/collections/<id>` (chapter book).
  */
-export async function createEpubText(
+export type ChapterBookResult =
+  | { kind: 'text'; text: Text; chapter: TextChapter; chapters: TextChapter[] }
+  | {
+      kind: 'collection';
+      collection: Collection;
+      texts: Text[];
+    };
+
+/**
+ * A `ChapterDraft` extended with the parent-section heading from
+ * the source nav doc. Carried through `buildChapterDrafts` into
+ * `createChapterBookCollection`, which writes it to the
+ * `collection_items.section_title` column for grouped rendering on
+ * the collection detail page.
+ */
+export type ChapterDraftWithSection = ChapterDraft & {
+  section: string | null;
+};
+
+/**
+ * Run each parsed chapter through the auto-splitter and produce
+ * contiguous `ChapterDraft`s. A short chapter passes through as one
+ * draft; an enormous chapter (>50k tokens — basically never in
+ * real publishing) gets split at paragraph boundaries with the title
+ * suffixed `"(cont. N)"` so the order remains obvious in the reader.
+ *
+ * Shared by the EPUB and ZIP paths; the only thing that differs
+ * between them is where the per-chapter title/body pairs come from.
+ * The optional `section` per input chapter — only set by the EPUB
+ * path when the nav doc nests this chapter under a parent heading —
+ * propagates onto every sub-chunk so a "(cont. 1)" split inherits
+ * its parent's part membership.
+ */
+function buildChapterDrafts(
+  chapters: Array<{ title: string | null; body: string; section?: string | null }>,
+): ChapterDraftWithSection[] {
+  const drafts: ChapterDraftWithSection[] = [];
+  let nextIdx = 0;
+  for (const c of chapters) {
+    const body = c.body.normalize('NFC').replace(/\r\n?/g, '\n');
+    const subChapters = splitIntoChapters(body);
+    const section = c.section ?? null;
+    for (let i = 0; i < subChapters.length; i += 1) {
+      const sub = subChapters[i]!;
+      // First sub-chapter inherits the source's title; further sub-
+      // splits get a derived "(cont. N)" suffix or fall back to the
+      // chunker's title.
+      let derivedTitle: string | null;
+      if (i === 0) derivedTitle = c.title;
+      else if (c.title) derivedTitle = `${c.title} (cont. ${i})`;
+      else derivedTitle = sub.title;
+      drafts.push({
+        idx: nextIdx,
+        title: derivedTitle,
+        body: sub.body,
+        tokenCount: sub.tokenCount,
+        section,
+      });
+      nextIdx += 1;
+    }
+  }
+  return drafts;
+}
+
+/**
+ * Convert a single-chapter `ChapterDraft` into a plain pasted text.
+ * Used by the EPUB/ZIP fallback when only one chapter came out of
+ * the file — there's no point spinning up a 1-item collection just
+ * to wrap a single text.
+ */
+async function createSingleChapterFallback(
   owner: Pick<User, 'id'>,
-  input: CreateEpubTextInput,
-  now: Date = new Date(),
+  args: {
+    sourceType: 'epub' | 'zip';
+    language: LanguageCode;
+    title: string;
+    draft: ChapterDraft;
+    now: Date;
+  },
 ): Promise<CreatedText> {
+  return insertTextWithChapters(owner, {
+    sourceType: args.sourceType,
+    language: args.language,
+    title: args.title,
+    chapters: [args.draft],
+    now: args.now,
+  });
+}
+
+/**
+ * Create a chapter-book collection from an EPUB.
+ *
+ * Each spine chapter becomes its own `texts` row (so each gets its
+ * own status, NLP job, progress %, audio binding) inside a
+ * `collections` row of kind `chapter_book`. If the EPUB declares
+ * `<dc:language>` and it disagrees with the user's selection, the
+ * upload is rejected so we don't tokenize a Marathi book under the
+ * Hindi pipeline.
+ *
+ * When only one readable chapter exists after parsing + chunking,
+ * the result is a single `texts` row (kind `text`) — callers
+ * redirect to `/reader/<id>` rather than a 1-item collection page.
+ */
+export async function createChapterBookFromEpub(
+  owner: Pick<User, 'id'>,
+  input: CreateChapterBookFromEpubInput,
+  now: Date = new Date(),
+): Promise<ChapterBookResult> {
   if (!isSupportedLanguage(input.language)) {
     throw new TextValidationError(
       `Unsupported language '${input.language}' (expected one of: hi, mr, or)`,
@@ -296,10 +445,7 @@ export async function createEpubText(
   if (title.length > MAX_TITLE_LEN) {
     throw new TextValidationError(`title exceeds ${MAX_TITLE_LEN} characters`);
   }
-  const byteLength =
-    input.epubBytes instanceof Uint8Array
-      ? input.epubBytes.byteLength
-      : input.epubBytes.byteLength;
+  const byteLength = input.epubBytes.byteLength;
   if (byteLength > MAX_EPUB_BYTES) {
     throw new TextValidationError(
       `EPUB exceeds ${MAX_EPUB_BYTES.toLocaleString()} bytes`,
@@ -311,44 +457,129 @@ export async function createEpubText(
 
   const parsed = await parseEpub(input.epubBytes);
 
-  // For each parsed chapter, run it through the chunker — short
-  // chapters stay one row, freakishly long ones get split. We then
-  // re-number `idx` across the flattened result so the order is
-  // contiguous regardless of any per-chapter sub-splits.
-  const drafts: ChapterDraft[] = [];
-  let nextIdx = 0;
-  for (const c of parsed) {
-    const body = c.body.normalize('NFC').replace(/\r\n?/g, '\n');
-    const subChapters = splitIntoChapters(body);
-    for (let i = 0; i < subChapters.length; i += 1) {
-      const sub = subChapters[i]!;
-      // The first sub-chapter inherits the EPUB chapter's title; any
-      // additional splits within that chapter get a derived title or
-      // fall back to "{title} (cont.)".
-      let derivedTitle: string | null;
-      if (i === 0) derivedTitle = c.title;
-      else if (c.title) derivedTitle = `${c.title} (cont. ${i})`;
-      else derivedTitle = sub.title;
-      drafts.push({
-        idx: nextIdx,
-        title: derivedTitle,
-        body: sub.body,
-        tokenCount: sub.tokenCount,
-      });
-      nextIdx += 1;
+  // Language verification (T-EPUB language gate). Only fires when the
+  // EPUB actually declares its language — most authoring tools do, but
+  // we don't penalize files that don't.
+  if (parsed.language !== null && parsed.language !== language) {
+    if (isSupportedLanguage(parsed.language)) {
+      throw new EpubLanguageMismatchError(
+        parsed.language as LanguageCode,
+        input.language,
+      );
     }
+    throw new EpubLanguageUnsupportedError(parsed.language);
   }
+
+  const drafts = buildChapterDrafts(parsed.chapters);
   if (drafts.length === 0) {
     throw new TextValidationError('EPUB has no readable chapters');
   }
 
-  return insertTextWithChapters(owner, {
-    sourceType: 'epub',
+  if (drafts.length === 1) {
+    const single = await createSingleChapterFallback(owner, {
+      sourceType: 'epub',
+      language,
+      title,
+      draft: drafts[0]!,
+      now,
+    });
+    return {
+      kind: 'text',
+      text: single.text,
+      chapter: single.chapter,
+      chapters: single.chapters,
+    };
+  }
+
+  const created = await createChapterBookCollection({
+    ownerId: owner.id,
     language,
     title,
+    sourceType: 'epub',
     chapters: drafts,
     now,
   });
+  return {
+    kind: 'collection',
+    collection: created.collection,
+    texts: created.texts,
+  };
+}
+
+/**
+ * Create a chapter-book collection from a ZIP of `.txt` files.
+ *
+ * Layout convention is "flat top-level `.txt` files, lexicographic
+ * order" — see `parseChapterZip` for the spec. Filename minus the
+ * `.txt` extension is the chapter title. Unlike EPUB there's no
+ * declared language tag; we trust the user's dropdown selection.
+ *
+ * Single-chapter fallback matches the EPUB path: one `.txt` file
+ * lands as a plain `texts` row, not a 1-item collection.
+ */
+export async function createChapterBookFromZip(
+  owner: Pick<User, 'id'>,
+  input: CreateChapterBookFromZipInput,
+  now: Date = new Date(),
+): Promise<ChapterBookResult> {
+  if (!isSupportedLanguage(input.language)) {
+    throw new TextValidationError(
+      `Unsupported language '${input.language}' (expected one of: hi, mr, or)`,
+    );
+  }
+  const language = input.language as LanguageCode;
+  const title = normalizeTitle(input.title ?? '');
+  if (title.length < MIN_TITLE_LEN) {
+    throw new TextValidationError('title is required');
+  }
+  if (title.length > MAX_TITLE_LEN) {
+    throw new TextValidationError(`title exceeds ${MAX_TITLE_LEN} characters`);
+  }
+  const byteLength = input.zipBytes.byteLength;
+  if (byteLength > MAX_ZIP_BYTES) {
+    throw new TextValidationError(
+      `ZIP exceeds ${MAX_ZIP_BYTES.toLocaleString()} bytes`,
+    );
+  }
+  if (byteLength === 0) {
+    throw new TextValidationError('ZIP file is empty');
+  }
+
+  const parsed = await parseChapterZip(input.zipBytes);
+  const drafts = buildChapterDrafts(parsed);
+  if (drafts.length === 0) {
+    throw new TextValidationError('ZIP has no readable chapters');
+  }
+
+  if (drafts.length === 1) {
+    const single = await createSingleChapterFallback(owner, {
+      sourceType: 'zip',
+      language,
+      title,
+      draft: drafts[0]!,
+      now,
+    });
+    return {
+      kind: 'text',
+      text: single.text,
+      chapter: single.chapter,
+      chapters: single.chapters,
+    };
+  }
+
+  const created = await createChapterBookCollection({
+    ownerId: owner.id,
+    language,
+    title,
+    sourceType: 'zip',
+    chapters: drafts,
+    now,
+  });
+  return {
+    kind: 'collection',
+    collection: created.collection,
+    texts: created.texts,
+  };
 }
 
 /**
@@ -389,3 +620,32 @@ export async function getReadableText(
  * @deprecated Use `getReadableText` directly.
  */
 export const getOwnedText = getReadableText;
+
+/**
+ * Delete a text. Owner-or-admin only; matches the policy on the
+ * collection delete endpoint. Cascades through `text_chapters`,
+ * `text_tokens`, `nlp_jobs`, `text_shares`, `text_group_shares`,
+ * `user_text_progress`, `collection_items`, and `audio_files` —
+ * every dependent table declares `onDelete: 'cascade'` on its
+ * `text_id` FK, so a single DELETE on `texts` clears the lot.
+ *
+ * Throws `TextValidationError(404)` for a missing text, or for a
+ * non-owner non-admin actor — same status code in both cases so we
+ * don't leak existence to a viewer who isn't allowed to delete.
+ */
+export async function deleteText(
+  textId: string,
+  actor: Pick<User, 'id' | 'role'>,
+): Promise<void> {
+  const [row] = (await db
+    .select({ id: schema.texts.id, ownerId: schema.texts.ownerId })
+    .from(schema.texts)
+    .where(eq(schema.texts.id, textId))
+    .limit(1)) as Array<{ id: string; ownerId: string | null }>;
+  if (!row) throw new TextValidationError('Text not found', 404);
+  const isOwner = row.ownerId !== null && row.ownerId === actor.id;
+  if (!isOwner && actor.role !== 'admin') {
+    throw new TextValidationError('Text not found', 404);
+  }
+  await db.delete(schema.texts).where(eq(schema.texts.id, textId));
+}

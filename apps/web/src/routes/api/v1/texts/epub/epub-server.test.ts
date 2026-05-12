@@ -4,7 +4,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const createEpubText = vi.fn();
+const createChapterBookFromEpub = vi.fn();
 const requireUser = vi.fn();
 const consumeRateLimit = vi.fn();
 
@@ -14,7 +14,8 @@ vi.mock('$lib/server/texts/upload.js', async () => {
   );
   return {
     ...actual,
-    createEpubText: (...a: unknown[]) => createEpubText(...a),
+    createChapterBookFromEpub: (...a: unknown[]) =>
+      createChapterBookFromEpub(...a),
   };
 });
 
@@ -73,7 +74,7 @@ async function callPost(
 }
 
 beforeEach(() => {
-  createEpubText.mockReset();
+  createChapterBookFromEpub.mockReset();
   requireUser.mockReset();
   consumeRateLimit.mockReset();
   consumeRateLimit.mockResolvedValue({
@@ -88,20 +89,23 @@ afterEach(() => {
 });
 
 describe('POST /api/v1/texts/epub', () => {
-  it('returns 201 with chapterCount on a happy path', async () => {
-    createEpubText.mockResolvedValueOnce({
-      text: {
-        id: 'text-1',
+  it('returns 201 with the new collection on a multi-chapter EPUB', async () => {
+    createChapterBookFromEpub.mockResolvedValueOnce({
+      kind: 'collection',
+      collection: {
+        id: 'col-1',
         ownerId: USER.id,
         language: 'hi',
         title: 'My novel',
-        sourceType: 'epub',
-        status: 'pending',
+        kind: 'chapter_book',
         visibility: 'private',
         createdAt: new Date('2026-04-27T00:00:00Z'),
       },
-      chapter: { id: 'c0' },
-      chapters: [{ id: 'c0' }, { id: 'c1' }, { id: 'c2' }],
+      texts: [
+        { id: 'text-1' },
+        { id: 'text-2' },
+        { id: 'text-3' },
+      ],
     });
     const res = (await callPost({
       language: 'hi',
@@ -110,12 +114,43 @@ describe('POST /api/v1/texts/epub', () => {
     })) as Response;
     expect(res.status).toBe(201);
     const json = await res.json();
+    expect(json.kind).toBe('collection');
+    expect(json.collection.id).toBe('col-1');
+    expect(json.collection.kind).toBe('chapter_book');
+    expect(json.textCount).toBe(3);
+  });
+
+  it('returns 201 with a plain text on a single-chapter EPUB (fallback)', async () => {
+    createChapterBookFromEpub.mockResolvedValueOnce({
+      kind: 'text',
+      text: {
+        id: 'text-1',
+        ownerId: USER.id,
+        language: 'hi',
+        title: 'Solo',
+        sourceType: 'epub',
+        status: 'pending',
+        visibility: 'private',
+        createdAt: new Date('2026-04-27T00:00:00Z'),
+      },
+      chapter: { id: 'c0' },
+      chapters: [{ id: 'c0' }],
+    });
+    const res = (await callPost({
+      language: 'hi',
+      title: 'Solo',
+      file: buildEpubFile(),
+    })) as Response;
+    expect(res.status).toBe(201);
+    const json = await res.json();
+    expect(json.kind).toBe('text');
     expect(json.text.sourceType).toBe('epub');
-    expect(json.chapterCount).toBe(3);
+    expect(json.chapterCount).toBe(1);
   });
 
   it('falls back to the filename when no title is supplied', async () => {
-    createEpubText.mockResolvedValueOnce({
+    createChapterBookFromEpub.mockResolvedValueOnce({
+      kind: 'text',
       text: {
         id: 'text-1',
         ownerId: USER.id,
@@ -133,7 +168,7 @@ describe('POST /api/v1/texts/epub', () => {
       language: 'hi',
       file: buildEpubFile(undefined, 'A Hindi Novel.epub'),
     });
-    expect(createEpubText).toHaveBeenCalledWith(
+    expect(createChapterBookFromEpub).toHaveBeenCalledWith(
       { id: USER.id },
       expect.objectContaining({ title: 'A Hindi Novel' }),
     );
@@ -146,7 +181,7 @@ describe('POST /api/v1/texts/epub', () => {
       file: buildEpubFile(),
     })) as { status: number };
     expect(res.status).toBe(400);
-    expect(createEpubText).not.toHaveBeenCalled();
+    expect(createChapterBookFromEpub).not.toHaveBeenCalled();
   });
 
   it('rejects a missing file with 400', async () => {
@@ -167,7 +202,7 @@ describe('POST /api/v1/texts/epub', () => {
 
   it('maps EpubParseError to 400', async () => {
     const { EpubParseError } = await import('$lib/server/texts/upload.js');
-    createEpubText.mockRejectedValueOnce(new EpubParseError('bad zip'));
+    createChapterBookFromEpub.mockRejectedValueOnce(new EpubParseError('bad zip'));
     const res = (await callPost({
       language: 'hi',
       title: 'X',
@@ -182,6 +217,6 @@ describe('POST /api/v1/texts/epub', () => {
       null,
     )) as { status: number };
     expect(res.status).toBe(401);
-    expect(createEpubText).not.toHaveBeenCalled();
+    expect(createChapterBookFromEpub).not.toHaveBeenCalled();
   });
 });

@@ -1,5 +1,5 @@
 /**
- * POST /api/v1/texts/epub (T-4.3).
+ * POST /api/v1/texts/epub (T-4.3, extended for chapter-book upload).
  *
  * Multipart endpoint for EPUB uploads. The request body is form-data
  * with three fields:
@@ -14,9 +14,16 @@
  * primitive — every browser <input type="file"> form action posts it
  * natively.
  *
- * Response shape mirrors POST /api/v1/texts (T-4.1/T-4.2): 201 with
- * the new text metadata + `chapterCount` so the redirect target can
- * surface "uploaded N chapters" in M5.
+ * Response shape:
+ *
+ *   - Multi-chapter EPUB → 201 with `{ kind: 'collection',
+ *     collection, textCount }`. Each spine chapter becomes its own
+ *     `texts` row inside a `collections` row of kind `chapter_book`.
+ *   - Single-chapter EPUB → 201 with `{ kind: 'text', text,
+ *     chapterCount: 1 }` (1-item collections are awkward UX).
+ *
+ * Clients branch on `kind` to redirect to `/collections/<id>` or
+ * `/reader/<id>`.
  */
 import { error, json } from '@sveltejs/kit';
 
@@ -27,7 +34,7 @@ import {
   RequestRateLimitError,
 } from '$lib/server/auth/rate-limits.js';
 import {
-  createEpubText,
+  createChapterBookFromEpub,
   EpubParseError,
   TextValidationError,
   MAX_EPUB_BYTES,
@@ -91,7 +98,7 @@ export const POST: RequestHandler = async (event) => {
       limit: EPUB_UPLOADS_PER_DAY,
       windowMs: UPLOAD_WINDOW_MS,
     });
-    const created = await createEpubText(
+    const created = await createChapterBookFromEpub(
       { id: user.id },
       {
         language,
@@ -99,20 +106,40 @@ export const POST: RequestHandler = async (event) => {
         epubBytes,
       },
     );
-    const { text } = created;
+    if (created.kind === 'text') {
+      const { text } = created;
+      return json(
+        {
+          kind: 'text' as const,
+          text: {
+            id: text.id,
+            ownerId: text.ownerId,
+            language: text.language,
+            title: text.title,
+            sourceType: text.sourceType,
+            status: text.status,
+            visibility: text.visibility,
+            createdAt: text.createdAt,
+          },
+          chapterCount: 1,
+        },
+        { status: 201, headers: rateLimitHeaders(requestLimit) },
+      );
+    }
+    const { collection } = created;
     return json(
       {
-        text: {
-          id: text.id,
-          ownerId: text.ownerId,
-          language: text.language,
-          title: text.title,
-          sourceType: text.sourceType,
-          status: text.status,
-          visibility: text.visibility,
-          createdAt: text.createdAt,
+        kind: 'collection' as const,
+        collection: {
+          id: collection.id,
+          ownerId: collection.ownerId,
+          language: collection.language,
+          title: collection.title,
+          kind: collection.kind,
+          visibility: collection.visibility,
+          createdAt: collection.createdAt,
         },
-        chapterCount: created.chapters.length,
+        textCount: created.texts.length,
       },
       { status: 201, headers: rateLimitHeaders(requestLimit) },
     );

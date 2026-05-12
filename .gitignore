@@ -43,3 +43,9 @@ coverage.lcov
 # checked-in fixtures, prod runs the fetch step on demand.
 apps/web/data/dictionaries/*/raw.*
 apps/web/data/dictionaries/*/raw_*
+
+# Playwright (e2e tests)
+apps/web/e2e/.auth/
+apps/web/playwright-report/
+apps/web/test-results/
+apps/web/playwright/.cache/

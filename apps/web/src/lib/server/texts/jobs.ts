@@ -64,19 +64,41 @@ export type EnqueueResult = {
 };
 
 /**
+ * A subset of the Drizzle `db` API that both the top-level `db` and a
+ * transaction handle expose — enough for `enqueueNlpJob` to run inside
+ * a transaction (so newly-inserted `texts` rows are visible for the
+ * FK) without coupling the helper to the transaction's full type.
+ */
+type DbOrTx = Pick<typeof db, 'insert'>;
+
+/**
  * Insert a `nlp_jobs` row and tell the dispatcher to wake the worker.
  * The text's own `status` stays `pending` until the worker flips it
  * via `markTextProcessing` — splitting "queued" from "started" lets
  * the UI show "waiting in queue" vs "processing" if we add that
  * distinction later.
+ *
+ * Pass `tx` when calling from inside `db.transaction(...)` so the
+ * insert participates in the same transaction — otherwise the
+ * `nlp_jobs.text_id` FK fires against rows that aren't visible yet.
+ *
+ * Dispatch behavior:
+ *  - Without `tx`: the dispatcher fires immediately (legacy contract).
+ *  - With `tx`: dispatch is deferred — the result carries a `flush()`
+ *    the caller MUST call after the transaction commits. Firing it
+ *    inside the tx would race the worker against uncommitted rows
+ *    (the in-process dispatcher's `processTextNow` reads via the
+ *    global `db`, which doesn't see in-flight tx writes).
  */
 export async function enqueueNlpJob(args: {
   textId: string;
   chapterIds: string[];
   now?: Date;
-}): Promise<EnqueueResult> {
+  tx?: DbOrTx;
+}): Promise<EnqueueResult & { flush?: () => Promise<void> }> {
   const now = args.now ?? new Date();
-  const [job] = await db
+  const conn: DbOrTx = args.tx ?? db;
+  const [job] = await conn
     .insert(schema.nlpJobs)
     .values({
       textId: args.textId,
@@ -85,11 +107,18 @@ export async function enqueueNlpJob(args: {
     })
     .returning();
   if (!job) throw new Error('Failed to insert nlp_jobs row');
-  await activeDispatcher.dispatch({
+  const dispatchArgs = {
     jobId: (job as NlpJob).id,
     textId: args.textId,
     chapterIds: args.chapterIds,
-  });
+  };
+  if (args.tx) {
+    return {
+      job: job as NlpJob,
+      flush: () => activeDispatcher.dispatch(dispatchArgs),
+    };
+  }
+  await activeDispatcher.dispatch(dispatchArgs);
   return { job: job as NlpJob };
 }
 

@@ -9,10 +9,59 @@
   and a leading "Add a text" tile on the Your tab.
 -->
 <script lang="ts">
+  import { invalidateAll } from '$app/navigation';
   import { coverForId } from '$lib/components/library/cover.js';
+  import Modal from '$lib/components/overlay/Modal.svelte';
   import type { PageData } from './$types';
 
   let { data }: { data: PageData } = $props();
+
+  // Shared confirm-delete modal — used for both text cards and
+  // chapter-book collection cards. Native browser confirm() doesn't
+  // match the rest of the app's visual language (see
+  // feedback_ui_contrast: filled accent surfaces, focus traps, etc.).
+  let pendingDelete = $state<{
+    kind: 'text' | 'collection';
+    id: string;
+    title: string;
+  } | null>(null);
+  let deleting = $state(false);
+  let deleteError = $state<string | null>(null);
+
+  function askDeleteText(id: string, title: string) {
+    pendingDelete = { kind: 'text', id, title };
+    deleteError = null;
+  }
+  function askDeleteCollection(id: string, title: string) {
+    pendingDelete = { kind: 'collection', id, title };
+    deleteError = null;
+  }
+  function closeDelete() {
+    if (deleting) return;
+    pendingDelete = null;
+    deleteError = null;
+  }
+  async function confirmDelete() {
+    if (!pendingDelete || deleting) return;
+    deleting = true;
+    deleteError = null;
+    try {
+      const url =
+        pendingDelete.kind === 'text'
+          ? `/api/v1/texts/${pendingDelete.id}`
+          : `/api/v1/collections/${pendingDelete.id}`;
+      const res = await fetch(url, { method: 'DELETE' });
+      if (!res.ok) {
+        deleteError =
+          (await res.text().catch(() => '')) || `HTTP ${res.status}`;
+        return;
+      }
+      pendingDelete = null;
+      await invalidateAll();
+    } finally {
+      deleting = false;
+    }
+  }
 
   const activePage = $derived(
     data.tab === 'collections' ? data.collectionsPage : data.page,
@@ -146,36 +195,83 @@
         </a>
       {/each}
     {:else}
+      {#each data.chapterBookCards as col (col.id)}
+        <div class="lib-card-wrap">
+          <a class="card lib-card" href={`/collections/${col.id}`}>
+            <div class={`lib-cover cover-${coverForId(col.id)}`}>
+              <div class="cover-title">{col.title}</div>
+              <div class="cover-chips">
+                <span class="chip">chapter book</span>
+                {#if col.visibility !== 'private'}
+                  <span class="chip">{col.visibility}</span>
+                {/if}
+                {#if col.estimatedComprehensionPct !== null}
+                  <span class="chip chip-pct" title="Estimated comprehension">
+                    {col.estimatedComprehensionPct}% known
+                  </span>
+                {/if}
+              </div>
+            </div>
+            <div class="body">
+              <div class="kind-row">
+                <span class="kind-tag">book</span>
+                <span class="kind-meta">{col.textCount} {col.textCount === 1 ? 'chapter' : 'chapters'}</span>
+              </div>
+              <div class="title-dev">{col.title}</div>
+            </div>
+          </a>
+          {#if data.tab === 'your'}
+            <button
+              type="button"
+              class="lib-card-del"
+              aria-label="Delete {col.title}"
+              title="Delete"
+              onclick={() => askDeleteCollection(col.id, col.title)}
+            >×</button>
+          {/if}
+        </div>
+      {/each}
       {#each data.page.cards as card (card.id)}
         {@const pct = data.textComprehension?.[card.id] ?? null}
-        <a class="card lib-card" href={`/reader/${card.id}`}>
-          <div class={`lib-cover cover-${coverForId(card.id)}`}>
-            <div class="cover-title">{card.title}</div>
-            <div class="cover-chips">
-              <span class="chip status-{card.status}">{card.status}</span>
-              {#if card.visibility !== 'private'}
-                <span class="chip">{card.visibility}</span>
-              {/if}
-              {#if pct !== null}
-                <span class="chip chip-pct" title="Estimated comprehension">
-                  {pct}% known
-                </span>
-              {/if}
+        <div class="lib-card-wrap">
+          <a class="card lib-card" href={`/reader/${card.id}`}>
+            <div class={`lib-cover cover-${coverForId(card.id)}`}>
+              <div class="cover-title">{card.title}</div>
+              <div class="cover-chips">
+                <span class="chip status-{card.status}">{card.status}</span>
+                {#if card.visibility !== 'private'}
+                  <span class="chip">{card.visibility}</span>
+                {/if}
+                {#if pct !== null}
+                  <span class="chip chip-pct" title="Estimated comprehension">
+                    {pct}% known
+                  </span>
+                {/if}
+              </div>
             </div>
-          </div>
-          <div class="body">
-            <div class="kind-row">
-              <span class="kind-tag">{card.sourceType}</span>
-              <span class="kind-meta">{card.language}</span>
+            <div class="body">
+              <div class="kind-row">
+                <span class="kind-tag">{card.sourceType}</span>
+                <span class="kind-meta">{card.language}</span>
+              </div>
+              <div class="title-dev">{card.title}</div>
             </div>
-            <div class="title-dev">{card.title}</div>
-          </div>
-        </a>
+          </a>
+          {#if data.tab === 'your'}
+            <button
+              type="button"
+              class="lib-card-del"
+              aria-label="Delete {card.title}"
+              title="Delete"
+              onclick={() => askDeleteText(card.id, card.title)}
+            >×</button>
+          {/if}
+        </div>
       {/each}
     {/if}
   </div>
 
-  {#if data.tab === 'collections' ? data.collections.length === 0 : data.page.cards.length === 0}
+  {#if data.tab === 'collections' ? data.collections.length === 0 : data.page.cards.length === 0 && data.chapterBookCards.length === 0}
     <p class="empty">
       {#if data.tab === 'your'}
         You haven't uploaded any texts yet — try the
@@ -212,6 +308,47 @@
     </nav>
   {/if}
 </section>
+
+<Modal
+  open={pendingDelete !== null}
+  onClose={closeDelete}
+  title={pendingDelete?.kind === 'collection' ? 'Delete chapter book' : 'Delete text'}
+  width={420}
+>
+  {#if pendingDelete}
+    <p class="del-body">
+      Delete <strong>“{pendingDelete.title}”</strong>?
+      {#if pendingDelete.kind === 'collection'}
+        Every chapter, its tokens, audio, and progress goes with it.
+      {:else}
+        This removes the text, its chapters, tokens, audio, and
+        progress.
+      {/if}
+      It can't be undone.
+    </p>
+    {#if deleteError}
+      <p class="del-err" role="alert">{deleteError}</p>
+    {/if}
+  {/if}
+  {#snippet footer()}
+    <button
+      type="button"
+      class="del-cancel"
+      onclick={closeDelete}
+      disabled={deleting}
+    >
+      Cancel
+    </button>
+    <button
+      type="button"
+      class="del-confirm"
+      onclick={confirmDelete}
+      disabled={deleting}
+    >
+      {deleting ? 'Deleting…' : 'Delete'}
+    </button>
+  {/snippet}
+</Modal>
 
 <style>
   .content {
@@ -319,6 +456,94 @@
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
     gap: 1rem;
+  }
+
+  /* A wrapper so we can stack a delete affordance over the card link
+     without nesting a <button> inside an <a>. The wrapper itself has
+     no visual chrome — the card link still owns the card box. */
+  .lib-card-wrap {
+    position: relative;
+    display: flex;
+  }
+  .lib-card-wrap > .lib-card {
+    flex: 1;
+  }
+  .lib-card-del {
+    position: absolute;
+    top: 0.5rem;
+    right: 0.5rem;
+    z-index: 2;
+    width: 28px;
+    height: 28px;
+    border-radius: 999px;
+    border: 1px solid var(--card-edge, var(--color-border));
+    background: var(--paper, var(--color-bg));
+    color: var(--ink, var(--color-fg));
+    font-size: 1.2rem;
+    line-height: 1;
+    display: grid;
+    place-items: center;
+    cursor: pointer;
+    opacity: 0;
+    transition:
+      opacity 150ms ease,
+      background-color 150ms ease,
+      color 150ms ease;
+  }
+  .lib-card-wrap:hover .lib-card-del,
+  .lib-card-del:focus-visible {
+    opacity: 1;
+  }
+  .lib-card-del:hover,
+  .lib-card-del:focus-visible {
+    background: var(--err, #b94545);
+    color: #fff;
+    border-color: var(--err, #b94545);
+  }
+  .lib-card-del:focus-visible {
+    outline: 2px solid var(--accent, var(--color-accent));
+    outline-offset: 2px;
+  }
+  /* Touch / coarse-pointer devices have no hover state — keep the
+     delete affordance always visible so phone users can reach it. */
+  @media (hover: none) {
+    .lib-card-del {
+      opacity: 1;
+    }
+  }
+
+  .del-body {
+    margin: 0;
+    color: var(--ink, var(--color-fg));
+    line-height: 1.4;
+  }
+  .del-err {
+    margin: 0.6rem 0 0;
+    color: var(--err, #b94545);
+    font-size: 0.85rem;
+  }
+  .del-cancel,
+  .del-confirm {
+    min-height: 38px;
+    padding: 0 0.85rem;
+    border-radius: 6px;
+    font: inherit;
+    cursor: pointer;
+  }
+  .del-cancel {
+    background: transparent;
+    border: 1px solid var(--rule, var(--color-border));
+    color: var(--ink, var(--color-fg));
+  }
+  .del-confirm {
+    background: var(--err, #b94545);
+    color: #fff;
+    border: 0;
+  }
+  .del-cancel:disabled,
+  .del-confirm:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
   }
 
   .card {

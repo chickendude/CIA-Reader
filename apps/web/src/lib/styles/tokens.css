@@ -189,7 +189,12 @@
 
   --accent: oklch(0.78 0.13 70);
   --accent-soft: oklch(0.78 0.13 70 / 0.18);
-  --accent-ink: oklch(0.86 0.11 70);
+  /* Ink that sits ON the accent fill. Must be DARK in dark mode so it
+     contrasts the bright saffron (a near-equal-lightness ink made the
+     "Reprocess all chapters" button unreadable). Keeps a slight
+     saffron tint to harmonize. Approx contrast vs --accent: 6.8:1
+     (WCAG AAA for normal text). */
+  --accent-ink: oklch(0.2 0.04 70);
 
   --w-l1-bg: oklch(0.3 0.05 70);
   --w-l2-bg: oklch(0.38 0.08 68);

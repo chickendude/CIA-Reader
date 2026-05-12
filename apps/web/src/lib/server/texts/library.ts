@@ -70,6 +70,23 @@ function clampPage(opts: { limit?: number; offset?: number }): {
 }
 
 /**
+ * Exclude texts that exist purely as chapters of a chapter-book
+ * collection. The collection card carries the user-facing entry point
+ * — surfacing each chapter as its own library card would mean a
+ * 30-chapter EPUB clutters the index with 30 extra rows.
+ *
+ * `course` / `anthology` member texts still surface as their own
+ * cards: those collections curate standalone texts that the user may
+ * also want to find directly.
+ */
+const NOT_A_CHAPTER_BOOK_MEMBER = sql`NOT EXISTS (
+  SELECT 1 FROM collection_items ci
+  INNER JOIN collections c ON c.id = ci.collection_id
+  WHERE ci.text_id = ${schema.texts.id}
+    AND c.kind = 'chapter_book'
+)`;
+
+/**
  * The user's own imports, newest first.
  */
 export async function listOwnedTexts(
@@ -77,7 +94,7 @@ export async function listOwnedTexts(
   opts: { limit?: number; offset?: number; language?: LanguageCode } = {},
 ): Promise<ListPage> {
   const { limit, offset } = clampPage(opts);
-  const conditions = [eq(schema.texts.ownerId, viewer.id)];
+  const conditions = [eq(schema.texts.ownerId, viewer.id), NOT_A_CHAPTER_BOOK_MEMBER];
   if (opts.language) {
     conditions.push(eq(schema.texts.language, opts.language));
   }
@@ -145,6 +162,7 @@ export async function listSharedTexts(
       sql`, `,
     )})`,
     sql`${schema.texts.ownerId} IS DISTINCT FROM ${viewer.id}`,
+    NOT_A_CHAPTER_BOOK_MEMBER,
   ];
   if (opts.language) {
     conditions.push(eq(schema.texts.language, opts.language));
@@ -183,7 +201,7 @@ export async function listOfficialTexts(
   opts: { limit?: number; offset?: number; language?: LanguageCode } = {},
 ): Promise<ListPage> {
   const { limit, offset } = clampPage(opts);
-  const conditions = [eq(schema.texts.visibility, 'official')];
+  const conditions = [eq(schema.texts.visibility, 'official'), NOT_A_CHAPTER_BOOK_MEMBER];
   if (opts.language) {
     conditions.push(eq(schema.texts.language, opts.language));
   }
