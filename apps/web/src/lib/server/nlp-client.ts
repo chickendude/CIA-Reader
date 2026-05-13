@@ -1,4 +1,28 @@
+import { Agent, type Dispatcher } from 'undici';
+
 import { NLP_SERVICE_URL } from './env.js';
+
+/**
+ * Undici's default `headersTimeout` and `bodyTimeout` are 5 minutes
+ * each — fine for a typical web fetch, way too short for Stanza's
+ * Hindi pipeline running on CPU. Long chapters can take 10+ minutes
+ * for the parser to emit response headers, surfacing as
+ * `UND_ERR_HEADERS_TIMEOUT` in `processTextNow` and a "fetch failed"
+ * `status_error` row in the texts table.
+ *
+ * 30 minutes is enough headroom for the largest book chapters we've
+ * seen in practice; chunking the request on the dispatcher side is
+ * the proper long-term fix, but bumping the patience here unblocks
+ * the in-process worker without an app-level rewrite. `keepAlive`
+ * stays on so the dispatcher reuses sockets across the per-chapter
+ * `/process` calls a single `processTextNow` makes.
+ */
+const NLP_REQUEST_TIMEOUT_MS = 30 * 60 * 1000;
+const nlpDispatcher: Dispatcher = new Agent({
+  headersTimeout: NLP_REQUEST_TIMEOUT_MS,
+  bodyTimeout: NLP_REQUEST_TIMEOUT_MS,
+  keepAliveTimeout: 30_000,
+});
 
 export interface LemmaCandidate {
   lemma: string;
@@ -80,12 +104,20 @@ export interface RomanizeResponse {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  // The `dispatcher` field is undici-specific; node's `fetch()`
+  // forwards it to undici under the hood. Tests stub `fetch` with
+  // vi.stubGlobal, in which case the stub ignores the extra option
+  // and the timeout config is a no-op — exactly what we want.
   const res = await fetch(new URL(path, NLP_SERVICE_URL), {
     ...init,
     headers: {
       'content-type': 'application/json',
       ...(init?.headers ?? {}),
     },
+    // @ts-expect-error — RequestInit doesn't type `dispatcher`, but
+    // Node's fetch reads it. Without this override every long
+    // chapter would die on undici's 5-minute headersTimeout.
+    dispatcher: nlpDispatcher,
   });
   if (!res.ok) {
     const body = await res.text().catch(() => '');
