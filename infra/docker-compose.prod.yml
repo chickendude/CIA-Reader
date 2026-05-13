@@ -74,9 +74,16 @@ services:
       context: ..
       dockerfile: services/nlp/Dockerfile
     restart: always
-    # Override the Dockerfile's dev-style `--reload` CMD with a
-    # production worker pool. Two workers fits CX32 / CCX13 headroom
-    # and keeps Stanza models pinned per process.
+    # Single uvicorn worker with all of the container's CPU budget.
+    # We previously ran two workers on 1.5 cpus, but that meant two
+    # full Stanza model loads in RAM and two PyTorch BLAS pools
+    # contending for the cgroup CPU quota — Hindi chapters took
+    # 10–30+ minutes wall-clock, hit the undici headers timeout, and
+    # surfaced as `UND_ERR_HEADERS_TIMEOUT` failures in the texts
+    # table. One worker × N threads is faster end-to-end and uses
+    # roughly half the RAM. Stanza loads each language's pipeline
+    # lazily on first request, so a single process per container
+    # still serves all three.
     command:
       - uvicorn
       - app.main:app
@@ -85,16 +92,29 @@ services:
       - --port
       - "8000"
       - --workers
-      - "2"
+      - "1"
     networks:
       - internal
     environment:
       PYTHONPATH: /opt/shared-types:/srv/nlp
+      # Pin PyTorch / NumPy / Stanza's BLAS thread count to the
+      # cgroup CPU quota. Without these, the libraries try to use
+      # every host core they can see, then Docker throttles them —
+      # which on Hindi depparse can mean 5–10× slower than just
+      # matching the quota up front. Keep these in lockstep with
+      # `deploy.resources.limits.cpus` below if you retune.
+      OMP_NUM_THREADS: "3"
+      MKL_NUM_THREADS: "3"
+      OPENBLAS_NUM_THREADS: "3"
     deploy:
       resources:
         limits:
-          memory: 2500m
-          cpus: "1.5"
+          # 4-vCPU / 8-GB host: NLP takes 3 cpus, web keeps 1; the
+          # host has ~1 cpu of headroom for postgres/redis/caddy
+          # bursts. Bump in lockstep with the *_NUM_THREADS env vars
+          # above if you move to a bigger box.
+          memory: 3000m
+          cpus: "3.0"
     logging:
       driver: json-file
       options:
