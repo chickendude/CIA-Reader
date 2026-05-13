@@ -377,11 +377,22 @@ export type ParadigmRegenSummary = {
  * Each lemma's regen is its own transaction (see `regenerateForms`),
  * so the cumulative state is consistent: even if half the loop fails
  * the successful half's rows are committed.
+ *
+ * The `lookupLemmas` + `regenerateLemma` parameters exist purely as
+ * test seams: same-module bindings can't be swapped via `vi.spyOn`,
+ * so unit tests pass mocked collaborators directly. Production
+ * callers leave them on their defaults.
  */
 export async function regenerateAllForParadigm(
   paradigmId: string,
+  deps: {
+    lookupLemmas?: typeof listLemmasUsingParadigm;
+    regenerateLemma?: (lemmaId: string) => Promise<RegenerateResult>;
+  } = {},
 ): Promise<ParadigmRegenSummary> {
-  const lemmas = await listLemmasUsingParadigm(paradigmId);
+  const lookup = deps.lookupLemmas ?? listLemmasUsingParadigm;
+  const regenLemma = deps.regenerateLemma ?? regenerateForms;
+  const lemmas = await lookup(paradigmId);
   const summary: ParadigmRegenSummary = {
     lemmasProcessed: 0,
     lemmasFailed: 0,
@@ -391,7 +402,7 @@ export async function regenerateAllForParadigm(
   };
   for (const lemma of lemmas) {
     try {
-      const result = await regenerateForms(lemma.id);
+      const result = await regenLemma(lemma.id);
       summary.removed += result.removed;
       summary.inserted += result.inserted;
       summary.lemmasProcessed += 1;

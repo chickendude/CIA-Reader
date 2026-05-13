@@ -403,40 +403,6 @@ export async function deleteSlot(slotId: string): Promise<void> {
 }
 
 /**
- * Rewrite the `sort_order` column for a list of slots. The caller
- * passes the canonical order — each slot's new position is its index
- * in the list times 10 (so future inline inserts have room without
- * a full re-ordering pass). All listed ids must belong to the same
- * paradigm.
- */
-export async function reorderSlots(
-  paradigmId: string,
-  orderedSlotIds: string[],
-): Promise<void> {
-  if (orderedSlotIds.length === 0) return;
-  const rows = await db
-    .select({ id: schema.paradigmSlots.id, paradigmId: schema.paradigmSlots.paradigmId })
-    .from(schema.paradigmSlots)
-    .where(inArray(schema.paradigmSlots.id, orderedSlotIds));
-  if (rows.length !== orderedSlotIds.length) {
-    throw new ParadigmValidationError('One or more slot ids do not exist', 404);
-  }
-  for (const row of rows) {
-    if (row.paradigmId !== paradigmId) {
-      throw new ParadigmValidationError('Slot does not belong to this paradigm', 400);
-    }
-  }
-  await db.transaction(async (tx) => {
-    for (const [i, id] of orderedSlotIds.entries()) {
-      await tx
-        .update(schema.paradigmSlots)
-        .set({ sortOrder: (i + 1) * 10 })
-        .where(eq(schema.paradigmSlots.id, id));
-    }
-  });
-}
-
-/**
  * Lemmas that opt into this paradigm and have a stem set — i.e. the
  * subset of consumers whose generated `lemma_forms` rows reflect the
  * current slot definitions. Lemmas without a stem aren't regenerated
