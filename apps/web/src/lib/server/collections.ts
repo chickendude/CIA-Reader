@@ -21,7 +21,7 @@ import type {
 } from './db/schema.js';
 import type { LanguageCode } from '@ciareader/shared-types';
 import { enqueueNlpJob } from './texts/jobs.js';
-import { estimateTokenCount, type ChapterDraft } from './texts/chunking.js';
+import { prependTitleToBody, type ChapterDraft } from './texts/chunking.js';
 
 export class CollectionError extends Error {
   constructor(
@@ -167,14 +167,14 @@ export async function createChapterBookCollection(
         .returning()) as Text[];
       if (!text) throw new CollectionError('text insert returned no row');
 
-      // Prepend the chapter title to the body as its first
-      // paragraph. The NLP pipeline tokenizes the whole body, so the
-      // title gets lemma resolution + popups + known-word tracking
-      // just like any other content — the reader knows to skip its
-      // own `<header>` chrome when the body already starts with the
-      // title to avoid showing it twice.
-      const bodyWithTitle = `${chapterTitle}\n\n${draft.body}`;
-      const tokenCountWithTitle = estimateTokenCount(bodyWithTitle);
+      // Prepend the chapter title to the body so the NLP pipeline
+      // tokenizes the title alongside the rest of the content (its
+      // words become clickable + known-word-tracked). The helper is
+      // idempotent: an EPUB whose `htmlToText` output already starts
+      // with the title — e.g. `<h1>Chapter One</h1>` in the body
+      // matching the nav title — doesn't get a duplicated heading.
+      const { body: bodyWithTitle, tokenCount: tokenCountWithTitle } =
+        prependTitleToBody(chapterTitle, draft.body);
       const [chapterRow] = (await tx
         .insert(schema.textChapters)
         .values({

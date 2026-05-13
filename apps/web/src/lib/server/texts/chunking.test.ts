@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   CHUNK_THRESHOLD_TOKENS,
   estimateTokenCount,
+  prependTitleToBody,
   splitIntoChapters,
   TARGET_CHAPTER_TOKENS,
 } from './chunking.js';
@@ -20,6 +21,61 @@ describe('estimateTokenCount', () => {
   it('returns 0 on whitespace-only', () => {
     expect(estimateTokenCount('   ')).toBe(0);
     expect(estimateTokenCount('')).toBe(0);
+  });
+});
+
+describe('prependTitleToBody', () => {
+  it('prepends the title separated by a blank line when the body does not start with it', () => {
+    const { body, tokenCount } = prependTitleToBody(
+      'Compound Effect',
+      'Body content here.',
+    );
+    expect(body).toBe('Compound Effect\n\nBody content here.');
+    expect(tokenCount).toBe(estimateTokenCount(body));
+  });
+
+  it('skips prepending when the body already starts with the title — no duplication', () => {
+    // EPUB chapter whose `<h1>Title</h1>` body heading survived
+    // `htmlToText` as the first paragraph: prepending would
+    // duplicate it in the reader + NLP.
+    const { body } = prependTitleToBody(
+      'Compound Effect',
+      'Compound Effect\n\nOpening paragraph.',
+    );
+    expect(body).toBe('Compound Effect\n\nOpening paragraph.');
+  });
+
+  it('matches the title against an NFC + LF-normalized body', () => {
+    const { body } = prependTitleToBody(
+      'Title',
+      'Title\r\n\r\nContent.',
+    );
+    expect(body).toBe('Title\n\nContent.');
+  });
+
+  it('treats whitespace at the start of the body as harmless', () => {
+    const { body } = prependTitleToBody(
+      'Chapter One',
+      '   \n\nChapter One\n\nBody.',
+    );
+    // The leading whitespace is preserved (we only normalize line
+    // endings + NFC, not collapse whitespace); the dedup just
+    // checks `trimStart().startsWith(...)`.
+    expect(body.includes('Chapter One\n\nChapter One')).toBe(false);
+  });
+
+  it('returns the body untouched when title is empty or null', () => {
+    expect(prependTitleToBody(null, 'body').body).toBe('body');
+    expect(prependTitleToBody('', 'body').body).toBe('body');
+    expect(prependTitleToBody('   ', 'body').body).toBe('body');
+  });
+
+  it('does NOT match a title that appears mid-word at the start', () => {
+    // `Chapt` should not be considered a prefix-of "Chapter One"
+    // — the next char after the supposed prefix must be whitespace
+    // or end-of-text.
+    const { body } = prependTitleToBody('Chapt', 'Chapter One starts here.');
+    expect(body.startsWith('Chapt\n\nChapter One')).toBe(true);
   });
 });
 

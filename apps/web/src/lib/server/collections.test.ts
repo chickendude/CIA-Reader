@@ -279,6 +279,42 @@ describe('createChapterBookCollection', () => {
     expect(chapterInsert!.tokenCount).toBeGreaterThan(3);
   });
 
+  it('does NOT duplicate the title when the body already starts with it', async () => {
+    // Repro: an EPUB whose `<h1>Title</h1>` survived htmlToText and
+    // shows up as the body's first paragraph. Without dedup, the
+    // stored body would be `Title\n\nTitle\n\n…` and the reader
+    // would render the heading twice.
+    queue.push([{ ...baseCollection, id: 'col-1' }]);
+    queue.push([{ id: 'text-1' }]);
+    queue.push([{ id: 'chap-1' }]);
+    queue.push([{ collectionId: 'col-1', textId: 'text-1', position: 0 }]);
+    queue.push([{ id: 'job-1' }]);
+
+    await createChapterBookCollection({
+      ownerId: OWNER.id,
+      language: 'hi',
+      title: 'Book',
+      sourceType: 'epub',
+      chapters: [
+        {
+          idx: 0,
+          title: 'Compound Effect',
+          body: 'Compound Effect\n\nReal opening paragraph.',
+          tokenCount: 5,
+        },
+      ],
+    });
+
+    const chapterInsert = chain.values.mock.calls
+      .map((c) => c[0] as Record<string, unknown>)
+      .find((v) => typeof v.body === 'string');
+    expect(chapterInsert).toBeDefined();
+    // No duplicated heading — the body stays as-is (normalized).
+    expect(chapterInsert!.body).toBe(
+      'Compound Effect\n\nReal opening paragraph.',
+    );
+  });
+
   it('rejects an empty chapter list', async () => {
     await expect(
       createChapterBookCollection({

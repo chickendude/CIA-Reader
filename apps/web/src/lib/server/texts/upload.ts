@@ -34,6 +34,7 @@ import type { Collection, Text, TextChapter, User } from '../db/schema.js';
 import {
   splitIntoChapters,
   estimateTokenCount,
+  prependTitleToBody,
   type ChapterDraft,
 } from './chunking.js';
 import { parseEpub, EpubParseError } from './epub.js';
@@ -393,6 +394,14 @@ function buildChapterDrafts(
  * Used by the EPUB/ZIP fallback when only one chapter came out of
  * the file — there's no point spinning up a 1-item collection just
  * to wrap a single text.
+ *
+ * The chapter title is prepended to the body so its words are
+ * tokenized + lookupable — same contract as multi-chapter
+ * chapter-book chapters created via `createChapterBookCollection`.
+ * Without this, single-file ZIP / one-spine EPUB titles render as
+ * reader chrome only and aren't clickable. `prependTitleToBody` is
+ * idempotent, so EPUBs whose `htmlToText` output already starts
+ * with the title don't get a duplicated heading.
  */
 async function createSingleChapterFallback(
   owner: Pick<User, 'id'>,
@@ -404,11 +413,20 @@ async function createSingleChapterFallback(
     now: Date;
   },
 ): Promise<CreatedText> {
+  // Prepend the chapter's own title when present, falling back to
+  // the text title (book / file name) — that's what the reader
+  // renders in the `<header>` chrome, and matching it lets the
+  // `titleInBody` detector suppress the duplicate display.
+  const titleForPrefix = args.draft.title?.trim() || args.title;
+  const { body, tokenCount } = prependTitleToBody(
+    titleForPrefix,
+    args.draft.body,
+  );
   return insertTextWithChapters(owner, {
     sourceType: args.sourceType,
     language: args.language,
     title: args.title,
-    chapters: [args.draft],
+    chapters: [{ ...args.draft, body, tokenCount }],
     now: args.now,
   });
 }

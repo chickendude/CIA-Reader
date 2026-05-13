@@ -78,6 +78,44 @@ export function estimateTokenCount(body: string): number {
   return trimmed.split(/\s+/).length;
 }
 
+/**
+ * Ensure a chapter body starts with its title so the NLP pipeline
+ * tokenizes the title alongside the rest of the content — that's
+ * what makes title words clickable + known-word-tracked in the
+ * reader, same as body words.
+ *
+ * Idempotent: when the body already opens with the title (e.g. an
+ * EPUB whose `<h1>Title</h1>` survived `htmlToText` as the first
+ * paragraph), we return the body unchanged. Without this, the
+ * stored body would be `Title\n\nTitle\n\n…` — duplicated heading
+ * in the reader AND duplicated tokens flowing into NLP.
+ *
+ * Normalizes to NFC + LF newlines either way so the prefix check
+ * is comparing in the same shape the reader / NLP will see.
+ */
+export function prependTitleToBody(
+  title: string | null,
+  body: string,
+): { body: string; tokenCount: number } {
+  const normalizedBody = body.normalize('NFC').replace(/\r\n?/g, '\n');
+  const t = (title ?? '').trim();
+  if (t.length === 0) {
+    return { body: normalizedBody, tokenCount: estimateTokenCount(normalizedBody) };
+  }
+  const leading = normalizedBody.trimStart();
+  if (leading.startsWith(t)) {
+    const rest = leading.slice(t.length);
+    if (rest.length === 0 || /^\s/.test(rest)) {
+      return {
+        body: normalizedBody,
+        tokenCount: estimateTokenCount(normalizedBody),
+      };
+    }
+  }
+  const next = `${t}\n\n${normalizedBody}`;
+  return { body: next, tokenCount: estimateTokenCount(next) };
+}
+
 const EXPLICIT_DELIMITER_RE = /(?:^|\n)(?:\f|-{3,}\s*)(?=\n|$)/g;
 
 function hasExplicitDelimiters(body: string): boolean {

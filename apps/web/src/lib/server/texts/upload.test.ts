@@ -557,6 +557,17 @@ describe('createChapterBookFromEpub', () => {
     if (result.kind !== 'text') throw new Error('unreachable');
     expect(result.text.sourceType).toBe('epub');
     expect(createChapterBookCollectionMock).not.toHaveBeenCalled();
+
+    // Single-chapter fallback should ALSO prepend the title to the
+    // body so NLP tokenizes it — same contract as the multi-chapter
+    // chapter_book path. The text_chapters insert is the second
+    // .values() call (after the texts row).
+    const chapterInsert = calls
+      .filter((c): c is Extract<Call, { kind: 'insert' }> => c.kind === 'insert')
+      .map((c) => c.values as Array<Record<string, unknown>>)
+      .find((v) => Array.isArray(v) && typeof v[0]?.body === 'string');
+    expect(chapterInsert).toBeDefined();
+    expect((chapterInsert![0]!.body as string).startsWith('Only chapter')).toBe(true);
   });
 
   it('rejects when EPUB dc:language disagrees with selected language (both supported)', async () => {
@@ -761,6 +772,15 @@ describe('createChapterBookFromZip', () => {
     if (result.kind !== 'text') throw new Error('unreachable');
     expect(result.text.sourceType).toBe('zip');
     expect(createChapterBookCollectionMock).not.toHaveBeenCalled();
+
+    // Single-file ZIP fallback also prepends the chapter title
+    // (filename minus extension) so its words land in NLP.
+    const chapterInsert = calls
+      .filter((c): c is Extract<Call, { kind: 'insert' }> => c.kind === 'insert')
+      .map((c) => c.values as Array<Record<string, unknown>>)
+      .find((v) => Array.isArray(v) && typeof v[0]?.body === 'string');
+    expect(chapterInsert).toBeDefined();
+    expect((chapterInsert![0]!.body as string).startsWith('only')).toBe(true);
   });
 
   it('rejects an unsupported language without parsing', async () => {
