@@ -2,6 +2,7 @@
   import '$lib/styles/tokens.css';
   import AppShell from '$lib/components/shell/AppShell.svelte';
   import VerifyEmailBanner from '$lib/components/auth/VerifyEmailBanner.svelte';
+  import ToastHost from '$lib/components/toast/ToastHost.svelte';
   import type { LayoutData } from './$types';
 
   let { data, children }: { data: LayoutData; children: import('svelte').Snippet } = $props();
@@ -19,3 +20,8 @@
 >
   {@render children()}
 </AppShell>
+
+<!-- App-wide toast host. Anything that calls `pushToast()` from
+     `$lib/components/toast/toast-store.js` lands here. Rendered
+     once at the root so toasts persist across route transitions. -->
+<ToastHost />
