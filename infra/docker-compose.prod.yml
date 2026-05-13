@@ -140,6 +140,16 @@ services:
       # app-side limit plus multipart boundary overhead, leaving the
       # per-route MAX_*_BYTES checks as the source of truth.
       BODY_SIZE_LIMIT: "100000000"
+      # Without an explicit `--max-old-space-size`, Node sizes V8's
+      # old generation against a conservative cgroup-memory heuristic
+      # (~50% of the limit) and `processTextNow` would OOM around
+      # 720 MB even on the 1500m limit — the trace is a chain of
+      # "Reached heap limit Allocation failed" / "Aborted (core
+      # dumped)" lines, with `restart: always` looping the container.
+      # 2600 MB leaves ~400 MB headroom under the 3000m container
+      # limit below for native heap, libuv buffers, and any other
+      # off-heap allocations.
+      NODE_OPTIONS: "--max-old-space-size=2600"
     volumes:
       - audio-data:/srv/audio
     networks:
@@ -147,7 +157,12 @@ services:
     deploy:
       resources:
         limits:
-          memory: 1500m
+          # Bumped from 1500m: EPUB processing pre-loads the language's
+          # full lemma index + tokenizes every chapter in-process, and
+          # 1500m wasn't enough headroom once the lemma table grew past
+          # MVP size. NODE_OPTIONS above caps V8's heap so this limit
+          # only has to cover heap + Node native + libuv overhead.
+          memory: 3000m
           cpus: "1.0"
     logging:
       driver: json-file
