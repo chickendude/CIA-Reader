@@ -147,14 +147,25 @@ test.describe('Reader cross-text prev navigation', () => {
   }) => {
     const { prevChapter, currentChapter } = await findChapterPair();
 
-    // Land at the end of the previous chapter.
+    // Land at the end of the previous chapter. The reader measures
+    // the column flow in waves (initial paint, then again after
+    // token spans render), so we poll until current === total
+    // rather than reading the state in one shot the moment current
+    // first exceeds 1.
     await page.goto(`/reader/${prevChapter.id}?mode=page&endOfChapter=1`);
     await expect(page.locator('.pager-pages').first()).toBeVisible({ timeout: 10_000 });
     await expect
-      .poll(async () => (await readPageState(page)).current, { timeout: 10_000 })
-      .toBeGreaterThan(1);
-    const start = await readPageState(page);
-    expect(start.current).toBe(start.total);
+      .poll(
+        async () => {
+          const s = await readPageState(page);
+          return s.current === s.total;
+        },
+        {
+          timeout: 10_000,
+          message: 'reader should settle on the last page of the previous chapter',
+        },
+      )
+      .toBe(true);
 
     // Click next — should walk into the next text at its first page.
     const nextButton = page.getByRole('button', { name: /^Next (chapter|page)$/ });

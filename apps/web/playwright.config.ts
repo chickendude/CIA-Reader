@@ -3,17 +3,15 @@ import { defineConfig, devices } from '@playwright/test';
 /**
  * Playwright config for end-to-end reader tests.
  *
- * Assumes a dev server is already running at the URL below (no
- * `webServer` block here — running `pnpm dev` from this directory
- * already serves the worktree, and Playwright shouldn't fight it
- * for the port). Override the base URL via `BASE_URL` env if you
- * point at a deployed instance.
+ * Locally: if `pnpm dev` is already serving the worktree on the
+ * configured port, Playwright reuses it (faster turnaround between
+ * runs). Otherwise — and always in CI — Playwright starts its own
+ * `pnpm dev` and tears it down at the end.
  *
- * Auth is handled via a global setup project that mints a session
- * for `crush@test.local` directly into the dev database and saves
- * the resulting cookies to `e2e/.auth/crush.json`. Specs that need
- * an authenticated viewer attach this storage state in their
- * project config below.
+ * Auth + test-data seeding is handled by a global setup project
+ * that talks directly to the dev database (test user, sample
+ * chapter-book collection if missing, session cookie). See
+ * `e2e/auth.setup.ts`.
  */
 export default defineConfig({
   testDir: './e2e',
@@ -28,6 +26,17 @@ export default defineConfig({
     baseURL: process.env.BASE_URL ?? 'http://localhost:5173',
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
+  },
+  webServer: {
+    command: 'pnpm dev',
+    url: process.env.BASE_URL ?? 'http://localhost:5173',
+    // Locally we reuse a developer's already-running `pnpm dev`. In
+    // CI the workspace is clean each run, so we let Playwright own
+    // the dev server's lifecycle.
+    reuseExistingServer: !process.env.CI,
+    timeout: 120_000,
+    stdout: 'ignore',
+    stderr: 'pipe',
   },
   projects: [
     {
