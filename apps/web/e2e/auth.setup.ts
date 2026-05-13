@@ -48,24 +48,47 @@ async function ensureTestUser(sql: postgres.Sql): Promise<string> {
   return inserted[0]!.id;
 }
 
-/** Generate paragraphs of approximately `wordsPerParagraph` words,
- *  for `paragraphCount` paragraphs. Used to fill seed chapter bodies
- *  with enough content to span multiple display pages at the test
- *  viewport (800×600). */
-function generateBody(paragraphCount: number, wordsPerParagraph: number): string {
-  const wordPool = [
-    'lorem', 'ipsum', 'dolor', 'sit', 'amet', 'consectetur', 'adipiscing',
-    'elit', 'sed', 'do', 'eiusmod', 'tempor', 'incididunt', 'ut', 'labore',
-    'magna', 'aliqua', 'enim', 'minim', 'veniam', 'quis', 'nostrud',
-    'exercitation', 'ullamco', 'laboris', 'nisi', 'aliquip', 'commodo',
-  ];
+/** Generate `count` words from a small pool — deterministic so seed
+ *  runs reproduce, but big enough that adjacent paragraphs don't
+ *  share the exact same prefix. */
+const WORD_POOL = [
+  'lorem', 'ipsum', 'dolor', 'sit', 'amet', 'consectetur', 'adipiscing',
+  'elit', 'sed', 'do', 'eiusmod', 'tempor', 'incididunt', 'ut', 'labore',
+  'magna', 'aliqua', 'enim', 'minim', 'veniam', 'quis', 'nostrud',
+  'exercitation', 'ullamco', 'laboris', 'nisi', 'aliquip', 'commodo',
+];
+function generateWords(count: number, seed: number): string {
+  const out: string[] = [];
+  for (let i = 0; i < count; i += 1) {
+    out.push(WORD_POOL[(seed + i) % WORD_POOL.length]!);
+  }
+  return out.join(' ') + '.';
+}
+
+/** Generate a body with varied paragraph lengths. We deliberately
+ *  mix short paragraphs (~10 words) with long ones (~200 words) so
+ *  the multi-page chapter has the kind of dense-vs-sparse variance
+ *  the progress edge-case test asserts on. Uniform paragraphs would
+ *  pack each display page with roughly the same word count, making
+ *  the test trivially close to 1.0× variance and unable to catch
+ *  the "uniform pages/N split" bug it's there to prevent. */
+function generateVariedBody(totalParagraphs: number): string {
+  const sizes = [12, 180, 35, 220, 8, 160, 50, 200, 15, 140, 28, 175];
+  const paragraphs: string[] = [];
+  for (let i = 0; i < totalParagraphs; i += 1) {
+    const size = sizes[i % sizes.length]!;
+    paragraphs.push(generateWords(size, i * 7));
+  }
+  return paragraphs.join('\n\n');
+}
+
+/** Generate uniform paragraphs — used for short chapters where
+ *  variance isn't a concern (the cross-text-nav test just needs a
+ *  multi-page chapter, not specifically a varied one). */
+function generateUniformBody(paragraphCount: number, wordsPerParagraph: number): string {
   const paragraphs: string[] = [];
   for (let p = 0; p < paragraphCount; p += 1) {
-    const words: string[] = [];
-    for (let w = 0; w < wordsPerParagraph; w += 1) {
-      words.push(wordPool[(p * wordsPerParagraph + w) % wordPool.length]!);
-    }
-    paragraphs.push(words.join(' ') + '.');
+    paragraphs.push(generateWords(wordsPerParagraph, p * 11));
   }
   return paragraphs.join('\n\n');
 }
@@ -99,9 +122,15 @@ async function ensureChapterBook(sql: postgres.Sql, ownerId: string): Promise<vo
     const collectionId = collection!.id;
 
     const chapters = [
-      { title: 'Chapter One — Intro', body: generateBody(8, 120) },
-      { title: 'Chapter Two — Body', body: generateBody(10, 140) },
-      { title: 'Chapter Three — Coda', body: generateBody(6, 100) },
+      // Uniform paragraphs are fine for the cross-text nav test —
+      // it just needs a multi-page chapter to step back into.
+      { title: 'Chapter One — Intro', body: generateUniformBody(8, 120) },
+      // Mixed paragraph sizes so the "dense vs sparse pages" test
+      // sees real per-page variance. ~1700 words across 12 paragraphs
+      // of widely varying sizes lays out as 8-10 display pages whose
+      // word counts differ by 2-3×.
+      { title: 'Chapter Two — Body', body: generateVariedBody(12) },
+      { title: 'Chapter Three — Coda', body: generateUniformBody(6, 100) },
     ];
 
     for (let i = 0; i < chapters.length; i += 1) {

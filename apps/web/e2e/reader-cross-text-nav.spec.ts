@@ -108,6 +108,12 @@ test.describe('Reader cross-text prev navigation', () => {
     // Land on the current chapter in page mode at page 1.
     await page.goto(`/reader/${currentChapter.id}?mode=page&chapter=0&token=0`);
     await expect(page.locator('.pager-pages').first()).toBeVisible({ timeout: 10_000 });
+    // Wait for hydration to settle before clicking — in CI's cold
+    // start the SSR'd button is on the page before Svelte's onclick
+    // handler is attached, so a too-early click was firing without
+    // triggering navigation. `networkidle` is a robust proxy for
+    // "the page has finished hydrating" in dev mode.
+    await page.waitForLoadState('networkidle');
     const start = await readPageState(page);
     expect(start.current).toBe(1);
 
@@ -154,6 +160,7 @@ test.describe('Reader cross-text prev navigation', () => {
     // first exceeds 1.
     await page.goto(`/reader/${prevChapter.id}?mode=page&endOfChapter=1`);
     await expect(page.locator('.pager-pages').first()).toBeVisible({ timeout: 10_000 });
+    await page.waitForLoadState('networkidle');
     await expect
       .poll(
         async () => {
