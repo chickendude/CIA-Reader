@@ -31,7 +31,7 @@ import { nlpClient } from '../nlp-client.js';
 import type { LanguageCode } from '@ciareader/shared-types';
 import type { Lemma, LemmaForm } from '../db/schema.js';
 
-import { generateForms, loadParadigm } from './paradigms.js';
+import { generateForms, listLemmasUsingParadigm, loadParadigm } from './paradigms.js';
 
 export type DbLike = typeof db;
 
@@ -354,6 +354,68 @@ export async function regenerateForms(
     }
     return { removed, inserted: generated.length };
   });
+}
+
+export type ParadigmRegenSummary = {
+  lemmasProcessed: number;
+  lemmasFailed: number;
+  removed: number;
+  inserted: number;
+  failures: Array<{ lemmaId: string; headword: string; error: string }>;
+};
+
+/**
+ * Regenerate forms for every lemma that opts into a given paradigm.
+ *
+ * Driven by the paradigm editor's "Regenerate forms" prompt — when
+ * the curator saves a slot edit (suffix, features, key), the
+ * generator-emitted rows on every affected lemma are now stale
+ * w.r.t. the paradigm. This helper walks the lemma list and calls
+ * `regenerateForms` on each, swallowing per-lemma failures so one
+ * bad row doesn't block the rest.
+ *
+ * Each lemma's regen is its own transaction (see `regenerateForms`),
+ * so the cumulative state is consistent: even if half the loop fails
+ * the successful half's rows are committed.
+ *
+ * The `lookupLemmas` + `regenerateLemma` parameters exist purely as
+ * test seams: same-module bindings can't be swapped via `vi.spyOn`,
+ * so unit tests pass mocked collaborators directly. Production
+ * callers leave them on their defaults.
+ */
+export async function regenerateAllForParadigm(
+  paradigmId: string,
+  deps: {
+    lookupLemmas?: typeof listLemmasUsingParadigm;
+    regenerateLemma?: (lemmaId: string) => Promise<RegenerateResult>;
+  } = {},
+): Promise<ParadigmRegenSummary> {
+  const lookup = deps.lookupLemmas ?? listLemmasUsingParadigm;
+  const regenLemma = deps.regenerateLemma ?? regenerateForms;
+  const lemmas = await lookup(paradigmId);
+  const summary: ParadigmRegenSummary = {
+    lemmasProcessed: 0,
+    lemmasFailed: 0,
+    removed: 0,
+    inserted: 0,
+    failures: [],
+  };
+  for (const lemma of lemmas) {
+    try {
+      const result = await regenLemma(lemma.id);
+      summary.removed += result.removed;
+      summary.inserted += result.inserted;
+      summary.lemmasProcessed += 1;
+    } catch (e) {
+      summary.lemmasFailed += 1;
+      summary.failures.push({
+        lemmaId: lemma.id,
+        headword: lemma.headword,
+        error: e instanceof Error ? e.message : String(e),
+      });
+    }
+  }
+  return summary;
 }
 
 /**

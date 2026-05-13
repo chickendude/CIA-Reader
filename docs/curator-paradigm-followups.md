@@ -8,7 +8,7 @@ for its own PR.
 
 ## Curator UX gaps
 
-- [ ] **Paradigm editor UI.** Today paradigms are added via SQL
+- [x] **Paradigm editor UI.** Today paradigms are added via SQL
       migrations (`apps/web/drizzle/0037_seed_odia_regular_verb_paradigm.sql`
       is the template). A `/moderation/paradigms` page should
       list paradigms (filter by language + POS), let admins create
