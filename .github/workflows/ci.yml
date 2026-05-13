@@ -31,6 +31,66 @@ jobs:
           path: apps/web/coverage
           if-no-files-found: ignore
 
+  web-e2e:
+    # Reader end-to-end tests (Playwright). Lives in its own job so
+    # the heavyweight browser + Postgres setup doesn't slow the
+    # main `web` lane and so a flake here doesn't block lint /
+    # typecheck / unit signal from landing.
+    name: web (playwright e2e)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: ciareader
+          POSTGRES_PASSWORD: ciareader
+          POSTGRES_DB: ciareader
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ciareader -d ciareader"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgres://ciareader:ciareader@localhost:5432/ciareader
+      AUTH_SECRET: dev-only-secret-replace-in-prod-0000000000000000000000000000000
+      APP_BASE_URL: http://localhost:5173
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.12.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20.18.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile=false
+      - run: pnpm --filter @ciareader/web exec svelte-kit sync
+      - name: Apply Drizzle migrations
+        working-directory: apps/web
+        run: pnpm db:migrate
+      - name: Install Playwright browsers
+        working-directory: apps/web
+        run: pnpm exec playwright install --with-deps chromium
+      - name: Run Playwright e2e
+        working-directory: apps/web
+        run: pnpm test:e2e
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: apps/web/playwright-report
+          if-no-files-found: ignore
+      - name: Upload Playwright traces
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-traces
+          path: apps/web/test-results
+          if-no-files-found: ignore
+
   nlp:
     name: nlp (ruff + pytest + coverage)
     runs-on: ubuntu-latest

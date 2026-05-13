@@ -91,18 +91,35 @@ export const load: PageServerLoad = async ({ params, locals }) => {
 
   return {
     collection: detail.collection,
-    items: detail.items.map((i) => ({
-      position: i.position,
-      text: {
-        id: i.text.id,
-        title: i.text.title,
-        status: i.text.status,
-        sourceType: i.text.sourceType,
-      },
-      pctRead: progressByTextId[i.text.id]?.pctRead ?? 0,
-      lastChapterIdx:
-        progressByTextId[i.text.id]?.lastChapterIdx ?? 0,
-    })),
+    // Each item is one of two kinds:
+    //  - 'chapter' — a leaf chapter the user reads. Carries its parent
+    //    section name for grouped rendering.
+    //  - 'sectionAnchor' — a top-level Part-intro page that the
+    //    publisher's TOC nests over a group of chapters (item has
+    //    no section of its own, AND the next item's section equals
+    //    this item's title). Rendered as the group's clickable
+    //    section header instead of a duplicate chapter card.
+    items: detail.items.map((i, idx, arr) => {
+      const nextSection = arr[idx + 1]?.sectionTitle ?? null;
+      const isSectionAnchor =
+        i.sectionTitle === null &&
+        nextSection !== null &&
+        nextSection === i.text.title;
+      return {
+        position: i.position,
+        sectionTitle: i.sectionTitle,
+        isSectionAnchor,
+        text: {
+          id: i.text.id,
+          title: i.text.title,
+          status: i.text.status,
+          sourceType: i.text.sourceType,
+        },
+        pctRead: progressByTextId[i.text.id]?.pctRead ?? 0,
+        lastChapterIdx:
+          progressByTextId[i.text.id]?.lastChapterIdx ?? 0,
+      };
+    }),
     aggregatedPctRead,
     // T-8.6: completion stats badge — number of finished texts on
     // course-kind collections. Counts pctRead >= 100.

@@ -281,6 +281,20 @@
       "when": 1778170100000,
       "tag": "0039_extend_odia_verb_politeness",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1778555297304,
+      "tag": "0040_quick_wolf_cub",
+      "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1778610962475,
+      "tag": "0041_giant_khan",
+      "breakpoints": true
     }
   ]
 }

@@ -54,16 +54,42 @@ const selectFn = vi.fn(() => {
 const insertFn = vi.fn(() => makeInsertChain());
 
 // T-8.4: canReadText consults collections.js for collection-share
-// access. Mock to "no share" so existing tests stay focused on
-// visibility / owner branches.
+// access. The chapter-book EPUB/ZIP path also delegates to
+// `createChapterBookCollection` here — mocked to a stub that records
+// args and returns a synthetic collection so the upload-side tests
+// can verify the orchestration without booting the real transactional
+// helper (that's tested in collections.test.ts).
+const createChapterBookCollectionMock = vi.fn();
 vi.mock('../collections.js', () => ({
   viewerHasCollectionShareForText: async () => false,
+  createChapterBookCollection: (...a: unknown[]) =>
+    createChapterBookCollectionMock(...a),
 }));
+
+// db.delete(...).where(...) — the deletion path used by `deleteText`.
+// Records the call so tests can assert it fired (or didn't). Resolves
+// to `undefined` to mirror the real builder.
+type DeleteCall = { table: unknown };
+const deleteCalls: DeleteCall[] = [];
+function makeDeleteChain() {
+  const entry: DeleteCall = { table: null };
+  deleteCalls.push(entry);
+  const chain: Record<string, unknown> = {};
+  chain.where = vi.fn(() => chain);
+  chain.then = (resolve: (v: unknown) => unknown) => resolve(undefined);
+  return chain;
+}
+const deleteFn = vi.fn((table: unknown) => {
+  const chain = makeDeleteChain();
+  deleteCalls[deleteCalls.length - 1]!.table = table;
+  return chain;
+});
 
 vi.mock('../db/index.js', () => ({
   db: {
     select: () => selectFn(),
     insert: () => insertFn(),
+    delete: (table: unknown) => deleteFn(table),
   },
   schema: {
     texts: {
@@ -102,14 +128,20 @@ vi.mock('../groups.js', () => ({
 const {
   TextValidationError,
   EpubParseError,
+  EpubLanguageMismatchError,
+  EpubLanguageUnsupportedError,
+  ZipParseError,
   createPastedText,
   createTxtText,
-  createEpubText,
+  createChapterBookFromEpub,
+  createChapterBookFromZip,
+  deleteText,
   estimateTokenCount,
   getOwnedText,
   MAX_PASTE_BYTES,
   MAX_TXT_BYTES,
   MAX_EPUB_BYTES,
+  MAX_ZIP_BYTES,
   MAX_TITLE_LEN,
 } = await import('./upload.js');
 
@@ -117,6 +149,8 @@ const JSZip = (await import('jszip')).default;
 
 async function buildFixtureEpub(
   chapters: Array<{ id: string; href: string; title: string; bodyHtml: string }>,
+  /** Optional `<dc:language>` to include in the OPF metadata. */
+  language?: string,
 ): Promise<Uint8Array> {
   const zip = new JSZip();
   zip.file('mimetype', 'application/epub+zip');
@@ -133,10 +167,14 @@ async function buildFixtureEpub(
     .map((c) => `<item id="${c.id}" href="${c.href}" media-type="application/xhtml+xml"/>`)
     .join('\n');
   const spine = chapters.map((c) => `<itemref idref="${c.id}"/>`).join('\n');
+  const metadata = language
+    ? `<metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:language>${language}</dc:language></metadata>`
+    : '';
   zip.file(
     'OEBPS/content.opf',
     `<?xml version="1.0"?>
 <package version="3.0">
+  ${metadata}
   <manifest>${manifest}</manifest>
   <spine>${spine}</spine>
 </package>`,
@@ -213,8 +251,11 @@ function stageHappyPath(opts: {
 beforeEach(() => {
   calls.length = 0;
   staged.length = 0;
+  deleteCalls.length = 0;
   selectFn.mockClear();
   insertFn.mockClear();
+  deleteFn.mockClear();
+  createChapterBookCollectionMock.mockReset();
 });
 
 afterEach(() => {
@@ -429,17 +470,29 @@ describe('createTxtText', () => {
 });
 
 // -----------------------------------------------------------------------
-// createEpubText (T-4.3)
+// createChapterBookFromEpub
 // -----------------------------------------------------------------------
 
-describe('createEpubText', () => {
-  it('parses an EPUB and inserts one chapter row per spine item', async () => {
-    stage([textRow({ sourceType: 'epub' })]);
-    stage([
-      chapterRow({ id: 'c0', idx: 0, body: 'one body.' }),
-      chapterRow({ id: 'c1', idx: 1, body: 'two body.' }),
-    ]);
-    stage([jobRow()]);
+describe('createChapterBookFromEpub', () => {
+  it('creates a chapter-book collection for a multi-chapter EPUB', async () => {
+    createChapterBookCollectionMock.mockResolvedValueOnce({
+      collection: {
+        id: 'col-1',
+        ownerId: OWNER.id,
+        language: 'hi',
+        title: 'Imported novel',
+        kind: 'chapter_book',
+        visibility: 'private',
+      },
+      texts: [
+        { id: 'text-1' },
+        { id: 'text-2' },
+      ],
+      items: [
+        { collectionId: 'col-1', textId: 'text-1', position: 0 },
+        { collectionId: 'col-1', textId: 'text-2', position: 1 },
+      ],
+    });
 
     const epubBytes = await buildFixtureEpub([
       {
@@ -456,33 +509,168 @@ describe('createEpubText', () => {
       },
     ]);
 
-    const result = await createEpubText(OWNER, {
+    const result = await createChapterBookFromEpub(OWNER, {
       language: 'hi',
       title: 'Imported novel',
       epubBytes,
     });
 
-    expect(result.chapters).toHaveLength(2);
-    const insertCalls = calls.filter(
-      (c): c is Extract<Call, { kind: 'insert' }> => c.kind === 'insert',
-    );
-    expect(insertCalls[0]!.values).toMatchObject({ sourceType: 'epub' });
-    const chapterValues = insertCalls[1]!.values as Array<{
-      idx: number;
-      title: string | null;
-      body: string;
-    }>;
-    expect(chapterValues).toHaveLength(2);
-    expect(chapterValues.map((c) => c.title)).toEqual(['Chapter One', 'Chapter Two']);
-    expect(chapterValues[0]!.body).toBe('one body.');
+    expect(result.kind).toBe('collection');
+    if (result.kind !== 'collection') throw new Error('unreachable');
+    expect(result.collection.id).toBe('col-1');
+    expect(result.texts).toHaveLength(2);
+
+    expect(createChapterBookCollectionMock).toHaveBeenCalledOnce();
+    const args = createChapterBookCollectionMock.mock.calls[0]![0];
+    expect(args).toMatchObject({
+      ownerId: OWNER.id,
+      language: 'hi',
+      title: 'Imported novel',
+      sourceType: 'epub',
+    });
+    expect(args.chapters).toHaveLength(2);
+    expect(args.chapters.map((c: { title: string }) => c.title)).toEqual([
+      'Chapter One',
+      'Chapter Two',
+    ]);
   });
 
-  it('rejects an unsupported language without parsing', async () => {
+  it('falls back to a single plain text when only one chapter is present', async () => {
+    stageHappyPath({ text: textRow({ sourceType: 'epub' }) });
+
+    const epubBytes = await buildFixtureEpub([
+      {
+        id: 'ch1',
+        href: 'ch1.xhtml',
+        title: 'Only chapter',
+        bodyHtml: '<p>solo body.</p>',
+      },
+    ]);
+
+    const result = await createChapterBookFromEpub(OWNER, {
+      language: 'hi',
+      title: 'Imported novel',
+      epubBytes,
+    });
+
+    expect(result.kind).toBe('text');
+    if (result.kind !== 'text') throw new Error('unreachable');
+    expect(result.text.sourceType).toBe('epub');
+    expect(createChapterBookCollectionMock).not.toHaveBeenCalled();
+
+    // Single-chapter fallback should ALSO prepend the title to the
+    // body so NLP tokenizes it — same contract as the multi-chapter
+    // chapter_book path. The text_chapters insert is the second
+    // .values() call (after the texts row).
+    const chapterInsert = calls
+      .filter((c): c is Extract<Call, { kind: 'insert' }> => c.kind === 'insert')
+      .map((c) => c.values as Array<Record<string, unknown>>)
+      .find((v) => Array.isArray(v) && typeof v[0]?.body === 'string');
+    expect(chapterInsert).toBeDefined();
+    expect((chapterInsert![0]!.body as string).startsWith('Only chapter')).toBe(true);
+  });
+
+  it('rejects when EPUB dc:language disagrees with selected language (both supported)', async () => {
+    const epubBytes = await buildFixtureEpub(
+      [
+        {
+          id: 'ch1',
+          href: 'ch1.xhtml',
+          title: 'A',
+          bodyHtml: '<p>body.</p>',
+        },
+        {
+          id: 'ch2',
+          href: 'ch2.xhtml',
+          title: 'B',
+          bodyHtml: '<p>body.</p>',
+        },
+      ],
+      'mr',
+    );
+    await expect(
+      createChapterBookFromEpub(OWNER, {
+        language: 'hi',
+        title: 'X',
+        epubBytes,
+      }),
+    ).rejects.toBeInstanceOf(EpubLanguageMismatchError);
+    expect(createChapterBookCollectionMock).not.toHaveBeenCalled();
+  });
+
+  it('rejects an EPUB declared as an unsupported language', async () => {
+    const epubBytes = await buildFixtureEpub(
+      [
+        {
+          id: 'ch1',
+          href: 'ch1.xhtml',
+          title: 'A',
+          bodyHtml: '<p>body.</p>',
+        },
+        {
+          id: 'ch2',
+          href: 'ch2.xhtml',
+          title: 'B',
+          bodyHtml: '<p>body.</p>',
+        },
+      ],
+      'en',
+    );
+    await expect(
+      createChapterBookFromEpub(OWNER, {
+        language: 'hi',
+        title: 'X',
+        epubBytes,
+      }),
+    ).rejects.toBeInstanceOf(EpubLanguageUnsupportedError);
+  });
+
+  it('trusts the user selection when the EPUB has no <dc:language>', async () => {
+    createChapterBookCollectionMock.mockResolvedValueOnce({
+      collection: { id: 'col-1' },
+      texts: [{ id: 'text-1' }, { id: 'text-2' }],
+      items: [],
+    });
+    const epubBytes = await buildFixtureEpub([
+      { id: 'ch1', href: 'ch1.xhtml', title: 'A', bodyHtml: '<p>body.</p>' },
+      { id: 'ch2', href: 'ch2.xhtml', title: 'B', bodyHtml: '<p>body.</p>' },
+    ]);
+    const result = await createChapterBookFromEpub(OWNER, {
+      language: 'or',
+      title: 'X',
+      epubBytes,
+    });
+    expect(result.kind).toBe('collection');
+    expect(createChapterBookCollectionMock).toHaveBeenCalledOnce();
+  });
+
+  it('accepts a matching dc:language and strips region subtags', async () => {
+    createChapterBookCollectionMock.mockResolvedValueOnce({
+      collection: { id: 'col-1' },
+      texts: [{ id: 'text-1' }, { id: 'text-2' }],
+      items: [],
+    });
+    const epubBytes = await buildFixtureEpub(
+      [
+        { id: 'ch1', href: 'ch1.xhtml', title: 'A', bodyHtml: '<p>body.</p>' },
+        { id: 'ch2', href: 'ch2.xhtml', title: 'B', bodyHtml: '<p>body.</p>' },
+      ],
+      'hi-IN',
+    );
+    const result = await createChapterBookFromEpub(OWNER, {
+      language: 'hi',
+      title: 'X',
+      epubBytes,
+    });
+    expect(result.kind).toBe('collection');
+  });
+
+  it('rejects an unsupported user-selected language without parsing', async () => {
     const epubBytes = await buildFixtureEpub([
       { id: 'ch1', href: 'ch1.xhtml', title: 'X', bodyHtml: '<p>body.</p>' },
     ]);
     await expect(
-      createEpubText(OWNER, { language: 'xx', title: 'X', epubBytes }),
+      createChapterBookFromEpub(OWNER, { language: 'xx', title: 'X', epubBytes }),
     ).rejects.toBeInstanceOf(TextValidationError);
   });
 
@@ -491,13 +679,13 @@ describe('createEpubText', () => {
       { id: 'ch1', href: 'ch1.xhtml', title: 'X', bodyHtml: '<p>body.</p>' },
     ]);
     await expect(
-      createEpubText(OWNER, { language: 'hi', title: '', epubBytes }),
+      createChapterBookFromEpub(OWNER, { language: 'hi', title: '', epubBytes }),
     ).rejects.toBeInstanceOf(TextValidationError);
   });
 
   it('rejects an empty file', async () => {
     await expect(
-      createEpubText(OWNER, {
+      createChapterBookFromEpub(OWNER, {
         language: 'hi',
         title: 'X',
         epubBytes: new Uint8Array(0),
@@ -506,11 +694,9 @@ describe('createEpubText', () => {
   });
 
   it('rejects an oversize archive', async () => {
-    // We don't actually allocate 50MB — just lie about the byte length
-    // via a fake ArrayBuffer subview that reports the cap.
     const tooBig = new ArrayBuffer(MAX_EPUB_BYTES + 1);
     await expect(
-      createEpubText(OWNER, {
+      createChapterBookFromEpub(OWNER, {
         language: 'hi',
         title: 'X',
         epubBytes: tooBig,
@@ -520,12 +706,163 @@ describe('createEpubText', () => {
 
   it('surfaces parse failures as EpubParseError', async () => {
     await expect(
-      createEpubText(OWNER, {
+      createChapterBookFromEpub(OWNER, {
         language: 'hi',
         title: 'X',
         epubBytes: new Uint8Array([1, 2, 3, 4]),
       }),
     ).rejects.toBeInstanceOf(EpubParseError);
+  });
+});
+
+// -----------------------------------------------------------------------
+// createChapterBookFromZip
+// -----------------------------------------------------------------------
+
+async function buildFixtureZip(
+  entries: Record<string, string | Uint8Array>,
+): Promise<Uint8Array> {
+  const zip = new JSZip();
+  for (const [name, body] of Object.entries(entries)) {
+    zip.file(name, body);
+  }
+  return zip.generateAsync({ type: 'uint8array' });
+}
+
+describe('createChapterBookFromZip', () => {
+  it('creates a chapter-book collection for a multi-file ZIP', async () => {
+    createChapterBookCollectionMock.mockResolvedValueOnce({
+      collection: { id: 'col-1' },
+      texts: [{ id: 'text-1' }, { id: 'text-2' }],
+      items: [],
+    });
+    const zipBytes = await buildFixtureZip({
+      '01-intro.txt': 'Intro body.',
+      '02-end.txt': 'Ending body.',
+    });
+    const result = await createChapterBookFromZip(OWNER, {
+      language: 'hi',
+      title: 'My ZIP book',
+      zipBytes,
+    });
+    expect(result.kind).toBe('collection');
+    expect(createChapterBookCollectionMock).toHaveBeenCalledOnce();
+    const args = createChapterBookCollectionMock.mock.calls[0]![0];
+    expect(args).toMatchObject({
+      ownerId: OWNER.id,
+      language: 'hi',
+      title: 'My ZIP book',
+      sourceType: 'zip',
+    });
+    expect(args.chapters.map((c: { title: string }) => c.title)).toEqual([
+      '01-intro',
+      '02-end',
+    ]);
+  });
+
+  it('falls back to a single plain text for a 1-file ZIP', async () => {
+    stageHappyPath({ text: textRow({ sourceType: 'zip' }) });
+    const zipBytes = await buildFixtureZip({ 'only.txt': 'Solo body.' });
+    const result = await createChapterBookFromZip(OWNER, {
+      language: 'hi',
+      title: 'X',
+      zipBytes,
+    });
+    expect(result.kind).toBe('text');
+    if (result.kind !== 'text') throw new Error('unreachable');
+    expect(result.text.sourceType).toBe('zip');
+    expect(createChapterBookCollectionMock).not.toHaveBeenCalled();
+
+    // Single-file ZIP fallback also prepends the chapter title
+    // (filename minus extension) so its words land in NLP.
+    const chapterInsert = calls
+      .filter((c): c is Extract<Call, { kind: 'insert' }> => c.kind === 'insert')
+      .map((c) => c.values as Array<Record<string, unknown>>)
+      .find((v) => Array.isArray(v) && typeof v[0]?.body === 'string');
+    expect(chapterInsert).toBeDefined();
+    expect((chapterInsert![0]!.body as string).startsWith('only')).toBe(true);
+  });
+
+  it('rejects an unsupported language without parsing', async () => {
+    const zipBytes = await buildFixtureZip({ 'a.txt': 'Body.' });
+    await expect(
+      createChapterBookFromZip(OWNER, { language: 'xx', title: 'X', zipBytes }),
+    ).rejects.toBeInstanceOf(TextValidationError);
+  });
+
+  it('rejects an empty ZIP', async () => {
+    await expect(
+      createChapterBookFromZip(OWNER, {
+        language: 'hi',
+        title: 'X',
+        zipBytes: new Uint8Array(0),
+      }),
+    ).rejects.toBeInstanceOf(TextValidationError);
+  });
+
+  it('rejects an oversize ZIP', async () => {
+    const tooBig = new ArrayBuffer(MAX_ZIP_BYTES + 1);
+    await expect(
+      createChapterBookFromZip(OWNER, {
+        language: 'hi',
+        title: 'X',
+        zipBytes: tooBig,
+      }),
+    ).rejects.toBeInstanceOf(TextValidationError);
+  });
+
+  it('surfaces parse failures (no top-level .txt files) as ZipParseError', async () => {
+    const zipBytes = await buildFixtureZip({ 'nested/inner.txt': 'Body.' });
+    await expect(
+      createChapterBookFromZip(OWNER, {
+        language: 'hi',
+        title: 'X',
+        zipBytes,
+      }),
+    ).rejects.toBeInstanceOf(ZipParseError);
+  });
+});
+
+// -----------------------------------------------------------------------
+// deleteText
+// -----------------------------------------------------------------------
+
+describe('deleteText', () => {
+  it('deletes when the actor owns the text', async () => {
+    stage([{ id: 'text-1', ownerId: OWNER.id }]); // pre-check select
+    await deleteText('text-1', { id: OWNER.id, role: 'user' });
+    expect(deleteCalls).toHaveLength(1);
+  });
+
+  it('deletes when the actor is an admin even if they do not own it', async () => {
+    stage([{ id: 'text-1', ownerId: 'someone-else' }]);
+    await deleteText(
+      'text-1',
+      { id: 'admin-id', role: 'admin' },
+    );
+    expect(deleteCalls).toHaveLength(1);
+  });
+
+  it('throws 404 when the text does not exist', async () => {
+    stage([]); // pre-check select returns no row
+    await expect(
+      deleteText('missing', { id: OWNER.id, role: 'user' }),
+    ).rejects.toMatchObject({
+      name: 'TextValidationError',
+      status: 404,
+    });
+    expect(deleteCalls).toHaveLength(0);
+  });
+
+  it('throws 404 (not 403) for a non-owner non-admin — no existence leak', async () => {
+    stage([{ id: 'text-1', ownerId: 'someone-else' }]);
+    await expect(
+      deleteText('text-1', { id: OWNER.id, role: 'user' }),
+    ).rejects.toMatchObject({
+      name: 'TextValidationError',
+      status: 404,
+    });
+    expect(deleteCalls).toHaveLength(0);
   });
 });
 

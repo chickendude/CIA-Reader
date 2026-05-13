@@ -16,7 +16,7 @@
 -->
 <script lang="ts">
   import { goto } from '$app/navigation';
-  import { onMount, tick } from 'svelte';
+  import { onMount, tick, untrack } from 'svelte';
 
   import ChapterBody from './ChapterBody.svelte';
   import { clampPage, pageCountFor, pageOffset } from './paginate.js';
@@ -49,6 +49,11 @@
     lineSpacing,
     fontFamily,
     readingWidth,
+    prevTextId = null,
+    nextTextId = null,
+    collectionPosition = null,
+    collectionTotal = null,
+    startAtEndOfChapter = false,
   }: {
     chapters: ChapterView[];
     chapterIdx: number;
@@ -62,11 +67,60 @@
     lineSpacing?: number;
     fontFamily?: string | null;
     readingWidth?: string;
+    /** When true, mount on the LAST page of the chapter rather than
+     *  page 0. Used by the cross-text "prev" handoff so a reader
+     *  stepping back off page 1 of chapter N lands at the end of
+     *  chapter N-1 (where they'd naturally resume reading). */
+    startAtEndOfChapter?: boolean;
+    /** Sibling text in the containing collection — when supplied,
+     *  the prev/next buttons advance into that text once we exhaust
+     *  pages + chapters in the current text. Critical for chapter
+     *  books where each chapter is its own one-chapter `texts` row
+     *  (otherwise the next button greys out at the end of every
+     *  chapter). */
+    prevTextId?: string | null;
+    nextTextId?: string | null;
+    /** Current text's 0-based position within its containing
+     *  collection (null when not in a collection). Used to show
+     *  "Ch. 6 / 48" in the chapter counter instead of the
+     *  uninformative "Ch. 1 / 1" you'd see on a one-chapter text. */
+    collectionPosition?: number | null;
+    collectionTotal?: number | null;
   } = $props();
 
   const current = $derived(chapters[Math.max(0, Math.min(chapterIdx, chapters.length - 1))]);
+  // Chapter-book chapters prepend the title to their body so the
+  // NLP pipeline tokenizes the title alongside the rest. When that
+  // happened, the body's first paragraph IS the title — render only
+  // that, not a duplicate `<header>` chrome on top.
+  const titleInBody = $derived.by(() => {
+    const t = current?.title?.trim();
+    if (!t) return false;
+    const body = current?.body?.trimStart() ?? '';
+    return body.startsWith(t);
+  });
   const hasPrevChapter = $derived(chapterIdx > 0);
   const hasNextChapter = $derived(chapterIdx < chapters.length - 1);
+  const hasPrevText = $derived(prevTextId !== null);
+  const hasNextText = $derived(nextTextId !== null);
+
+  // For chapter counters, prefer the collection-level position when
+  // this text is itself a single-chapter member of a chapter-book
+  // (otherwise the counter would always read "Ch. 1 / 1"). For
+  // multi-chapter texts — paste/.txt with auto-split, or
+  // course-style collections of multi-chapter texts — the
+  // within-text position stays correct.
+  const useCollectionCounter = $derived(
+    chapters.length === 1 &&
+      collectionPosition !== null &&
+      collectionTotal !== null,
+  );
+  const counterCurrent = $derived(
+    useCollectionCounter ? collectionPosition! + 1 : chapterIdx + 1,
+  );
+  const counterTotal = $derived(
+    useCollectionCounter ? collectionTotal! : chapters.length,
+  );
 
   // Pagination state. Recomputed on resize / chapter change /
   // showRomanization toggle (which changes line-height).
@@ -111,8 +165,19 @@
 
   const hasPrevPage = $derived(pageInChapter > 0);
   const hasNextPage = $derived(pageInChapter < pageCount - 1);
-  const hasPrev = $derived(hasPrevPage || hasPrevChapter);
-  const hasNext = $derived(hasNextPage || hasNextChapter);
+  const hasPrev = $derived(hasPrevPage || hasPrevChapter || hasPrevText);
+  const hasNext = $derived(hasNextPage || hasNextChapter || hasNextText);
+  // True when clicking next / prev will leave the current chapter
+  // (advance to a sibling chapter within this text OR to a sibling
+  // text in the surrounding collection). Used to give the arrow
+  // button a slightly different appearance + aria-label so readers
+  // notice they're crossing a chapter boundary.
+  const nextLeavesChapter = $derived(
+    !hasNextPage && (hasNextChapter || hasNextText),
+  );
+  const prevLeavesChapter = $derived(
+    !hasPrevPage && (hasPrevChapter || hasPrevText),
+  );
 
   // Overall progress — fraction of the whole text in *words*, not pages.
   // A page with 10 words must advance the bar less than a page with 500.
@@ -146,7 +211,24 @@
     pendingJumpToLast = opts.lastPage === true;
   }
 
-  let pendingJumpToLast = $state(false);
+  // Seeded from the cross-text "prev" handoff flag so the new
+  // chapter mounts on its last page. The effect below applies the
+  // jump once measurement finishes (pageCount > 0).
+  let pendingJumpToLast = $state(untrack(() => startAtEndOfChapter));
+  // SvelteKit reuses the page component across navigations between
+  // /reader/<id> URLs — the $state initializer only fires once on
+  // first mount, so a fresh `startAtEndOfChapter=true` prop arriving
+  // via navigation wouldn't otherwise re-trigger the jump. This
+  // effect re-arms `pendingJumpToLast` whenever the prop flips to
+  // true AND forces a re-measure so the consumer effect below sees
+  // the NEW chapter's pageCount rather than whatever was measured
+  // for the previous chapter (otherwise we'd jump to the wrong page
+  // and the clamp would push us to 0).
+  $effect(() => {
+    if (!startAtEndOfChapter) return;
+    pendingJumpToLast = true;
+    measure();
+  });
   $effect(() => {
     if (!pendingJumpToLast) return;
     if (pageCount > 0) {
@@ -160,6 +242,10 @@
       pageInChapter += 1;
     } else if (hasNextChapter) {
       go(chapterIdx + 1);
+    } else if (nextTextId) {
+      // Walk off the end of this text — advance into the next text
+      // in the containing collection. Keeps page mode active.
+      void goto(`/reader/${nextTextId}?mode=page`, { keepFocus: true });
     }
   }
   function prevPage() {
@@ -167,6 +253,15 @@
       pageInChapter -= 1;
     } else if (hasPrevChapter) {
       go(chapterIdx - 1, { lastPage: true });
+    } else if (prevTextId) {
+      // Stepping back off the start of this text lands on the LAST
+      // page of the previous text — the reading-direction-natural
+      // place to resume. The destination reader treats
+      // `endOfChapter=1` as a URL anchor and jumps to the last page
+      // of its last internal chapter after measurement.
+      void goto(`/reader/${prevTextId}?mode=page&endOfChapter=1`, {
+        keepFocus: true,
+      });
     }
   }
 
@@ -253,8 +348,17 @@
   // settings driven by CSS vars on the .reader root. ResizeObserver
   // fires on box-size changes only, so font-size / line-height swaps
   // (which only change scrollWidth) need an explicit nudge.
+  //
+  // `textId` + `chapters` are listed so a cross-text navigation
+  // (chapter-book "prev"/"next" that swaps the whole chapter content
+  // while leaving chapterIdx at 0) also re-measures. Without those
+  // deps, contentW stayed at the OLD chapter's value and pageCount
+  // was stale, so `pendingJumpToLast` jumped to the wrong page (or
+  // got clamped back to 0).
   $effect(() => {
     void chapterIdx;
+    void textId;
+    void chapters;
     void showRomanization;
     void fontSize;
     void lineSpacing;
@@ -329,10 +433,55 @@
       currentAnchor: anchor,
       nextAnchor: nextPageAnchor,
     });
-    const startPctNext = computePctRead(chapters, anchor.chapterIdx, anchor.tokenIdx);
-    const endPctNext = computePctRead(chapters, boundary.chapterIdx, boundary.tokenIdx, {
-      completedText: boundary.completed,
-    });
+    // Word-based progress using actual per-column word counts from
+    // the DOM index. Each page contributes EXACTLY the words it
+    // visibly carries, so a sparse page near the end moves the bar
+    // a little and a dense page moves it a lot — matching what the
+    // reader sees rather than assuming uniform distribution.
+    //
+    //   chapterDomTotal = words rendered in this chapter (all columns)
+    //   beforePage      = words in columns < current
+    //   throughPage     = words in columns <= current
+    //   ratio           = chapter.tokenCount / chapterDomTotal
+    //                     (scales DOM counts to the canonical
+    //                      tokenCount so cross-chapter math stays
+    //                      consistent with what other chapters
+    //                      contribute when not in view)
+    //   startWords      = wordsBeforeChapter + beforePage × ratio
+    //   endWords        = wordsBeforeChapter + throughPage × ratio
+    //
+    // 100% is only hit on the last page of the last chapter.
+    const totalWordsInText = chapters.reduce(
+      (sum, c) => sum + Math.max(0, c.tokenCount),
+      0,
+    );
+    const wordsBeforeChapter = chapters
+      .slice(0, chapterIdx)
+      .reduce((sum, c) => sum + Math.max(0, c.tokenCount), 0);
+    const currentChapterWords = Math.max(
+      0,
+      chapters[chapterIdx]?.tokenCount ?? 0,
+    );
+
+    let domBeforePage = 0;
+    let domThroughPage = 0;
+    let domTotal = 0;
+    for (const entry of index.entries) {
+      domTotal += 1;
+      if (entry.columnIndex < pageInChapter) domBeforePage += 1;
+      if (entry.columnIndex <= pageInChapter) domThroughPage += 1;
+    }
+    const ratio = domTotal > 0 ? currentChapterWords / domTotal : 0;
+    const startWords = wordsBeforeChapter + domBeforePage * ratio;
+    const endWords = wordsBeforeChapter + domThroughPage * ratio;
+
+    const startPctNext =
+      totalWordsInText > 0 ? (startWords / totalWordsInText) * 100 : 0;
+    const endPctNext = boundary.completed
+      ? 100
+      : totalWordsInText > 0
+        ? (endWords / totalWordsInText) * 100
+        : 0;
     startPct = startPctNext;
     endPct = endPctNext;
     if (!onProgress) return;
@@ -388,11 +537,40 @@
   <button
     type="button"
     class="page-arrow page-arrow-l"
-    aria-label="Previous page"
+    data-step={prevLeavesChapter ? 'chapter' : 'page'}
+    aria-label={prevLeavesChapter ? 'Previous chapter' : 'Previous page'}
     disabled={!hasPrev}
     onclick={prevPage}
   >
-    <span class="arrow-glyph" aria-hidden="true">‹</span>
+    <span class="arrow-glyph" aria-hidden="true">
+      {#if prevLeavesChapter}
+        <!-- Previous-chapter icon: left-pointing chevron + open
+             book to its right. 24x24 viewBox; strokes inherit
+             currentColor so the icon follows the button's text
+             color in light/dark themes and the chapter-step
+             accent state. -->
+        <svg
+          class="step-icon"
+          width="22"
+          height="22"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.8"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <!-- chevron pointing left, x=2..7 -->
+          <path d="M7 7 L2 12 L7 17" />
+          <!-- open book shifted right, x=13..23, leaving a ~6-unit
+               gap between chevron and book so they don't crowd -->
+          <path d="M13 18V8c0-1.1 1.2-2 3-2H18v10H16c-1.8 0-3 .9-3 2Z" />
+          <path d="M18 18V8c0-1.1 1.2-2 3-2H23v10H21c-1.8 0-3 .9-3 2Z" />
+        </svg>
+      {:else}
+        ‹
+      {/if}
+    </span>
   </button>
 
   <div class="reader-page-viewport">
@@ -408,14 +586,12 @@
       >
         <div class="reader-page-content" bind:this={contentEl}>
           {#if current}
-            <header class="chapter-h">
-              {current.title ?? `Chapter ${current.idx + 1}`}
-              <span class="roman">
-                Chapter {current.idx + 1} of {chapters.length}
-                · {current.tokenCount.toLocaleString()} tokens
-              </span>
-            </header>
-            <article>
+            {#if !titleInBody}
+              <header class="chapter-h">
+                {current.title ?? `Chapter ${current.idx + 1}`}
+              </header>
+            {/if}
+            <article class:title-in-body={titleInBody}>
               <ChapterBody chapter={current} {language} {showRomanization} {isOwner} />
             </article>
           {/if}
@@ -427,11 +603,39 @@
   <button
     type="button"
     class="page-arrow page-arrow-r"
-    aria-label="Next page"
+    data-step={nextLeavesChapter ? 'chapter' : 'page'}
+    aria-label={nextLeavesChapter ? 'Next chapter' : 'Next page'}
     disabled={!hasNext}
     onclick={nextPage}
   >
-    <span class="arrow-glyph" aria-hidden="true">›</span>
+    <span class="arrow-glyph" aria-hidden="true">
+      {#if nextLeavesChapter}
+        <!-- Next-chapter icon: open book on the left + a
+             right-pointing chevron to its right. Mirror of the
+             previous-chapter glyph. -->
+        <svg
+          class="step-icon"
+          width="22"
+          height="22"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.8"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <!-- open book on the left, x=1..11 -->
+          <path d="M1 18V8c0-1.1 1.2-2 3-2H6v10H4c-1.8 0-3 .9-3 2Z" />
+          <path d="M6 18V8c0-1.1 1.2-2 3-2H11v10H9c-1.8 0-3 .9-3 2Z" />
+          <!-- chevron pointing right, x=17..22 — ~6-unit gap from
+               the book so the two parts of the glyph are clearly
+               separate rather than crowding into each other. -->
+          <path d="M17 7 L22 12 L17 17" />
+        </svg>
+      {:else}
+        ›
+      {/if}
+    </span>
   </button>
 </div>
 
@@ -439,7 +643,7 @@
   <div class="reader-foot-meta">
     <span class="pager-pages">
       Page {pageInChapter + 1} of {pageCount}
-      <span class="muted">· Ch. {chapterIdx + 1} / {chapters.length}</span>
+      <span class="muted">· Ch. {counterCurrent} / {counterTotal}</span>
     </span>
     <span class="muted">{formatPctRange(startPct, endPct, pctPrecision)}</span>
   </div>
@@ -546,14 +750,21 @@
     margin: 0 0 1.75rem;
     font-weight: 400;
   }
-  .chapter-h .roman {
-    display: block;
-    font-family: var(--font-mono-display, var(--font-mono));
-    font-size: 0.7rem;
-    color: var(--ink-4, var(--color-fg-subtle));
-    letter-spacing: 0.04em;
-    margin-top: 0.3rem;
-    text-transform: uppercase;
+  /* When the chapter title lives inside the body (chapter-book
+     uploads — see `createChapterBookCollection`), the body's first
+     paragraph IS the title. Style it like a heading so the typography
+     reads as "title above body" rather than two equal paragraphs.
+     Words inside stay tokenized + clickable for lookup. The
+     `:global()` reaches into ChapterBody's scoped CSS. */
+  .title-in-body :global(.body:first-of-type) {
+    font-family: var(--font-serif-dev, var(--font-serif));
+    font-size: 1.35rem;
+    line-height: 1.4;
+    font-weight: 500;
+    color: var(--ink, var(--color-fg));
+    border-bottom: 1px solid var(--rule, var(--color-border));
+    padding-bottom: 0.875rem;
+    margin: 0 0 1.5rem;
   }
 
   /* Page arrows fill the full vertical strip on either side of the
@@ -567,7 +778,11 @@
     width: 3rem;
     background: transparent;
     border: 0;
-    color: var(--ink-2, var(--color-fg-muted));
+    /* Use the full-contrast ink token so the chevron reads clearly
+       on both light and dark surfaces. The muted token (--ink-2)
+       was too low-contrast — at small sizes the glyph looked
+       disabled even when the button was active. */
+    color: var(--ink, var(--color-fg));
     display: grid;
     place-items: center;
     cursor: pointer;
@@ -601,9 +816,25 @@
       color 150ms ease,
       transform 150ms ease;
   }
+  /* Inline SVG glyph used for the chapter-step variant. Sits inside
+     the round .arrow-glyph and inherits stroke=currentColor so it
+     follows the parent's text color through theme + hover + accent
+     states. */
+  .step-icon {
+    display: block;
+  }
   .page-arrow:hover:not(:disabled) .arrow-glyph {
-    background: var(--accent-soft, var(--color-accent));
+    /* Solid accent fill on hover — same for page and chapter-step
+       buttons. The chapter-step variant signals itself purely
+       through the open-book SVG glyph; styling otherwise stays
+       identical so the buttons feel like the same control. The
+       previous translucent `--accent-soft` overlay paired badly
+       with `--accent-ink` (which expects a solid accent surface for
+       WCAG contrast), making the hover state look disabled in dark
+       mode. */
+    background: var(--accent, var(--color-accent));
     color: var(--accent-ink, var(--color-accent-fg, #fff));
+    border-color: var(--accent, var(--color-accent));
     transform: scale(1.05);
   }
   .page-arrow:disabled {

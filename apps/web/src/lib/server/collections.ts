@@ -16,9 +16,12 @@ import type {
   CollectionItem,
   CollectionShare,
   Text,
+  TextChapter,
   User,
 } from './db/schema.js';
 import type { LanguageCode } from '@ciareader/shared-types';
+import { enqueueNlpJob } from './texts/jobs.js';
+import { prependTitleToBody, type ChapterDraft } from './texts/chunking.js';
 
 export class CollectionError extends Error {
   constructor(
@@ -57,6 +60,178 @@ export async function createCollection(
     .returning();
   if (!row) throw new CollectionError('insert returned no row');
   return row as Collection;
+}
+
+export type CreateChapterBookInput = {
+  ownerId: string;
+  language: LanguageCode;
+  title: string;
+  /** `'epub'` or `'zip'` — surfaced on each child `texts` row so the
+   *  library / admin views can tell where a chapter book came from. */
+  sourceType: 'epub' | 'zip';
+  /** Per-chapter drafts in display order. `idx` on each draft is the
+   *  position within the collection (0-based, contiguous). Each draft
+   *  becomes its own `texts` row plus a single-chapter
+   *  `text_chapters` row, then a `collection_items` row linking the
+   *  text to the new collection at `position = draft.idx`.
+   *
+   *  Optional `section` is the parent-heading from the publisher's
+   *  TOC (EPUB nav doc) — when present we persist it on
+   *  `collection_items.section_title` so the detail page can group
+   *  chapters under their Part heading. ZIP uploads and flat EPUBs
+   *  leave it null. */
+  chapters: Array<ChapterDraft & { section?: string | null }>;
+  now?: Date;
+};
+
+export type ChapterBookCreated = {
+  collection: Collection;
+  texts: Text[];
+  items: CollectionItem[];
+};
+
+/**
+ * Create a chapter-book collection from EPUB / ZIP-style chapter
+ * drafts in one transaction. Each draft becomes:
+ *
+ *   1. A `texts` row (single-chapter doc, `status='pending'`,
+ *      `visibility='private'`). The chapter title is the draft's
+ *      title, falling back to `Chapter N` when the source didn't
+ *      provide one.
+ *   2. A `text_chapters` row at `idx=0` holding the body.
+ *   3. A `collection_items` row at `position = draft.idx` linking the
+ *      text to the new collection.
+ *
+ * After the transaction commits, an NLP job is enqueued per child
+ * text — same shape the paste / .txt path uses, so every chapter gets
+ * its own status / progress / known-word coverage rather than being
+ * lumped under the book-level row.
+ *
+ * Rolls back the whole thing if any insert (or the NLP enqueue)
+ * throws — no orphan rows.
+ */
+export async function createChapterBookCollection(
+  input: CreateChapterBookInput,
+): Promise<ChapterBookCreated> {
+  const title = input.title.trim();
+  if (!title) throw new CollectionError('title required');
+  if (input.chapters.length === 0) {
+    throw new CollectionError('chapter book must have at least one chapter');
+  }
+  const now = input.now ?? new Date();
+
+  // Deferred dispatcher calls collected during the transaction —
+  // fired AFTER commit so the in-process worker sees rows the
+  // global `db` connection can read. Firing inside the tx makes
+  // `processTextNow`'s SELECT against `db` miss the not-yet-
+  // committed text and leave the chapter stuck at 'pending'.
+  const flushes: Array<() => Promise<void>> = [];
+
+  const result = await db.transaction(async (tx) => {
+    const [collection] = (await tx
+      .insert(schema.collections)
+      .values({
+        ownerId: input.ownerId,
+        language: input.language,
+        kind: 'chapter_book',
+        title,
+        visibility: 'private',
+        createdAt: now,
+        updatedAt: now,
+      })
+      .returning()) as Collection[];
+    if (!collection) throw new CollectionError('collection insert returned no row');
+
+    const createdTexts: Text[] = [];
+    const createdItems: CollectionItem[] = [];
+
+    for (const draft of input.chapters) {
+      // "Untitled" rather than "Chapter N" because the chapter card
+      // and reader nav already surface the position number — a
+      // separate "Chapter N" prefix would just duplicate that. The
+      // fallback fires for EPUBs whose nav doc + chapter <title> are
+      // both junk auto-IDs (see `isJunkTitle` in epub.ts).
+      const chapterTitle = draft.title?.trim() || 'Untitled';
+      const [text] = (await tx
+        .insert(schema.texts)
+        .values({
+          ownerId: input.ownerId,
+          language: input.language,
+          title: chapterTitle,
+          sourceType: input.sourceType,
+          status: 'pending',
+          visibility: 'private',
+          createdAt: now,
+          updatedAt: now,
+        })
+        .returning()) as Text[];
+      if (!text) throw new CollectionError('text insert returned no row');
+
+      // Prepend the chapter title to the body so the NLP pipeline
+      // tokenizes the title alongside the rest of the content (its
+      // words become clickable + known-word-tracked). The helper is
+      // idempotent: an EPUB whose `htmlToText` output already starts
+      // with the title — e.g. `<h1>Chapter One</h1>` in the body
+      // matching the nav title — doesn't get a duplicated heading.
+      const { body: bodyWithTitle, tokenCount: tokenCountWithTitle } =
+        prependTitleToBody(chapterTitle, draft.body);
+      const [chapterRow] = (await tx
+        .insert(schema.textChapters)
+        .values({
+          textId: text.id,
+          idx: 0,
+          title: chapterTitle,
+          body: bodyWithTitle,
+          tokenCount: tokenCountWithTitle,
+          createdAt: now,
+        })
+        .returning()) as TextChapter[];
+      if (!chapterRow) {
+        throw new CollectionError('chapter insert returned no row');
+      }
+
+      const [item] = (await tx
+        .insert(schema.collectionItems)
+        .values({
+          collectionId: collection.id,
+          textId: text.id,
+          position: draft.idx,
+          sectionTitle: draft.section ?? null,
+          createdAt: now,
+        })
+        .returning()) as CollectionItem[];
+      if (!item) throw new CollectionError('item insert returned no row');
+
+      // Insert the nlp_jobs row inside the tx (FK needs the text);
+      // defer the dispatcher until after commit.
+      const enqueued = await enqueueNlpJob({
+        textId: text.id,
+        chapterIds: [chapterRow.id],
+        now,
+        tx,
+      });
+      if (enqueued.flush) flushes.push(enqueued.flush);
+
+      createdTexts.push(text);
+      createdItems.push(item);
+    }
+
+    return {
+      collection,
+      texts: createdTexts,
+      items: createdItems,
+    };
+  });
+
+  // Transaction committed — now safe to wake the worker for every
+  // chapter text. We fire sequentially so a thrown dispatcher (e.g.
+  // unreachable NLP service) surfaces predictably; the in-process
+  // dispatcher is fire-and-forget per text so this is cheap.
+  for (const flush of flushes) {
+    await flush();
+  }
+
+  return result;
 }
 
 async function loadCollection(id: string): Promise<Collection | null> {
@@ -137,12 +312,48 @@ export type CollectionActor = {
   actor: Pick<User, 'id' | 'role'>;
 };
 
+/**
+ * Delete a collection. For `chapter_book` collections, also cascades
+ * to the member texts — those rows only exist as chapters of the
+ * book, so a "delete book" gesture should clean them up too.
+ *
+ * For `course` and `anthology` kinds the member texts are
+ * independent (curators just group them), so we leave the texts
+ * alone and only break the collection-item links.
+ *
+ * Wrapped in a transaction so a chapter_book delete is all-or-
+ * nothing: either every chapter goes with the book, or none do.
+ */
 export async function deleteCollection(input: CollectionActor): Promise<void> {
   const c = await loadCollection(input.collectionId);
   if (!c) throw new CollectionError('collection not found', 404);
   if (!canManage(c, input.actor)) {
     throw new CollectionError('only the owner can delete', 403);
   }
+
+  if (c.kind === 'chapter_book') {
+    // Snapshot member ids before we drop the collection, since the
+    // `collection_items` rows cascade away with the parent.
+    const items = (await db
+      .select({ textId: schema.collectionItems.textId })
+      .from(schema.collectionItems)
+      .where(eq(schema.collectionItems.collectionId, c.id))) as Array<{
+      textId: string;
+    }>;
+    const textIds = items.map((r) => r.textId);
+    await db.transaction(async (tx) => {
+      await tx
+        .delete(schema.collections)
+        .where(eq(schema.collections.id, c.id));
+      if (textIds.length > 0) {
+        await tx
+          .delete(schema.texts)
+          .where(inArray(schema.texts.id, textIds));
+      }
+    });
+    return;
+  }
+
   await db
     .delete(schema.collections)
     .where(eq(schema.collections.id, input.collectionId));
@@ -343,6 +554,9 @@ export type CollectionDetail = {
   collection: Collection;
   items: Array<{
     position: number;
+    /** Parent-section title from the source TOC (Part heading, etc.).
+     *  `null` for flat collections + manually-curated ones. */
+    sectionTitle: string | null;
     text: Text;
   }>;
 };
@@ -355,6 +569,7 @@ export async function loadCollectionDetail(
   const rows = (await db
     .select({
       position: schema.collectionItems.position,
+      sectionTitle: schema.collectionItems.sectionTitle,
       text: schema.texts,
     })
     .from(schema.collectionItems)
@@ -365,6 +580,7 @@ export async function loadCollectionDetail(
     .where(eq(schema.collectionItems.collectionId, collectionId))
     .orderBy(asc(schema.collectionItems.position))) as Array<{
     position: number;
+    sectionTitle: string | null;
     text: Text;
   }>;
   return { collection: c, items: rows };

@@ -6,7 +6,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const createPastedText = vi.fn();
 const createTxtText = vi.fn();
-const createEpubText = vi.fn();
+const createChapterBookFromEpub = vi.fn();
+const createChapterBookFromZip = vi.fn();
 
 vi.mock('$lib/server/texts/upload.js', async () => {
   const actual = await vi.importActual<typeof import('$lib/server/texts/upload.js')>(
@@ -16,13 +17,23 @@ vi.mock('$lib/server/texts/upload.js', async () => {
     ...actual,
     createPastedText: (...a: unknown[]) => createPastedText(...a),
     createTxtText: (...a: unknown[]) => createTxtText(...a),
-    createEpubText: (...a: unknown[]) => createEpubText(...a),
+    createChapterBookFromEpub: (...a: unknown[]) =>
+      createChapterBookFromEpub(...a),
+    createChapterBookFromZip: (...a: unknown[]) =>
+      createChapterBookFromZip(...a),
   };
 });
 
 type Mod = typeof import('./+page.server.js');
 
-const USER = { id: 'user-1', role: 'user' as const };
+// Verified-by-default in tests — the upload actions gate on
+// emailVerifiedAt, so an unverified-user test sets this to null
+// explicitly.
+const USER = {
+  id: 'user-1',
+  role: 'user' as const,
+  emailVerifiedAt: new Date('2026-01-01T00:00:00Z'),
+};
 
 async function callLoad(user: typeof USER | null) {
   const { load } = (await import('./+page.server.js')) as Mod;
@@ -58,7 +69,8 @@ async function callAction(
 beforeEach(() => {
   createPastedText.mockReset();
   createTxtText.mockReset();
-  createEpubText.mockReset();
+  createChapterBookFromEpub.mockReset();
+  createChapterBookFromZip.mockReset();
 });
 
 async function callEpubAction(
@@ -76,6 +88,26 @@ async function callEpubAction(
   } as unknown as Parameters<Mod['actions']['epub']>[0];
   try {
     return await actions.epub!(event);
+  } catch (e) {
+    return e as { status: number; location?: string };
+  }
+}
+
+async function callZipAction(
+  fields: { language?: string; title?: string; file?: File | null },
+  user: typeof USER | null = USER,
+) {
+  const { actions } = (await import('./+page.server.js')) as Mod;
+  const fd = new FormData();
+  if (fields.language !== undefined) fd.append('language', fields.language);
+  if (fields.title !== undefined) fd.append('title', fields.title);
+  if (fields.file) fd.append('file', fields.file);
+  const event = {
+    locals: { user },
+    request: { formData: () => Promise.resolve(fd) } as unknown as Request,
+  } as unknown as Parameters<Mod['actions']['zip']>[0];
+  try {
+    return await actions.zip!(event);
   } catch (e) {
     return e as { status: number; location?: string };
   }
@@ -190,6 +222,19 @@ describe('/upload paste action', () => {
     expect(res.status).toBe(303);
     expect(res.location).toContain('/login');
   });
+
+  it('rejects unverified users with a 403 verification message', async () => {
+    const result = (await callAction(
+      { language: 'hi', title: 'X', body: 'hello' },
+      { ...USER, emailVerifiedAt: null } as unknown as typeof USER,
+    )) as {
+      status: number;
+      data: { ok: boolean; message: string };
+    };
+    expect(result.status).toBe(403);
+    expect(result.data.message).toMatch(/verify your email/i);
+    expect(createPastedText).not.toHaveBeenCalled();
+  });
 });
 
 describe('/upload epub action', () => {
@@ -198,11 +243,11 @@ describe('/upload epub action', () => {
     return new File([bytes], name, { type: 'application/epub+zip' });
   }
 
-  it('creates an EPUB-sourced text and 303s to it', async () => {
-    createEpubText.mockResolvedValueOnce({
-      text: { id: 'text-3', ownerId: USER.id },
-      chapter: { id: 'c0' },
-      chapters: [{ id: 'c0' }, { id: 'c1' }],
+  it('redirects to the new collection for a multi-chapter EPUB', async () => {
+    createChapterBookFromEpub.mockResolvedValueOnce({
+      kind: 'collection',
+      collection: { id: 'col-1', ownerId: USER.id },
+      texts: [{ id: 'text-a' }, { id: 'text-b' }],
     });
     const res = (await callEpubAction({
       language: 'hi',
@@ -210,15 +255,32 @@ describe('/upload epub action', () => {
       file: fakeFile(),
     })) as { status: number; location: string };
     expect(res.status).toBe(303);
-    expect(res.location).toBe('/reader/text-3');
-    expect(createEpubText).toHaveBeenCalledWith(
+    expect(res.location).toBe('/collections/col-1');
+    expect(createChapterBookFromEpub).toHaveBeenCalledWith(
       { id: USER.id },
       expect.objectContaining({ language: 'hi', title: 'My EPUB' }),
     );
   });
 
+  it('redirects to the reader for a single-chapter EPUB (fallback)', async () => {
+    createChapterBookFromEpub.mockResolvedValueOnce({
+      kind: 'text',
+      text: { id: 'text-3', ownerId: USER.id },
+      chapter: { id: 'c0' },
+      chapters: [{ id: 'c0' }],
+    });
+    const res = (await callEpubAction({
+      language: 'hi',
+      title: 'Solo',
+      file: fakeFile(),
+    })) as { status: number; location: string };
+    expect(res.status).toBe(303);
+    expect(res.location).toBe('/reader/text-3');
+  });
+
   it('falls back to filename when no title is given', async () => {
-    createEpubText.mockResolvedValueOnce({
+    createChapterBookFromEpub.mockResolvedValueOnce({
+      kind: 'text',
       text: { id: 'text-3', ownerId: USER.id },
       chapter: { id: 'c0' },
       chapters: [{ id: 'c0' }],
@@ -227,7 +289,7 @@ describe('/upload epub action', () => {
       language: 'hi',
       file: fakeFile(100, 'A Hindi Novel.epub'),
     });
-    expect(createEpubText).toHaveBeenCalledWith(
+    expect(createChapterBookFromEpub).toHaveBeenCalledWith(
       { id: USER.id },
       expect.objectContaining({ title: 'A Hindi Novel' }),
     );
@@ -244,7 +306,7 @@ describe('/upload epub action', () => {
     };
     expect(result.status).toBe(400);
     expect(result.data.section).toBe('epub');
-    expect(createEpubText).not.toHaveBeenCalled();
+    expect(createChapterBookFromEpub).not.toHaveBeenCalled();
   });
 
   it('rejects a missing file', async () => {
@@ -273,7 +335,7 @@ describe('/upload epub action', () => {
 
   it('surfaces an EpubParseError as a section=epub fail', async () => {
     const { EpubParseError } = await import('$lib/server/texts/upload.js');
-    createEpubText.mockRejectedValueOnce(new EpubParseError('bad zip'));
+    createChapterBookFromEpub.mockRejectedValueOnce(new EpubParseError('bad zip'));
     const result = (await callEpubAction({
       language: 'hi',
       title: 'X',
@@ -286,6 +348,26 @@ describe('/upload epub action', () => {
     expect(result.data.message).toMatch(/bad zip/);
   });
 
+  it('surfaces a language-mismatch as a section=epub fail with a clear message', async () => {
+    const { EpubLanguageMismatchError } = await import(
+      '$lib/server/texts/upload.js'
+    );
+    createChapterBookFromEpub.mockRejectedValueOnce(
+      new EpubLanguageMismatchError('mr', 'hi'),
+    );
+    const result = (await callEpubAction({
+      language: 'hi',
+      title: 'X',
+      file: fakeFile(),
+    })) as {
+      status: number;
+      data: { ok: boolean; section: string; message: string };
+    };
+    expect(result.status).toBe(400);
+    expect(result.data.section).toBe('epub');
+    expect(result.data.message).toMatch(/Marathi/);
+  });
+
   it('redirects unauthenticated EPUB submissions to /login', async () => {
     const res = (await callEpubAction(
       { language: 'hi', title: 'X', file: fakeFile() },
@@ -293,5 +375,121 @@ describe('/upload epub action', () => {
     )) as { status: number; location: string };
     expect(res.status).toBe(303);
     expect(res.location).toContain('/login');
+  });
+
+  it('rejects unverified users with a 403 verification message', async () => {
+    const result = (await callEpubAction(
+      { language: 'hi', title: 'X', file: fakeFile() },
+      { ...USER, emailVerifiedAt: null } as unknown as typeof USER,
+    )) as {
+      status: number;
+      data: { ok: boolean; section: string; message: string };
+    };
+    expect(result.status).toBe(403);
+    expect(result.data.section).toBe('epub');
+    expect(result.data.message).toMatch(/verify your email/i);
+    expect(createChapterBookFromEpub).not.toHaveBeenCalled();
+  });
+});
+
+describe('/upload zip action', () => {
+  function fakeFile(size = 100, name = 'book.zip') {
+    const bytes = new Uint8Array(size);
+    return new File([bytes], name, { type: 'application/zip' });
+  }
+
+  it('redirects to the new collection for a multi-file ZIP', async () => {
+    createChapterBookFromZip.mockResolvedValueOnce({
+      kind: 'collection',
+      collection: { id: 'col-9', ownerId: USER.id },
+      texts: [{ id: 't1' }, { id: 't2' }],
+    });
+    const res = (await callZipAction({
+      language: 'hi',
+      title: 'My ZIP',
+      file: fakeFile(),
+    })) as { status: number; location: string };
+    expect(res.status).toBe(303);
+    expect(res.location).toBe('/collections/col-9');
+    expect(createChapterBookFromZip).toHaveBeenCalledWith(
+      { id: USER.id },
+      expect.objectContaining({ language: 'hi', title: 'My ZIP' }),
+    );
+  });
+
+  it('redirects to the reader for a single-file ZIP (fallback)', async () => {
+    createChapterBookFromZip.mockResolvedValueOnce({
+      kind: 'text',
+      text: { id: 'text-zip', ownerId: USER.id },
+      chapter: { id: 'c0' },
+      chapters: [{ id: 'c0' }],
+    });
+    const res = (await callZipAction({
+      language: 'hi',
+      title: 'Solo',
+      file: fakeFile(),
+    })) as { status: number; location: string };
+    expect(res.status).toBe(303);
+    expect(res.location).toBe('/reader/text-zip');
+  });
+
+  it('falls back to filename when no title is given', async () => {
+    createChapterBookFromZip.mockResolvedValueOnce({
+      kind: 'text',
+      text: { id: 'text-zip', ownerId: USER.id },
+      chapter: { id: 'c0' },
+      chapters: [{ id: 'c0' }],
+    });
+    await callZipAction({
+      language: 'hi',
+      file: fakeFile(100, 'A Hindi Anthology.zip'),
+    });
+    expect(createChapterBookFromZip).toHaveBeenCalledWith(
+      { id: USER.id },
+      expect.objectContaining({ title: 'A Hindi Anthology' }),
+    );
+  });
+
+  it('rejects a missing file with a section=zip fail', async () => {
+    const result = (await callZipAction({
+      language: 'hi',
+      title: 'X',
+    })) as {
+      status: number;
+      data: { ok: boolean; section: string; message: string };
+    };
+    expect(result.status).toBe(400);
+    expect(result.data.section).toBe('zip');
+  });
+
+  it('surfaces a ZipParseError as a section=zip fail', async () => {
+    const { ZipParseError } = await import('$lib/server/texts/upload.js');
+    createChapterBookFromZip.mockRejectedValueOnce(
+      new ZipParseError('no top-level .txt'),
+    );
+    const result = (await callZipAction({
+      language: 'hi',
+      title: 'X',
+      file: fakeFile(),
+    })) as {
+      status: number;
+      data: { ok: boolean; section: string; message: string };
+    };
+    expect(result.status).toBe(400);
+    expect(result.data.section).toBe('zip');
+    expect(result.data.message).toMatch(/top-level/);
+  });
+
+  it('rejects unverified users with a 403 verification message', async () => {
+    const result = (await callZipAction(
+      { language: 'hi', title: 'X', file: fakeFile() },
+      { ...USER, emailVerifiedAt: null } as unknown as typeof USER,
+    )) as {
+      status: number;
+      data: { ok: boolean; section: string; message: string };
+    };
+    expect(result.status).toBe(403);
+    expect(result.data.section).toBe('zip');
+    expect(result.data.message).toMatch(/verify your email/i);
   });
 });

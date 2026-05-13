@@ -86,7 +86,7 @@ export const load: PageServerLoad = async ({ url, locals }) => {
     limit,
     offset,
   };
-  let collections: Array<{
+  type CollectionCard = {
     id: string;
     title: string;
     kind: string;
@@ -95,7 +95,14 @@ export const load: PageServerLoad = async ({ url, locals }) => {
     coverUrl: string | null;
     textCount: number;
     estimatedComprehensionPct: number | null;
-  }> = [];
+  };
+  let collections: CollectionCard[] = [];
+  // Chapter-book collections surfaced inline on the 'your' / 'official'
+  // tabs alongside texts — each book is one library card, never one
+  // card per chapter. The full collections catalog still lives on the
+  // dedicated Collections tab; this is just so users see their
+  // imported books in the place they expect them.
+  let chapterBookCards: CollectionCard[] = [];
   let collectionsPage = {
     totalCount: 0,
     limit,
@@ -111,6 +118,29 @@ export const load: PageServerLoad = async ({ url, locals }) => {
       { id: locals.user!.id },
       { limit, offset, language: language ?? undefined },
     );
+    // Surface chapter-book collections as library cards. We don't
+    // paginate these — a learner has at most a handful of imported
+    // books — they sit above the paginated texts.
+    const ownedCollections = await listCollectionsForUser(locals.user!.id);
+    const filtered = ownedCollections.filter(
+      (row) =>
+        row.collection.kind === 'chapter_book' &&
+        (!language || row.collection.language === language),
+    );
+    const compMap = await estimatedComprehensionForCollections(
+      locals.user!.id,
+      filtered.map((m) => m.collection.id),
+    );
+    chapterBookCards = filtered.map((row) => ({
+      id: row.collection.id,
+      title: row.collection.title,
+      kind: row.collection.kind,
+      language: row.collection.language,
+      visibility: row.collection.visibility,
+      coverUrl: row.collection.coverUrl,
+      textCount: row.textCount,
+      estimatedComprehensionPct: compMap.get(row.collection.id) ?? null,
+    }));
   } else if (tab === 'shared') {
     page = await listSharedTexts({ id: locals.user!.id }, { limit, offset });
   } else if (tab === 'collections') {
@@ -163,6 +193,31 @@ export const load: PageServerLoad = async ({ url, locals }) => {
       offset,
       language: language ?? undefined,
     });
+    // Same treatment for the official tab — official chapter-book
+    // collections surface as cards alongside standalone official
+    // texts. Anonymous viewers see no comprehension badge.
+    const officialCollections = await listOfficialCollections(
+      language ?? undefined,
+    );
+    const filtered = officialCollections.filter(
+      (row) => row.collection.kind === 'chapter_book',
+    );
+    const compMap = locals.user
+      ? await estimatedComprehensionForCollections(
+          locals.user.id,
+          filtered.map((m) => m.collection.id),
+        )
+      : new Map<string, number | null>();
+    chapterBookCards = filtered.map((row) => ({
+      id: row.collection.id,
+      title: row.collection.title,
+      kind: row.collection.kind,
+      language: row.collection.language,
+      visibility: row.collection.visibility,
+      coverUrl: row.collection.coverUrl,
+      textCount: row.textCount,
+      estimatedComprehensionPct: compMap.get(row.collection.id) ?? null,
+    }));
   }
 
   // T-10.2 text-card badge — same flow for the your / shared /
@@ -180,6 +235,7 @@ export const load: PageServerLoad = async ({ url, locals }) => {
     page,
     textComprehension: Object.fromEntries(textComprehension),
     collections,
+    chapterBookCards,
     collectionsPage,
     language,
     languages: Object.values(LANGUAGES).map((d) => ({

@@ -1,10 +1,49 @@
 <script lang="ts">
   import { invalidateAll, goto } from '$app/navigation';
+  import Modal from '$lib/components/overlay/Modal.svelte';
   import type { PageData } from './$types';
 
   let { data }: { data: PageData } = $props();
 
   import { untrack } from 'svelte';
+
+  // Single shared confirmation modal — used in place of the native
+  // `window.confirm()` so the dialog matches the rest of the app's
+  // visual language (and so we can support styled bodies, focus
+  // trapping, etc.). Each caller fills in title/body/confirmLabel
+  // and an async handler.
+  let confirmState = $state<{
+    title: string;
+    body: string;
+    confirmLabel: string;
+    danger?: boolean;
+    onConfirm: () => Promise<void> | void;
+  } | null>(null);
+  let confirmRunning = $state(false);
+
+  function openConfirm(opts: {
+    title: string;
+    body: string;
+    confirmLabel: string;
+    danger?: boolean;
+    onConfirm: () => Promise<void> | void;
+  }) {
+    confirmState = opts;
+  }
+  function closeConfirm() {
+    if (confirmRunning) return;
+    confirmState = null;
+  }
+  async function runConfirm() {
+    if (!confirmState || confirmRunning) return;
+    confirmRunning = true;
+    try {
+      await confirmState.onConfirm();
+    } finally {
+      confirmRunning = false;
+      confirmState = null;
+    }
+  }
   // Drag-and-drop reorder. The dragged element's index is captured
   // on dragstart; on drop we splice the items array client-side
   // and POST the new order. Mouse only — keyboard reorder is a
@@ -83,13 +122,76 @@
     }
   }
 
-  async function removeItem(textId: string) {
-    if (!window.confirm('Remove this text from the collection?')) return;
-    const res = await fetch(
-      `/api/v1/collections/${data.collection.id}/items/${textId}`,
-      { method: 'DELETE' },
-    );
-    if (res.ok) await invalidateAll();
+  function removeItem(textId: string) {
+    const item = data.items.find((i) => i.text.id === textId);
+    openConfirm({
+      title: 'Remove from collection',
+      body: item
+        ? `Remove “${item.text.title}” from this collection? The text itself isn't deleted.`
+        : 'Remove this text from the collection?',
+      confirmLabel: 'Remove',
+      danger: true,
+      onConfirm: async () => {
+        const res = await fetch(
+          `/api/v1/collections/${data.collection.id}/items/${textId}`,
+          { method: 'DELETE' },
+        );
+        if (res.ok) await invalidateAll();
+      },
+    });
+  }
+
+  // Re-dispatch NLP processing for member texts. Two modes:
+  //  - stuck rescue: when any chapter is `pending` or `failed`, the
+  //    button targets just those (POST without body, server default).
+  //  - full re-run: when everything is `ready`, the button targets
+  //    every chapter (POST `{all: true}`) — useful after a
+  //    dictionary import where the existing tokenizations are stale.
+  const stuckCount = $derived(
+    data.items.filter(
+      (it) => it.text.status === 'pending' || it.text.status === 'failed',
+    ).length,
+  );
+  const reprocessLabel = 'Reprocess All';
+  let reprocessing = $state(false);
+  let reprocessMessage = $state<string | null>(null);
+  function reprocessAll() {
+    if (data.items.length === 0) return;
+    const all = stuckCount === 0;
+    const target = all ? data.items.length : stuckCount;
+    openConfirm({
+      title: 'Reprocess chapters',
+      body: all
+        ? `Re-run NLP processing on all ${target} ${target === 1 ? 'chapter' : 'chapters'} in this collection? Existing tokens will be replaced.`
+        : `Reprocess ${target} stuck ${target === 1 ? 'chapter' : 'chapters'}? Already-ready chapters won't be touched.`,
+      confirmLabel: 'Reprocess',
+      onConfirm: async () => {
+        reprocessing = true;
+        reprocessMessage = null;
+        try {
+          const res = await fetch(
+            `/api/v1/collections/${data.collection.id}/reprocess`,
+            {
+              method: 'POST',
+              headers: all ? { 'content-type': 'application/json' } : {},
+              body: all ? JSON.stringify({ all: true }) : undefined,
+            },
+          );
+          if (!res.ok) {
+            reprocessMessage =
+              (await res.text().catch(() => '')) || `HTTP ${res.status}`;
+            return;
+          }
+          const body = (await res.json()) as { dispatched: number };
+          reprocessMessage = `Dispatched ${body.dispatched} ${
+            body.dispatched === 1 ? 'chapter' : 'chapters'
+          } — refresh in a few seconds to see status updates.`;
+          await invalidateAll();
+        } finally {
+          reprocessing = false;
+        }
+      },
+    });
   }
 
   // T-8.4 — manage sharing. Owner enters a recipient email; the API
@@ -147,7 +249,20 @@
       <span class="cd-pill">{data.collection.language}</span>
       <span class="cd-pill">{data.collection.visibility}</span>
       <span class="cd-pill">{data.items.length} {data.items.length === 1 ? 'text' : 'texts'}</span>
+      {#if data.isOwner && data.items.length > 0}
+        <button
+          type="button"
+          class="cd-pill-btn"
+          onclick={reprocessAll}
+          disabled={reprocessing}
+        >
+          {reprocessing ? 'Dispatching…' : reprocessLabel}
+        </button>
+      {/if}
     </p>
+    {#if data.isOwner && reprocessMessage}
+      <p class="cd-muted" role="status">{reprocessMessage}</p>
+    {/if}
     {#if data.collection.description}
       <p class="cd-desc">{data.collection.description}</p>
     {/if}
@@ -170,36 +285,51 @@
     {/if}
   </header>
 
-  <ol class="cd-list">
+  <div class="cd-list" role="list">
     {#each data.items as item, i (item.text.id)}
-      <li
-        class="cd-item"
-        draggable={data.isOwner}
-        ondragstart={onDragStart(i)}
-        ondragover={onDragOver}
-        ondrop={() => onDrop(i)}
-      >
-        <span class="cd-pos">{i + 1}</span>
-        <a class="cd-link" href={`/reader/${item.text.id}`}>{item.text.title}</a>
-        <span class="cd-status">{item.text.status}</span>
-        {#if item.pctRead > 0}
-          <span class="cd-pct">{Math.round(item.pctRead)}%</span>
+      {#if item.isSectionAnchor}
+        <!-- This spine item is the part-intro page that the publisher's
+             TOC nests over the next group of chapters. Render it as
+             the section header instead of a duplicate chapter card.
+             Link the header to its own reader page so the intro
+             content stays reachable. -->
+        <a class="cd-section cd-section-link" href={`/reader/${item.text.id}`}>
+          {item.text.title}
+        </a>
+      {:else}
+        {#if item.sectionTitle && (i === 0 || data.items[i - 1]?.sectionTitle !== item.sectionTitle) && !(data.items[i - 1]?.isSectionAnchor && data.items[i - 1]?.text.title === item.sectionTitle)}
+          <h3 class="cd-section">{item.sectionTitle}</h3>
         {/if}
-        {#if data.isOwner}
-          <button
-            type="button"
-            class="cd-remove"
-            aria-label="Remove from collection"
-            onclick={() => removeItem(item.text.id)}
-          >×</button>
-        {/if}
-      </li>
+        <div
+          class="cd-item"
+          role="listitem"
+          draggable={data.isOwner}
+          ondragstart={onDragStart(i)}
+          ondragover={onDragOver}
+          ondrop={() => onDrop(i)}
+        >
+          <span class="cd-pos">{i + 1}</span>
+          <a class="cd-link" href={`/reader/${item.text.id}`}>{item.text.title}</a>
+          <span class="cd-status">{item.text.status}</span>
+          {#if item.pctRead > 0}
+            <span class="cd-pct">{Math.round(item.pctRead)}%</span>
+          {/if}
+          {#if data.isOwner}
+            <button
+              type="button"
+              class="cd-remove"
+              aria-label="Remove from collection"
+              onclick={() => removeItem(item.text.id)}
+            >×</button>
+          {/if}
+        </div>
+      {/if}
     {:else}
-      <li class="cd-empty">
+      <p class="cd-empty">
         No texts in this collection yet.
-      </li>
+      </p>
     {/each}
-  </ol>
+  </div>
 
   {#if savingOrder}
     <p class="cd-muted">Saving new order…</p>
@@ -281,6 +411,35 @@
   {/if}
 </div>
 
+<Modal
+  open={confirmState !== null}
+  onClose={closeConfirm}
+  title={confirmState?.title ?? ''}
+  width={420}
+>
+  {#if confirmState}
+    <p class="confirm-body">{confirmState.body}</p>
+  {/if}
+  {#snippet footer()}
+    <button
+      type="button"
+      class="confirm-cancel"
+      onclick={closeConfirm}
+      disabled={confirmRunning}
+    >
+      Cancel
+    </button>
+    <button
+      type="button"
+      class={confirmState?.danger ? 'confirm-danger' : 'confirm-go'}
+      onclick={runConfirm}
+      disabled={confirmRunning}
+    >
+      {confirmRunning ? 'Working…' : (confirmState?.confirmLabel ?? 'Confirm')}
+    </button>
+  {/snippet}
+</Modal>
+
 <style>
   .cd {
     max-width: 48rem;
@@ -359,6 +518,40 @@
     display: flex;
     flex-direction: column;
     gap: 0.4rem;
+  }
+  /* Section heading rendered between groups of chapters that share
+     the same `section_title` (e.g. "Part 1: Make It Obvious").
+     Slightly heavier weight than the body but smaller than the
+     collection title so the hierarchy reads: collection → section
+     → chapter. Extra top margin separates each group. */
+  .cd-section {
+    margin: 0.9rem 0 0;
+    font-family: var(--font-serif, var(--font-ui));
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--ink, var(--color-fg));
+    letter-spacing: 0.01em;
+  }
+  /* First section header shouldn't add extra space above (the list's
+     own top margin already provides it). */
+  .cd-list > .cd-section:first-child {
+    margin-top: 0;
+  }
+  /* Section header that's also a link to the part-intro page. Same
+     typography as a plain section header; the underline + color
+     reveal that it's clickable. */
+  .cd-section-link {
+    display: block;
+    text-decoration: none;
+    color: var(--ink, var(--color-fg));
+  }
+  .cd-section-link:hover {
+    color: var(--accent, var(--color-accent));
+  }
+  .cd-section-link:focus-visible {
+    outline: 2px solid var(--accent, var(--color-accent));
+    outline-offset: 2px;
+    border-radius: 4px;
   }
   .cd-item {
     display: grid;
@@ -452,6 +645,82 @@
     cursor: pointer;
   }
   .cd-add-form button:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
+  /* Pill-sized action button that lives alongside .cd-pill chips in
+     the meta row. Same height + radius as the pills. Filled accent +
+     paired ink for WCAG AA contrast (accent-on-transparent fails on
+     this surface). `margin-left: auto` pushes it to the far right of
+     the flex row, separating action from metadata. */
+  .cd-pill-btn {
+    margin-left: auto;
+    background: var(--accent, var(--color-accent));
+    color: var(--accent-ink, var(--color-bg));
+    border: 1px solid var(--accent, var(--color-accent));
+    border-radius: 999px;
+    padding: 0.18rem 0.7rem;
+    /* Label is slightly larger than the surrounding pills for
+       readability; tighter line-height keeps the overall box height
+       matched (pills inherit body line-height 1.5 at font-size
+       0.62rem ≈ 0.93rem leading; 0.75 * 1.24 ≈ 0.93rem). */
+    font-size: 0.75rem;
+    line-height: 1.24;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    font-weight: 600;
+    font-family: inherit;
+    cursor: pointer;
+  }
+  .cd-pill-btn:hover:not(:disabled) {
+    /* Darken the accent slightly so the hover state is detectable
+       without dropping contrast. */
+    background: color-mix(
+      in oklch,
+      var(--accent, var(--color-accent)) 85%,
+      var(--ink, var(--color-fg))
+    );
+  }
+  .cd-pill-btn:focus-visible {
+    outline: 2px solid var(--accent, var(--color-accent));
+    outline-offset: 2px;
+  }
+  .cd-pill-btn:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
+  .confirm-body {
+    margin: 0;
+    color: var(--ink, var(--color-fg));
+    line-height: 1.4;
+  }
+  .confirm-cancel,
+  .confirm-go,
+  .confirm-danger {
+    min-height: 38px;
+    padding: 0 0.85rem;
+    border-radius: 6px;
+    font: inherit;
+    cursor: pointer;
+  }
+  .confirm-cancel {
+    background: transparent;
+    border: 1px solid var(--rule, var(--color-border));
+    color: var(--ink, var(--color-fg));
+  }
+  .confirm-go {
+    background: var(--accent, var(--color-accent));
+    color: var(--accent-ink, var(--color-bg));
+    border: 0;
+  }
+  .confirm-danger {
+    background: var(--err, #b94545);
+    color: #fff;
+    border: 0;
+  }
+  .confirm-cancel:disabled,
+  .confirm-go:disabled,
+  .confirm-danger:disabled {
     opacity: 0.55;
     cursor: not-allowed;
   }

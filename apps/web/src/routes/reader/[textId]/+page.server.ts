@@ -79,16 +79,26 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
   if (locals.user) {
     savedProgress = await getTextProgress(locals.user.id, params.textId);
   }
+  // `?endOfChapter=1` is the cross-text "prev" handoff: when a
+  // reader on page 1 of chapter N hits prev, they advance into the
+  // previous text's LAST page (last page of the last internal
+  // chapter). We treat this as a URL anchor so saved progress
+  // doesn't override it.
+  const endOfChapter = url.searchParams.get('endOfChapter') === '1';
   const hasUrlAnchor =
-    url.searchParams.has('chapter') || url.searchParams.has('token');
+    url.searchParams.has('chapter') ||
+    url.searchParams.has('token') ||
+    endOfChapter;
 
   // Clamp anchor params to valid ranges. A bad `?chapter=999` URL
   // shouldn't 500 — it should land on the first chapter.
-  const requestedChapter = readInt(
-    url,
-    'chapter',
-    !hasUrlAnchor && savedProgress ? savedProgress.lastChapterIdx : 0,
-  );
+  const requestedChapter = endOfChapter
+    ? result.chapters.length - 1
+    : readInt(
+        url,
+        'chapter',
+        !hasUrlAnchor && savedProgress ? savedProgress.lastChapterIdx : 0,
+      );
   const chapterIdx = Math.max(
     0,
     Math.min(requestedChapter, result.chapters.length - 1),
@@ -222,6 +232,7 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
     anchor: {
       chapterIdx,
       tokenIdx,
+      endOfChapter,
     },
     mode,
     showRomanization,

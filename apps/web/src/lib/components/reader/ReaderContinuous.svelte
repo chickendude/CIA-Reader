@@ -244,7 +244,7 @@
       {#if chapter.title || renderedChapters.length > 1}
         <h2>
           {chapter.title ?? `Chapter ${chapter.idx + 1}`}
-          <span class="muted">({chapter.tokenCount.toLocaleString()} tokens)</span>
+          <span class="muted">({chapter.tokenCount.toLocaleString()} words)</span>
         </h2>
       {/if}
       <ChapterBody {chapter} {language} {showRomanization} {isOwner} />

@@ -17,15 +17,18 @@ import { fail, redirect } from '@sveltejs/kit';
 import { z } from 'zod';
 
 import {
-  createEpubText,
+  createChapterBookFromEpub,
+  createChapterBookFromZip,
   createPastedText,
   createTxtText,
   EpubParseError,
   TextValidationError,
+  ZipParseError,
   MAX_EPUB_BYTES,
   MAX_PASTE_BYTES,
   MAX_TXT_BYTES,
   MAX_TITLE_LEN,
+  MAX_ZIP_BYTES,
   MIN_TITLE_LEN,
 } from '$lib/server/texts/upload.js';
 import { LANGUAGES, SUPPORTED_LANGUAGE_CODES } from '@ciareader/shared-types';
@@ -70,6 +73,7 @@ export const load: PageServerLoad = async ({ locals, url }) => {
       maxPasteBytes: MAX_PASTE_BYTES,
       maxTxtBytes: MAX_TXT_BYTES,
       maxEpubBytes: MAX_EPUB_BYTES,
+      maxZipBytes: MAX_ZIP_BYTES,
     },
   };
 };
@@ -91,6 +95,15 @@ export const actions: Actions = {
       title: fd.get('title')?.toString() ?? '',
       body: fd.get('body')?.toString() ?? '',
     };
+    if (!locals.user.emailVerifiedAt) {
+      return fail(403, {
+        ok: false,
+        message:
+          'Please verify your email before uploading. Check your inbox for the verification link.',
+        // Echo values so the user keeps their paste on resubmit.
+        values: raw,
+      });
+    }
     const parsed = formSchema.safeParse(raw);
     if (!parsed.success) {
       return fail(400, {
@@ -138,6 +151,14 @@ export const actions: Actions = {
   epub: async ({ request, locals }) => {
     if (!locals.user) {
       throw redirect(303, '/login?next=/upload');
+    }
+    if (!locals.user.emailVerifiedAt) {
+      return fail(403, {
+        ok: false,
+        section: 'epub',
+        message:
+          'Please verify your email before uploading. Check your inbox for the verification link.',
+      });
     }
     const fd = await request.formData();
     const language = fd.get('language')?.toString() ?? '';
@@ -193,11 +214,14 @@ export const actions: Actions = {
     }
     const epubBytes = new Uint8Array(await file.arrayBuffer());
     try {
-      const created = await createEpubText(
+      const created = await createChapterBookFromEpub(
         { id: locals.user.id },
         { language, title, epubBytes },
       );
-      throw redirect(303, `/reader/${created.text.id}`);
+      if (created.kind === 'text') {
+        throw redirect(303, `/reader/${created.text.id}`);
+      }
+      throw redirect(303, `/collections/${created.collection.id}`);
     } catch (err) {
       if (err instanceof TextValidationError) {
         return fail(err.status, {
@@ -210,6 +234,95 @@ export const actions: Actions = {
         return fail(400, {
           ok: false,
           section: 'epub',
+          message: err.message,
+        });
+      }
+      throw err;
+    }
+  },
+
+  zip: async ({ request, locals }) => {
+    if (!locals.user) {
+      throw redirect(303, '/login?next=/upload');
+    }
+    if (!locals.user.emailVerifiedAt) {
+      return fail(403, {
+        ok: false,
+        section: 'zip',
+        message:
+          'Please verify your email before uploading. Check your inbox for the verification link.',
+      });
+    }
+    const fd = await request.formData();
+    const language = fd.get('language')?.toString() ?? '';
+    const titleRaw = fd.get('title')?.toString() ?? '';
+    const file = fd.get('file');
+    if (language !== 'hi' && language !== 'mr' && language !== 'or') {
+      return fail(400, {
+        ok: false,
+        section: 'zip',
+        message: `Unsupported language '${language}'`,
+      });
+    }
+    if (!(file instanceof File)) {
+      return fail(400, {
+        ok: false,
+        section: 'zip',
+        message: 'Please select a .zip file to upload',
+      });
+    }
+    if (file.size === 0) {
+      return fail(400, {
+        ok: false,
+        section: 'zip',
+        message: 'ZIP file is empty',
+      });
+    }
+    if (file.size > MAX_ZIP_BYTES) {
+      return fail(400, {
+        ok: false,
+        section: 'zip',
+        message: `ZIP exceeds ${MAX_ZIP_BYTES.toLocaleString()} bytes`,
+      });
+    }
+    let title = titleRaw.trim();
+    if (title.length === 0) title = file.name.replace(/\.zip$/i, '').trim();
+    if (title.length < MIN_TITLE_LEN) {
+      return fail(400, {
+        ok: false,
+        section: 'zip',
+        message: 'title is required',
+      });
+    }
+    if (title.length > MAX_TITLE_LEN) {
+      return fail(400, {
+        ok: false,
+        section: 'zip',
+        message: `title exceeds ${MAX_TITLE_LEN} characters`,
+      });
+    }
+    const zipBytes = new Uint8Array(await file.arrayBuffer());
+    try {
+      const created = await createChapterBookFromZip(
+        { id: locals.user.id },
+        { language, title, zipBytes },
+      );
+      if (created.kind === 'text') {
+        throw redirect(303, `/reader/${created.text.id}`);
+      }
+      throw redirect(303, `/collections/${created.collection.id}`);
+    } catch (err) {
+      if (err instanceof TextValidationError) {
+        return fail(err.status, {
+          ok: false,
+          section: 'zip',
+          message: err.message,
+        });
+      }
+      if (err instanceof ZipParseError) {
+        return fail(400, {
+          ok: false,
+          section: 'zip',
           message: err.message,
         });
       }
