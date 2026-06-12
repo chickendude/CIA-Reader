@@ -246,8 +246,15 @@
 
     <label>
       Title {#if isFileMode}<span class="hint">(optional)</span>{/if}
+      <!-- dir=auto: direction follows the typed content, so a Yiddish
+           (RTL Hebrew-script) title lays out right-to-left while Indic
+           titles stay LTR. Same on the body textarea below, where the
+           browser resolves each line independently — mixed-direction
+           documents (Yiddish text with English credits) render every
+           paragraph in its natural direction. -->
       <input
         name="title"
+        dir="auto"
         bind:value={title}
         maxlength={data.limits.maxTitleLength}
         required={isTextMode}
@@ -300,6 +307,7 @@
         Body
         <textarea
           name="body"
+          dir="auto"
           bind:value={body}
           rows="14"
           required
