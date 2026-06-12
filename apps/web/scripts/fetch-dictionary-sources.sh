@@ -156,6 +156,7 @@ case "${1-all}" in
     fetch_kaikki kaikki-hindi Hindi
     fetch_kaikki kaikki-marathi Marathi
     fetch_kaikki kaikki-odia Odia
+    fetch_kaikki kaikki-yiddish Yiddish
     fetch_kaikki_en_translations
     ;;
   kaikki-hindi)
@@ -167,12 +168,15 @@ case "${1-all}" in
   kaikki-odia)
     fetch_kaikki kaikki-odia Odia
     ;;
+  kaikki-yiddish)
+    fetch_kaikki kaikki-yiddish Yiddish
+    ;;
   kaikki-en-translations)
     fetch_kaikki_en_translations
     ;;
   *)
     echo "unknown source: $1" >&2
-    echo "available: kaikki-hindi, kaikki-marathi, kaikki-odia, kaikki-en-translations" >&2
+    echo "available: kaikki-hindi, kaikki-marathi, kaikki-odia, kaikki-yiddish, kaikki-en-translations" >&2
     exit 1
     ;;
 esac

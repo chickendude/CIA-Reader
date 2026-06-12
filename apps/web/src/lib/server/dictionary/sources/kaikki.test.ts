@@ -19,12 +19,14 @@ import {
 import { kaikkiHindiSource } from './kaikki-hindi.js';
 import { kaikkiMarathiSource } from './kaikki-marathi.js';
 import { kaikkiOdiaSource } from './kaikki-odia.js';
+import { kaikkiYiddishSource } from './kaikki-yiddish.js';
 import type { ImportEntry } from '../types.js';
 
 const FIXTURES = dirname(fileURLToPath(import.meta.url)) + '/__fixtures__';
 const HINDI_FIXTURE = resolve(FIXTURES, 'kaikki-hindi.jsonl');
 const MARATHI_FIXTURE = resolve(FIXTURES, 'kaikki-marathi.jsonl');
 const ODIA_FIXTURE = resolve(FIXTURES, 'kaikki-odia.jsonl');
+const YIDDISH_FIXTURE = resolve(FIXTURES, 'kaikki-yiddish.jsonl');
 
 const HINDI_OPTS = { script: 'Deva' as const, sourceIdPrefix: 'kaikki:hi' };
 
@@ -350,5 +352,50 @@ describe('kaikkiOdiaSource (streaming over fixture)', () => {
     }
     // Spot-check known entries from the fixture.
     expect(out.find((e) => e.headword === 'ପାଣି' && e.pos === 'NOUN')).toBeDefined();
+  });
+});
+
+describe('kaikkiYiddishSource (streaming over fixture)', () => {
+  beforeEach(() => {
+    process.env.KAIKKI_YIDDISH_FILE = YIDDISH_FIXTURE;
+  });
+  afterEach(() => {
+    delete process.env.KAIKKI_YIDDISH_FILE;
+  });
+
+  it('exposes the expected metadata + Hebrew script identifier', () => {
+    expect(kaikkiYiddishSource.name).toBe('kaikki-yiddish');
+    expect(kaikkiYiddishSource.language).toBe('yi');
+    expect(kaikkiYiddishSource.license).toBe('CC-BY-SA-3.0');
+    expect(kaikkiYiddishSource.sourceAttribution).toContain('Yiddish');
+  });
+
+  it('uses the Hebrew script (Hebr) — first non-Brahmic import path', async () => {
+    const out: ImportEntry[] = [];
+    for await (const entry of await kaikkiYiddishSource.entries()) {
+      out.push(entry);
+    }
+    expect(out.length).toBeGreaterThan(0);
+    for (const e of out) {
+      expect(e.script).toBe('Hebr');
+      expect(e.sourceId.startsWith('kaikki:yi:')).toBe(true);
+    }
+    // Spot-check known entries from the fixture, including pointed
+    // letters and the pasekh-tsvey-yudn ligature.
+    expect(out.find((e) => e.headword === 'בוך' && e.pos === 'NOUN')).toBeDefined();
+    expect(out.find((e) => e.headword === 'שרײַבן' && e.pos === 'VERB')).toBeDefined();
+    // The 'article' POS isn't in the POS map and must be skipped.
+    expect(out.find((e) => e.headword === 'אַ')).toBeUndefined();
+  });
+
+  it('carries inflected forms (plural, participle) for lemma_forms', async () => {
+    const out: ImportEntry[] = [];
+    for await (const entry of await kaikkiYiddishSource.entries()) {
+      out.push(entry);
+    }
+    const bukh = out.find((e) => e.headword === 'בוך')!;
+    expect(bukh.forms?.map((f) => f.surface)).toContain('ביכער');
+    const shraybn = out.find((e) => e.headword === 'שרײַבן')!;
+    expect(shraybn.forms?.map((f) => f.surface)).toContain('געשריבן');
   });
 });

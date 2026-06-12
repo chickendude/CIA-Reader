@@ -59,6 +59,23 @@ community submissions (T-6.3) to fill gaps post-launch.
 The Odia dictionary browse page (T-3.6) will carry a visible
 **"coverage: sparse"** notice so users calibrate expectations.
 
+## Yiddish
+
+| Source | Publisher | License | Status |
+|---|---|---|---|
+| [Wiktionary Yiddish (via Kaikki.org)](https://kaikki.org/dictionary/Yiddish/) | Wiktionary contributors | CC-BY-SA 3.0 | **Registered** (`kaikki-yiddish`) — fetched via `scripts/fetch-dictionary-sources.sh kaikki-yiddish`; ~10k entries in standard YIVO orthography (pointed letters, װ/ױ/ײ ligature codepoints — the NLP lemma lookup folds ligatures so either spelling convention matches) |
+| [Wiktionary English Translations sections (via Kaikki.org)](https://kaikki.org/dictionary/English/) | Wiktionary contributors | CC-BY-SA 3.0 | **Registered** (`kaikki-en-translations-yiddish`) — inverted from English entries' `translations[]`, sharing the same cached English dump as the HI/MR/OR importers |
+| Comprehensive Yiddish-English Dictionary (Beinfeld/Bochner) | Indiana University Press | Proprietary | **Rejected** — commercial dictionary, no redistribution rights |
+| Yiddish Book Center resources | Yiddish Book Center | Mixed, mostly all-rights-reserved | Not pursued for dictionary data; texts may be sourced individually where public domain |
+
+Coverage: medium for core vocabulary. The loshn-koydesh (Hebrew/Aramaic-origin)
+component is spelled etymologically and unpointed, so rule-based
+romanization and affix-stripping both undershoot there — expect the
+correction UX and curator edits to carry more weight than they do for
+Hindi. The custom pipeline's seed lemma table
+(`services/nlp/app/pipelines/yiddish/data/seed_lemmas.json`) bootstraps
+the analyzer until this import lands in Postgres.
+
 ## Cross-source duplication
 
 Multiple sources may ship the same `(language, headword, pos)` triple —

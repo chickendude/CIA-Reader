@@ -1,0 +1,96 @@
+{
+  "__description__": "Seed Yiddish lemma table. Each entry: 'headword': {'pos', 'gloss', optional 'stem' (conjugation base when it differs from the headword), optional 'forms' (surface → UD features for irregular/suppletive/umlaut forms the affix rules can't derive)}. Headwords are NFC-normalized YIVO-orthography Yiddish (ISO 15924 'Hebr'); the table folds the װ/ױ/ײ ligatures at lookup time so either spelling convention matches. Large-scale import (Wiktionary Yiddish via Kaikki.org) populates Postgres; this hand-curated set only exercises the morphology rules and the golden corpus in CI.",
+  "entries": {
+    "שרײַבן": { "pos": "VERB", "gloss": "to write", "stem": "שרײַב", "forms": { "געשריבן": { "VerbForm": "Part" } } },
+    "לייענען": { "pos": "VERB", "gloss": "to read", "stem": "לייען" },
+    "גיין": { "pos": "VERB", "gloss": "to go", "stem": "גיי", "forms": { "געגאַנגען": { "VerbForm": "Part" } } },
+    "זײַן": {
+      "pos": "VERB",
+      "gloss": "to be",
+      "stem": "זײַ",
+      "forms": {
+        "בין": { "Tense": "Pres", "Person": "1", "Number": "Sing" },
+        "ביסט": { "Tense": "Pres", "Person": "2", "Number": "Sing" },
+        "איז": { "Tense": "Pres", "Person": "3", "Number": "Sing" },
+        "זענען": { "Tense": "Pres", "Number": "Plur" },
+        "זײַנען": { "Tense": "Pres", "Number": "Plur" },
+        "געווען": { "VerbForm": "Part" }
+      }
+    },
+    "האָבן": {
+      "pos": "VERB",
+      "gloss": "to have",
+      "stem": "האָב",
+      "forms": {
+        "האָסט": { "Tense": "Pres", "Person": "2", "Number": "Sing" },
+        "האָט": { "Tense": "Pres", "Person": "3", "Number": "Sing" },
+        "געהאַט": { "VerbForm": "Part" }
+      }
+    },
+    "זינגען": { "pos": "VERB", "gloss": "to sing", "stem": "זינג", "forms": { "געזונגען": { "VerbForm": "Part" } } },
+    "עסן": { "pos": "VERB", "gloss": "to eat", "stem": "עס", "forms": { "געגעסן": { "VerbForm": "Part" } } },
+    "לערנען": { "pos": "VERB", "gloss": "to learn, to teach", "stem": "לערן" },
+    "וווינען": { "pos": "VERB", "gloss": "to live, to reside", "stem": "וווין" },
+    "קויפֿן": { "pos": "VERB", "gloss": "to buy", "stem": "קויף" },
+    "רעדן": { "pos": "VERB", "gloss": "to speak", "stem": "רעד", "forms": { "גערעדט": { "VerbForm": "Part" } } },
+    "זען": { "pos": "VERB", "gloss": "to see", "stem": "זע", "forms": { "געזען": { "VerbForm": "Part" } } },
+    "מאַכן": { "pos": "VERB", "gloss": "to make", "stem": "מאַך" },
+
+    "בוך": { "pos": "NOUN", "gloss": "book", "forms": { "ביכער": { "Number": "Plur" } } },
+    "קינד": { "pos": "NOUN", "gloss": "child" },
+    "מאַן": { "pos": "NOUN", "gloss": "man, husband", "forms": { "מענער": { "Number": "Plur" } } },
+    "פֿרוי": { "pos": "NOUN", "gloss": "woman, wife" },
+    "טאַטע": { "pos": "NOUN", "gloss": "father" },
+    "מאַמע": { "pos": "NOUN", "gloss": "mother" },
+    "הויז": { "pos": "NOUN", "gloss": "house", "forms": { "הײַזער": { "Number": "Plur" } } },
+    "וואַסער": { "pos": "NOUN", "gloss": "water" },
+    "ברויט": { "pos": "NOUN", "gloss": "bread" },
+    "חבֿר": { "pos": "NOUN", "gloss": "friend" },
+    "שול": { "pos": "NOUN", "gloss": "school, synagogue" },
+    "טאָג": { "pos": "NOUN", "gloss": "day", "forms": { "טעג": { "Number": "Plur" } } },
+    "יאָר": { "pos": "NOUN", "gloss": "year" },
+    "שטאָט": { "pos": "NOUN", "gloss": "city", "forms": { "שטעט": { "Number": "Plur" } } },
+    "וועלט": { "pos": "NOUN", "gloss": "world" },
+    "מענטש": { "pos": "NOUN", "gloss": "person" },
+    "בריוו": { "pos": "NOUN", "gloss": "letter" },
+    "ייִדיש": { "pos": "NOUN", "gloss": "Yiddish (language)" },
+
+    "גוט": { "pos": "ADJ", "gloss": "good" },
+    "גרויס": { "pos": "ADJ", "gloss": "big" },
+    "קליין": { "pos": "ADJ", "gloss": "small" },
+    "אַלט": { "pos": "ADJ", "gloss": "old" },
+    "שיין": { "pos": "ADJ", "gloss": "beautiful" },
+    "נײַ": { "pos": "ADJ", "gloss": "new" },
+    "לאַנג": { "pos": "ADJ", "gloss": "long" },
+
+    "איך": { "pos": "PRON", "gloss": "I" },
+    "דו": { "pos": "PRON", "gloss": "you (sg)" },
+    "ער": { "pos": "PRON", "gloss": "he" },
+    "זי": { "pos": "PRON", "gloss": "she" },
+    "עס": { "pos": "PRON", "gloss": "it" },
+    "מיר": { "pos": "PRON", "gloss": "we" },
+    "איר": { "pos": "PRON", "gloss": "you (pl)" },
+    "זיי": { "pos": "PRON", "gloss": "they" },
+
+    "דער": { "pos": "DET", "gloss": "the (masc)" },
+    "די": { "pos": "DET", "gloss": "the (fem/pl)" },
+    "דאָס": { "pos": "DET", "gloss": "the (neut)" },
+    "דעם": { "pos": "DET", "gloss": "the (obl)" },
+    "אַ": { "pos": "DET", "gloss": "a" },
+    "אַן": { "pos": "DET", "gloss": "an" },
+
+    "אין": { "pos": "ADP", "gloss": "in" },
+    "אויף": { "pos": "ADP", "gloss": "on" },
+    "מיט": { "pos": "ADP", "gloss": "with" },
+    "פֿון": { "pos": "ADP", "gloss": "from, of" },
+    "צו": { "pos": "ADP", "gloss": "to" },
+
+    "און": { "pos": "CCONJ", "gloss": "and" },
+    "אָבער": { "pos": "CCONJ", "gloss": "but" },
+
+    "נישט": { "pos": "PART", "gloss": "not" },
+
+    "דאָ": { "pos": "ADV", "gloss": "here" },
+    "זייער": { "pos": "ADV", "gloss": "very" }
+  }
+}

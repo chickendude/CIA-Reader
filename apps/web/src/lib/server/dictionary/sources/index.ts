@@ -18,9 +18,11 @@ import { hindiSeedSource } from './hindi-seed.js';
 import { kaikkiEnTranslationsHindiSource } from './kaikki-en-translations-hindi.js';
 import { kaikkiEnTranslationsMarathiSource } from './kaikki-en-translations-marathi.js';
 import { kaikkiEnTranslationsOdiaSource } from './kaikki-en-translations-odia.js';
+import { kaikkiEnTranslationsYiddishSource } from './kaikki-en-translations-yiddish.js';
 import { kaikkiHindiSource } from './kaikki-hindi.js';
 import { kaikkiMarathiSource } from './kaikki-marathi.js';
 import { kaikkiOdiaSource } from './kaikki-odia.js';
+import { kaikkiYiddishSource } from './kaikki-yiddish.js';
 
 export type RegistryEntry = {
   name: string;
@@ -32,6 +34,7 @@ export const dictionarySources: RegistryEntry[] = [
   { name: kaikkiHindiSource.name, source: kaikkiHindiSource },
   { name: kaikkiMarathiSource.name, source: kaikkiMarathiSource },
   { name: kaikkiOdiaSource.name, source: kaikkiOdiaSource },
+  { name: kaikkiYiddishSource.name, source: kaikkiYiddishSource },
   {
     name: kaikkiEnTranslationsHindiSource.name,
     source: kaikkiEnTranslationsHindiSource,
@@ -43,6 +46,10 @@ export const dictionarySources: RegistryEntry[] = [
   {
     name: kaikkiEnTranslationsOdiaSource.name,
     source: kaikkiEnTranslationsOdiaSource,
+  },
+  {
+    name: kaikkiEnTranslationsYiddishSource.name,
+    source: kaikkiEnTranslationsYiddishSource,
   },
 ];
 

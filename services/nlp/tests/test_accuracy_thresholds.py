@@ -30,6 +30,7 @@ from app.eval.corpus import load_corpus
 from app.pipelines import get_pipeline, reset_pipeline_cache
 from app.pipelines.odia import OdiaPipeline
 from app.pipelines.odia.lemmas import default_lemma_table
+from app.pipelines.yiddish import build_yiddish_pipeline
 
 _GOLDEN_DIR = Path(__file__).resolve().parent / "golden"
 _HINDI_CORPUS = _GOLDEN_DIR / "hindi_corpus.json"
@@ -42,6 +43,14 @@ _ODIA_CORPUS = (
     / "data"
     / "golden_corpus.json"
 )
+_YIDDISH_CORPUS = (
+    Path(__file__).resolve().parent.parent
+    / "app"
+    / "pipelines"
+    / "yiddish"
+    / "data"
+    / "golden_corpus.json"
+)
 
 # Per-language lemma-accuracy floors. Stay in sync with the M2 release
 # gate in the plan. Raising these as pipeline quality improves is a
@@ -49,6 +58,10 @@ _ODIA_CORPUS = (
 HINDI_LEMMA_FLOOR = 0.90
 MARATHI_LEMMA_FLOOR = 0.80
 ODIA_LEMMA_FLOOR = 0.70
+# Yiddish ships the same custom-pipeline tier as Odia: rule-based
+# morphology over a seed table, with the unpointed loshn-koydesh
+# vocabulary as the known weak spot.
+YIDDISH_LEMMA_FLOOR = 0.70
 
 
 # ---- corpus-structure sanity (default suite) ----
@@ -56,8 +69,8 @@ ODIA_LEMMA_FLOOR = 0.70
 
 @pytest.mark.parametrize(
     "path",
-    [_HINDI_CORPUS, _MARATHI_CORPUS, _ODIA_CORPUS],
-    ids=["hindi", "marathi", "odia"],
+    [_HINDI_CORPUS, _MARATHI_CORPUS, _ODIA_CORPUS, _YIDDISH_CORPUS],
+    ids=["hindi", "marathi", "odia", "yiddish"],
 )
 def test_corpus_loads_and_has_unique_ids(path: Path):
     corpus = load_corpus(path)
@@ -89,6 +102,18 @@ def test_odia_lemma_accuracy_meets_floor():
     summary = result.summary()
     assert summary["lemma_accuracy"] >= ODIA_LEMMA_FLOOR, (
         f"Odia lemma accuracy regressed: {summary}\n"
+        "First failures:\n" + "\n".join(result.failures[:20])
+    )
+
+
+def test_yiddish_lemma_accuracy_meets_floor():
+    # Yiddish is fully dependency-free (regex tokenizer + rule-based
+    # morph + seed lemma table), so the production factory itself runs
+    # in the default lane — no model download, no tokenizer fake.
+    result = evaluate(build_yiddish_pipeline(), load_corpus(_YIDDISH_CORPUS))
+    summary = result.summary()
+    assert summary["lemma_accuracy"] >= YIDDISH_LEMMA_FLOOR, (
+        f"Yiddish lemma accuracy regressed: {summary}\n"
         "First failures:\n" + "\n".join(result.failures[:20])
     )
 

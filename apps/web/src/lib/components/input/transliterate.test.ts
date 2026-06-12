@@ -99,3 +99,58 @@ describe('nfc', () => {
     expect(nfc('hello')).toBe('hello');
   });
 });
+
+describe('latinToNative — Yiddish YIVO (yi)', () => {
+  // Mirror of `_yivo_to_hebrew` in services/nlp/app/romanize.py —
+  // the canonical cases below are asserted on both sides.
+  it('converts core vocabulary', () => {
+    expect(latinToNative('yi', 'bukh')).toBe('בוך');
+    expect(latinToNative('yi', 'kind')).toBe('קינד');
+    expect(latinToNative('yi', 'shraybn')).toBe('שרײַבן');
+    expect(latinToNative('yi', 'vaser')).toBe('וואַסער');
+  });
+
+  it('prepends a shtumer alef before word-initial vocalic vov/yud', () => {
+    expect(latinToNative('yi', 'un')).toBe('און');
+    expect(latinToNative('yi', 'in')).toBe('אין');
+    expect(latinToNative('yi', 'oyb')).toBe('אויב');
+  });
+
+  it('does not prepend an alef before consonantal y', () => {
+    expect(latinToNative('yi', 'yor')).toBe('יאָר');
+  });
+
+  it('uses final letter forms at word end', () => {
+    expect(latinToNative('yi', 'nemen')).toBe('נעמען');
+    expect(latinToNative('yi', 'ikh')).toBe('איך');
+  });
+
+  it('points vocalic i/u next to look-alike letters', () => {
+    expect(latinToNative('yi', 'yidish')).toBe('ייִדיש');
+    expect(latinToNative('yi', 'vu')).toBe('וווּ');
+    expect(latinToNative('yi', 'ruik')).toBe('רויִק');
+  });
+
+  it('passes non-Latin characters through unchanged', () => {
+    expect(latinToNative('yi', 'bukh 25!')).toBe('בוך 25!');
+  });
+});
+
+describe('looksLikeNativeScript — Hebrew (yi)', () => {
+  it('detects Hebrew-block characters', () => {
+    expect(looksLikeNativeScript('בוך', 'yi')).toBe(true);
+    expect(looksLikeNativeScript('שרײַבן', 'yi')).toBe(true);
+  });
+
+  it('detects presentation-form codepoints some keyboards emit', () => {
+    expect(looksLikeNativeScript('יִ', 'yi')).toBe(true);
+  });
+
+  it('treats Latin input as not-native', () => {
+    expect(looksLikeNativeScript('shraybn', 'yi')).toBe(false);
+  });
+
+  it('does not classify Hebrew as native for Indic languages', () => {
+    expect(looksLikeNativeScript('בוך', 'hi')).toBe(false);
+  });
+});

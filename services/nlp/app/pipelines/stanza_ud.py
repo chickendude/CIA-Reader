@@ -59,6 +59,9 @@ _TRAILING_SPLIT_MARKS: tuple[str, ...] = ("।", "॥", "?", "!")
 _SCRIPT_RANGES: dict[str, tuple[tuple[int, int], ...]] = {
     "Deva": ((0x0900, 0x097F),),
     "Orya": ((0x0B00, 0x0B7F),),
+    # Hebrew block + Alphabetic Presentation Forms (ligature/pointed
+    # variants that survive when input isn't NFC-normalized upstream).
+    "Hebr": ((0x0590, 0x05FF), (0xFB1D, 0xFB4F)),
 }
 
 _COORDINATE_MARKS: frozenset[str] = frozenset({"°", "′", "″"})

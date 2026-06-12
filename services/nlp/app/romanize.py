@@ -102,11 +102,15 @@ _SCHEME_TO_SANSCRIPT: dict[str, str] = {
 
 #: Read-only view of the romanization schemes this module actually
 #: converts. Used by validation at the API layer so the user profile
-#: UI never offers an option that would fail at runtime.
-SUPPORTED_SCHEMES: frozenset[str] = frozenset(_SCHEME_TO_SANSCRIPT.keys())
+#: UI never offers an option that would fail at runtime. ``yivo`` is
+#: implemented by the custom Hebrew-script path below, not sanscript —
+#: the registry only offers it for Yiddish, so the scheme×script
+#: combinations users can reach are always convertible.
+SUPPORTED_SCHEMES: frozenset[str] = frozenset(_SCHEME_TO_SANSCRIPT.keys()) | {"yivo"}
 
-#: Read-only view of the scripts this module converts.
-SUPPORTED_SCRIPTS: frozenset[str] = frozenset(_SCRIPT_TO_SANSCRIPT.keys())
+#: Read-only view of the scripts this module converts. ``Hebr`` is
+#: handled by the custom YIVO path, not sanscript.
+SUPPORTED_SCRIPTS: frozenset[str] = frozenset(_SCRIPT_TO_SANSCRIPT.keys()) | {"Hebr"}
 
 
 class UnsupportedScriptError(ValueError):
@@ -232,6 +236,270 @@ def _hindi_schwa_delete(devanagari: str) -> str:
 _HINDI_ISO_FOLD = str.maketrans({"ē": "e", "ō": "o", "Ē": "E", "Ō": "O"})
 
 
+# ====================================================================
+# Yiddish: Hebrew script ↔ YIVO romanization
+# ====================================================================
+#
+# sanscript knows nothing about Hebrew script, so the YIVO scheme is a
+# hand-built mapping. YIVO romanization of *standard Yiddish
+# orthography* (the pointed YIVO spelling: אַ אָ בֿ וּ יִ כּ פּ פֿ שׂ תּ) is
+# close to deterministic for the Germanic / Slavic component of the
+# vocabulary. The loshn-koydesh (Hebrew/Aramaic-origin) component is
+# spelled etymologically and unpointed — שבת is pronounced "shabes",
+# not the letter-by-letter "shbs" this table produces. Same tier of
+# honesty as the Odia pipeline: rule output is a best effort, and the
+# dictionary's per-lemma romanizations (M3) override it where it's
+# wrong. Display-only, like the Hindi schwa-deleted output.
+#
+# Sequences are matched longest-first. Pointed letters are the NFC
+# forms (base letter + combining point — Unicode excludes the Hebrew
+# presentation forms from recomposition, so NFC input is always
+# decomposed).
+
+_YI_PASEKH = "ַ"  # ◌ַ  (patah)
+_YI_KOMETS = "ָ"  # ◌ָ  (qamats)
+_YI_KHIRIK = "ִ"  # ◌ִ  (hiriq)
+_YI_DAGESH = "ּ"  # ◌ּ
+_YI_RAFE = "ֿ"  # ◌ֿ
+_YI_SHIN_DOT = "ׁ"  # ◌ׁ
+_YI_SIN_DOT = "ׂ"  # ◌ׂ
+
+# Sentinel for a bare yud whose reading (consonantal "y" vs vocalic
+# "i") depends on what follows. Resolved in a second pass.
+_YI_YUD = object()
+
+# (sequence, romanization) — longest sequences first within each
+# group; the scanner takes the first entry that matches at the cursor.
+_HEBR_TO_YIVO: tuple[tuple[str, object], ...] = (
+    # Affricate / sibilant clusters
+    ("דזש", "dzh"),
+    ("זש", "zh"),
+    ("טש", "tsh"),
+    # Vov + yud combinations. ויִ (vov, khirik-yud) is "ui" (רויִק →
+    # ruik) and must outrank the וי → "oy" digraph.
+    ("ויִ", "ui"),
+    ("וי", "oy"),
+    ("ױ" + _YI_KHIRIK, "ui"),
+    ("ױ", "oy"),
+    ("וו", "v"),
+    ("װ", "v"),
+    ("וּ", "u"),
+    # Yud combinations. ייִ (yud, khirik-yud) is "yi" (ייִדיש → yidish)
+    # and must outrank יי → "ey". The pasekh forms are "ay".
+    ("ייַ", "ay"),
+    ("ײַ", "ay"),
+    ("ייִ", "yi"),
+    ("יי", "ey"),
+    ("ײ", "ey"),
+    ("יִ", "i"),
+    # Pointed alef / single letters
+    ("אַ", "a"),
+    ("אָ", "o"),
+    ("א", ""),  # shtumer alef — a silent placeholder
+    ("בֿ", "v"),
+    ("ב" + _YI_DAGESH, "b"),
+    ("ב", "b"),
+    ("ג", "g"),
+    ("ד", "d"),
+    ("ה", "h"),
+    ("ו", "u"),
+    ("ז", "z"),
+    ("ח", "kh"),
+    ("ט", "t"),
+    ("י", _YI_YUD),
+    ("כּ", "k"),
+    ("כ", "kh"),
+    ("ך", "kh"),
+    ("ל", "l"),
+    ("מ", "m"),
+    ("ם", "m"),
+    ("נ", "n"),
+    ("ן", "n"),
+    ("ס", "s"),
+    ("ע", "e"),
+    ("פּ", "p"),
+    ("פֿ", "f"),
+    ("פ", "f"),
+    ("ף", "f"),
+    ("צ", "ts"),
+    ("ץ", "ts"),
+    ("ק", "k"),
+    ("ר", "r"),
+    ("שׂ", "s"),
+    ("ש" + _YI_SHIN_DOT, "sh"),
+    ("ש", "sh"),
+    ("תּ", "t"),
+    ("ת", "s"),
+    # Yiddish punctuation that has a conventional Latin rendering.
+    ("׳", "'"),
+    ("״", '"'),
+    ("־", "-"),
+)
+
+_YIVO_VOWELS = frozenset("aeiou")
+
+
+def _hebrew_to_yivo(text: str) -> str:
+    """Transliterate NFC Hebrew-script text into YIVO romanization.
+
+    Single forward scan with longest-first matching, then a resolution
+    pass for bare yud: consonantal ``y`` when the next emitted unit
+    starts with a vowel (יאָר → yor), vocalic ``i`` otherwise (קינד →
+    kind). Unknown characters (Latin digits, stray punctuation,
+    leftover Hebrew points like sheva) pass through except combining
+    marks, which are dropped — a mark we didn't pair with its base
+    letter has no YIVO rendering of its own.
+    """
+    units: list[object] = []
+    i = 0
+    n = len(text)
+    while i < n:
+        for seq, out in _HEBR_TO_YIVO:
+            if text.startswith(seq, i):
+                units.append(out)
+                i += len(seq)
+                break
+        else:
+            ch = text[i]
+            if unicodedata.category(ch).startswith("M"):
+                pass  # unpaired combining point — drop
+            else:
+                units.append(ch)
+            i += 1
+
+    pieces: list[str] = []
+    for idx, unit in enumerate(units):
+        if unit is not _YI_YUD:
+            pieces.append(unit)  # type: ignore[arg-type]
+            continue
+        nxt = next(
+            (u for u in units[idx + 1 :] if u is _YI_YUD or u != ""),
+            None,
+        )
+        if nxt is _YI_YUD:
+            # Two bare yuds in a row would have matched יי above; a
+            # resolved second yud behaves like a vowel-initial unit.
+            pieces.append("y")
+        elif isinstance(nxt, str) and nxt and nxt[0] in _YIVO_VOWELS:
+            pieces.append("y")
+        else:
+            pieces.append("i")
+    return "".join(pieces)
+
+
+# YIVO → Hebrew script, for the script-aware input path (typing
+# "shraybn" produces שרײַבן). Longest-first; the per-word post-passes
+# below handle final letters and the word-initial shtumer alef.
+_YIVO_TO_HEBR: tuple[tuple[str, str], ...] = (
+    ("dzh", "דזש"),
+    ("tsh", "טש"),
+    ("zh", "זש"),
+    ("sh", "ש"),
+    ("kh", "כ"),
+    ("ts", "צ"),
+    ("ay", "ײַ"),
+    ("ey", "יי"),
+    ("oy", "וי"),
+    ("a", "אַ"),
+    ("o", "אָ"),
+    ("u", "ו"),
+    ("i", "י"),
+    ("e", "ע"),
+    ("b", "ב"),
+    ("d", "ד"),
+    ("f", "פֿ"),
+    ("g", "ג"),
+    ("h", "ה"),
+    ("k", "ק"),
+    ("l", "ל"),
+    ("m", "מ"),
+    ("n", "נ"),
+    ("p", "פּ"),
+    ("r", "ר"),
+    ("s", "ס"),
+    ("t", "ט"),
+    ("v", "וו"),
+    ("y", "י"),
+    ("z", "ז"),
+)
+
+# Non-final → final letter at word end. פֿ loses its rafe as ף.
+_YI_FINAL_FORMS: dict[str, str] = {
+    "מ": "ם",
+    "נ": "ן",
+    "פֿ": "ף",
+    "צ": "ץ",
+    "כ": "ך",
+}
+
+_LATIN_WORD_RE = re.compile(r"[A-Za-z]+")
+
+
+# Latin sequences that begin a word with a *vocalic* vov / yud and
+# therefore need a leading shtumer alef (un → און, in → אין, oyb →
+# אויב). Consonantal y (yor → יאָר) and v do not.
+_YI_VOCALIC_STARTS = frozenset({"u", "i", "oy", "ey", "ay"})
+
+
+def _yivo_word_to_hebrew(word: str) -> str:
+    # (latin_seq, hebrew) pairs so the orthographic post-passes can
+    # distinguish vocalic i/u from consonantal y/v, which map to the
+    # same base letters.
+    units: list[tuple[str, str]] = []
+    i = 0
+    n = len(word)
+    lower = word.lower()
+    while i < n:
+        for seq, heb in _YIVO_TO_HEBR:
+            if lower.startswith(seq, i):
+                units.append((seq, heb))
+                i += len(seq)
+                break
+        else:
+            units.append((word[i], word[i]))
+            i += 1
+    if not units:
+        return word
+    # Vocalic i / u adjacent to look-alike letters take their
+    # distinguishing point so the cluster doesn't read as a digraph:
+    # khirik yud next to any yud or vov (yidish → ייִדיש, ruik → רויִק),
+    # melupm vov only next to a consonantal vov (vu → וווּ). Adjacency
+    # is judged against the unpointed units, so one fix can't suppress
+    # its neighbor's.
+    pointed = list(units)
+    for idx, (seq, heb) in enumerate(units):
+        prev_seq, prev_heb = units[idx - 1] if idx > 0 else ("", "")
+        next_seq, next_heb = units[idx + 1] if idx + 1 < len(units) else ("", "")
+        if seq == "i" and (
+            prev_heb[-1:] in ("י", "ו") or next_heb[:1] in ("י", "ו")
+        ):
+            pointed[idx] = (seq, heb + _YI_KHIRIK)
+        elif seq == "u" and ("v" in (prev_seq, next_seq)):
+            pointed[idx] = (seq, heb + _YI_DAGESH)
+    units = pointed
+    out = [heb for _, heb in units]
+    # Word-initial vocalic ו / י take a shtumer alef.
+    if units[0][0] in _YI_VOCALIC_STARTS:
+        out.insert(0, "א")
+    # Word-final letters swap to their final forms: nemen → נעמען with
+    # a terminal ן, not נעמענ.
+    if out[-1] in _YI_FINAL_FORMS:
+        out[-1] = _YI_FINAL_FORMS[out[-1]]
+    return "".join(out)
+
+
+def _yivo_to_hebrew(text: str) -> str:
+    """Transliterate YIVO-romanized text into Hebrew-script Yiddish.
+
+    The inverse of :func:`_hebrew_to_yivo` for the unambiguous core.
+    Lossy at the edges by nature — YIVO "k" can't know whether the
+    original was ק or כּ, "v" picks וו over the loshn-koydesh בֿ —
+    which matches its use: live input conversion, where the user
+    confirms the produced spelling on screen.
+    """
+    return _LATIN_WORD_RE.sub(lambda m: _yivo_word_to_hebrew(m.group(0)), text)
+
+
 def to_roman(
     text: str,
     *,
@@ -257,6 +525,19 @@ def to_roman(
     if not text:
         return ""
     normalized = unicodedata.normalize("NFC", text)
+    if from_script == "Hebr":
+        # Hebrew script bypasses sanscript entirely. YIVO is the only
+        # scheme defined for it — the registry never offers another.
+        if to_scheme != "yivo":
+            raise UnsupportedSchemeError(
+                f"Script 'Hebr' only romanizes to 'yivo', not {to_scheme!r}"
+            )
+        return _hebrew_to_yivo(normalized)
+    if to_scheme == "yivo":
+        raise UnsupportedSchemeError(
+            f"Romanization scheme 'yivo' is only defined for script 'Hebr', "
+            f"not {from_script!r}"
+        )
     if language == "hi" and from_script == "Deva":
         # Schwa-delete on the Devanagari side, then let sanscript handle
         # the actual romanization for whichever scheme was requested.
@@ -279,6 +560,17 @@ def to_native(text: str, *, target_script: str, from_scheme: str) -> str:
     """
     if not text:
         return ""
+    if target_script == "Hebr":
+        if from_scheme != "yivo":
+            raise UnsupportedSchemeError(
+                f"Script 'Hebr' only converts from 'yivo', not {from_scheme!r}"
+            )
+        return unicodedata.normalize("NFC", _yivo_to_hebrew(text))
+    if from_scheme == "yivo":
+        raise UnsupportedSchemeError(
+            f"Romanization scheme 'yivo' is only defined for script 'Hebr', "
+            f"not {target_script!r}"
+        )
     src = _resolve_scheme(from_scheme)
     dst = _resolve_script(target_script)
     return unicodedata.normalize("NFC", sanscript.transliterate(text, src, dst))

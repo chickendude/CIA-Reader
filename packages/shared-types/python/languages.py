@@ -10,9 +10,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Literal
 
-LanguageCode = Literal["hi", "mr", "or"]
-ScriptCode = Literal["Deva", "Orya", "Beng", "Guru", "Gujr", "Arab"]
-RomanizationScheme = Literal["iso15919", "iast", "hunterian", "itrans", "velthuis"]
+LanguageCode = Literal["hi", "mr", "or", "yi"]
+ScriptCode = Literal["Deva", "Orya", "Beng", "Guru", "Gujr", "Arab", "Hebr"]
+RomanizationScheme = Literal["iso15919", "iast", "hunterian", "itrans", "velthuis", "yivo"]
 TextDirection = Literal["ltr", "rtl"]
 
 
@@ -77,6 +77,28 @@ LANGUAGES: dict[LanguageCode, LanguageDescriptor] = {
             "Stanza's Odia support is weak. We ship a custom pipeline "
             "(IndicNLP tokenizer + rule-based morphological analyzer seeded "
             "from Odia WordNet)."
+        ),
+    ),
+    "yi": LanguageDescriptor(
+        code="yi",
+        display_name="Yiddish",
+        native_name="ייִדיש",
+        script="Hebr",
+        text_direction="rtl",
+        supported_romanizations=("yivo",),
+        default_romanization="yivo",
+        recommended_fonts=(
+            "Noto Serif Hebrew",
+            "Noto Sans Hebrew",
+            "David Libre",
+            "Frank Ruhl Libre",
+        ),
+        pipeline_id="custom-yi",
+        notes=(
+            "No Stanza model exists for Yiddish. We ship a custom pipeline "
+            "(Hebrew-script tokenizer + rule-based morphological analyzer "
+            "over a seed lemma table), mirroring the Odia approach. First "
+            "RTL language — UI direction comes from text_direction."
         ),
     ),
 }

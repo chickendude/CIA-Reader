@@ -18,7 +18,7 @@
   import WordTooltip from './WordTooltip.svelte';
   import CorrectionToast from './CorrectionToast.svelte';
   import { LongPressDetector } from './touch-gestures.js';
-  import type { LanguageCode } from '@ciareader/shared-types';
+  import { LANGUAGES, type LanguageCode } from '@ciareader/shared-types';
   import {
     groupPendingSegments,
     paragraphsOfServerTokens,
@@ -46,6 +46,13 @@
     showRomanization?: boolean;
     isOwner?: boolean;
   } = $props();
+
+  // Text direction comes from the shared registry (rtl for Yiddish's
+  // Hebrew script). Set as a `dir` attribute on the chapter wrapper so
+  // paragraph flow, alignment, and punctuation placement all follow
+  // the script — every reader mode renders through this component, so
+  // this is the single switch for RTL reading.
+  const textDirection = $derived(LANGUAGES[language].textDirection);
 
   // Local override map: lemmaId → user's most recent status. The
   // popup's optimistic update writes through here so every other
@@ -569,6 +576,7 @@
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <!-- svelte-ignore a11y_mouse_events_have_key_events -->
 <div
+  dir={textDirection}
   onmousedown={onChapterMousedown}
   onclick={onChapterClick}
   onmouseover={showHoverTooltip}

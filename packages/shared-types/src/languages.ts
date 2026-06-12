@@ -10,18 +10,19 @@
  */
 
 // ISO 639-1 language codes we support (MVP + near-term).
-export type LanguageCode = 'hi' | 'mr' | 'or';
+export type LanguageCode = 'hi' | 'mr' | 'or' | 'yi';
 
 // ISO 15924 script codes. Kept explicit so Urdu/Sindhi (multi-script) can be
 // modeled cleanly later without retrofitting.
-export type ScriptCode = 'Deva' | 'Orya' | 'Beng' | 'Guru' | 'Gujr' | 'Arab';
+export type ScriptCode = 'Deva' | 'Orya' | 'Beng' | 'Guru' | 'Gujr' | 'Arab' | 'Hebr';
 
 export type RomanizationScheme =
   | 'iso15919'
   | 'iast'
   | 'hunterian'
   | 'itrans'
-  | 'velthuis';
+  | 'velthuis'
+  | 'yivo';
 
 export type TextDirection = 'ltr' | 'rtl';
 
@@ -83,6 +84,24 @@ export const LANGUAGES: Readonly<Record<LanguageCode, LanguageDescriptor>> = {
     pipelineId: 'custom-or',
     notes:
       "Stanza's Odia support is weak. We ship a custom pipeline (IndicNLP tokenizer + rule-based morphological analyzer seeded from Odia WordNet).",
+  },
+  yi: {
+    code: 'yi',
+    displayName: 'Yiddish',
+    nativeName: 'ייִדיש',
+    script: 'Hebr',
+    textDirection: 'rtl',
+    supportedRomanizations: ['yivo'],
+    defaultRomanization: 'yivo',
+    recommendedFonts: [
+      'Noto Serif Hebrew',
+      'Noto Sans Hebrew',
+      'David Libre',
+      'Frank Ruhl Libre',
+    ],
+    pipelineId: 'custom-yi',
+    notes:
+      'No Stanza model exists for Yiddish. We ship a custom pipeline (Hebrew-script tokenizer + rule-based morphological analyzer over a seed lemma table), mirroring the Odia approach. First RTL language — UI direction comes from textDirection.',
   },
 } as const;
 

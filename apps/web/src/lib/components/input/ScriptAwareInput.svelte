@@ -181,6 +181,7 @@
     autocorrect="off"
     spellcheck="false"
     lang={language}
+    dir="auto"
     value={text}
     oninput={onInput}
     oncompositionstart={onCompositionStart}
@@ -201,9 +202,21 @@
       onclick={toggleMode}
       aria-pressed={mode === 'native'}
       aria-label="Toggle native / romanization input"
-      title={mode === 'native' ? 'Switch to ITRANS-style typing' : 'Switch to native script'}
+      title={mode === 'native'
+        ? langInfo.script === 'Hebr'
+          ? 'Switch to YIVO-style typing'
+          : 'Switch to ITRANS-style typing'
+        : 'Switch to native script'}
     >
-      {mode === 'native' ? 'Aa' : langInfo.script === 'Deva' ? 'देव' : langInfo.script === 'Orya' ? 'ଓଡ଼' : 'A'}
+      {mode === 'native'
+        ? 'Aa'
+        : langInfo.script === 'Deva'
+          ? 'देव'
+          : langInfo.script === 'Orya'
+            ? 'ଓଡ଼'
+            : langInfo.script === 'Hebr'
+              ? 'ייִ'
+              : 'A'}
     </button>
   {/if}
 </div>
