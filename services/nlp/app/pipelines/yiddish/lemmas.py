@@ -52,11 +52,19 @@ _RAFE = "ֿ"  # U+05BF
 _DAGESH = "ּ"  # U+05BC
 
 
+_PASEKH = "ַ"  # U+05B7
+
+
 def canonical_key(text: str) -> str:
     """Normalize a surface / headword / stem into its lookup key."""
     s = unicodedata.normalize("NFC", text).translate(_LIGATURE_FOLD)
     if not s:
         return s
+    # Pasekh tsvey yudn has two letter-pair encodings in the wild:
+    # pasekh on the second yud (canonical) or on the first. Fold the
+    # first-yud variant so both hit the same key. The ligature
+    # encoding was already folded to יי + pasekh by the translate.
+    s = s.replace("י" + _PASEKH + "י", "יי" + _PASEKH)
     # Trailing pe: פֿ (fe, pe+rafe) finalizes to bare ף; פּ (pe+dagesh,
     # the [p] sound) has no final form and stays as typed.
     if s.endswith("פ" + _RAFE):
@@ -70,20 +78,37 @@ def canonical_key(text: str) -> str:
 
 
 @dataclass(frozen=True, slots=True)
+class YiddishForm:
+    """One explicit (irregular / suppletive / umlaut) inflected form.
+
+    ``romanization`` is the phonetic YIVO reading when the rule-based
+    letter mapping would be wrong — chiefly loshn-koydesh plurals
+    (חלומות → khaloymes). ``None`` defers to the rule-based output.
+    """
+
+    features: dict[str, str] = field(default_factory=dict)
+    romanization: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class YiddishLemma:
     """A minimal lemma record for the Yiddish seed table.
 
     ``headword`` is the dictionary citation form (infinitive for
     verbs); ``stem`` is the conjugation base when it differs from the
-    headword. Richer fields live on the Postgres ``lemmas`` table.
+    headword. ``romanization`` is the headword's phonetic YIVO reading
+    for words the rule-based mapping can't romanize — the unpointed
+    loshn-koydesh vocabulary (שבת → shabes, not the letter-by-letter
+    "shbs"). Richer fields live on the Postgres ``lemmas`` table.
     """
 
     headword: str
     pos: str
     gloss: str | None = None
     stem: str | None = None
-    # surface → UD features for forms the rules can't derive.
-    forms: dict[str, dict[str, str]] = field(default_factory=dict)
+    romanization: str | None = None
+    # surface → explicit form record for forms the rules can't derive.
+    forms: dict[str, YiddishForm] = field(default_factory=dict)
 
 
 class YiddishLemmaTable:
@@ -92,14 +117,14 @@ class YiddishLemmaTable:
     def __init__(self, entries: list[YiddishLemma]) -> None:
         self._by_headword: dict[str, YiddishLemma] = {}
         self._by_stem: dict[str, list[YiddishLemma]] = {}
-        self._by_form: dict[str, list[tuple[YiddishLemma, dict[str, str]]]] = {}
+        self._by_form: dict[str, list[tuple[YiddishLemma, YiddishForm]]] = {}
         for lemma in entries:
             self._by_headword[canonical_key(lemma.headword)] = lemma
             if lemma.stem:
                 self._by_stem.setdefault(canonical_key(lemma.stem), []).append(lemma)
-            for surface, features in lemma.forms.items():
+            for surface, form in lemma.forms.items():
                 self._by_form.setdefault(canonical_key(surface), []).append(
-                    (lemma, features)
+                    (lemma, form)
                 )
 
     def lookup(self, surface: str) -> YiddishLemma | None:
@@ -110,7 +135,7 @@ class YiddishLemmaTable:
 
     def lookup_form(
         self, surface: str
-    ) -> list[tuple[YiddishLemma, dict[str, str]]]:
+    ) -> list[tuple[YiddishLemma, YiddishForm]]:
         return self._by_form.get(canonical_key(surface), [])
 
     def __len__(self) -> int:
@@ -138,9 +163,13 @@ def load_seed_lemma_table(path: Path | None = None) -> YiddishLemmaTable:
                 pos=fields["pos"],
                 gloss=fields.get("gloss"),
                 stem=fields.get("stem"),
+                romanization=fields.get("romanization"),
                 forms={
-                    surface: dict(features)
-                    for surface, features in (fields.get("forms") or {}).items()
+                    surface: YiddishForm(
+                        features=dict(form.get("features") or {}),
+                        romanization=form.get("romanization"),
+                    )
+                    for surface, form in (fields.get("forms") or {}).items()
                 },
             )
         )
@@ -154,6 +183,7 @@ def default_lemma_table() -> YiddishLemmaTable:
 
 
 __all__ = [
+    "YiddishForm",
     "YiddishLemma",
     "YiddishLemmaTable",
     "canonical_key",

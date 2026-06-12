@@ -114,3 +114,31 @@ describe('hasNukta', () => {
     expect(hasNukta('hello world')).toBe(false);
   });
 });
+
+describe('stripNukta — Hebrew ligature folding (Yiddish)', () => {
+  it('folds the ligature codepoints to letter pairs', () => {
+    expect(stripNukta('װאַסער')).toBe('וואַסער');
+    expect(stripNukta('הױז')).toBe('הויז');
+    expect(stripNukta('צװײ')).toBe('צוויי');
+  });
+
+  it('folds ligature + pasekh onto the letter-pair pasekh form', () => {
+    // שרײַבן (U+05F2 + pasekh) and שרייַבן (letter pair) must reduce
+    // to the same key so either dictionary/typing convention matches.
+    expect(stripNukta('שרײַבן')).toBe(stripNukta('שרייַבן'));
+  });
+
+  it('folds pasekh-on-first-yud onto pasekh-on-second-yud', () => {
+    expect(stripNukta('שריַיבן')).toBe(stripNukta('שרייַבן'));
+  });
+
+  it('leaves canonical letter-pair text unchanged', () => {
+    expect(stripNukta('וואַסער')).toBe('וואַסער');
+    expect(stripNukta('ייִדיש')).toBe('ייִדיש');
+  });
+
+  it('does not trigger the lossy-fallback hint for ligature folding', () => {
+    expect(hasNukta('װאַסער')).toBe(false);
+    expect(hasNukta('שרײַבן')).toBe(false);
+  });
+});

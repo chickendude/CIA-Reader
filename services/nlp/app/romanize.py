@@ -285,8 +285,12 @@ _HEBR_TO_YIVO: tuple[tuple[str, object], ...] = (
     ("װ", "v"),
     ("וּ", "u"),
     # Yud combinations. ייִ (yud, khirik-yud) is "yi" (ייִדיש → yidish)
-    # and must outrank יי → "ey". The pasekh forms are "ay".
+    # and must outrank יי → "ey". The pasekh forms are "ay" — accepted
+    # with the pasekh on the second yud (ייַ, the canonical typed
+    # form), on the first yud (יַי, seen in the wild), or on the U+05F2
+    # ligature (ײַ).
     ("ייַ", "ay"),
+    ("יַי", "ay"),
     ("ײַ", "ay"),
     ("ייִ", "yi"),
     ("יי", "ey"),
@@ -397,7 +401,11 @@ _YIVO_TO_HEBR: tuple[tuple[str, str], ...] = (
     ("sh", "ש"),
     ("kh", "כ"),
     ("ts", "צ"),
-    ("ay", "ײַ"),
+    # Letter-pair spellings throughout — modern typed Yiddish writes
+    # tsvey vovn / vov-yud / tsvey yudn as individual letters, not the
+    # U+05F0-U+05F2 ligature codepoints. Lookups fold both, but what we
+    # *emit* should match what users type.
+    ("ay", "ייַ"),
     ("ey", "יי"),
     ("oy", "וי"),
     ("a", "אַ"),

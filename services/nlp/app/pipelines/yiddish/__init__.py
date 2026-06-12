@@ -184,6 +184,11 @@ class YiddishPipeline(Pipeline):
             candidates[0].pos,
             script="Hebr",
         )
+        # A seed-declared phonetic reading (loshn-koydesh vocabulary:
+        # שבת → shabes) beats the rule-based letter mapping, which is
+        # wrong for etymologically-spelled words. Take the strongest
+        # analysis that declares one.
+        phonetic = next((a.romanization for a in analyses if a.romanization), None)
         return Token(
             idx=idx,
             surface=surface,
@@ -191,7 +196,7 @@ class YiddishPipeline(Pipeline):
             candidates=candidates,
             is_ambiguous=len(analyses) >= 2,
             is_oov=is_word and is_oov,
-            romanization=self._romanize(surface) if is_word else None,
+            romanization=(phonetic or self._romanize(surface)) if is_word else None,
         )
 
     @staticmethod

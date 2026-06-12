@@ -9,6 +9,7 @@ POS constraints that keep rules from over-generating.
 from __future__ import annotations
 
 from app.pipelines.yiddish.lemmas import (
+    YiddishForm,
     YiddishLemma,
     YiddishLemmaTable,
     canonical_key,
@@ -69,16 +70,59 @@ def test_bare_stem_resolves_to_citation_form():
 def test_irregular_form_lookup():
     table = _table(
         YiddishLemma(
-            headword="זײַן",
+            headword="זייַן",
             pos="VERB",
-            stem="זײַ",
-            forms={"איז": {"Tense": "Pres", "Person": "3", "Number": "Sing"}},
+            stem="זייַ",
+            forms={
+                "איז": YiddishForm(
+                    features={"Tense": "Pres", "Person": "3", "Number": "Sing"}
+                )
+            },
         )
     )
     analyses = analyze("איז", table)
     assert len(analyses) == 1
-    assert analyses[0].lemma.headword == "זײַן"
+    assert analyses[0].lemma.headword == "זייַן"
     assert analyses[0].features["Person"] == "3"
+
+
+# ---- loshn-koydesh phonetic readings ----
+
+
+def test_headword_phonetic_romanization():
+    table = _table(
+        YiddishLemma(headword="שבת", pos="NOUN", romanization="shabes")
+    )
+    analyses = analyze("שבת", table)
+    assert len(analyses) == 1
+    assert analyses[0].romanization == "shabes"
+
+
+def test_form_phonetic_romanization():
+    table = _table(
+        YiddishLemma(
+            headword="חלום",
+            pos="NOUN",
+            romanization="kholem",
+            forms={
+                "חלומות": YiddishForm(
+                    features={"Number": "Plur"}, romanization="khaloymes"
+                )
+            },
+        )
+    )
+    analyses = analyze("חלומות", table)
+    assert len(analyses) == 1
+    assert analyses[0].lemma.headword == "חלום"
+    assert analyses[0].romanization == "khaloymes"
+
+
+def test_rule_derived_analysis_has_no_phonetic():
+    # Germanic-component inflection derived by rules carries no
+    # phonetic — the rule-based romanizer is correct there.
+    table = _table(YiddishLemma(headword="קינד", pos="NOUN"))
+    analyses = analyze("קינדער", table)
+    assert analyses[0].romanization is None
 
 
 # ---- verb suffix rules ----

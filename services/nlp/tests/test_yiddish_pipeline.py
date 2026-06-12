@@ -94,6 +94,21 @@ def test_word_tokens_carry_yivo_romanization():
     assert result.tokens[0].romanization == "bukh"
 
 
+def test_loshn_koydesh_phonetic_overrides_rule_romanization():
+    # Etymologically-spelled Hebrew-origin words carry explicit
+    # phonetic readings in the seed; the rule-based letter mapping
+    # (which would emit "shbs") must lose to them.
+    result = _pipeline().process("שבת")
+    assert result.tokens[0].romanization == "shabes"
+
+
+def test_loshn_koydesh_plural_form_phonetic():
+    result = _pipeline().process("חלומות")
+    token = result.tokens[0]
+    assert token.candidates[0].lemma == "חלום"
+    assert token.romanization == "khaloymes"
+
+
 def test_number_forms_deliberately_absent():
     # NumberForms spells numerals in Hindi/Marathi/Odia — meaningless
     # in a Yiddish reader, so the pipeline leaves the field None.

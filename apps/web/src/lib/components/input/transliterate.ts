@@ -201,7 +201,10 @@ const YIVO_TO_HEBR: Mapping = [
   ['sh', 'ש'],
   ['kh', 'כ'],
   ['ts', 'צ'],
-  ['ay', 'ײַ'],
+  // Letter-pair spellings throughout (matches the server-side
+  // converter): modern typed Yiddish writes these as individual
+  // letters, not the U+05F0-U+05F2 ligature codepoints.
+  ['ay', 'ייַ'],
   ['ey', 'יי'],
   ['oy', 'וי'],
   ['a', 'אַ'],

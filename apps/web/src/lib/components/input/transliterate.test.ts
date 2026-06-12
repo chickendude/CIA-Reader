@@ -106,7 +106,7 @@ describe('latinToNative — Yiddish YIVO (yi)', () => {
   it('converts core vocabulary', () => {
     expect(latinToNative('yi', 'bukh')).toBe('בוך');
     expect(latinToNative('yi', 'kind')).toBe('קינד');
-    expect(latinToNative('yi', 'shraybn')).toBe('שרײַבן');
+    expect(latinToNative('yi', 'shraybn')).toBe('שרייַבן');
     expect(latinToNative('yi', 'vaser')).toBe('וואַסער');
   });
 
@@ -133,6 +133,13 @@ describe('latinToNative — Yiddish YIVO (yi)', () => {
 
   it('passes non-Latin characters through unchanged', () => {
     expect(latinToNative('yi', 'bukh 25!')).toBe('בוך 25!');
+  });
+
+  it('emits letter pairs, never the ligature codepoints', () => {
+    for (const latin of ['shraybn', 'tsvey', 'hoyz', 'vaser']) {
+      const native = latinToNative('yi', latin);
+      expect([...'װױײ'].some((ch) => native.includes(ch))).toBe(false);
+    }
   });
 });
 

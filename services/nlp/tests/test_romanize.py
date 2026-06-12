@@ -341,6 +341,10 @@ def test_supported_scripts_exposed_as_frozenset():
         # Ligature and two-letter spellings romanize identically.
         ("װאַסער", "vaser"),
         ("וואַסער", "vaser"),
+        ("שרײַבן", "shraybn"),
+        ("שרייַבן", "shraybn"),
+        # Pasekh on the first yud of the pair — seen in the wild.
+        ("שריַיבן", "shraybn"),
         ("הויז", "hoyz"),
         ("פֿרײַנד", "fraynd"),
         ("געשריבן", "geshribn"),
@@ -375,6 +379,16 @@ def test_yivo_to_native_round_trips(latin: str):
     native = romanize.to_native(latin, target_script="Hebr", from_scheme="yivo")
     back = romanize.to_roman(native, from_script="Hebr", to_scheme="yivo")
     assert back == latin, f"{latin!r} -> {native!r} -> {back!r}"
+
+
+def test_yivo_to_native_emits_letter_pairs():
+    # Outputs use individual letters (וו / וי / יי), never the
+    # U+05F0-U+05F2 ligature codepoints.
+    for latin in ("shraybn", "tsvey", "hoyz", "vaser"):
+        native = romanize.to_native(latin, target_script="Hebr", from_scheme="yivo")
+        assert not any(ch in native for ch in "װױײ"), (
+            f"{latin!r} produced a ligature codepoint: {native!r}"
+        )
 
 
 def test_yivo_to_native_orthography_details():

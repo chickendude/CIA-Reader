@@ -33,10 +33,17 @@ from .lemmas import YiddishLemma, YiddishLemmaTable
 
 @dataclass(frozen=True, slots=True)
 class MorphAnalysis:
-    """One plausible (lemma + features) reading of a Yiddish surface."""
+    """One plausible (lemma + features) reading of a Yiddish surface.
+
+    ``romanization`` is the phonetic YIVO reading of *this surface*
+    when the seed declares one (loshn-koydesh vocabulary, where the
+    rule-based letter mapping is wrong). ``None`` defers to the
+    rule-based romanizer.
+    """
 
     lemma: YiddishLemma
     features: dict[str, str] = field(default_factory=dict)
+    romanization: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -133,19 +140,29 @@ def analyze(surface: str, lemmas: YiddishLemmaTable) -> list[MorphAnalysis]:
     analyses: list[MorphAnalysis] = []
     seen: set[tuple[str, str, frozenset[tuple[str, str]]]] = set()
 
-    def _add(lemma: YiddishLemma, features: dict[str, str]) -> None:
+    def _add(
+        lemma: YiddishLemma,
+        features: dict[str, str],
+        romanization: str | None = None,
+    ) -> None:
         key = (lemma.headword, lemma.pos, frozenset(features.items()))
         if key in seen:
             return
         seen.add(key)
-        analyses.append(MorphAnalysis(lemma=lemma, features=dict(features)))
+        analyses.append(
+            MorphAnalysis(
+                lemma=lemma,
+                features=dict(features),
+                romanization=romanization,
+            )
+        )
 
     exact = lemmas.lookup(surface)
     if exact is not None:
-        _add(exact, {})
+        _add(exact, {}, romanization=exact.romanization)
 
-    for lemma, features in lemmas.lookup_form(surface):
-        _add(lemma, features)
+    for lemma, form in lemmas.lookup_form(surface):
+        _add(lemma, form.features, romanization=form.romanization)
 
     for lemma in lemmas.lookup_stem(surface):
         _add(lemma, _BARE_STEM_FEATURES)

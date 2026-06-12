@@ -85,6 +85,17 @@ type LemmaIndex = {
    * the headword tiers.
    */
   bySurface: Map<string, string>;
+  /**
+   * `surface` → dictionary-provided romanization from the same live
+   * `lemma_forms` rows. Curators (and imports) record phonetic
+   * readings here for words the rule-based romanizer gets wrong —
+   * chiefly Yiddish loshn-koydesh vocabulary, where the etymological
+   * spelling defeats letter mapping (שבת → shabes, not "shbs"). A
+   * recorded reading beats the NLP token's rule-based output when
+   * the chapter's tokens are persisted, so dictionary updates reach
+   * the reader on the next (re)process.
+   */
+  romanizationBySurface: Map<string, string>;
 };
 
 /**
@@ -154,6 +165,7 @@ async function loadLemmaIndex(
     .select({
       surface: schema.lemmaForms.surface,
       lemmaId: schema.lemmaForms.lemmaId,
+      romanization: schema.lemmaForms.romanization,
     })
     .from(schema.lemmaForms)
     .innerJoin(schema.lemmas, eq(schema.lemmas.id, schema.lemmaForms.lemmaId))
@@ -162,10 +174,14 @@ async function loadLemmaIndex(
         eq(schema.lemmas.language, language),
         isNull(schema.lemmaForms.quarantinedAt),
       ),
-    )) as Array<{ surface: string; lemmaId: string }>;
+    )) as Array<{ surface: string; lemmaId: string; romanization: string | null }>;
   const bySurface = new Map<string, string>();
+  const romanizationBySurface = new Map<string, string>();
   for (const r of formRows) {
     if (!bySurface.has(r.surface)) bySurface.set(r.surface, r.lemmaId);
+    if (r.romanization && !romanizationBySurface.has(r.surface)) {
+      romanizationBySurface.set(r.surface, r.romanization);
+    }
   }
   return {
     byHeadwordPos,
@@ -173,6 +189,7 @@ async function loadLemmaIndex(
     byNuktaStrippedHeadword,
     overridesBySurface,
     bySurface,
+    romanizationBySurface,
   };
 }
 
@@ -381,7 +398,9 @@ async function processChapter(
       isOov: lemmaId ? false : t.is_oov,
       isWord: t.is_word,
       sentenceIdx: 0,
-      romanization: t.romanization,
+      // Dictionary-recorded phonetic reading wins over the pipeline's
+      // rule-based romanization (see LemmaIndex.romanizationBySurface).
+      romanization: index.romanizationBySurface.get(t.surface) ?? t.romanization,
       numberForms: t.number_forms ?? null,
     };
   }) satisfies Array<Omit<TextToken, 'id'>>;

@@ -343,20 +343,23 @@ export const lemmas = pgTable(
     curatorLocked: boolean('curator_locked').notNull().default(false),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
-    // #318: nukta-agnostic search column. Postgres-side mirror of
+    // #318: fold-agnostic search column. Postgres-side mirror of
     // the JS `stripNukta` helper in `@ciareader/shared-types/nukta`:
     // NFD-normalize so atomic precomposed nukta consonants
     // (U+0958..U+095F + U+0929) decompose to base + U+093C, then
-    // delete every U+093C. The resulting string contains only
-    // non-nukta base consonants, which is what the search query also
-    // gets reduced to before the fallback compares them. STORED
-    // because we read it on every fallback search; the index below
-    // must be on the materialized column. Generated columns require
-    // an IMMUTABLE expression — `normalize` and `translate` both are.
+    // delete every U+093C; additionally fold the Hebrew ligatures
+    // (U+05F0 װ / U+05F1 ױ / U+05F2 ײ → letter pairs) and normalize
+    // pasekh-on-first-yud to pasekh-on-second so both Yiddish typing
+    // conventions hit the same key. The result is what the search
+    // query also gets reduced to before the fallback compares them.
+    // STORED because we read it on every fallback search; the index
+    // below must be on the materialized column. Generated columns
+    // require an IMMUTABLE expression — `normalize`, `translate` and
+    // `replace` all are. Keep in lockstep with stripNukta.
     headwordNuktaStripped: text('headword_nukta_stripped')
       .notNull()
       .generatedAlwaysAs(
-        sql`translate(normalize("headword", NFD), '़', '')`,
+        sql`replace(replace(replace(replace(translate(normalize("headword", NFD), '़', ''), 'װ', 'וו'), 'ױ', 'וי'), 'ײ', 'יי'), 'יַי', 'ייַ')`,
       ),
     // A lemma may opt into a paradigm (e.g. "Odia regular verb"). When set,
     // the form-editor's "regenerate forms" action wipes generator-created

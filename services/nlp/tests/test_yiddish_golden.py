@@ -38,7 +38,7 @@ def test_corpus_loads_and_is_non_empty():
     corpus = _load()
     assert len(corpus) >= 15, "corpus shrank — did a data PR accidentally drop entries?"
     # Spot-check the smoke-test sentence is still in here.
-    assert any(s.text == "איך שרײַב אַ בוך" for s in corpus.sentences)
+    assert any(s.text == "איך שרייַב אַ בוך" for s in corpus.sentences)
 
 
 def test_corpus_entries_have_unique_ids():
