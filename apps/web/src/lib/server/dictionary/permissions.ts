@@ -22,7 +22,7 @@ import { and, eq } from 'drizzle-orm';
 
 import { db, schema } from '../db/index.js';
 import type { User } from '../db/schema.js';
-import type { LanguageCode } from '@ciareader/shared-types';
+import { SUPPORTED_LANGUAGE_CODES, type LanguageCode } from '@ciareader/shared-types';
 
 export class ForbiddenError extends Error {
   constructor(message: string) {
@@ -85,7 +85,7 @@ export function requireAdmin(
 export async function listGrantedLanguages(
   user: Pick<User, 'id' | 'role'>,
 ): Promise<LanguageCode[]> {
-  if (isAdmin(user)) return ['hi', 'mr', 'or'];
+  if (isAdmin(user)) return [...SUPPORTED_LANGUAGE_CODES];
   if (user.role !== 'curator') return [];
   const rows = await db
     .select({ language: schema.curatorLanguages.language })

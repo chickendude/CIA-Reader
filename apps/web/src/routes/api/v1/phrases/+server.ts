@@ -26,8 +26,9 @@ import {
   MAX_PHRASE_TOKENS,
 } from '$lib/server/phrases.js';
 import type { RequestHandler } from './$types';
+import { SUPPORTED_LANGUAGE_CODES, type LanguageCode } from '@ciareader/shared-types';
 
-const LANGS = ['hi', 'mr', 'or'] as const;
+const LANGS = SUPPORTED_LANGUAGE_CODES as readonly [LanguageCode, ...LanguageCode[]];
 const SOURCES = ['user', 'curator', 'official_dictionary'] as const;
 
 const createBody = z.object({

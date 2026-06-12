@@ -19,12 +19,13 @@ import { ForbiddenError } from '$lib/server/dictionary/permissions.js';
 import { MissingReasonError } from '$lib/server/dictionary/audit.js';
 import type { RequestHandler } from './$types';
 import { parseJson } from '../../../auth/_helpers.js';
+import { SUPPORTED_LANGUAGE_CODES, type LanguageCode } from '@ciareader/shared-types';
 
 const body = z.object({
   source: z.enum(['official_dictionary', 'curator']),
   oldAttribution: z.string().min(1).max(500),
   newAttribution: z.string().max(500).nullable(),
-  language: z.enum(['hi', 'mr', 'or']).optional(),
+  language: z.enum(SUPPORTED_LANGUAGE_CODES as readonly [LanguageCode, ...LanguageCode[]]).optional(),
   reason: z.string().min(3).max(500),
 });
 

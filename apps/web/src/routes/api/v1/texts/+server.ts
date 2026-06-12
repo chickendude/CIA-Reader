@@ -33,6 +33,7 @@ import {
 } from '$lib/server/texts/upload.js';
 import type { RequestHandler } from './$types';
 import { parseJson } from '../auth/_helpers.js';
+import { SUPPORTED_LANGUAGE_CODES, type LanguageCode } from '@ciareader/shared-types';
 
 // T-11.2: per-day cap on text uploads. 50/day is generous for an
 // engaged learner uploading a chapter at a time and trips long
@@ -47,14 +48,14 @@ const UPLOAD_WINDOW_MS = 24 * 60 * 60 * 1_000;
 // the path they took.
 const pasteSchema = z.object({
   sourceType: z.literal('paste').optional(),
-  language: z.enum(['hi', 'mr', 'or']),
+  language: z.enum(SUPPORTED_LANGUAGE_CODES as readonly [LanguageCode, ...LanguageCode[]]),
   title: z.string().min(1).max(MAX_TITLE_LEN),
   body: z.string().min(1).max(MAX_PASTE_BYTES),
 });
 
 const txtSchema = z.object({
   sourceType: z.literal('txt'),
-  language: z.enum(['hi', 'mr', 'or']),
+  language: z.enum(SUPPORTED_LANGUAGE_CODES as readonly [LanguageCode, ...LanguageCode[]]),
   title: z.string().min(1).max(MAX_TITLE_LEN),
   body: z.string().min(1).max(MAX_TXT_BYTES),
 });

@@ -16,9 +16,10 @@ import {
 import { isAdmin } from '$lib/server/dictionary/permissions.js';
 import type { RequestHandler } from './$types';
 import { parseJson } from '../../../../auth/_helpers.js';
+import { SUPPORTED_LANGUAGE_CODES, type LanguageCode } from '@ciareader/shared-types';
 
 const body = z.object({
-  language: z.enum(['hi', 'mr', 'or']),
+  language: z.enum(SUPPORTED_LANGUAGE_CODES as readonly [LanguageCode, ...LanguageCode[]]),
 });
 
 export const GET: RequestHandler = async (event) => {

@@ -31,7 +31,7 @@ import {
   MAX_ZIP_BYTES,
   MIN_TITLE_LEN,
 } from '$lib/server/texts/upload.js';
-import { LANGUAGES, SUPPORTED_LANGUAGE_CODES } from '@ciareader/shared-types';
+import { LANGUAGES, SUPPORTED_LANGUAGE_CODES, type LanguageCode } from '@ciareader/shared-types';
 import type { Actions, PageServerLoad } from './$types';
 
 // Source-type-aware schemas: paste keeps the tight 1MB cap, txt
@@ -40,14 +40,14 @@ import type { Actions, PageServerLoad } from './$types';
 // cap applies.
 const pasteFormSchema = z.object({
   sourceType: z.literal('paste').optional(),
-  language: z.enum(['hi', 'mr', 'or']),
+  language: z.enum(SUPPORTED_LANGUAGE_CODES as readonly [LanguageCode, ...LanguageCode[]]),
   title: z.string().min(1).max(MAX_TITLE_LEN),
   body: z.string().min(1).max(MAX_PASTE_BYTES),
 });
 
 const txtFormSchema = z.object({
   sourceType: z.literal('txt'),
-  language: z.enum(['hi', 'mr', 'or']),
+  language: z.enum(SUPPORTED_LANGUAGE_CODES as readonly [LanguageCode, ...LanguageCode[]]),
   title: z.string().min(1).max(MAX_TITLE_LEN),
   body: z.string().min(1).max(MAX_TXT_BYTES),
 });
