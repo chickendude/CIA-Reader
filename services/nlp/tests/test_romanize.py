@@ -323,3 +323,97 @@ def test_supported_scripts_exposed_as_frozenset():
     assert "Orya" in romanize.SUPPORTED_SCRIPTS
     assert "Arab" not in romanize.SUPPORTED_SCRIPTS
     assert isinstance(romanize.SUPPORTED_SCRIPTS, frozenset)
+
+
+# ---- Yiddish: Hebrew script ↔ YIVO (custom path, no sanscript) ----
+
+
+@pytest.mark.parametrize(
+    ("native", "expected"),
+    [
+        ("ייִדיש", "yidish"),
+        ("שרײַבן", "shraybn"),
+        ("בוך", "bukh"),
+        ("איך", "ikh"),
+        # Consonantal yud before a vowel vs vocalic yud before a consonant.
+        ("יאָר", "yor"),
+        ("קינד", "kind"),
+        # Ligature and two-letter spellings romanize identically.
+        ("װאַסער", "vaser"),
+        ("וואַסער", "vaser"),
+        ("שרײַבן", "shraybn"),
+        ("שרייַבן", "shraybn"),
+        # Pasekh on the first yud of the pair — seen in the wild.
+        ("שריַיבן", "shraybn"),
+        ("הויז", "hoyz"),
+        ("פֿרײַנד", "fraynd"),
+        ("געשריבן", "geshribn"),
+        # ויִ (vov + khirik-yud) is "ui", not the וי "oy" digraph.
+        ("רויִק", "ruik"),
+        ("צוויי", "tsvey"),
+        ("מענטש", "mentsh"),
+        ("זשורנאַל", "zhurnal"),
+    ],
+)
+def test_yivo_romanization(native: str, expected: str):
+    assert (
+        romanize.to_roman(native, from_script="Hebr", to_scheme="yivo", language="yi")
+        == expected
+    )
+
+
+def test_yivo_loshn_koydesh_is_best_effort():
+    # Hebrew-origin words are spelled etymologically and unpointed —
+    # the letter-by-letter output is documented as a best effort
+    # (real pronunciation: "shabes"). Dictionary-level romanizations
+    # override this downstream.
+    out = romanize.to_roman("שבת", from_script="Hebr", to_scheme="yivo")
+    assert out == "shbs"
+
+
+@pytest.mark.parametrize(
+    "latin",
+    ["shraybn", "yor", "yidish", "un", "in", "oyb", "nemen", "vu", "ruik", "kind"],
+)
+def test_yivo_to_native_round_trips(latin: str):
+    native = romanize.to_native(latin, target_script="Hebr", from_scheme="yivo")
+    back = romanize.to_roman(native, from_script="Hebr", to_scheme="yivo")
+    assert back == latin, f"{latin!r} -> {native!r} -> {back!r}"
+
+
+def test_yivo_to_native_emits_letter_pairs():
+    # Outputs use individual letters (וו / וי / יי), never the
+    # U+05F0-U+05F2 ligature codepoints.
+    for latin in ("shraybn", "tsvey", "hoyz", "vaser"):
+        native = romanize.to_native(latin, target_script="Hebr", from_scheme="yivo")
+        assert not any(ch in native for ch in "װױײ"), (
+            f"{latin!r} produced a ligature codepoint: {native!r}"
+        )
+
+
+def test_yivo_to_native_orthography_details():
+    # Word-initial vocalic vov/yud take a shtumer alef…
+    assert romanize.to_native("un", target_script="Hebr", from_scheme="yivo") == "און"
+    # …consonantal y does not.
+    assert romanize.to_native("yor", target_script="Hebr", from_scheme="yivo") == "יאָר"
+    # Word-final letters use their final forms.
+    assert romanize.to_native("nemen", target_script="Hebr", from_scheme="yivo") == "נעמען"
+
+
+def test_yivo_scheme_rejected_for_non_hebrew_scripts():
+    with pytest.raises(romanize.UnsupportedSchemeError):
+        romanize.to_roman("नमस्ते", from_script="Deva", to_scheme="yivo")
+    with pytest.raises(romanize.UnsupportedSchemeError):
+        romanize.to_native("namaste", target_script="Deva", from_scheme="yivo")
+
+
+def test_hebrew_script_rejects_indic_schemes():
+    with pytest.raises(romanize.UnsupportedSchemeError):
+        romanize.to_roman("בוך", from_script="Hebr", to_scheme="iso15919")
+    with pytest.raises(romanize.UnsupportedSchemeError):
+        romanize.to_native("bukh", target_script="Hebr", from_scheme="iso15919")
+
+
+def test_yivo_and_hebr_in_supported_sets():
+    assert "yivo" in romanize.SUPPORTED_SCHEMES
+    assert "Hebr" in romanize.SUPPORTED_SCRIPTS

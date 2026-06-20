@@ -112,9 +112,9 @@ describe('canEditDictionary', () => {
 });
 
 describe('listGrantedLanguages', () => {
-  it('returns every MVP language for an admin without hitting the DB', async () => {
+  it('returns every supported language for an admin without hitting the DB', async () => {
     const langs = await listGrantedLanguages({ id: 'a1', role: 'admin' });
-    expect(langs.sort()).toEqual(['hi', 'mr', 'or']);
+    expect(langs.sort()).toEqual(['hi', 'mr', 'or', 'yi']);
   });
 
   it('returns [] for a plain user', async () => {

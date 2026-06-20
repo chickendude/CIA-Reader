@@ -42,8 +42,9 @@ import {
   MIN_TITLE_LEN,
 } from '$lib/server/texts/upload.js';
 import type { RequestHandler } from './$types';
+import { SUPPORTED_LANGUAGE_CODES } from '@ciareader/shared-types';
 
-const SUPPORTED_LANGS = new Set(['hi', 'mr', 'or']);
+const SUPPORTED_LANGS = new Set<string>(SUPPORTED_LANGUAGE_CODES);
 
 // T-11.2: EPUB ingest is expensive (chunking + parsing + chapter
 // fan-out), so the daily quota is tighter than the paste / .txt

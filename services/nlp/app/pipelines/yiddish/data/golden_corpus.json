@@ -1,0 +1,976 @@
+{
+  "__description__": "Yiddish golden-file corpus. Each entry pairs a Yiddish sentence (NFC-normalized YIVO orthography, Hebrew script) with its expected per-token analysis. Serves as (a) an eval set for pipeline iteration, (b) a regression guard for rule-table / lemma-seed edits, and (c) the fixture the CI accuracy floor runs against. Format matches the Odia corpus: 'tokens' is ordered — including the ' ' whitespace gap tokens the pipeline emits — with optional expectations ('lemma', 'pos', 'features' subset, 'is_oov', 'is_ambiguous'); a missing key means 'do not enforce'. The corpus only uses lemmas from seed_lemmas.json so the eval is reproducible without the Kaikki import. Expanded corpora land after the dictionary import, ideally reviewed by a fluent Yiddish reader.",
+  "sentences": [
+    {
+      "id": "verb-pres-1sg-01",
+      "source": "hand-written",
+      "text": "איך שרייַב אַ בוך",
+      "tokens": [
+        {
+          "surface": "איך",
+          "lemma": "איך",
+          "pos": "PRON",
+          "is_oov": false
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "שרייַב",
+          "lemma": "שרייַבן",
+          "pos": "VERB",
+          "features": {
+            "Person": "1",
+            "Number": "Sing"
+          },
+          "is_oov": false
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "אַ",
+          "lemma": "אַ",
+          "pos": "DET",
+          "is_oov": false
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "בוך",
+          "lemma": "בוך",
+          "pos": "NOUN",
+          "is_oov": false
+        }
+      ]
+    },
+    {
+      "id": "verb-pres-2sg-01",
+      "source": "hand-written",
+      "text": "דו שרייַבסט גוט",
+      "tokens": [
+        {
+          "surface": "דו",
+          "lemma": "דו",
+          "pos": "PRON",
+          "is_oov": false
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "שרייַבסט",
+          "lemma": "שרייַבן",
+          "pos": "VERB",
+          "features": {
+            "Person": "2",
+            "Number": "Sing"
+          },
+          "is_oov": false,
+          "is_ambiguous": false
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "גוט",
+          "lemma": "גוט",
+          "pos": "ADJ",
+          "is_oov": false
+        }
+      ]
+    },
+    {
+      "id": "verb-pres-3sg-01",
+      "source": "hand-written",
+      "text": "ער שרייַבט אַ בריוו",
+      "tokens": [
+        {
+          "surface": "ער",
+          "lemma": "ער",
+          "pos": "PRON",
+          "is_oov": false
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "שרייַבט",
+          "lemma": "שרייַבן",
+          "pos": "VERB",
+          "features": {
+            "Tense": "Pres"
+          },
+          "is_oov": false
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "אַ",
+          "lemma": "אַ",
+          "pos": "DET",
+          "is_oov": false
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "בריוו",
+          "lemma": "בריוו",
+          "pos": "NOUN",
+          "is_oov": false
+        }
+      ]
+    },
+    {
+      "id": "verb-inf-ambig-01",
+      "source": "hand-written",
+      "comment": "לייענען is both infinitive and 1pl/3pl present — genuinely ambiguous; ביכער is the umlaut plural from the seed's forms map.",
+      "text": "מיר לייענען ביכער",
+      "tokens": [
+        {
+          "surface": "מיר",
+          "lemma": "מיר",
+          "pos": "PRON",
+          "is_oov": false
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "לייענען",
+          "lemma": "לייענען",
+          "pos": "VERB",
+          "is_oov": false,
+          "is_ambiguous": true
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "ביכער",
+          "lemma": "בוך",
+          "pos": "NOUN",
+          "features": {
+            "Number": "Plur"
+          },
+          "is_oov": false
+        }
+      ]
+    },
+    {
+      "id": "verb-perfect-01",
+      "source": "hand-written",
+      "comment": "Strong (ablaut) participle געשריבן comes from the seed's forms map, not the affix rules.",
+      "text": "זי האָט געשריבן",
+      "tokens": [
+        {
+          "surface": "זי",
+          "lemma": "זי",
+          "pos": "PRON",
+          "is_oov": false
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "האָט",
+          "lemma": "האָבן",
+          "pos": "VERB",
+          "features": {
+            "Person": "3",
+            "Number": "Sing"
+          },
+          "is_oov": false
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "געשריבן",
+          "lemma": "שרייַבן",
+          "pos": "VERB",
+          "features": {
+            "VerbForm": "Part"
+          },
+          "is_oov": false
+        }
+      ]
+    },
+    {
+      "id": "verb-perfect-02",
+      "source": "hand-written",
+      "comment": "Weak participle געלערנט is derived by the גע־…־ט circumfix rule (strip back to stem לערן via final-letter folding).",
+      "text": "זיי האָבן געלערנט ייִדיש",
+      "tokens": [
+        {
+          "surface": "זיי",
+          "lemma": "זיי",
+          "pos": "PRON",
+          "is_oov": false
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "האָבן",
+          "lemma": "האָבן",
+          "pos": "VERB",
+          "is_oov": false
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "געלערנט",
+          "lemma": "לערנען",
+          "pos": "VERB",
+          "features": {
+            "VerbForm": "Part"
+          },
+          "is_oov": false
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "ייִדיש",
+          "lemma": "ייִדיש",
+          "pos": "NOUN",
+          "is_oov": false
+        }
+      ]
+    },
+    {
+      "id": "noun-plural-01",
+      "source": "hand-written",
+      "text": "די קינדער זינגען",
+      "tokens": [
+        {
+          "surface": "די",
+          "lemma": "די",
+          "pos": "DET",
+          "is_oov": false
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "קינדער",
+          "lemma": "קינד",
+          "pos": "NOUN",
+          "features": {
+            "Number": "Plur"
+          },
+          "is_oov": false
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "זינגען",
+          "lemma": "זינגען",
+          "pos": "VERB",
+          "is_oov": false,
+          "is_ambiguous": true
+        }
+      ]
+    },
+    {
+      "id": "noun-plural-hebrew-origin-01",
+      "source": "hand-written",
+      "comment": "Hebrew-origin ־ים plural strips back to the headword חבֿר.",
+      "text": "ער האָט חבֿרים",
+      "tokens": [
+        {
+          "surface": "ער",
+          "lemma": "ער",
+          "pos": "PRON",
+          "is_oov": false
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "האָט",
+          "lemma": "האָבן",
+          "pos": "VERB",
+          "is_oov": false
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "חבֿרים",
+          "lemma": "חבֿר",
+          "pos": "NOUN",
+          "features": {
+            "Number": "Plur"
+          },
+          "is_oov": false
+        }
+      ]
+    },
+    {
+      "id": "copula-adj-01",
+      "source": "hand-written",
+      "text": "דער טאַטע איז אַלט",
+      "tokens": [
+        {
+          "surface": "דער",
+          "lemma": "דער",
+          "pos": "DET",
+          "is_oov": false
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "טאַטע",
+          "lemma": "טאַטע",
+          "pos": "NOUN",
+          "is_oov": false
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "איז",
+          "lemma": "זייַן",
+          "pos": "VERB",
+          "features": {
+            "Person": "3",
+            "Number": "Sing"
+          },
+          "is_oov": false
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "אַלט",
+          "lemma": "אַלט",
+          "pos": "ADJ",
+          "is_oov": false
+        }
+      ]
+    },
+    {
+      "id": "copula-suppletive-01",
+      "source": "hand-written",
+      "comment": "Suppletive זייַן forms (בין, געגאַנגען) come from the seed's forms map.",
+      "text": "איך בין געגאַנגען אין שול",
+      "tokens": [
+        {
+          "surface": "איך",
+          "lemma": "איך",
+          "pos": "PRON",
+          "is_oov": false
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "בין",
+          "lemma": "זייַן",
+          "pos": "VERB",
+          "features": {
+            "Person": "1",
+            "Number": "Sing"
+          },
+          "is_oov": false
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "געגאַנגען",
+          "lemma": "גיין",
+          "pos": "VERB",
+          "features": {
+            "VerbForm": "Part"
+          },
+          "is_oov": false
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "אין",
+          "lemma": "אין",
+          "pos": "ADP",
+          "is_oov": false
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "שול",
+          "lemma": "שול",
+          "pos": "NOUN",
+          "is_oov": false
+        }
+      ]
+    },
+    {
+      "id": "adj-agreement-01",
+      "source": "hand-written",
+      "comment": "Inflected adjective גוטן strips back to גוט; no cell features asserted because ־ן covers several.",
+      "text": "ער האָט אַ גוטן חבֿר",
+      "tokens": [
+        {
+          "surface": "ער",
+          "lemma": "ער",
+          "pos": "PRON",
+          "is_oov": false
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "האָט",
+          "lemma": "האָבן",
+          "pos": "VERB",
+          "is_oov": false
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "אַ",
+          "lemma": "אַ",
+          "pos": "DET",
+          "is_oov": false
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "גוטן",
+          "lemma": "גוט",
+          "pos": "ADJ",
+          "is_oov": false
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "חבֿר",
+          "lemma": "חבֿר",
+          "pos": "NOUN",
+          "is_oov": false
+        }
+      ]
+    },
+    {
+      "id": "verb-pres-3pl-01",
+      "source": "hand-written",
+      "text": "זיי גייען אין דער שטאָט",
+      "tokens": [
+        {
+          "surface": "זיי",
+          "lemma": "זיי",
+          "pos": "PRON",
+          "is_oov": false
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "גייען",
+          "lemma": "גיין",
+          "pos": "VERB",
+          "features": {
+            "Tense": "Pres"
+          },
+          "is_oov": false
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "אין",
+          "lemma": "אין",
+          "pos": "ADP",
+          "is_oov": false
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "דער",
+          "lemma": "דער",
+          "pos": "DET",
+          "is_oov": false
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "שטאָט",
+          "lemma": "שטאָט",
+          "pos": "NOUN",
+          "is_oov": false
+        }
+      ]
+    },
+    {
+      "id": "umlaut-plural-01",
+      "source": "hand-written",
+      "text": "די טעג זענען לאַנג",
+      "tokens": [
+        {
+          "surface": "די",
+          "lemma": "די",
+          "pos": "DET",
+          "is_oov": false
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "טעג",
+          "lemma": "טאָג",
+          "pos": "NOUN",
+          "features": {
+            "Number": "Plur"
+          },
+          "is_oov": false
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "זענען",
+          "lemma": "זייַן",
+          "pos": "VERB",
+          "features": {
+            "Number": "Plur"
+          },
+          "is_oov": false
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "לאַנג",
+          "lemma": "לאַנג",
+          "pos": "ADJ",
+          "is_oov": false
+        }
+      ]
+    },
+    {
+      "id": "verb-3sg-stem-t-01",
+      "source": "hand-written",
+      "comment": "עסט = stem עס + ־ט. עס itself is also a pronoun, but the inflected form only matches the verb rule.",
+      "text": "דאָס קינד עסט ברויט",
+      "tokens": [
+        {
+          "surface": "דאָס",
+          "lemma": "דאָס",
+          "pos": "DET",
+          "is_oov": false
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "קינד",
+          "lemma": "קינד",
+          "pos": "NOUN",
+          "is_oov": false
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "עסט",
+          "lemma": "עסן",
+          "pos": "VERB",
+          "features": {
+            "Tense": "Pres"
+          },
+          "is_oov": false
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "ברויט",
+          "lemma": "ברויט",
+          "pos": "NOUN",
+          "is_oov": false
+        }
+      ]
+    },
+    {
+      "id": "noun-plural-en-01",
+      "source": "hand-written",
+      "text": "די פֿרויען זענען דאָ",
+      "tokens": [
+        {
+          "surface": "די",
+          "lemma": "די",
+          "pos": "DET",
+          "is_oov": false
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "פֿרויען",
+          "lemma": "פֿרוי",
+          "pos": "NOUN",
+          "features": {
+            "Number": "Plur"
+          },
+          "is_oov": false
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "זענען",
+          "lemma": "זייַן",
+          "pos": "VERB",
+          "is_oov": false
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "דאָ",
+          "lemma": "דאָ",
+          "pos": "ADV",
+          "is_oov": false
+        }
+      ]
+    },
+    {
+      "id": "verbs-residence-01",
+      "source": "hand-written",
+      "text": "מיר וווינען אין אַ קליין הויז",
+      "tokens": [
+        {
+          "surface": "מיר",
+          "lemma": "מיר",
+          "pos": "PRON",
+          "is_oov": false
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "וווינען",
+          "lemma": "וווינען",
+          "pos": "VERB",
+          "is_oov": false,
+          "is_ambiguous": true
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "אין",
+          "lemma": "אין",
+          "pos": "ADP",
+          "is_oov": false
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "אַ",
+          "lemma": "אַ",
+          "pos": "DET",
+          "is_oov": false
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "קליין",
+          "lemma": "קליין",
+          "pos": "ADJ",
+          "is_oov": false
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "הויז",
+          "lemma": "הויז",
+          "pos": "NOUN",
+          "is_oov": false
+        }
+      ]
+    },
+    {
+      "id": "negation-punct-01",
+      "source": "hand-written",
+      "comment": "Pins the punctuation split: the period attaches directly to the last word with no gap token between them.",
+      "text": "ער רעדט נישט מיט מיר.",
+      "tokens": [
+        {
+          "surface": "ער",
+          "lemma": "ער",
+          "pos": "PRON",
+          "is_oov": false
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "רעדט",
+          "lemma": "רעדן",
+          "pos": "VERB",
+          "features": {
+            "Tense": "Pres"
+          },
+          "is_oov": false
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "נישט",
+          "lemma": "נישט",
+          "pos": "PART",
+          "is_oov": false
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "מיט",
+          "lemma": "מיט",
+          "pos": "ADP",
+          "is_oov": false
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "מיר",
+          "lemma": "מיר",
+          "pos": "PRON",
+          "is_oov": false
+        },
+        {
+          "surface": ".",
+          "pos": "PUNCT",
+          "is_oov": false
+        }
+      ]
+    },
+    {
+      "id": "oov-01",
+      "source": "hand-written",
+      "comment": "קאָמפּיוטער is deliberately absent from the seed — pins OOV detection and the surface-as-lemma fallback.",
+      "text": "דער קאָמפּיוטער איז נייַ",
+      "tokens": [
+        {
+          "surface": "דער",
+          "lemma": "דער",
+          "pos": "DET",
+          "is_oov": false
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "קאָמפּיוטער",
+          "lemma": "קאָמפּיוטער",
+          "pos": "X",
+          "is_oov": true
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "איז",
+          "lemma": "זייַן",
+          "pos": "VERB",
+          "is_oov": false
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "נייַ",
+          "lemma": "נייַ",
+          "pos": "ADJ",
+          "is_oov": false
+        }
+      ]
+    },
+    {
+      "id": "buy-water-01",
+      "source": "hand-written",
+      "text": "איך קויף וואַסער און ברויט",
+      "tokens": [
+        {
+          "surface": "איך",
+          "lemma": "איך",
+          "pos": "PRON",
+          "is_oov": false
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "קויף",
+          "lemma": "קויפֿן",
+          "pos": "VERB",
+          "features": {
+            "Person": "1",
+            "Number": "Sing"
+          },
+          "is_oov": false
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "וואַסער",
+          "lemma": "וואַסער",
+          "pos": "NOUN",
+          "is_oov": false
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "און",
+          "lemma": "און",
+          "pos": "CCONJ",
+          "is_oov": false
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "ברויט",
+          "lemma": "ברויט",
+          "pos": "NOUN",
+          "is_oov": false
+        }
+      ]
+    },
+    {
+      "id": "loshn-koydesh-01",
+      "source": "hand-written",
+      "comment": "Hebrew-origin (loshn-koydesh) nouns are spelled etymologically; the seed carries explicit phonetic YIVO readings (shabes, not the letter-by-letter shbs).",
+      "text": "שבת איז אַ גוטער טאָג",
+      "tokens": [
+        {
+          "surface": "שבת",
+          "lemma": "שבת",
+          "pos": "NOUN",
+          "is_oov": false
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "איז",
+          "lemma": "זייַן",
+          "pos": "VERB",
+          "is_oov": false
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "אַ",
+          "lemma": "אַ",
+          "pos": "DET",
+          "is_oov": false
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "גוטער",
+          "lemma": "גוט",
+          "pos": "ADJ",
+          "is_oov": false
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "טאָג",
+          "lemma": "טאָג",
+          "pos": "NOUN",
+          "is_oov": false
+        }
+      ]
+    },
+    {
+      "id": "loshn-koydesh-02",
+      "source": "hand-written",
+      "comment": "Loshn-koydesh plural from the forms map (חלומות → חלום) alongside a Germanic-component sentence frame.",
+      "text": "די מאַמע האָט חלומות וועגן שלום",
+      "tokens": [
+        {
+          "surface": "די",
+          "lemma": "די",
+          "pos": "DET",
+          "is_oov": false
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "מאַמע",
+          "lemma": "מאַמע",
+          "pos": "NOUN",
+          "is_oov": false
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "האָט",
+          "lemma": "האָבן",
+          "pos": "VERB",
+          "is_oov": false
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "חלומות",
+          "lemma": "חלום",
+          "pos": "NOUN",
+          "features": {
+            "Number": "Plur"
+          },
+          "is_oov": false
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "וועגן",
+          "lemma": "וועגן",
+          "pos": "ADP",
+          "is_oov": false
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "שלום",
+          "lemma": "שלום",
+          "pos": "NOUN",
+          "is_oov": false
+        }
+      ]
+    }
+  ]
+}

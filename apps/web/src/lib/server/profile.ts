@@ -4,7 +4,7 @@ import type {
   User,
   UserLanguage,
 } from './db/schema.js';
-import { SUPPORTED_LANGUAGE_CODES, type LanguageCode } from '@ciareader/shared-types';
+import { LANGUAGES, SUPPORTED_LANGUAGE_CODES, type LanguageCode } from '@ciareader/shared-types';
 
 export type ProfileUserPatch = {
   displayName?: string | null;
@@ -166,7 +166,11 @@ export function withDefaultsForAllLanguages(
       : {
           code,
           scriptPreference: 'native' as const,
-          romanizationScheme: 'iso15919' as const,
+          // Per-language registry default — ISO 15919 for the Indic
+          // languages, YIVO for Yiddish. A hardcoded iso15919 here
+          // would request a scheme the Hebrew script can't render.
+          romanizationScheme: LANGUAGES[code]
+            .defaultRomanization as UserLanguage['romanizationScheme'],
           isDefault: true,
         };
   });

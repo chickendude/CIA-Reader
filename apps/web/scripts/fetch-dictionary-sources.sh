@@ -156,6 +156,7 @@ case "${1-all}" in
     fetch_kaikki kaikki-hindi Hindi
     fetch_kaikki kaikki-marathi Marathi
     fetch_kaikki kaikki-odia Odia
+    fetch_kaikki kaikki-yiddish Yiddish
     fetch_kaikki_en_translations
     ;;
   kaikki-hindi)
@@ -167,12 +168,33 @@ case "${1-all}" in
   kaikki-odia)
     fetch_kaikki kaikki-odia Odia
     ;;
+  kaikki-yiddish)
+    fetch_kaikki kaikki-yiddish Yiddish
+    ;;
   kaikki-en-translations)
     fetch_kaikki_en_translations
     ;;
+  # Hebrew + Aramaic are NOT dictionary import sources — we never put them
+  # in the Yiddish lemma table. They are detection aids for the Yiddish
+  # loshn-koydesh romanization generator (services/nlp/scripts/
+  # build_loshn_koydesh.py): a Yiddish word whose consonantal skeleton
+  # matches a Hebrew/Aramaic headword is a loshn-koydesh loan whose
+  # rule-based romanization should defer to the curated reading. Excluded
+  # from `all` for that reason; fetch explicitly before regenerating.
+  loshn-koydesh-aids)
+    fetch_kaikki kaikki-hebrew Hebrew
+    fetch_kaikki kaikki-aramaic Aramaic
+    ;;
+  kaikki-hebrew)
+    fetch_kaikki kaikki-hebrew Hebrew
+    ;;
+  kaikki-aramaic)
+    fetch_kaikki kaikki-aramaic Aramaic
+    ;;
   *)
     echo "unknown source: $1" >&2
-    echo "available: kaikki-hindi, kaikki-marathi, kaikki-odia, kaikki-en-translations" >&2
+    echo "available: kaikki-hindi, kaikki-marathi, kaikki-odia, kaikki-yiddish, kaikki-en-translations" >&2
+    echo "  loshn-koydesh detection aids (not imported): kaikki-hebrew, kaikki-aramaic, loshn-koydesh-aids" >&2
     exit 1
     ;;
 esac

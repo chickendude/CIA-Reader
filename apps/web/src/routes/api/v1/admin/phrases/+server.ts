@@ -17,10 +17,10 @@ import {
   ForbiddenError,
   requireCanEditDictionary,
 } from '$lib/server/dictionary/permissions.js';
-import type { LanguageCode } from '@ciareader/shared-types';
+import { SUPPORTED_LANGUAGE_CODES, type LanguageCode } from '@ciareader/shared-types';
 import type { RequestHandler } from './$types';
 
-const LANGS = ['hi', 'mr', 'or'] as const;
+const LANGS = SUPPORTED_LANGUAGE_CODES as readonly [LanguageCode, ...LanguageCode[]];
 // T-14.4a: source filter values match the `translation_source`
 // enum on this branch. T-14.5a adds `'nlp'`; once it merges
 // (and the migration lands), this list extends in lockstep.

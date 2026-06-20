@@ -295,6 +295,27 @@
       "when": 1778610962475,
       "tag": "0041_giant_khan",
       "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1781227565744,
+      "tag": "0042_fantastic_crystal",
+      "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1781227749183,
+      "tag": "0043_seed_yiddish_regular_verb_paradigm",
+      "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1781230285446,
+      "tag": "0044_fold_hebrew_ligatures_in_stripped_headword",
+      "breakpoints": true
     }
   ]
 }

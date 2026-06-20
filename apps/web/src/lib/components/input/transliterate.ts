@@ -177,6 +177,120 @@ const ORYA_VOWEL_SIGNS: Record<string, string> = {
 
 const VIRAMA: Record<string, string> = { Deva: '्', Orya: '୍' };
 
+// ----------------------------------------------------------------
+// Yiddish: YIVO romanization → Hebrew script.
+//
+// Client-side mirror of `_yivo_to_hebrew` in
+// services/nlp/app/romanize.py — keep the two in sync. Unlike the
+// Indic tables there are no vowel signs or viramas; the wrinkles are
+// digraphs (sh/kh/ts/zh + the ay/ey/oy diphthongs), word-final letter
+// forms (מ→ם etc.), the shtumer alef before word-initial vocalic
+// vov/yud (un → און), and the distinguishing points on i/u next to a
+// look-alike letter (yidish → ייִדיש, vu → וווּ).
+// ----------------------------------------------------------------
+
+const YI_KHIRIK = 'ִ';
+const YI_DAGESH = 'ּ';
+
+// Longest-first scan table. Values are the Hebrew renderings; vocalic
+// vs consonantal distinctions are resolved by the post-passes below.
+const YIVO_TO_HEBR: Mapping = [
+  ['dzh', 'דזש'],
+  ['tsh', 'טש'],
+  ['zh', 'זש'],
+  ['sh', 'ש'],
+  ['kh', 'כ'],
+  ['ts', 'צ'],
+  // Letter-pair spellings throughout (matches the server-side
+  // converter): modern typed Yiddish writes these as individual
+  // letters, not the U+05F0-U+05F2 ligature codepoints.
+  ['ay', 'ייַ'],
+  ['ey', 'יי'],
+  ['oy', 'וי'],
+  ['a', 'אַ'],
+  ['o', 'אָ'],
+  ['u', 'ו'],
+  ['i', 'י'],
+  ['e', 'ע'],
+  ['b', 'ב'],
+  ['d', 'ד'],
+  ['f', 'פֿ'],
+  ['g', 'ג'],
+  ['h', 'ה'],
+  ['k', 'ק'],
+  ['l', 'ל'],
+  ['m', 'מ'],
+  ['n', 'נ'],
+  ['p', 'פּ'],
+  ['r', 'ר'],
+  ['s', 'ס'],
+  ['t', 'ט'],
+  ['v', 'וו'],
+  ['y', 'י'],
+  ['z', 'ז'],
+];
+
+// Latin sequences that begin a word with a *vocalic* vov/yud and take
+// a leading shtumer alef. Consonantal y/v (yor → יאָר) do not.
+const YI_VOCALIC_STARTS = new Set(['u', 'i', 'oy', 'ey', 'ay']);
+
+const YI_FINAL_FORMS: Record<string, string> = {
+  מ: 'ם',
+  נ: 'ן',
+  פֿ: 'ף', // fe loses its rafe in final position
+  צ: 'ץ',
+  כ: 'ך',
+};
+
+function yivoWordToHebrew(word: string): string {
+  const units: Array<readonly [string, string]> = [];
+  const lower = word.toLowerCase();
+  let i = 0;
+  while (i < word.length) {
+    const m = longestMatch(lower, i, YIVO_TO_HEBR);
+    if (m) {
+      units.push([lower.substr(i, m.len), m.out]);
+      i += m.len;
+    } else {
+      units.push([word[i]!, word[i]!]);
+      i += 1;
+    }
+  }
+  if (units.length === 0) return word;
+  // Vocalic i/u adjacent to a look-alike letter take their
+  // distinguishing point: khirik yud next to any yud or vov, melupm
+  // vov only next to a consonantal vov. Adjacency is judged on the
+  // unpointed units so one fix can't suppress its neighbor's.
+  const isYudOrVov = (ch: string) => ch === 'י' || ch === 'ו';
+  const pointed = units.map(([seq, heb], idx) => {
+    const [prevSeq, prevHeb] = units[idx - 1] ?? ['', ''];
+    const [nextSeq, nextHeb] = units[idx + 1] ?? ['', ''];
+    if (
+      seq === 'i' &&
+      (isYudOrVov(prevHeb.slice(-1)) || isYudOrVov(nextHeb.charAt(0)))
+    ) {
+      return [seq, heb + YI_KHIRIK] as const;
+    }
+    if (seq === 'u' && (prevSeq === 'v' || nextSeq === 'v')) {
+      return [seq, heb + YI_DAGESH] as const;
+    }
+    return [seq, heb] as const;
+  });
+  const out = pointed.map(([, heb]) => heb);
+  if (YI_VOCALIC_STARTS.has(pointed[0]![0])) {
+    out.unshift('א');
+  }
+  const last = out[out.length - 1]!;
+  if (YI_FINAL_FORMS[last]) {
+    out[out.length - 1] = YI_FINAL_FORMS[last]!;
+  }
+  return out.join('');
+}
+
+function yivoToHebrew(latin: string): string {
+  return latin.replace(/[A-Za-z]+/g, (word) => yivoWordToHebrew(word));
+}
+
 const VOWEL_KEYS = ['aa', 'A', 'ii', 'I', 'uu', 'U', 'ai', 'au', 'i', 'u', 'e', 'o', 'a'];
 
 /** Lookup the longest matching key in `mapping` at position `i`
@@ -267,10 +381,10 @@ function transliterateScript(
 }
 
 /**
- * Main entry point: convert a Latin / ITRANS-flavored string to the
- * native script of `language`. Devanagari languages (hi, mr) and
- * Odia (or) have built-in maps; any other language returns the
- * input unchanged.
+ * Main entry point: convert a Latin-romanized string to the native
+ * script of `language`. Devanagari languages (hi, mr) and Odia (or)
+ * use ITRANS-flavored maps; Yiddish (yi) uses YIVO romanization. Any
+ * other language returns the input unchanged.
  */
 export function latinToNative(language: LanguageCode, latin: string): string {
   const script = LANGUAGES[language].script;
@@ -280,20 +394,25 @@ export function latinToNative(language: LanguageCode, latin: string): string {
   if (script === 'Orya') {
     return transliterateScript(latin, ORYA_CONS, ORYA_VOWEL_SIGNS, VIRAMA.Orya!);
   }
+  if (script === 'Hebr') {
+    return yivoToHebrew(latin);
+  }
   return latin;
 }
 
 /**
  * Heuristic: does this string look like it was already typed in the
  * native script, or is it Latin awaiting transliteration? We use
- * the Unicode-block check for Deva / Orya — any single native char
- * counts as "native".
+ * the Unicode-block check — any single native char counts as
+ * "native". The Hebrew check includes the Alphabetic Presentation
+ * Forms block (ligature/pointed variants some keyboards emit).
  */
 export function looksLikeNativeScript(s: string, language: LanguageCode): boolean {
   if (!s) return false;
   const script = LANGUAGES[language].script;
   if (script === 'Deva') return /[ऀ-ॿ]/.test(s);
   if (script === 'Orya') return /[଀-୿]/.test(s);
+  if (script === 'Hebr') return /[\u0590-\u05FF\uFB1D-\uFB4F]/.test(s);
   return false;
 }
 

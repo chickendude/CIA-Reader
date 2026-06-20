@@ -14,8 +14,9 @@ import {
 } from '$lib/server/dictionary/admin.js';
 import { isAdmin } from '$lib/server/dictionary/permissions.js';
 import type { RequestHandler } from './$types';
+import { SUPPORTED_LANGUAGE_CODES } from '@ciareader/shared-types';
 
-const SUPPORTED = new Set(['hi', 'mr', 'or']);
+const SUPPORTED = new Set<string>(SUPPORTED_LANGUAGE_CODES);
 
 export const DELETE: RequestHandler = async (event) => {
   const user = await requireUser(event);

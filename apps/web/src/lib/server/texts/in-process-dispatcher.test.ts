@@ -98,6 +98,7 @@ vi.mock('../db/index.js', () => ({
     lemmaForms: {
       surface: 'lemma_forms.surface',
       lemmaId: 'lemma_forms.lemma_id',
+      romanization: 'lemma_forms.romanization',
       quarantinedAt: 'lemma_forms.quarantined_at',
     },
   },
@@ -394,6 +395,49 @@ describe('processTextNow', () => {
     const tokenInsert = inserts[0]!.values as Array<{ lemmaId: string | null; surface: string }>;
     expect(tokenInsert[0]!.lemmaId).toBe('lemma-rahiba');
     expect(tokenInsert[0]!.surface).toBe('ରହିଲି');
+  });
+
+  it('prefers a dictionary-recorded romanization over the pipeline output', async () => {
+    // Yiddish loshn-koydesh: the NLP service's rule-based romanizer
+    // reads שבת letter-by-letter ("shbs"); a curator recorded the
+    // phonetic reading on the lemma_forms row. The recorded reading
+    // must land on the persisted token so dictionary updates reach
+    // the reader on the next (re)process.
+    stage([{ id: 'text-1', language: 'yi' }]);
+    stage([{ id: 'chap-1', body: 'שבת' }]);
+    stage([{ id: 'lemma-shabes', headword: 'שבת', pos: 'NOUN' }]);
+    stage([]); // overrides — empty
+    stage([{ surface: 'שבת', lemmaId: 'lemma-shabes', romanization: 'shabes' }]);
+
+    nlpProcess.mockResolvedValueOnce({
+      language: 'yi',
+      pipeline_id: 'custom-yi',
+      tokens: [
+        {
+          idx: 0,
+          surface: 'שבת',
+          is_word: true,
+          is_ambiguous: false,
+          is_oov: false,
+          romanization: 'shbs',
+          number_forms: null,
+          candidates: [{ lemma: 'שבת', pos: 'NOUN', score: 1.0, features: {} }],
+        },
+      ],
+    });
+
+    await processTextNow('text-1');
+
+    const inserts = calls.filter(
+      (c): c is Extract<Call, { kind: 'insert' }> => c.kind === 'insert',
+    );
+    expect(inserts).toHaveLength(1);
+    const tokenInsert = inserts[0]!.values as Array<{
+      surface: string;
+      romanization: string | null;
+    }>;
+    expect(tokenInsert[0]!.surface).toBe('שבת');
+    expect(tokenInsert[0]!.romanization).toBe('shabes');
   });
 
   it('does not auto-create a lemma row for digit-only number tokens (T-2.8)', async () => {

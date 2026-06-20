@@ -18,6 +18,7 @@ import {
   NEXT_BREAKING_API_PREFIX,
   STABLE_API_PREFIX,
 } from '$lib/server/api-versioning.js';
+import { SUPPORTED_LANGUAGE_CODES } from '@ciareader/shared-types';
 
 const HTTP_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] as const;
 type HttpMethod = (typeof HTTP_METHODS)[number];
@@ -424,7 +425,7 @@ export async function generateOpenApiDocument(): Promise<OpenApiDocument> {
             status: { type: 'string', enum: ['ok'] },
             languages: {
               type: 'array',
-              items: { type: 'string', enum: ['hi', 'mr', 'or'] },
+              items: { type: 'string', enum: [...SUPPORTED_LANGUAGE_CODES] },
             },
           },
         },
@@ -432,7 +433,7 @@ export async function generateOpenApiDocument(): Promise<OpenApiDocument> {
           type: 'object',
           required: ['language', 'text'],
           properties: {
-            language: { type: 'string', enum: ['hi', 'mr', 'or'] },
+            language: { type: 'string', enum: [...SUPPORTED_LANGUAGE_CODES] },
             text: { type: 'string', minLength: 1 },
           },
         },

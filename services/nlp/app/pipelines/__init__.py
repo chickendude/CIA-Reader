@@ -27,6 +27,7 @@ from .hindi import build_hindi_pipeline
 from .marathi import build_marathi_pipeline
 from .odia import build_odia_pipeline
 from .stub import StubPipeline
+from .yiddish import build_yiddish_pipeline
 
 
 def _use_stub_pipelines() -> bool:
@@ -53,6 +54,7 @@ _PIPELINE_FACTORIES: dict[str, Callable[[], Pipeline]] = {
     "stanza-hi": build_hindi_pipeline,
     "stanza-mr": build_marathi_pipeline,
     "custom-or": build_odia_pipeline,
+    "custom-yi": build_yiddish_pipeline,
 }
 
 

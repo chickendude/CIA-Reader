@@ -35,7 +35,7 @@
  */
 import { and, eq, isNull } from 'drizzle-orm';
 
-import { stripNukta } from '@ciareader/shared-types';
+import { LANGUAGES, stripNukta, type LanguageCode } from '@ciareader/shared-types';
 
 import { db, schema } from '../db/index.js';
 import { nlpClient, type NlpToken } from '../nlp-client.js';
@@ -85,6 +85,17 @@ type LemmaIndex = {
    * the headword tiers.
    */
   bySurface: Map<string, string>;
+  /**
+   * `surface` → dictionary-provided romanization from the same live
+   * `lemma_forms` rows. Curators (and imports) record phonetic
+   * readings here for words the rule-based romanizer gets wrong —
+   * chiefly Yiddish loshn-koydesh vocabulary, where the etymological
+   * spelling defeats letter mapping (שבת → shabes, not "shbs"). A
+   * recorded reading beats the NLP token's rule-based output when
+   * the chapter's tokens are persisted, so dictionary updates reach
+   * the reader on the next (re)process.
+   */
+  romanizationBySurface: Map<string, string>;
 };
 
 /**
@@ -94,7 +105,7 @@ type LemmaIndex = {
  * this is a few MB of strings — well within process memory.
  */
 async function loadLemmaIndex(
-  language: 'hi' | 'mr' | 'or',
+  language: LanguageCode,
 ): Promise<LemmaIndex> {
   const rows = (await db
     .select({
@@ -154,6 +165,7 @@ async function loadLemmaIndex(
     .select({
       surface: schema.lemmaForms.surface,
       lemmaId: schema.lemmaForms.lemmaId,
+      romanization: schema.lemmaForms.romanization,
     })
     .from(schema.lemmaForms)
     .innerJoin(schema.lemmas, eq(schema.lemmas.id, schema.lemmaForms.lemmaId))
@@ -162,10 +174,14 @@ async function loadLemmaIndex(
         eq(schema.lemmas.language, language),
         isNull(schema.lemmaForms.quarantinedAt),
       ),
-    )) as Array<{ surface: string; lemmaId: string }>;
+    )) as Array<{ surface: string; lemmaId: string; romanization: string | null }>;
   const bySurface = new Map<string, string>();
+  const romanizationBySurface = new Map<string, string>();
   for (const r of formRows) {
     if (!bySurface.has(r.surface)) bySurface.set(r.surface, r.lemmaId);
+    if (r.romanization && !romanizationBySurface.has(r.surface)) {
+      romanizationBySurface.set(r.surface, r.romanization);
+    }
   }
   return {
     byHeadwordPos,
@@ -173,17 +189,10 @@ async function loadLemmaIndex(
     byNuktaStrippedHeadword,
     overridesBySurface,
     bySurface,
+    romanizationBySurface,
   };
 }
 
-// Each MVP language has a single canonical script today (multi-script
-// languages — Sindhi, Urdu — land in M15). Hardcoded here so the
-// dispatcher doesn't have to drag the Python language registry in.
-const SCRIPT_FOR: Record<'hi' | 'mr' | 'or', string> = {
-  hi: 'Deva',
-  mr: 'Deva',
-  or: 'Orya',
-};
 
 function lookupCandidate(
   c: { lemma: string; pos: string },
@@ -215,7 +224,7 @@ function lookupCandidate(
  * symbol tokens) — those don't deserve a dictionary row.
  */
 async function ensureLemma(
-  language: 'hi' | 'mr' | 'or',
+  language: LanguageCode,
   candidate: { lemma: string; pos: string },
   index: LemmaIndex,
 ): Promise<string | null> {
@@ -232,7 +241,10 @@ async function ensureLemma(
       language,
       headword,
       pos,
-      script: SCRIPT_FOR[language],
+      // Each MVP language has a single canonical script today (multi-
+      // script languages — Sindhi, Urdu — land in M15), so the shared
+      // registry's primary script is authoritative.
+      script: LANGUAGES[language].script,
       source: 'official_dictionary',
       sourceAttribution: 'Stanza UD',
     })
@@ -286,7 +298,7 @@ function cacheRow(
 
 async function pickLemmaId(
   token: NlpToken,
-  language: 'hi' | 'mr' | 'or',
+  language: LanguageCode,
   index: LemmaIndex,
 ): Promise<string | null> {
   if (!token.is_word) return null;
@@ -351,7 +363,7 @@ async function pickLemmaId(
 
 async function processChapter(
   chapter: Pick<TextChapter, 'id' | 'body'>,
-  language: 'hi' | 'mr' | 'or',
+  language: LanguageCode,
   index: LemmaIndex,
 ): Promise<number> {
   const result = await nlpClient.process(language, chapter.body);
@@ -386,7 +398,9 @@ async function processChapter(
       isOov: lemmaId ? false : t.is_oov,
       isWord: t.is_word,
       sentenceIdx: 0,
-      romanization: t.romanization,
+      // Dictionary-recorded phonetic reading wins over the pipeline's
+      // rule-based romanization (see LemmaIndex.romanizationBySurface).
+      romanization: index.romanizationBySurface.get(t.surface) ?? t.romanization,
       numberForms: t.number_forms ?? null,
     };
   }) satisfies Array<Omit<TextToken, 'id'>>;

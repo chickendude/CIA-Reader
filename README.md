@@ -2,7 +2,10 @@
 
 **Comparative Indo-Aryan** — a LingQ-style web reader focused on Indo-Aryan languages, with lemma-based known-words tracking, morphological feedback, and optional romanization.
 
-MVP languages: **Hindi**, **Marathi**, **Odia**.
+MVP languages: **Hindi**, **Marathi**, **Odia**. Also supported: **Yiddish** —
+the first language outside the Indo-Aryan family (Hebrew script,
+right-to-left, YIVO romanization), which exercises the registry's
+script-agnostic design end to end.
 
 ## Repo layout
 

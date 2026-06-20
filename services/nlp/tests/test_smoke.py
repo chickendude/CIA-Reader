@@ -12,7 +12,7 @@ def test_health_ok():
     assert resp.status_code == 200
     body = resp.json()
     assert body["status"] == "ok"
-    assert set(body["languages"]) == {"hi", "mr", "or"}
+    assert set(body["languages"]) == {"hi", "mr", "or", "yi"}
 
 
 def test_healthz_alias_returns_same_payload():
@@ -46,6 +46,24 @@ def test_process_odia_canned():
     # renders as one unbreakable run).
     word_tokens = [t for t in body["tokens"] if t["is_word"]]
     assert len(word_tokens) == 2
+
+
+def test_process_yiddish_canned():
+    # The Yiddish factory is dependency-free (regex tokenizer + seed
+    # lemma table), so unlike Hi/Mr/Or the conftest doesn't fake it —
+    # this exercises the real production pipeline end to end.
+    resp = client.post("/process", json={"language": "yi", "text": "איך שרייַב אַ בוך"})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["language"] == "yi"
+    assert body["pipeline_id"] == "custom-yi"
+    word_tokens = [t for t in body["tokens"] if t["is_word"]]
+    assert len(word_tokens) == 4
+    # שרייַב is the bare stem of שרייַבן — the morph analyzer attaches it
+    # to the citation form, and the romanization layer is YIVO.
+    shrayb = word_tokens[1]
+    assert shrayb["candidates"][0]["lemma"] == "שרייַבן"
+    assert shrayb["romanization"] == "shrayb"
 
 
 def test_process_rejects_unsupported_language():

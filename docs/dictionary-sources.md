@@ -59,6 +59,46 @@ community submissions (T-6.3) to fill gaps post-launch.
 The Odia dictionary browse page (T-3.6) will carry a visible
 **"coverage: sparse"** notice so users calibrate expectations.
 
+## Yiddish
+
+| Source | Publisher | License | Status |
+|---|---|---|---|
+| [Wiktionary Yiddish (via Kaikki.org)](https://kaikki.org/dictionary/Yiddish/) | Wiktionary contributors | CC-BY-SA 3.0 | **Registered** (`kaikki-yiddish`) — fetched via `scripts/fetch-dictionary-sources.sh kaikki-yiddish`; ~10k entries in standard YIVO orthography (pointed letters, װ/ױ/ײ ligature codepoints — the NLP lemma lookup folds ligatures so either spelling convention matches) |
+| [Wiktionary English Translations sections (via Kaikki.org)](https://kaikki.org/dictionary/English/) | Wiktionary contributors | CC-BY-SA 3.0 | **Registered** (`kaikki-en-translations-yiddish`) — inverted from English entries' `translations[]`, sharing the same cached English dump as the HI/MR/OR importers |
+| Comprehensive Yiddish-English Dictionary (Beinfeld/Bochner) | Indiana University Press | Proprietary | **Rejected** — commercial dictionary, no redistribution rights |
+| Yiddish Book Center resources | Yiddish Book Center | Mixed, mostly all-rights-reserved | Not pursued for dictionary data; texts may be sourced individually where public domain |
+
+Coverage: medium for core vocabulary. The loshn-koydesh (Hebrew/Aramaic-origin)
+component is spelled etymologically and unpointed, so rule-based
+romanization and affix-stripping both undershoot there — expect the
+correction UX and curator edits to carry more weight than they do for
+Hindi. The custom pipeline's seed lemma table
+(`services/nlp/app/pipelines/yiddish/data/seed_lemmas.json`) bootstraps
+the analyzer until this import lands in Postgres.
+
+**Phonetic readings for loshn-koydesh.** Etymologically-spelled
+Hebrew-origin words carry an explicit phonetic reading stored as YIVO
+romanization (שבת → `shabes`, חלומות → `khaloymes`); a stored reading
+beats the rule-based letter mapping everywhere romanization is shown.
+Three fill paths: (1) the NLP seed ships readings for its own entries
+(headword-level `romanization`, per-form `forms[].romanization`);
+(2) curators record readings on `lemma_forms.romanization` in the
+form editor — the text processor prefers a recorded reading for a
+matching surface when (re)processing, so dictionary updates reach the
+reader without code changes; (3) future community submissions. A
+stored reading can also be rendered back into *vowelized Yiddish
+orthography* via the YIVO→Hebrew transliterator (`shabes` → שאַבעס) if
+we later want the phonetic respelling displayed natively.
+
+**Spelling conventions.** Both digital Yiddish conventions circulate:
+individual letter pairs (וו / וי / יי) and the U+05F0–U+05F2 ligature
+codepoints (װ / ױ / ײ). Everything we *emit* (input transliteration,
+seed data) uses letter pairs; everything we *match* (lemma lookups in
+the NLP pipeline, the `headword_nukta_stripped` search/auto-create
+fallback tier) folds both conventions — plus the floating pasekh
+position in pasekh tsvey yudn — onto one key, so imports may keep
+whatever convention the upstream source uses.
+
 ## Cross-source duplication
 
 Multiple sources may ship the same `(language, headword, pos)` triple —

@@ -108,7 +108,11 @@ async function main() {
     `[reprocess] form_lemma_overrides loaded: ${overridesBySurface.size} surfaces`,
   );
 
-  const SCRIPT_FOR = { hi: 'Deva', mr: 'Deva', or: 'Orya' };
+  // Primary script per language. Mirrors LANGUAGES[lang].script in
+  // @ciareader/shared-types (the authoritative registry) — kept inline here
+  // only because this standalone .mjs helper doesn't transpile the TS package.
+  // Keep in sync when a language is added.
+  const SCRIPT_FOR = { hi: 'Deva', mr: 'Deva', or: 'Orya', yi: 'Hebr' };
 
   // Find-or-auto-create. Mirrors ensureLemma() in
   // lib/server/texts/in-process-dispatcher.ts: if Stanza gave us a

@@ -62,7 +62,7 @@ describe('withDefaultsForAllLanguages', () => {
     ];
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const merged = withDefaultsForAllLanguages(persisted as any);
-    expect(merged.map((m) => m.code).sort()).toEqual(['hi', 'mr', 'or']);
+    expect(merged.map((m) => m.code).sort()).toEqual(['hi', 'mr', 'or', 'yi']);
     const hi = merged.find((m) => m.code === 'hi')!;
     expect(hi.isDefault).toBe(false);
     expect(hi.romanizationScheme).toBe('iast');
@@ -70,11 +70,15 @@ describe('withDefaultsForAllLanguages', () => {
     expect(or.isDefault).toBe(true);
     expect(or.scriptPreference).toBe('native');
     expect(or.romanizationScheme).toBe('iso15919');
+    // Yiddish defaults come from the registry: YIVO, not ISO 15919.
+    const yi = merged.find((m) => m.code === 'yi')!;
+    expect(yi.isDefault).toBe(true);
+    expect(yi.romanizationScheme).toBe('yivo');
   });
 
   it('returns all-defaults when the user has no persisted rows', () => {
     const merged = withDefaultsForAllLanguages([]);
-    expect(merged).toHaveLength(3);
+    expect(merged).toHaveLength(4);
     expect(merged.every((m) => m.isDefault)).toBe(true);
   });
 });

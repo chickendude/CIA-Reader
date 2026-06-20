@@ -13,6 +13,8 @@
  */
 import { and, eq, inArray, isNotNull } from 'drizzle-orm';
 
+import type { LanguageCode } from '@ciareader/shared-types';
+
 import { db, schema } from '../db/index.js';
 import type { TextToken, TokenCorrection, UserKnownLemma } from '../db/schema.js';
 
@@ -301,7 +303,7 @@ export async function loadChapterTokens(
       .from(schema.lemmas)
       .where(
         and(
-          inArray(schema.lemmas.language, languages as ('hi' | 'mr' | 'or')[]),
+          inArray(schema.lemmas.language, languages as LanguageCode[]),
           inArray(schema.lemmas.headword, headwords),
           isNotNull(schema.lemmas.glossDefault),
         ),
@@ -526,7 +528,7 @@ export async function setKnownLemmaStatus(args: {
   if (!lemma) {
     throw new Error(`Lemma ${args.lemmaId} not found`);
   }
-  const language = (lemma as { language: 'hi' | 'mr' | 'or' }).language;
+  const language = (lemma as { language: LanguageCode }).language;
 
   // Upsert. We can't use Drizzle's onConflictDoUpdate with a composite
   // PK across all our drivers without a lot of ceremony — the simpler

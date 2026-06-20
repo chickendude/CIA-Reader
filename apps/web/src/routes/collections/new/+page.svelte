@@ -54,7 +54,8 @@
   <form onsubmit={submit} class="nc-form">
     <label class="nc-row">
       <span class="nc-l">Title</span>
-      <input id="nc-title" type="text" bind:value={title} maxlength="200" required />
+      <!-- dir=auto so RTL (Yiddish) titles/descriptions lay out correctly. -->
+      <input id="nc-title" type="text" dir="auto" bind:value={title} maxlength="200" required />
     </label>
     <div class="nc-grid">
       <label class="nc-row">
@@ -76,7 +77,7 @@
     </div>
     <label class="nc-row">
       <span class="nc-l">Description (optional)</span>
-      <textarea id="nc-desc" bind:value={description} maxlength="2000" rows="3"></textarea>
+      <textarea id="nc-desc" dir="auto" bind:value={description} maxlength="2000" rows="3"></textarea>
     </label>
     <label class="nc-row">
       <span class="nc-l">Cover image URL (optional)</span>

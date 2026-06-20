@@ -49,15 +49,22 @@ describe('root +page.server.ts load', () => {
   }
 
   it("reports NLP 'ok' and lists supported languages when healthy", async () => {
-    health.mockResolvedValue({ status: 'ok', languages: ['hi', 'mr', 'or'] });
+    health.mockResolvedValue({ status: 'ok', languages: ['hi', 'mr', 'or', 'yi'] });
     const data = await callLoad({});
     expect(data.nlpStatus).toBe('ok');
-    expect(data.nlpLanguages).toEqual(['hi', 'mr', 'or']);
-    expect(data.languages.map((l: { code: string }) => l.code).sort()).toEqual(['hi', 'mr', 'or']);
+    expect(data.nlpLanguages).toEqual(['hi', 'mr', 'or', 'yi']);
+    expect(data.languages.map((l: { code: string }) => l.code).sort()).toEqual([
+      'hi',
+      'mr',
+      'or',
+      'yi',
+    ]);
     const hi = data.languages.find((l: { code: string }) => l.code === 'hi');
     expect(hi?.script).toBe('Deva');
     const or = data.languages.find((l: { code: string }) => l.code === 'or');
     expect(or?.script).toBe('Orya');
+    const yi = data.languages.find((l: { code: string }) => l.code === 'yi');
+    expect(yi?.script).toBe('Hebr');
     expect(data.user).toBeNull();
   });
 

@@ -17,6 +17,7 @@ import {
 import { kaikkiEnTranslationsHindiSource } from './kaikki-en-translations-hindi.js';
 import { kaikkiEnTranslationsMarathiSource } from './kaikki-en-translations-marathi.js';
 import { kaikkiEnTranslationsOdiaSource } from './kaikki-en-translations-odia.js';
+import { kaikkiEnTranslationsYiddishSource } from './kaikki-en-translations-yiddish.js';
 import type { ImportEntry } from '../types.js';
 
 const FIXTURE = resolve(
@@ -260,11 +261,26 @@ describe('streaming over the fixture', () => {
     }
   });
 
+  it('Yiddish importer yields Yiddish rows with the Hebr script identifier', async () => {
+    const out: ImportEntry[] = [];
+    for await (const e of await kaikkiEnTranslationsYiddishSource.entries()) {
+      out.push(e);
+    }
+    expect(out.map((e) => `${e.headword}/${e.pos}=${e.glossDefault}`).sort()).toEqual(
+      ['בוך/NOUN=book', 'וואַסער/NOUN=water', 'לייענען/VERB=to read'].sort(),
+    );
+    for (const e of out) {
+      expect(e.script).toBe('Hebr');
+      expect(e.sourceId.startsWith('kaikki-en:yi:')).toBe(true);
+    }
+  });
+
   it('exposes the expected metadata + license on each language source', () => {
     for (const src of [
       kaikkiEnTranslationsHindiSource,
       kaikkiEnTranslationsMarathiSource,
       kaikkiEnTranslationsOdiaSource,
+      kaikkiEnTranslationsYiddishSource,
     ]) {
       expect(src.license).toBe('CC-BY-SA-3.0');
       expect(src.sourceAttribution).toContain('Wiktionary');

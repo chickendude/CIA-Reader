@@ -22,6 +22,11 @@ def test_mvp_languages_have_expected_scripts():
     assert LANGUAGES["mr"].script == "Deva"
     # Odia uses Odia script, not Devanagari. This is the script-agnostic check.
     assert LANGUAGES["or"].script == "Orya"
+    # Yiddish is the first non-Brahmic, right-to-left language.
+    assert LANGUAGES["yi"].script == "Hebr"
+    assert LANGUAGES["yi"].text_direction == "rtl"
+    assert LANGUAGES["yi"].pipeline_id == "custom-yi"
+    assert LANGUAGES["yi"].default_romanization == "yivo"
 
 
 def test_every_descriptor_has_at_least_one_font_and_romanization():
