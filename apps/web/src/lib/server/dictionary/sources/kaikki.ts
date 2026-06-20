@@ -87,6 +87,26 @@ function glossesOf(sense: KaikkiSense): string[] {
   return sense.glosses ?? sense.raw_glosses ?? sense.english ?? [];
 }
 
+/**
+ * Kaikki carries a word's transliteration as a *form* object, e.g.
+ * `{ "form": "bemeshekh", "tags": ["romanization"] }`. Those Latin
+ * strings are not native-script inflected surfaces — left in, they
+ * pollute `lemma_forms.surface` (31k Latin junk rows for Yiddish
+ * alone). We drop any form carrying a transliteration tag here; the
+ * curated romanization belongs in `lemma_forms.romanization`, not the
+ * surface column. Spelling variants (`-zation` / `-sation`) are both
+ * matched, case-insensitively.
+ */
+const ROMANIZATION_FORM_TAGS = new Set([
+  'romanization',
+  'romanisation',
+  'transliteration',
+]);
+
+function isRomanizationForm(form: { tags?: string[] }): boolean {
+  return (form.tags ?? []).some((t) => ROMANIZATION_FORM_TAGS.has(t.toLowerCase()));
+}
+
 function hashGlosses(senses: KaikkiSense[]): string {
   const joined = senses
     .flatMap(glossesOf)
@@ -155,6 +175,7 @@ export function kaikkiToImportEntry(
   // discoverable in fallback lookups but leave `features` empty.
   const forms = (raw.forms ?? [])
     .filter((f) => typeof f.form === 'string' && f.form.length > 0)
+    .filter((f) => !isRomanizationForm(f))
     .map((f) => f.form.normalize('NFC'))
     .filter((surface) => surface !== headword)
     .map((surface) => ({ surface, features: {} as Record<string, string> }));
