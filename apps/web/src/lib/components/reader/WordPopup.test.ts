@@ -526,6 +526,24 @@ describe('WordPopup — admin Basque reference panel', () => {
         examples: ['etxe handia : casa grande'],
         url: 'https://hiztegiak.elhuyar.eus/eu/etxe',
       },
+      {
+        source: 'elhuyar_en',
+        label: 'Elhuyar eu-en',
+        headword: 'etxe',
+        pos: 'iz.',
+        definition: 'house',
+        examples: [],
+        url: 'https://hiztegiak.elhuyar.eus/eu/etxe',
+      },
+      {
+        source: 'euskaltzaindia',
+        label: 'Euskaltzaindiaren Hiztegia',
+        headword: 'etxe',
+        pos: 'iz.',
+        definition: 'Bizitzeko eraikina.',
+        examples: ['etxe berria'],
+        url: 'https://www.euskaltzaindia.eus/',
+      },
     ],
   };
 
@@ -543,7 +561,7 @@ describe('WordPopup — admin Basque reference panel', () => {
     vi.unstubAllGlobals();
   });
 
-  it('shows the panel for an admin on a Basque token and lazily loads on expand', async () => {
+  it('auto-loads (no toggle) and shows ES/EN/EU tabs with the active entry, no source label/link', async () => {
     const fetchMock = stubFetch();
     render(WordPopup, {
       token: makeToken({ surface: 'etxe', lemmaId: 'lem-eu' }),
@@ -552,18 +570,7 @@ describe('WordPopup — admin Basque reference panel', () => {
       isAdmin: true,
       onClose: vi.fn(),
     });
-    await waitFor(() => {
-      expect(document.body.querySelector('[data-testid="admin-ref-toggle"]')).not.toBeNull();
-    });
-    // Lazy: the reference endpoint isn't hit until the section is expanded.
-    expect(
-      fetchMock.mock.calls.some((c) => String(c[0]).includes('/admin/basque-dictionary')),
-    ).toBe(false);
-
-    document.body
-      .querySelector<HTMLButtonElement>('[data-testid="admin-ref-toggle"]')!
-      .click();
-
+    // Expanded by default: the Spanish entry appears with no click.
     await waitFor(() => {
       expect(document.body.querySelector('[data-testid="admin-ref"]')!.textContent).toContain(
         'casa',
@@ -574,8 +581,68 @@ describe('WordPopup — admin Basque reference panel', () => {
         String(c[0]).includes('/admin/basque-dictionary?word=etxe'),
       ),
     ).toBe(true);
-    const link = document.body.querySelector<HTMLAnchorElement>('.admin-ref-link');
-    expect(link?.getAttribute('href')).toBe('https://hiztegiak.elhuyar.eus/eu/etxe');
+    // The three language tabs render; no collapsible toggle.
+    for (const lang of ['es', 'en', 'eu']) {
+      expect(document.body.querySelector(`[data-testid="ref-tab-${lang}"]`)).not.toBeNull();
+    }
+    expect(document.body.querySelector('[data-testid="admin-ref-toggle"]')).toBeNull();
+    // Per-entry source label + "source" link are gone (the tab conveys it).
+    const panel = document.body.querySelector('[data-testid="admin-ref"]')!;
+    expect(panel.querySelector('.admin-ref-link')).toBeNull();
+    expect(panel.textContent).not.toContain('Elhuyar eu-es');
+    expect(panel.textContent).not.toContain('source');
+  });
+
+  it('switches the upstream source when another tab is selected', async () => {
+    stubFetch();
+    render(WordPopup, {
+      token: makeToken({ surface: 'etxe', lemmaId: 'lem-eu' }),
+      language: 'eu',
+      isOwner: false,
+      isAdmin: true,
+      onClose: vi.fn(),
+    });
+    await waitFor(() => {
+      expect(document.body.querySelector('[data-testid="admin-ref"]')!.textContent).toContain(
+        'casa',
+      );
+    });
+    document.body.querySelector<HTMLButtonElement>('[data-testid="ref-tab-en"]')!.click();
+    await waitFor(() => {
+      expect(document.body.querySelector('[data-testid="admin-ref"]')!.textContent).toContain(
+        'house',
+      );
+    });
+    // Spanish entry is no longer shown under the English tab.
+    expect(document.body.querySelector('[data-testid="admin-ref"]')!.textContent).not.toContain(
+      'casa',
+    );
+  });
+
+  it('keeps examples behind a hover trigger (only when an entry has them)', async () => {
+    stubFetch();
+    render(WordPopup, {
+      token: makeToken({ surface: 'etxe', lemmaId: 'lem-eu' }),
+      language: 'eu',
+      isOwner: false,
+      isAdmin: true,
+      onClose: vi.fn(),
+    });
+    // ES entry has an example → a trigger button whose popover holds the text.
+    await waitFor(() => {
+      expect(document.body.querySelector('.ext-ex')).not.toBeNull();
+    });
+    expect(document.body.querySelector('.ext-ex .ext-ex-pop')!.textContent).toContain(
+      'casa grande',
+    );
+    // EN entry has no examples → no trigger.
+    document.body.querySelector<HTMLButtonElement>('[data-testid="ref-tab-en"]')!.click();
+    await waitFor(() => {
+      expect(document.body.querySelector('[data-testid="admin-ref"]')!.textContent).toContain(
+        'house',
+      );
+    });
+    expect(document.body.querySelector('.ext-ex')).toBeNull();
   });
 
   it('is absent for a non-admin', async () => {

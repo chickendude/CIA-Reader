@@ -49,3 +49,27 @@ export function parseHiddenDefinitionLanguages(raw: string | null): Set<string> 
 export function serializeHiddenDefinitionLanguages(hidden: Set<string>): string {
   return JSON.stringify([...hidden]);
 }
+
+/**
+ * Reference (external dictionaries) panel — the admin-only Elhuyar /
+ * Euskaltzaindia lookups are organised into ES | EN | EU tabs. Each tab
+ * maps to one upstream source.
+ */
+export type ReferenceLanguage = 'es' | 'en' | 'eu';
+
+export const REFERENCE_LANGUAGE_TABS: readonly ReferenceLanguage[] = ['es', 'en', 'eu'];
+
+/** Map an external reference source to the tab it belongs under. */
+export function referenceSourceLanguage(source: string): ReferenceLanguage | null {
+  if (source === 'elhuyar_es') return 'es';
+  if (source === 'elhuyar_en') return 'en';
+  if (source === 'euskaltzaindia') return 'eu';
+  return null;
+}
+
+/** localStorage key for the admin's last-selected reference tab. */
+export const ACTIVE_REFERENCE_LANGUAGE_KEY = 'ciareader:active-reference-language';
+
+export function parseReferenceLanguage(raw: string | null): ReferenceLanguage | null {
+  return raw === 'es' || raw === 'en' || raw === 'eu' ? raw : null;
+}

@@ -4,6 +4,8 @@ import { describe, expect, it } from 'vitest';
 import {
   definitionLanguageName,
   parseHiddenDefinitionLanguages,
+  parseReferenceLanguage,
+  referenceSourceLanguage,
   serializeHiddenDefinitionLanguages,
 } from './definition-languages.js';
 
@@ -39,5 +41,20 @@ describe('parseHiddenDefinitionLanguages', () => {
       'en',
       'es',
     ]);
+  });
+});
+
+describe('reference tabs', () => {
+  it('maps each upstream source to its tab language', () => {
+    expect(referenceSourceLanguage('elhuyar_es')).toBe('es');
+    expect(referenceSourceLanguage('elhuyar_en')).toBe('en');
+    expect(referenceSourceLanguage('euskaltzaindia')).toBe('eu');
+    expect(referenceSourceLanguage('whatever')).toBeNull();
+  });
+
+  it('parses a persisted reference tab, rejecting junk', () => {
+    expect(parseReferenceLanguage('eu')).toBe('eu');
+    expect(parseReferenceLanguage('fr')).toBeNull();
+    expect(parseReferenceLanguage(null)).toBeNull();
   });
 });

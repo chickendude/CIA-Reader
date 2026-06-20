@@ -31,6 +31,11 @@
     HIDDEN_DEFINITION_LANGUAGES_KEY,
     parseHiddenDefinitionLanguages,
     serializeHiddenDefinitionLanguages,
+    ACTIVE_REFERENCE_LANGUAGE_KEY,
+    parseReferenceLanguage,
+    REFERENCE_LANGUAGE_TABS,
+    referenceSourceLanguage,
+    type ReferenceLanguage,
   } from './definition-languages.js';
   import { browser } from '$app/environment';
   import type { LanguageCode } from '@ciareader/shared-types';
@@ -307,9 +312,9 @@
   // instead of leaving the old one stuck.
   $effect(() => {
     const t = token;
-    // Collapse + clear the admin reference panel whenever the popup
-    // rebinds to a different word (it lazy-loads again on expand).
-    adminRefExpanded = false;
+    // Clear the reference panel whenever the popup rebinds to a different
+    // word; the auto-load effect refetches for the new word. The active
+    // tab is intentionally preserved across words.
     adminRefResults = null;
     adminRefWord = null;
     adminRefError = null;
@@ -362,16 +367,32 @@
     examples: string[];
     url: string;
   };
-  let adminRefExpanded = $state(false);
   let adminRefLoading = $state(false);
   let adminRefError = $state<string | null>(null);
   let adminRefResults = $state<BasqueRefResult[] | null>(null);
   let adminRefWord = $state<string | null>(null);
 
-  // We look up the resolved NLP lemma (falling back to the surface) — no
-  // need to re-derive a citation form.
+  // The ES | EN | EU tabs select which upstream source's entries show.
+  // Persisted so the admin's preferred reference language sticks across
+  // words; `null` until they pick, then we default to the first tab that
+  // has results.
+  function readActiveRefTab(): ReferenceLanguage | null {
+    if (!browser) return null;
+    try {
+      return parseReferenceLanguage(
+        localStorage.getItem(ACTIVE_REFERENCE_LANGUAGE_KEY),
+      );
+    } catch {
+      return null;
+    }
+  }
+  let activeRefTab = $state<ReferenceLanguage | null>(readActiveRefTab());
+
+  // We look up the resolved NLP lemma; for an OOV token (no lemma) we fall
+  // back to the surface. Waiting for the lemma when there is one avoids a
+  // double fetch (surface, then lemma) as the payload resolves.
   const adminRefLookupWord = $derived(
-    payload?.lemma.headword ?? token?.surface ?? null,
+    payload?.lemma.headword ?? (token && !token.lemmaId ? token.surface : null),
   );
   const showAdminRef = $derived(
     isAdmin &&
@@ -385,12 +406,39 @@
       !!adminRefLookupWord,
   );
 
+  function refResultsFor(lang: ReferenceLanguage): BasqueRefResult[] {
+    return (adminRefResults ?? []).filter(
+      (r) => referenceSourceLanguage(r.source) === lang,
+    );
+  }
+  const refTabsWithResults = $derived(
+    REFERENCE_LANGUAGE_TABS.filter((l) => refResultsFor(l).length > 0),
+  );
+  // Honour the admin's pick; otherwise land on the first tab that has
+  // something so the panel isn't empty on open.
+  const effectiveRefTab: ReferenceLanguage = $derived(
+    activeRefTab ?? refTabsWithResults[0] ?? 'es',
+  );
+  const shownRefResults = $derived(refResultsFor(effectiveRefTab));
+
+  function selectRefTab(lang: ReferenceLanguage): void {
+    activeRefTab = lang;
+    if (browser) {
+      try {
+        localStorage.setItem(ACTIVE_REFERENCE_LANGUAGE_KEY, lang);
+      } catch {
+        /* storage disabled — in-memory state still works */
+      }
+    }
+  }
+
   async function loadAdminRef(): Promise<void> {
     const word = adminRefLookupWord;
     if (!word) return;
-    if (adminRefResults !== null && adminRefWord === word) return; // cached
+    adminRefWord = word; // mark requested up front so the effect won't refire
     adminRefLoading = true;
     adminRefError = null;
+    adminRefResults = null;
     try {
       const res = await fetch(
         `/api/v1/admin/basque-dictionary?word=${encodeURIComponent(word)}`,
@@ -398,7 +446,6 @@
       if (!res.ok) throw new Error(`Lookup failed (${res.status})`);
       const data = (await res.json()) as { results: BasqueRefResult[] };
       adminRefResults = data.results;
-      adminRefWord = word;
     } catch (e) {
       adminRefError = e instanceof Error ? e.message : 'Lookup failed';
       adminRefResults = null;
@@ -407,10 +454,13 @@
     }
   }
 
-  function toggleAdminRef(): void {
-    adminRefExpanded = !adminRefExpanded;
-    if (adminRefExpanded) void loadAdminRef();
-  }
+  // Auto-load on open — the panel is expanded by default (no toggle).
+  $effect(() => {
+    if (!showAdminRef) return;
+    const word = adminRefLookupWord;
+    if (!word || adminRefWord === word) return;
+    void loadAdminRef();
+  });
 
   function handleKeydown(e: KeyboardEvent) {
     if (!isOwner || !token?.lemmaId) return;
@@ -1693,71 +1743,6 @@
 
     {/if}
 
-    {#if showAdminRef}
-      <!-- Admin-only Basque reference panel: live Elhuyar / Euskaltzaindia
-           lookups as a curation aid. Reference-only — never stored. Lazy:
-           fetches on first expand. -->
-      <section class="admin-ref" data-testid="admin-ref">
-        <button
-          type="button"
-          class="admin-ref-toggle"
-          data-testid="admin-ref-toggle"
-          aria-expanded={adminRefExpanded}
-          onclick={toggleAdminRef}
-        >
-          <span>Reference (admin)</span>
-          <span class="admin-ref-chevron" aria-hidden="true">
-            {adminRefExpanded ? '▾' : '▸'}
-          </span>
-        </button>
-        {#if adminRefExpanded}
-          <div class="admin-ref-body">
-            {#if adminRefLoading}
-              <p class="muted small" data-testid="admin-ref-loading">
-                Looking up “{adminRefLookupWord}”…
-              </p>
-            {:else if adminRefError}
-              <p class="err small" data-testid="admin-ref-error">{adminRefError}</p>
-            {:else if adminRefResults && adminRefResults.length > 0}
-              <ul class="admin-ref-list">
-                {#each adminRefResults as r, i (r.source + i)}
-                  <li class="admin-ref-row">
-                    <div class="admin-ref-head">
-                      <span class="admin-ref-source">{r.label}</span>
-                      {#if r.pos}<span class="admin-ref-pos">{r.pos}</span>{/if}
-                      <a
-                        class="admin-ref-link"
-                        href={r.url}
-                        target="_blank"
-                        rel="noreferrer noopener"
-                      >
-                        source ↗
-                      </a>
-                    </div>
-                    <div class="admin-ref-def">{r.definition}</div>
-                    {#if r.examples.length > 0}
-                      <ul class="admin-ref-examples">
-                        {#each r.examples as ex (ex)}
-                          <li>{ex}</li>
-                        {/each}
-                      </ul>
-                    {/if}
-                  </li>
-                {/each}
-              </ul>
-            {:else}
-              <p class="muted small" data-testid="admin-ref-empty">
-                No reference entries found.
-              </p>
-            {/if}
-            <p class="admin-ref-note">
-              Admin-only reference. Not stored or shown to readers.
-            </p>
-          </div>
-        {/if}
-      </section>
-    {/if}
-
     <!-- T-14.3b: "+ Add my translation" sits outside the
          `{#if payload}` block so it surfaces both for normal lemma
          tokens (after the lemma fetch resolves) and for the
@@ -1802,6 +1787,73 @@
           + Add my translation
         </button>
       {/if}
+    {/if}
+
+    {#if showAdminRef}
+      <!-- Admin-only external dictionaries (Elhuyar / Euskaltzaindia),
+           expanded by default and tabbed by language. Reference-only —
+           fetched live, never stored or shown to readers. -->
+      <section class="ext-dict" data-testid="admin-ref">
+        <h3 class="sp-section-h">
+          External dictionaries
+          <span class="muted">admin</span>
+        </h3>
+        <div class="ext-tabs" role="tablist" aria-label="Reference language">
+          {#each REFERENCE_LANGUAGE_TABS as lang (lang)}
+            <button
+              type="button"
+              role="tab"
+              class="ext-tab"
+              data-active={effectiveRefTab === lang ? '1' : '0'}
+              aria-selected={effectiveRefTab === lang}
+              data-testid={`ref-tab-${lang}`}
+              title={definitionLanguageName(lang)}
+              onclick={() => selectRefTab(lang)}
+            >
+              {lang.toUpperCase()}
+            </button>
+          {/each}
+        </div>
+        {#if adminRefLoading}
+          <p class="muted small" data-testid="admin-ref-loading">
+            Looking up “{adminRefLookupWord}”…
+          </p>
+        {:else if adminRefError}
+          <p class="err small" data-testid="admin-ref-error">{adminRefError}</p>
+        {:else if shownRefResults.length > 0}
+          <ul class="ext-list">
+            {#each shownRefResults as r, i (r.source + i)}
+              <li class="ext-row">
+                <div class="ext-def">
+                  {#if r.pos}<span class="ext-pos">{r.pos}</span>{/if}
+                  <span>{r.definition}</span>
+                  {#if r.examples.length > 0}
+                    <button
+                      type="button"
+                      class="ext-ex"
+                      aria-label="Show {r.examples.length} example{r.examples
+                        .length === 1
+                        ? ''
+                        : 's'}"
+                    >
+                      <span class="ext-ex-icon" aria-hidden="true">❝</span>
+                      <span class="ext-ex-pop" role="note">
+                        {#each r.examples as ex (ex)}
+                          <span class="ext-ex-item">{ex}</span>
+                        {/each}
+                      </span>
+                    </button>
+                  {/if}
+                </div>
+              </li>
+            {/each}
+          </ul>
+        {:else}
+          <p class="muted small" data-testid="admin-ref-empty">
+            No {definitionLanguageName(effectiveRefTab)} entries.
+          </p>
+        {/if}
+      </section>
     {/if}
 
     <!-- T-6.2: "Fix" affordance — every popup gets it, even the
@@ -2255,76 +2307,103 @@
     background: color-mix(in oklch, var(--ink, var(--color-fg)) 6%, transparent);
     border-radius: 999px;
   }
-  .admin-ref {
+  .ext-dict {
     margin-top: 0.75rem;
     border-top: 1px solid var(--rule-2, var(--color-border));
     padding-top: 0.5rem;
   }
-  .admin-ref-toggle {
+  .ext-tabs {
     display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.5rem;
-    width: 100%;
-    padding: 0.3rem 0;
+    gap: 0.25rem;
+    margin: 0.25rem 0 0.5rem;
+  }
+  .ext-tab {
+    padding: 0.15rem 0.7rem;
     font: inherit;
-    font-size: 0.8rem;
+    font-size: 0.74rem;
     font-weight: 600;
+    letter-spacing: 0.03em;
+    border: 1px solid var(--rule, var(--color-border));
+    border-radius: 999px;
+    background: var(--paper, var(--color-bg));
     color: var(--ink, var(--color-fg));
-    background: none;
-    border: 0;
     cursor: pointer;
   }
-  .admin-ref-chevron {
-    color: var(--ink-3, var(--color-fg-muted));
+  .ext-tab[data-active='1'] {
+    border-color: color-mix(
+      in oklch,
+      var(--accent, var(--color-accent)) 35%,
+      var(--rule, var(--color-border))
+    );
+    background: color-mix(
+      in oklch,
+      var(--accent, var(--color-accent)) 14%,
+      var(--paper, var(--color-bg))
+    );
   }
-  .admin-ref-list {
+  .ext-tab:focus-visible {
+    outline: 2px solid var(--accent, var(--color-accent));
+    outline-offset: 1px;
+  }
+  .ext-list {
     list-style: none;
-    margin: 0.25rem 0 0;
+    margin: 0;
     padding: 0;
     display: grid;
     gap: 0.5rem;
   }
-  .admin-ref-row {
+  .ext-row {
     font-size: 0.84rem;
-    line-height: 1.4;
+    line-height: 1.45;
   }
-  .admin-ref-head {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: baseline;
-    gap: 0.4rem;
+  .ext-def {
+    color: var(--ink, var(--color-fg));
   }
-  .admin-ref-source {
-    font-size: 0.68rem;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    color: var(--ink-3, var(--color-fg-muted));
-  }
-  .admin-ref-pos {
+  .ext-pos {
     font-style: italic;
     font-size: 0.74rem;
     color: var(--ink-3, var(--color-fg-muted));
+    margin-right: 0.3rem;
   }
-  .admin-ref-link {
-    margin-left: auto;
+  /* Examples are hidden behind a hover/focus icon to keep the entry compact. */
+  .ext-ex {
+    position: relative;
+    display: inline-flex;
+    margin-left: 0.3rem;
+    padding: 0;
+    border: 0;
+    background: none;
+    font: inherit;
+    cursor: help;
+    vertical-align: baseline;
+  }
+  .ext-ex-icon {
     font-size: 0.72rem;
-    color: var(--ink, var(--color-fg));
-    text-decoration: underline;
-  }
-  .admin-ref-def {
-    color: var(--ink, var(--color-fg));
-  }
-  .admin-ref-examples {
-    margin: 0.2rem 0 0;
-    padding-left: 1rem;
-    font-size: 0.78rem;
-    color: var(--ink-2, var(--color-fg));
-  }
-  .admin-ref-note {
-    margin: 0.5rem 0 0;
-    font-size: 0.68rem;
     color: var(--ink-3, var(--color-fg-muted));
+  }
+  .ext-ex-pop {
+    display: none;
+    position: absolute;
+    left: 0;
+    top: 1.3em;
+    z-index: 5;
+    min-width: 12rem;
+    max-width: 18rem;
+    padding: 0.4rem 0.55rem;
+    background: var(--card, var(--color-bg));
+    border: 1px solid var(--rule, var(--color-border));
+    border-radius: 6px;
+    box-shadow: 0 6px 20px color-mix(in oklch, var(--ink, var(--color-fg)) 18%, transparent);
+  }
+  .ext-ex:hover .ext-ex-pop,
+  .ext-ex:focus-within .ext-ex-pop {
+    display: grid;
+    gap: 0.3rem;
+  }
+  .ext-ex-item {
+    font-size: 0.78rem;
+    font-style: italic;
+    color: var(--ink-2, var(--color-fg));
   }
   .community-row {
     display: flex;
