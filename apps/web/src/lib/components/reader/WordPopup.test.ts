@@ -322,6 +322,293 @@ describe('WordPopup — translation reporting (T-11.1)', () => {
   });
 });
 
+describe('WordPopup — definition-language filter (Basque dictionary)', () => {
+  function official(id: string, body: string, targetLanguage: string) {
+    return {
+      id,
+      source: 'official_dictionary',
+      submittedBy: null,
+      body,
+      targetLanguage,
+      sourceAttribution: 'Wiktionary',
+      parentTranslationId: null,
+      provenance: { kind: 'imported', attribution: 'Wiktionary' },
+      voteScore: 0,
+      viewerVote: null,
+    };
+  }
+
+  function basquePayload() {
+    return {
+      lemma: { id: 'lem-eu', headword: 'etxe', pos: 'NOUN', glossDefault: 'house' },
+      translations: {
+        personal: [],
+        official: [
+          official('off-en', 'house', 'en'),
+          official('off-es', 'casa', 'es'),
+          official('off-eu', 'eraikin bat', 'eu'),
+        ],
+        community: [],
+      },
+      definitionLanguages: ['en', 'es', 'eu'],
+    };
+  }
+
+  function res(payload: unknown) {
+    return new Response(JSON.stringify(payload), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+  }
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('renders a chip + badge per definition language and shows all by default', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(res(basquePayload())));
+    render(WordPopup, {
+      token: makeToken({ surface: 'etxe', lemmaId: 'lem-eu' }),
+      language: 'eu',
+      isOwner: false,
+      onClose: vi.fn(),
+    });
+    await waitFor(() => {
+      expect(document.body.querySelector('.official-row')).not.toBeNull();
+    });
+    for (const code of ['en', 'es', 'eu']) {
+      expect(
+        document.body.querySelector(`[data-testid="def-lang-chip-${code}"]`),
+      ).not.toBeNull();
+    }
+    const list = document.body.querySelector('.translations')!;
+    expect(list.textContent).toContain('house');
+    expect(list.textContent).toContain('casa');
+    expect(list.textContent).toContain('eraikin bat');
+    // Each row is badged with its definition language.
+    expect(list.textContent).toContain('Spanish');
+    expect(list.textContent).toContain('Euskara');
+  });
+
+  it('hides a language when its chip is toggled off', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(res(basquePayload())));
+    render(WordPopup, {
+      token: makeToken({ surface: 'etxe', lemmaId: 'lem-eu' }),
+      language: 'eu',
+      isOwner: false,
+      onClose: vi.fn(),
+    });
+    await waitFor(() => {
+      expect(document.body.querySelector('.official-row')).not.toBeNull();
+    });
+    const esChip = document.body.querySelector<HTMLButtonElement>(
+      '[data-testid="def-lang-chip-es"]',
+    )!;
+    esChip.click();
+    await waitFor(() => {
+      expect(document.body.querySelector('.translations')!.textContent).not.toContain(
+        'casa',
+      );
+    });
+    const list = document.body.querySelector('.translations')!;
+    expect(list.textContent).toContain('house');
+    expect(list.textContent).toContain('eraikin bat');
+    expect(esChip.getAttribute('data-active')).toBe('0');
+  });
+
+  function fakeStorage(seed: Record<string, string> = {}) {
+    const store = new Map<string, string>(Object.entries(seed));
+    return {
+      store,
+      api: {
+        getItem: (k: string) => store.get(k) ?? null,
+        setItem: (k: string, v: string) => void store.set(k, v),
+        removeItem: (k: string) => void store.delete(k),
+        clear: () => store.clear(),
+        key: () => null,
+        length: 0,
+      },
+    };
+  }
+
+  const PREF_KEY = 'ciareader:hidden-definition-languages';
+
+  it('persists a toggled-off language to localStorage', async () => {
+    const storage = fakeStorage();
+    vi.stubGlobal('localStorage', storage.api);
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(res(basquePayload())));
+
+    render(WordPopup, {
+      token: makeToken({ surface: 'etxe', lemmaId: 'lem-eu' }),
+      language: 'eu',
+      isOwner: false,
+      onClose: vi.fn(),
+    });
+    await waitFor(() => {
+      expect(document.body.querySelector('.official-row')).not.toBeNull();
+    });
+    document.body
+      .querySelector<HTMLButtonElement>('[data-testid="def-lang-chip-es"]')!
+      .click();
+    await waitFor(() => {
+      expect(storage.store.get(PREF_KEY)).toBeDefined();
+    });
+    expect(JSON.parse(storage.store.get(PREF_KEY)!)).toContain('es');
+  });
+
+  it('re-applies a persisted hidden language from the start', async () => {
+    const storage = fakeStorage({ [PREF_KEY]: JSON.stringify(['es']) });
+    vi.stubGlobal('localStorage', storage.api);
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(res(basquePayload())));
+
+    render(WordPopup, {
+      token: makeToken({ surface: 'etxe', lemmaId: 'lem-eu' }),
+      language: 'eu',
+      isOwner: false,
+      onClose: vi.fn(),
+    });
+    await waitFor(() => {
+      expect(document.body.querySelector('.official-row')).not.toBeNull();
+    });
+    // Spanish is hidden from the first render; English/Basque remain.
+    const list = document.body.querySelector('.translations')!;
+    expect(list.textContent).not.toContain('casa');
+    expect(list.textContent).toContain('house');
+    expect(
+      document.body
+        .querySelector('[data-testid="def-lang-chip-es"]')!
+        .getAttribute('data-active'),
+    ).toBe('0');
+  });
+
+  it('omits the filter entirely when only one definition language is present', async () => {
+    const payload = basquePayload();
+    payload.translations.official = [official('off-en', 'house', 'en')];
+    payload.definitionLanguages = ['en'];
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(res(payload)));
+    render(WordPopup, {
+      token: makeToken({ surface: 'etxe', lemmaId: 'lem-eu' }),
+      language: 'eu',
+      isOwner: false,
+      onClose: vi.fn(),
+    });
+    await waitFor(() => {
+      expect(document.body.querySelector('.official-row')).not.toBeNull();
+    });
+    expect(document.body.querySelector('[data-testid="def-lang-filter"]')).toBeNull();
+    // No per-row badge either, since there's nothing to disambiguate.
+    expect(document.body.querySelector('.def-lang-badge')).toBeNull();
+  });
+});
+
+describe('WordPopup — admin Basque reference panel', () => {
+  function jres(payload: unknown) {
+    return new Response(JSON.stringify(payload), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+  }
+
+  const TRANSLATIONS = {
+    lemma: { id: 'lem-eu', headword: 'etxe', pos: 'NOUN', glossDefault: 'house' },
+    translations: { personal: [], official: [], community: [] },
+    definitionLanguages: ['en'],
+  };
+  const REFERENCE = {
+    word: 'etxe',
+    results: [
+      {
+        source: 'elhuyar_es',
+        label: 'Elhuyar eu-es',
+        headword: 'etxe',
+        pos: 'iz.',
+        definition: 'casa',
+        examples: ['etxe handia : casa grande'],
+        url: 'https://hiztegiak.elhuyar.eus/eu/etxe',
+      },
+    ],
+  };
+
+  function stubFetch() {
+    const fetchMock = vi.fn(async (input: unknown) => {
+      const url = String(input);
+      if (url.includes('/admin/basque-dictionary')) return jres(REFERENCE);
+      return jres(TRANSLATIONS);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    return fetchMock;
+  }
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('shows the panel for an admin on a Basque token and lazily loads on expand', async () => {
+    const fetchMock = stubFetch();
+    render(WordPopup, {
+      token: makeToken({ surface: 'etxe', lemmaId: 'lem-eu' }),
+      language: 'eu',
+      isOwner: false,
+      isAdmin: true,
+      onClose: vi.fn(),
+    });
+    await waitFor(() => {
+      expect(document.body.querySelector('[data-testid="admin-ref-toggle"]')).not.toBeNull();
+    });
+    // Lazy: the reference endpoint isn't hit until the section is expanded.
+    expect(
+      fetchMock.mock.calls.some((c) => String(c[0]).includes('/admin/basque-dictionary')),
+    ).toBe(false);
+
+    document.body
+      .querySelector<HTMLButtonElement>('[data-testid="admin-ref-toggle"]')!
+      .click();
+
+    await waitFor(() => {
+      expect(document.body.querySelector('[data-testid="admin-ref"]')!.textContent).toContain(
+        'casa',
+      );
+    });
+    expect(
+      fetchMock.mock.calls.some((c) =>
+        String(c[0]).includes('/admin/basque-dictionary?word=etxe'),
+      ),
+    ).toBe(true);
+    const link = document.body.querySelector<HTMLAnchorElement>('.admin-ref-link');
+    expect(link?.getAttribute('href')).toBe('https://hiztegiak.elhuyar.eus/eu/etxe');
+  });
+
+  it('is absent for a non-admin', async () => {
+    stubFetch();
+    render(WordPopup, {
+      token: makeToken({ surface: 'etxe', lemmaId: 'lem-eu' }),
+      language: 'eu',
+      isOwner: false,
+      isAdmin: false,
+      onClose: vi.fn(),
+    });
+    await waitFor(() => {
+      expect(document.body.querySelector('[data-testid="word-popup"]')).not.toBeNull();
+    });
+    expect(document.body.querySelector('[data-testid="admin-ref"]')).toBeNull();
+  });
+
+  it('is absent for an admin reading a non-Basque language', async () => {
+    stubFetch();
+    render(WordPopup, {
+      token: makeToken({ surface: 'पानी', lemmaId: 'lem-eu' }),
+      language: 'hi',
+      isOwner: false,
+      isAdmin: true,
+      onClose: vi.fn(),
+    });
+    await waitFor(() => {
+      expect(document.body.querySelector('[data-testid="word-popup"]')).not.toBeNull();
+    });
+    expect(document.body.querySelector('[data-testid="admin-ref"]')).toBeNull();
+  });
+});
+
 describe('WordPopup — feature pills', () => {
   function makePayload() {
     return {

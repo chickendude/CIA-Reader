@@ -26,6 +26,13 @@
   import ReportTranslationModal from './ReportTranslationModal.svelte';
   import { getFeaturePills } from './feature-labels.js';
   import { customizableOfficialIds } from './customize-eligibility.js';
+  import {
+    definitionLanguageName,
+    HIDDEN_DEFINITION_LANGUAGES_KEY,
+    parseHiddenDefinitionLanguages,
+    serializeHiddenDefinitionLanguages,
+  } from './definition-languages.js';
+  import { browser } from '$app/environment';
   import type { LanguageCode } from '@ciareader/shared-types';
   import { looksLikeNumberToken, type ServerToken } from './types.js';
 
@@ -60,6 +67,9 @@
       official: PublicTranslation[];
       community: PublicTranslation[];
     };
+    /** Distinct definition languages present across the buckets (T-… Basque
+     *  dictionary). Drives the per-language filter chips. */
+    definitionLanguages?: string[];
   };
 
   type NumberDisplay = {
@@ -82,6 +92,7 @@
     selectionError,
     language,
     isOwner,
+    isAdmin = false,
     onClose,
     onStatusChange,
     onCorrectionApplied,
@@ -113,6 +124,9 @@
     language: LanguageCode;
     anchorRect?: { top: number; left: number; bottom: number; right: number };
     isOwner: boolean;
+    /** T-… Basque dictionary: gates the admin-only Elhuyar/Euskaltzaindia
+     *  reference panel. Threaded from the reader loader's `isAdmin`. */
+    isAdmin?: boolean;
     onClose: () => void;
     onStatusChange?: (
       lemmaId: string,
@@ -293,6 +307,13 @@
   // instead of leaving the old one stuck.
   $effect(() => {
     const t = token;
+    // Collapse + clear the admin reference panel whenever the popup
+    // rebinds to a different word (it lazy-loads again on expand).
+    adminRefExpanded = false;
+    adminRefResults = null;
+    adminRefWord = null;
+    adminRefError = null;
+    adminRefLoading = false;
     if (!t) {
       payload = null;
       loadError = null;
@@ -328,6 +349,69 @@
     };
   });
 
+  // ---- Admin-only Basque reference panel (Elhuyar / Euskaltzaindia) ---
+  // Proprietary dictionaries shown to admins only, as a curation aid.
+  // Lazy: nothing is fetched until the section is expanded. Reference-only
+  // — the endpoint never writes to our DB.
+  type BasqueRefResult = {
+    source: string;
+    label: string;
+    headword: string;
+    pos: string;
+    definition: string;
+    examples: string[];
+    url: string;
+  };
+  let adminRefExpanded = $state(false);
+  let adminRefLoading = $state(false);
+  let adminRefError = $state<string | null>(null);
+  let adminRefResults = $state<BasqueRefResult[] | null>(null);
+  let adminRefWord = $state<string | null>(null);
+
+  // We look up the resolved NLP lemma (falling back to the surface) — no
+  // need to re-derive a citation form.
+  const adminRefLookupWord = $derived(
+    payload?.lemma.headword ?? token?.surface ?? null,
+  );
+  const showAdminRef = $derived(
+    isAdmin &&
+      language === 'eu' &&
+      !!token?.isWord &&
+      // Skip numerals — they have their own spelled-out block, not a
+      // dictionary entry. (`isNumberToken` is declared below, so inline
+      // the same check here to avoid a use-before-declaration.)
+      token?.numberForms == null &&
+      !looksLikeNumberToken(token?.surface ?? '') &&
+      !!adminRefLookupWord,
+  );
+
+  async function loadAdminRef(): Promise<void> {
+    const word = adminRefLookupWord;
+    if (!word) return;
+    if (adminRefResults !== null && adminRefWord === word) return; // cached
+    adminRefLoading = true;
+    adminRefError = null;
+    try {
+      const res = await fetch(
+        `/api/v1/admin/basque-dictionary?word=${encodeURIComponent(word)}`,
+      );
+      if (!res.ok) throw new Error(`Lookup failed (${res.status})`);
+      const data = (await res.json()) as { results: BasqueRefResult[] };
+      adminRefResults = data.results;
+      adminRefWord = word;
+    } catch (e) {
+      adminRefError = e instanceof Error ? e.message : 'Lookup failed';
+      adminRefResults = null;
+    } finally {
+      adminRefLoading = false;
+    }
+  }
+
+  function toggleAdminRef(): void {
+    adminRefExpanded = !adminRefExpanded;
+    if (adminRefExpanded) void loadAdminRef();
+  }
+
   function handleKeydown(e: KeyboardEvent) {
     if (!isOwner || !token?.lemmaId) return;
     // T-5.21: skip the k/l/i shortcuts whenever the user is typing
@@ -361,6 +445,83 @@
       ...payload.translations.official,
       ...payload.translations.community,
     ];
+  });
+
+  // ---- Definition-language filter (Basque dictionary) -------------
+  // Each translation is glossed in some language (`targetLanguage`).
+  // Basque carries English + Spanish + (eventually) monolingual Basque,
+  // so we let the reader hide languages they don't read. The choice is a
+  // pure display preference persisted in localStorage (no migration, not
+  // cross-device).
+  function readHiddenDefLangs(): Set<string> {
+    if (!browser) return new Set<string>();
+    try {
+      return parseHiddenDefinitionLanguages(
+        localStorage.getItem(HIDDEN_DEFINITION_LANGUAGES_KEY),
+      );
+    } catch {
+      // localStorage can be absent/disabled (private mode, test env) —
+      // fall back to "nothing hidden".
+      return new Set<string>();
+    }
+  }
+
+  let hiddenDefLangs = $state<Set<string>>(readHiddenDefLangs());
+
+  const definitionLanguages = $derived(payload?.definitionLanguages ?? []);
+  // Only worth showing the filter when there's more than one language to
+  // choose between — single-language readers (e.g. Hindi → English only)
+  // never see the control.
+  const showDefLangFilter = $derived(definitionLanguages.length >= 2);
+
+  function isDefLangVisible(code: string): boolean {
+    return !hiddenDefLangs.has(code);
+  }
+
+  function toggleDefLang(code: string): void {
+    const next = new Set(hiddenDefLangs);
+    if (next.has(code)) next.delete(code);
+    else next.add(code);
+    hiddenDefLangs = next;
+    if (browser) {
+      try {
+        localStorage.setItem(
+          HIDDEN_DEFINITION_LANGUAGES_KEY,
+          serializeHiddenDefinitionLanguages(next),
+        );
+      } catch {
+        /* storage disabled / over quota — the in-memory state still works */
+      }
+    }
+  }
+
+  // Translations rendered in the list (everything except the primary
+  // personal editor slot), after the language filter. Used to drive the
+  // "all hidden" empty-state.
+  const visibleListTranslations = $derived(() => {
+    if (!payload) return [];
+    return [
+      ...payload.translations.personal.slice(1),
+      ...payload.translations.official,
+      ...payload.translations.community,
+    ].filter((t) => isDefLangVisible(t.targetLanguage));
+  });
+
+  // List rows that exist before the language filter (the primary personal
+  // editor slot is rendered separately, so it's excluded here). When this
+  // is non-zero but nothing survives the filter, the list shows an
+  // "all hidden" empty-state rather than looking broken.
+  const totalListCount = $derived(() => {
+    if (!payload) return 0;
+    const personalRest =
+      payload.translations.personal.length > 0
+        ? payload.translations.personal.length - 1
+        : 0;
+    return (
+      personalRest +
+      payload.translations.official.length +
+      payload.translations.community.length
+    );
   });
 
   // ---- Add-translation flow ---------------------------------------
@@ -1305,8 +1466,35 @@
         <span class="muted">{allTranslations().length}</span>
       </h3>
 
+      {#if showDefLangFilter}
+        <div
+          class="def-lang-filter"
+          role="group"
+          aria-label="Filter definitions by language"
+          data-testid="def-lang-filter"
+        >
+          {#each definitionLanguages as code (code)}
+            <button
+              type="button"
+              class="def-lang-chip"
+              data-active={isDefLangVisible(code) ? '1' : '0'}
+              aria-pressed={isDefLangVisible(code)}
+              data-testid={`def-lang-chip-${code}`}
+              onclick={() => toggleDefLang(code)}
+              title={isDefLangVisible(code)
+                ? `Hide ${definitionLanguageName(code)} definitions`
+                : `Show ${definitionLanguageName(code)} definitions`}
+            >
+              {definitionLanguageName(code)}
+            </button>
+          {/each}
+        </div>
+      {/if}
+
       <ul class="translations">
-        {#each payload.translations.personal.slice(1) as t (t.id)}
+        {#each payload.translations.personal
+          .slice(1)
+          .filter((t) => isDefLangVisible(t.targetLanguage)) as t (t.id)}
           <li class="personal-row" data-testid="personal-row">
             {#if editingId === t.id}
               <form
@@ -1334,6 +1522,11 @@
             {:else}
               <div class="personal-body">
                 <span class="personal-text">{t.body}</span>
+                {#if showDefLangFilter}
+                  <span class="def-lang-badge">
+                    {definitionLanguageName(t.targetLanguage)}
+                  </span>
+                {/if}
                 {#if isOwner}
                   <div class="personal-actions">
                     <button
@@ -1365,10 +1558,15 @@
             {/if}
           </li>
         {/each}
-        {#each payload.translations.official as t (t.id)}
+        {#each payload.translations.official.filter((t) => isDefLangVisible(t.targetLanguage)) as t (t.id)}
           <li class="official-row">
             <div class="official-body">
               {t.body}
+              {#if showDefLangFilter}
+                <span class="def-lang-badge">
+                  {definitionLanguageName(t.targetLanguage)}
+                </span>
+              {/if}
               {#if customizableIds().has(t.id)}
                 <button
                   type="button"
@@ -1419,10 +1617,15 @@
             {/if}
           </li>
         {/each}
-        {#each payload.translations.community as t (t.id)}
+        {#each payload.translations.community.filter((t) => isDefLangVisible(t.targetLanguage)) as t (t.id)}
           <li class="community-row">
             <div class="community-body">
               {t.body}
+              {#if showDefLangFilter}
+                <span class="def-lang-badge">
+                  {definitionLanguageName(t.targetLanguage)}
+                </span>
+              {/if}
               {#if isOwner}
                 {#if reportedIds.has(t.id)}
                   <span class="reported-badge" data-testid="reported-badge">
@@ -1473,6 +1676,10 @@
         {/each}
         {#if allTranslations().length === 0}
           <li class="muted">No translations yet.</li>
+        {:else if showDefLangFilter && totalListCount() > 0 && visibleListTranslations().length === 0}
+          <li class="muted" data-testid="def-lang-all-hidden">
+            All definitions are hidden by the language filter above.
+          </li>
         {/if}
       </ul>
       {#if reportToast}
@@ -1484,6 +1691,71 @@
         <p class="err small">Could not save vote: {voteError}</p>
       {/if}
 
+    {/if}
+
+    {#if showAdminRef}
+      <!-- Admin-only Basque reference panel: live Elhuyar / Euskaltzaindia
+           lookups as a curation aid. Reference-only — never stored. Lazy:
+           fetches on first expand. -->
+      <section class="admin-ref" data-testid="admin-ref">
+        <button
+          type="button"
+          class="admin-ref-toggle"
+          data-testid="admin-ref-toggle"
+          aria-expanded={adminRefExpanded}
+          onclick={toggleAdminRef}
+        >
+          <span>Reference (admin)</span>
+          <span class="admin-ref-chevron" aria-hidden="true">
+            {adminRefExpanded ? '▾' : '▸'}
+          </span>
+        </button>
+        {#if adminRefExpanded}
+          <div class="admin-ref-body">
+            {#if adminRefLoading}
+              <p class="muted small" data-testid="admin-ref-loading">
+                Looking up “{adminRefLookupWord}”…
+              </p>
+            {:else if adminRefError}
+              <p class="err small" data-testid="admin-ref-error">{adminRefError}</p>
+            {:else if adminRefResults && adminRefResults.length > 0}
+              <ul class="admin-ref-list">
+                {#each adminRefResults as r, i (r.source + i)}
+                  <li class="admin-ref-row">
+                    <div class="admin-ref-head">
+                      <span class="admin-ref-source">{r.label}</span>
+                      {#if r.pos}<span class="admin-ref-pos">{r.pos}</span>{/if}
+                      <a
+                        class="admin-ref-link"
+                        href={r.url}
+                        target="_blank"
+                        rel="noreferrer noopener"
+                      >
+                        source ↗
+                      </a>
+                    </div>
+                    <div class="admin-ref-def">{r.definition}</div>
+                    {#if r.examples.length > 0}
+                      <ul class="admin-ref-examples">
+                        {#each r.examples as ex (ex)}
+                          <li>{ex}</li>
+                        {/each}
+                      </ul>
+                    {/if}
+                  </li>
+                {/each}
+              </ul>
+            {:else}
+              <p class="muted small" data-testid="admin-ref-empty">
+                No reference entries found.
+              </p>
+            {/if}
+            <p class="admin-ref-note">
+              Admin-only reference. Not stored or shown to readers.
+            </p>
+          </div>
+        {/if}
+      </section>
     {/if}
 
     <!-- T-14.3b: "+ Add my translation" sits outside the
@@ -1933,6 +2205,126 @@
     font-size: 0.88rem;
     line-height: 1.4;
     color: var(--ink, var(--color-fg));
+  }
+  .def-lang-filter {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+    margin: 0 0 0.5rem;
+  }
+  .def-lang-chip {
+    padding: 0.12rem 0.55rem;
+    font: inherit;
+    font-size: 0.72rem;
+    border-radius: 999px;
+    border: 1px solid var(--rule, var(--color-border));
+    background: var(--paper, var(--color-bg));
+    /* Full foreground in both states so the label stays ≥4.5:1; the
+       on/off distinction is carried by the fill, border, and strike. */
+    color: var(--ink, var(--color-fg));
+    cursor: pointer;
+  }
+  .def-lang-chip[data-active='1'] {
+    border-color: color-mix(
+      in oklch,
+      var(--accent, var(--color-accent)) 30%,
+      var(--rule, var(--color-border))
+    );
+    background: color-mix(
+      in oklch,
+      var(--accent, var(--color-accent)) 10%,
+      var(--paper, var(--color-bg))
+    );
+  }
+  .def-lang-chip[data-active='0'] {
+    text-decoration: line-through;
+    background: color-mix(in oklch, var(--ink, var(--color-fg)) 4%, transparent);
+  }
+  .def-lang-chip:focus-visible {
+    outline: 2px solid var(--accent, var(--color-accent));
+    outline-offset: 1px;
+  }
+  .def-lang-badge {
+    margin-left: 0.4rem;
+    padding: 0.05rem 0.4rem;
+    font-size: 0.62rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    white-space: nowrap;
+    color: var(--ink-3, var(--color-fg-muted));
+    background: color-mix(in oklch, var(--ink, var(--color-fg)) 6%, transparent);
+    border-radius: 999px;
+  }
+  .admin-ref {
+    margin-top: 0.75rem;
+    border-top: 1px solid var(--rule-2, var(--color-border));
+    padding-top: 0.5rem;
+  }
+  .admin-ref-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    width: 100%;
+    padding: 0.3rem 0;
+    font: inherit;
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--ink, var(--color-fg));
+    background: none;
+    border: 0;
+    cursor: pointer;
+  }
+  .admin-ref-chevron {
+    color: var(--ink-3, var(--color-fg-muted));
+  }
+  .admin-ref-list {
+    list-style: none;
+    margin: 0.25rem 0 0;
+    padding: 0;
+    display: grid;
+    gap: 0.5rem;
+  }
+  .admin-ref-row {
+    font-size: 0.84rem;
+    line-height: 1.4;
+  }
+  .admin-ref-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.4rem;
+  }
+  .admin-ref-source {
+    font-size: 0.68rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--ink-3, var(--color-fg-muted));
+  }
+  .admin-ref-pos {
+    font-style: italic;
+    font-size: 0.74rem;
+    color: var(--ink-3, var(--color-fg-muted));
+  }
+  .admin-ref-link {
+    margin-left: auto;
+    font-size: 0.72rem;
+    color: var(--ink, var(--color-fg));
+    text-decoration: underline;
+  }
+  .admin-ref-def {
+    color: var(--ink, var(--color-fg));
+  }
+  .admin-ref-examples {
+    margin: 0.2rem 0 0;
+    padding-left: 1rem;
+    font-size: 0.78rem;
+    color: var(--ink-2, var(--color-fg));
+  }
+  .admin-ref-note {
+    margin: 0.5rem 0 0;
+    font-size: 0.68rem;
+    color: var(--ink-3, var(--color-fg-muted));
   }
   .community-row {
     display: flex;

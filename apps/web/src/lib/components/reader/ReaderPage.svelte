@@ -44,6 +44,7 @@
     language,
     showRomanization = false,
     isOwner = false,
+    isAdmin = false,
     onProgress,
     fontSize,
     lineSpacing,
@@ -62,6 +63,7 @@
     language: import('@ciareader/shared-types').LanguageCode;
     showRomanization?: boolean;
     isOwner?: boolean;
+    isAdmin?: boolean;
     onProgress?: (anchor: ProgressAnchor) => void;
     fontSize?: number;
     lineSpacing?: number;
@@ -592,7 +594,7 @@
               </header>
             {/if}
             <article class:title-in-body={titleInBody}>
-              <ChapterBody chapter={current} {language} {showRomanization} {isOwner} />
+              <ChapterBody chapter={current} {language} {showRomanization} {isOwner} {isAdmin} />
             </article>
           {/if}
         </div>

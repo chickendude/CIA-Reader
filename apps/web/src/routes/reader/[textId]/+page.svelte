@@ -486,6 +486,7 @@
       language={data.text.language as LanguageCode}
       {showRomanization}
       isOwner={data.isOwner}
+      isAdmin={data.isAdmin}
       onProgress={onReaderProgress}
       fontSize={readerSettings.fontSize}
       lineSpacing={readerSettings.lineSpacing}
@@ -506,6 +507,7 @@
       language={data.text.language as LanguageCode}
       {showRomanization}
       isOwner={data.isOwner}
+      isAdmin={data.isAdmin}
       onProgress={onReaderProgress}
     />
   {:else}
@@ -517,6 +519,7 @@
       language={data.text.language as LanguageCode}
       {showRomanization}
       isOwner={data.isOwner}
+      isAdmin={data.isAdmin}
       onProgress={onReaderProgress}
     />
   {/if}

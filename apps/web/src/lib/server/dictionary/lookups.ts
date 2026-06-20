@@ -76,6 +76,14 @@ export type LemmaTranslationBuckets = {
     official: PublicTranslation[];
     community: PublicTranslation[];
   };
+  /**
+   * Distinct definition languages (`translations.targetLanguage`) present
+   * across the visible buckets, sorted. Drives the reader popup's
+   * per-definition-language filter chips: a Basque lemma may carry English
+   * + Spanish + monolingual-Basque glosses, and the reader can toggle each.
+   * Empty when the lemma has no visible translations.
+   */
+  definitionLanguages: string[];
 };
 
 export type PublicLemma = {
@@ -401,8 +409,29 @@ export async function getLemmaTranslations(
 
   const rowsWithVotes = await attachVoteData(rows, viewer);
 
+  const translations = bucketTranslations(rowsWithVotes, viewer);
   return {
     lemma: toPublicLemma(lemmaTyped),
-    translations: bucketTranslations(rowsWithVotes, viewer),
+    translations,
+    definitionLanguages: distinctDefinitionLanguages(translations),
   };
+}
+
+/**
+ * Sorted unique `targetLanguage` codes across the three visible buckets.
+ * Visibility (hidden-row suppression) is already applied by
+ * `bucketTranslations`, so flattening its output is correct here.
+ */
+export function distinctDefinitionLanguages(
+  translations: LemmaTranslationBuckets['translations'],
+): string[] {
+  const seen = new Set<string>();
+  for (const bucket of [
+    translations.personal,
+    translations.official,
+    translations.community,
+  ]) {
+    for (const t of bucket) seen.add(t.targetLanguage);
+  }
+  return [...seen].sort();
 }

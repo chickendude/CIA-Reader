@@ -20,6 +20,8 @@ export const kaikkiBasqueSource = makeKaikkiSource({
   sourceIdPrefix: 'kaikki:eu',
   attribution: 'Wiktionary Basque via Kaikki.org',
   license: 'CC-BY-SA-3.0',
+  // English Wiktionary glosses Basque headwords in English.
+  glossLanguage: 'en',
   envVar: 'KAIKKI_BASQUE_FILE',
   defaultPath: 'data/dictionaries/kaikki-basque/raw.jsonl',
 });

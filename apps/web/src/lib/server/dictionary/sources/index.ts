@@ -15,6 +15,7 @@
 import type { DictionaryImportSource } from '../types.js';
 
 import { hindiSeedSource } from './hindi-seed.js';
+import { kaikkiBasqueEsSource } from './kaikki-basque-es.js';
 import { kaikkiBasqueSource } from './kaikki-basque.js';
 import { kaikkiEnTranslationsBasqueSource } from './kaikki-en-translations-basque.js';
 import { kaikkiEnTranslationsHindiSource } from './kaikki-en-translations-hindi.js';
@@ -38,6 +39,7 @@ export const dictionarySources: RegistryEntry[] = [
   { name: kaikkiOdiaSource.name, source: kaikkiOdiaSource },
   { name: kaikkiYiddishSource.name, source: kaikkiYiddishSource },
   { name: kaikkiBasqueSource.name, source: kaikkiBasqueSource },
+  { name: kaikkiBasqueEsSource.name, source: kaikkiBasqueEsSource },
   {
     name: kaikkiEnTranslationsHindiSource.name,
     source: kaikkiEnTranslationsHindiSource,
