@@ -99,6 +99,23 @@ fallback tier) folds both conventions — plus the floating pasekh
 position in pasekh tsvey yudn — onto one key, so imports may keep
 whatever convention the upstream source uses.
 
+## Basque
+
+| Source | Publisher | License | Status |
+|---|---|---|---|
+| [Wiktionary Basque (via Kaikki.org)](https://kaikki.org/dictionary/Basque/) | Wiktionary contributors | CC-BY-SA 3.0 | **Registered** (`kaikki-basque`) — fetched via `scripts/fetch-dictionary-sources.sh kaikki-basque`; standard Latin orthography. First Latin-script importer — proves the script-aware path doesn't assume a non-Latin script. |
+| [Wiktionary English Translations sections (via Kaikki.org)](https://kaikki.org/dictionary/English/) | Wiktionary contributors | CC-BY-SA 3.0 | **Registered** (`kaikki-en-translations-basque`) — inverted from English entries' `translations[]`, sharing the same cached English dump as the other importers |
+| [Euskaltzaindiaren Hiztegia (Basque Academy dictionary)](https://www.euskaltzaindia.eus/) | Euskaltzaindia (Royal Academy of the Basque Language) | All rights reserved | **Rejected** — no redistribution license |
+| Elhuyar Hiztegiak | Elhuyar Fundazioa | Proprietary | **Rejected** — commercial dictionary |
+
+Coverage: medium for core vocabulary. Basque is **Latin-script**, so there is
+no romanization layer (the reader renders headwords as written). Morphology is
+handled by the Stanza UD_Basque-BDT model rather than a custom analyzer or seed
+lemma table; the Kaikki import supplies the dictionary glosses on top of that.
+Basque is agglutinative with a rich case system, so expect inflected surfaces to
+lemmatize back to a smaller set of citation forms — the curator editor (T-3.7)
+and community submissions (T-6.3) fill gloss gaps post-launch as for the others.
+
 ## Cross-source duplication
 
 Multiple sources may ship the same `(language, headword, pos)` triple —

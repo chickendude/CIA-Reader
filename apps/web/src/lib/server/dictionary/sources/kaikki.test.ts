@@ -16,6 +16,7 @@ import {
   mapKaikkiPos,
   parseKaikkiLine,
 } from './kaikki.js';
+import { kaikkiBasqueSource } from './kaikki-basque.js';
 import { kaikkiHindiSource } from './kaikki-hindi.js';
 import { kaikkiMarathiSource } from './kaikki-marathi.js';
 import { kaikkiOdiaSource } from './kaikki-odia.js';
@@ -27,6 +28,7 @@ const HINDI_FIXTURE = resolve(FIXTURES, 'kaikki-hindi.jsonl');
 const MARATHI_FIXTURE = resolve(FIXTURES, 'kaikki-marathi.jsonl');
 const ODIA_FIXTURE = resolve(FIXTURES, 'kaikki-odia.jsonl');
 const YIDDISH_FIXTURE = resolve(FIXTURES, 'kaikki-yiddish.jsonl');
+const BASQUE_FIXTURE = resolve(FIXTURES, 'kaikki-basque.jsonl');
 
 const HINDI_OPTS = { script: 'Deva' as const, sourceIdPrefix: 'kaikki:hi' };
 
@@ -397,5 +399,49 @@ describe('kaikkiYiddishSource (streaming over fixture)', () => {
     expect(bukh.forms?.map((f) => f.surface)).toContain('ביכער');
     const shraybn = out.find((e) => e.headword === 'שרײַבן')!;
     expect(shraybn.forms?.map((f) => f.surface)).toContain('געשריבן');
+  });
+});
+
+describe('kaikkiBasqueSource (streaming over fixture)', () => {
+  beforeEach(() => {
+    process.env.KAIKKI_BASQUE_FILE = BASQUE_FIXTURE;
+  });
+  afterEach(() => {
+    delete process.env.KAIKKI_BASQUE_FILE;
+  });
+
+  it('exposes the expected metadata + Latin script identifier', () => {
+    expect(kaikkiBasqueSource.name).toBe('kaikki-basque');
+    expect(kaikkiBasqueSource.language).toBe('eu');
+    expect(kaikkiBasqueSource.license).toBe('CC-BY-SA-3.0');
+    expect(kaikkiBasqueSource.sourceAttribution).toContain('Basque');
+  });
+
+  it('uses the Latin script (Latn) — first Latin-script import path', async () => {
+    const out: ImportEntry[] = [];
+    for await (const entry of await kaikkiBasqueSource.entries()) {
+      out.push(entry);
+    }
+    expect(out.length).toBeGreaterThan(0);
+    for (const e of out) {
+      expect(e.script).toBe('Latn');
+      expect(e.sourceId.startsWith('kaikki:eu:')).toBe(true);
+    }
+    // Spot-check known entries from the fixture.
+    expect(out.find((e) => e.headword === 'etxe' && e.pos === 'NOUN')).toBeDefined();
+    expect(out.find((e) => e.headword === 'idatzi' && e.pos === 'VERB')).toBeDefined();
+    // The 'suffix' POS isn't in the POS map and must be skipped.
+    expect(out.find((e) => e.headword === '-tik')).toBeUndefined();
+  });
+
+  it('carries inflected forms (plural, participle) for lemma_forms', async () => {
+    const out: ImportEntry[] = [];
+    for await (const entry of await kaikkiBasqueSource.entries()) {
+      out.push(entry);
+    }
+    const etxe = out.find((e) => e.headword === 'etxe')!;
+    expect(etxe.forms?.map((f) => f.surface)).toContain('etxeak');
+    const idatzi = out.find((e) => e.headword === 'idatzi')!;
+    expect(idatzi.forms?.map((f) => f.surface)).toContain('idazten');
   });
 });

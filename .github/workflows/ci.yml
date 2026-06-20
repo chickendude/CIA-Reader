@@ -165,8 +165,8 @@ jobs:
           import re, sys, pathlib
           ts = pathlib.Path("packages/shared-types/src/languages.ts").read_text(encoding="utf-8")
           py = pathlib.Path("packages/shared-types/python/languages.py").read_text(encoding="utf-8")
-          ts_codes = set(re.findall(r"^\s+(hi|mr|or|yi|pa|bn|gu|ne|ur|sd):\s", ts, re.M))
-          py_codes = set(re.findall(r'^\s+"(hi|mr|or|yi|pa|bn|gu|ne|ur|sd)":\s', py, re.M))
+          ts_codes = set(re.findall(r"^\s+(hi|mr|or|yi|eu|pa|bn|gu|ne|ur|sd):\s", ts, re.M))
+          py_codes = set(re.findall(r'^\s+"(hi|mr|or|yi|eu|pa|bn|gu|ne|ur|sd)":\s', py, re.M))
           if ts_codes != py_codes:
               print(f"TS codes:     {sorted(ts_codes)}", file=sys.stderr)
               print(f"Python codes: {sorted(py_codes)}", file=sys.stderr)

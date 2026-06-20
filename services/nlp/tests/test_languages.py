@@ -27,13 +27,29 @@ def test_mvp_languages_have_expected_scripts():
     assert LANGUAGES["yi"].text_direction == "rtl"
     assert LANGUAGES["yi"].pipeline_id == "custom-yi"
     assert LANGUAGES["yi"].default_romanization == "yivo"
+    # Basque is the first Latin-script language: Stanza-backed, ltr, and
+    # with no romanization layer (the text is already Latin).
+    assert LANGUAGES["eu"].script == "Latn"
+    assert LANGUAGES["eu"].text_direction == "ltr"
+    assert LANGUAGES["eu"].pipeline_id == "stanza-eu"
+    assert LANGUAGES["eu"].supported_romanizations == ()
+    assert LANGUAGES["eu"].default_romanization is None
 
 
-def test_every_descriptor_has_at_least_one_font_and_romanization():
+def test_every_descriptor_has_at_least_one_font():
     for descriptor in LANGUAGES.values():
         assert descriptor.recommended_fonts, descriptor.code
-        assert descriptor.supported_romanizations, descriptor.code
-        assert descriptor.default_romanization in descriptor.supported_romanizations
+
+
+def test_romanization_defaults_match_supported_list():
+    for descriptor in LANGUAGES.values():
+        if descriptor.supported_romanizations:
+            assert (
+                descriptor.default_romanization in descriptor.supported_romanizations
+            ), descriptor.code
+        else:
+            # Latin-script languages (Basque) declare no romanization layer.
+            assert descriptor.default_romanization is None, descriptor.code
 
 
 def test_get_language_returns_descriptor():

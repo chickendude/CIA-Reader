@@ -28,9 +28,10 @@ ENV PYTHONPATH=/opt/shared-types:/srv/nlp
 # Pre-download the Stanza models at image-build time so the first
 # /process request doesn't pay a multi-hundred-megabyte download and
 # so production stays offline-safe (each build_*_pipeline constructs
-# stanza.Pipeline with download_method=None). Odia (T-2.3a) is a
-# custom IndicNLP-based pipeline and doesn't need a Stanza download.
-RUN python -c "import stanza; [stanza.download(lang, processors='tokenize,pos,lemma', verbose=False) for lang in ('hi', 'mr')]"
+# stanza.Pipeline with download_method=None). Odia (T-2.3a) and Yiddish
+# are custom pipelines and don't need a Stanza download; Basque uses the
+# UD_Basque-BDT model like Hindi/Marathi.
+RUN python -c "import stanza; [stanza.download(lang, processors='tokenize,pos,lemma', verbose=False) for lang in ('hi', 'mr', 'eu')]"
 
 EXPOSE 8000
 

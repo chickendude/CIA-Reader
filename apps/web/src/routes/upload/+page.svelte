@@ -9,9 +9,11 @@
   }: { data: PageData; form: ActionData } = $props();
 
   // Initial state seeded from any failed-submit echo (paste-action
-  // values), so the user keeps their work after a validation bounce.
+  // values), else the language the user arrived from (data.selectedLanguage,
+  // derived from ?language= — e.g. the Basque library's "Add a text" card),
+  // so the form doesn't silently default to Hindi.
   let language = $state(
-    untrack(() => form?.values?.language ?? data.languages[0]!.code),
+    untrack(() => form?.values?.language ?? data.selectedLanguage),
   );
   let title = $state(untrack(() => form?.values?.title ?? ''));
   let body = $state(untrack(() => form?.values?.body ?? ''));

@@ -1,0 +1,571 @@
+{
+  "__description__": "Basque (eu) golden-file corpus. Scored against the real Stanza UD_Basque-BDT model in the `nlp-accuracy` CI job (the default pytest run skips the real_models-marked tests but still loads this file for the corpus-structure sanity check). Format matches the Hindi/Marathi corpora: per-token lemma/pos pinned for word + punctuation tokens, whitespace gap tokens carry only `surface`. Sentences are common, everyday Basque where the UD model's analysis is the linguistically correct one; expand post-MVP as pipeline quality becomes load-bearing.",
+  "sentences": [
+    {
+      "id": "eu-001",
+      "source": "hand-written",
+      "text": "Egun on.",
+      "tokens": [
+        {
+          "surface": "Egun",
+          "lemma": "egun",
+          "pos": "NOUN"
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "on",
+          "lemma": "on",
+          "pos": "ADJ"
+        },
+        {
+          "surface": ".",
+          "lemma": ".",
+          "pos": "PUNCT"
+        }
+      ]
+    },
+    {
+      "id": "eu-002",
+      "source": "hand-written",
+      "text": "Ni Bilbon bizi naiz.",
+      "tokens": [
+        {
+          "surface": "Ni",
+          "lemma": "ni",
+          "pos": "PRON"
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "Bilbon",
+          "lemma": "Bilbo",
+          "pos": "PROPN"
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "bizi",
+          "lemma": "bizi",
+          "pos": "ADJ"
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "naiz",
+          "lemma": "izan",
+          "pos": "VERB"
+        },
+        {
+          "surface": ".",
+          "lemma": ".",
+          "pos": "PUNCT"
+        }
+      ]
+    },
+    {
+      "id": "eu-003",
+      "source": "hand-written",
+      "text": "Etxe hau handia da.",
+      "tokens": [
+        {
+          "surface": "Etxe",
+          "lemma": "etxe",
+          "pos": "NOUN"
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "hau",
+          "lemma": "hau",
+          "pos": "DET"
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "handia",
+          "lemma": "handi",
+          "pos": "ADJ"
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "da",
+          "lemma": "izan",
+          "pos": "AUX"
+        },
+        {
+          "surface": ".",
+          "lemma": ".",
+          "pos": "PUNCT"
+        }
+      ]
+    },
+    {
+      "id": "eu-004",
+      "source": "hand-written",
+      "text": "Liburu bat irakurtzen ari naiz.",
+      "tokens": [
+        {
+          "surface": "Liburu",
+          "lemma": "liburu",
+          "pos": "NOUN"
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "bat",
+          "lemma": "bat",
+          "pos": "NUM"
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "irakurtzen",
+          "lemma": "irakurri",
+          "pos": "VERB"
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "ari",
+          "lemma": "ari",
+          "pos": "AUX"
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "naiz",
+          "lemma": "izan",
+          "pos": "VERB"
+        },
+        {
+          "surface": ".",
+          "lemma": ".",
+          "pos": "PUNCT"
+        }
+      ]
+    },
+    {
+      "id": "eu-005",
+      "source": "hand-written",
+      "text": "Gaur eguraldi ona dago.",
+      "tokens": [
+        {
+          "surface": "Gaur",
+          "lemma": "gaur",
+          "pos": "ADV"
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "eguraldi",
+          "lemma": "eguraldi",
+          "pos": "NOUN"
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "ona",
+          "lemma": "on",
+          "pos": "ADJ"
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "dago",
+          "lemma": "egon",
+          "pos": "VERB"
+        },
+        {
+          "surface": ".",
+          "lemma": ".",
+          "pos": "PUNCT"
+        }
+      ]
+    },
+    {
+      "id": "eu-006",
+      "source": "hand-written",
+      "text": "Umeak parkean jolasten dira.",
+      "tokens": [
+        {
+          "surface": "Umeak",
+          "lemma": "ume",
+          "pos": "NOUN"
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "parkean",
+          "lemma": "parke",
+          "pos": "NOUN"
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "jolasten",
+          "lemma": "jolastu",
+          "pos": "VERB"
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "dira",
+          "lemma": "izan",
+          "pos": "AUX"
+        },
+        {
+          "surface": ".",
+          "lemma": ".",
+          "pos": "PUNCT"
+        }
+      ]
+    },
+    {
+      "id": "eu-007",
+      "source": "hand-written",
+      "text": "Nire izena Maddi da.",
+      "tokens": [
+        {
+          "surface": "Nire",
+          "lemma": "ni",
+          "pos": "PRON"
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "izena",
+          "lemma": "izen",
+          "pos": "NOUN"
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "Maddi",
+          "lemma": "Maddi",
+          "pos": "PROPN"
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "da",
+          "lemma": "izan",
+          "pos": "AUX"
+        },
+        {
+          "surface": ".",
+          "lemma": ".",
+          "pos": "PUNCT"
+        }
+      ]
+    },
+    {
+      "id": "eu-008",
+      "source": "hand-written",
+      "text": "Euskara hizkuntza zaharra da.",
+      "tokens": [
+        {
+          "surface": "Euskara",
+          "lemma": "euskara",
+          "pos": "NOUN"
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "hizkuntza",
+          "lemma": "hizkuntza",
+          "pos": "NOUN"
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "zaharra",
+          "lemma": "zahar",
+          "pos": "ADJ"
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "da",
+          "lemma": "izan",
+          "pos": "AUX"
+        },
+        {
+          "surface": ".",
+          "lemma": ".",
+          "pos": "PUNCT"
+        }
+      ]
+    },
+    {
+      "id": "eu-009",
+      "source": "hand-written",
+      "text": "Kafe bat hartu nahi dut.",
+      "tokens": [
+        {
+          "surface": "Kafe",
+          "lemma": "kafe",
+          "pos": "NOUN"
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "bat",
+          "lemma": "bat",
+          "pos": "NUM"
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "hartu",
+          "lemma": "hartu",
+          "pos": "VERB"
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "nahi",
+          "lemma": "nahi",
+          "pos": "NOUN"
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "dut",
+          "lemma": "ukan",
+          "pos": "VERB"
+        },
+        {
+          "surface": ".",
+          "lemma": ".",
+          "pos": "PUNCT"
+        }
+      ]
+    },
+    {
+      "id": "eu-010",
+      "source": "hand-written",
+      "text": "Mendira joango gara bihar.",
+      "tokens": [
+        {
+          "surface": "Mendira",
+          "lemma": "mendi",
+          "pos": "NOUN"
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "joango",
+          "lemma": "joan",
+          "pos": "VERB"
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "gara",
+          "lemma": "izan",
+          "pos": "AUX"
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "bihar",
+          "lemma": "bihar",
+          "pos": "ADV"
+        },
+        {
+          "surface": ".",
+          "lemma": ".",
+          "pos": "PUNCT"
+        }
+      ]
+    },
+    {
+      "id": "eu-011",
+      "source": "hand-written",
+      "text": "Zer ordu da?",
+      "tokens": [
+        {
+          "surface": "Zer",
+          "lemma": "zer",
+          "pos": "DET"
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "ordu",
+          "lemma": "ordu",
+          "pos": "NOUN"
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "da",
+          "lemma": "izan",
+          "pos": "AUX"
+        },
+        {
+          "surface": "?",
+          "lemma": "?",
+          "pos": "PUNCT"
+        }
+      ]
+    },
+    {
+      "id": "eu-012",
+      "source": "hand-written",
+      "text": "Ura edaten dut egunero.",
+      "tokens": [
+        {
+          "surface": "Ura",
+          "lemma": "ur",
+          "pos": "NOUN"
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "edaten",
+          "lemma": "edan",
+          "pos": "VERB"
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "dut",
+          "lemma": "edun",
+          "pos": "AUX"
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "egunero",
+          "lemma": "egunero",
+          "pos": "ADV"
+        },
+        {
+          "surface": ".",
+          "lemma": ".",
+          "pos": "PUNCT"
+        }
+      ]
+    },
+    {
+      "id": "eu-013",
+      "source": "hand-written",
+      "text": "Etxera itzuli ginen berandu.",
+      "tokens": [
+        {
+          "surface": "Etxera",
+          "lemma": "etxe",
+          "pos": "NOUN"
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "itzuli",
+          "lemma": "itzuli",
+          "pos": "VERB"
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "ginen",
+          "lemma": "izan",
+          "pos": "AUX"
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "berandu",
+          "lemma": "berandu",
+          "pos": "ADV"
+        },
+        {
+          "surface": ".",
+          "lemma": ".",
+          "pos": "PUNCT"
+        }
+      ]
+    },
+    {
+      "id": "eu-014",
+      "source": "hand-written",
+      "text": "Lagunekin afaldu genuen atzo.",
+      "tokens": [
+        {
+          "surface": "Lagunekin",
+          "lemma": "lagun",
+          "pos": "NOUN"
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "afaldu",
+          "lemma": "afaldu",
+          "pos": "VERB"
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "genuen",
+          "lemma": "edun",
+          "pos": "AUX"
+        },
+        {
+          "surface": " "
+        },
+        {
+          "surface": "atzo",
+          "lemma": "atzo",
+          "pos": "ADV"
+        },
+        {
+          "surface": ".",
+          "lemma": ".",
+          "pos": "PUNCT"
+        }
+      ]
+    }
+  ]
+}

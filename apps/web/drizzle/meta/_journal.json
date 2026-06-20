@@ -316,6 +316,13 @@
       "when": 1781230285446,
       "tag": "0044_fold_hebrew_ligatures_in_stripped_headword",
       "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1781976000897,
+      "tag": "0045_add_basque_language",
+      "breakpoints": true
     }
   ]
 }

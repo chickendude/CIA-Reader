@@ -62,6 +62,11 @@ _SCRIPT_RANGES: dict[str, tuple[tuple[int, int], ...]] = {
     # Hebrew block + Alphabetic Presentation Forms (ligature/pointed
     # variants that survive when input isn't NFC-normalized upstream).
     "Hebr": ((0x0590, 0x05FF), (0xFB1D, 0xFB4F)),
+    # Basic Latin + Latin-1 Supplement + Latin Extended-A/B, covering
+    # Basque's ç/ñ/ü and accented loanwords. Lets the foreign-script
+    # filter in `should_treat_as_word` drop stray non-Latin fragments
+    # (e.g. a Cyrillic or CJK quotation) from a Basque reader's word UX.
+    "Latn": ((0x0041, 0x024F),),
 }
 
 _COORDINATE_MARKS: frozenset[str] = frozenset({"°", "′", "″"})

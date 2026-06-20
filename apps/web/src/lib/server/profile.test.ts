@@ -62,7 +62,7 @@ describe('withDefaultsForAllLanguages', () => {
     ];
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const merged = withDefaultsForAllLanguages(persisted as any);
-    expect(merged.map((m) => m.code).sort()).toEqual(['hi', 'mr', 'or', 'yi']);
+    expect(merged.map((m) => m.code).sort()).toEqual(['eu', 'hi', 'mr', 'or', 'yi']);
     const hi = merged.find((m) => m.code === 'hi')!;
     expect(hi.isDefault).toBe(false);
     expect(hi.romanizationScheme).toBe('iast');
@@ -74,11 +74,17 @@ describe('withDefaultsForAllLanguages', () => {
     const yi = merged.find((m) => m.code === 'yi')!;
     expect(yi.isDefault).toBe(true);
     expect(yi.romanizationScheme).toBe('yivo');
+    // Basque has no romanization (Latin script); the column gets the inert
+    // iso15919 default and scriptPreference stays native.
+    const eu = merged.find((m) => m.code === 'eu')!;
+    expect(eu.isDefault).toBe(true);
+    expect(eu.scriptPreference).toBe('native');
+    expect(eu.romanizationScheme).toBe('iso15919');
   });
 
   it('returns all-defaults when the user has no persisted rows', () => {
     const merged = withDefaultsForAllLanguages([]);
-    expect(merged).toHaveLength(4);
+    expect(merged).toHaveLength(5);
     expect(merged.every((m) => m.isDefault)).toBe(true);
   });
 });

@@ -22,7 +22,7 @@ export const themePreference = pgEnum('theme_preference', ['system', 'light', 'd
 // adding a new language means extending both sides in lockstep. The registry
 // is the human-facing source of truth, but Postgres needs its own enum so
 // FK-like integrity is enforced at the DB layer.
-export const language = pgEnum('language', ['hi', 'mr', 'or', 'yi']);
+export const language = pgEnum('language', ['hi', 'mr', 'or', 'yi', 'eu']);
 
 // Romanization schemes a user can pick. Subset of the registry's
 // RomanizationScheme — the DB only needs to store choices users can make.

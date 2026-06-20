@@ -40,6 +40,7 @@ os.environ.setdefault("PYTHONPATH", str(_SHARED_PY))
 import pytest  # noqa: E402
 
 from app import pipelines  # noqa: E402
+from app.pipelines.basque import BasquePipeline  # noqa: E402
 from app.pipelines.hindi import HindiPipeline  # noqa: E402
 from app.pipelines.marathi import MarathiPipeline  # noqa: E402
 from app.pipelines.odia import OdiaPipeline  # noqa: E402
@@ -89,15 +90,16 @@ def _fallback_split(text: str) -> list[str]:
 def _fake_real_factories():
     """Replace the real model-backed factories with lightweight fakes.
 
-    Applies to ``stanza-hi`` (T-2.2), ``stanza-mr`` (T-2.3), and
-    ``custom-or`` (T-2.3a). Dedicated tests for each pipeline still
-    instantiate with their own fakes when they need specific UPOS /
-    features / fallback behavior.
+    Applies to ``stanza-hi`` (T-2.2), ``stanza-mr`` (T-2.3),
+    ``custom-or`` (T-2.3a), and ``stanza-eu`` (Basque). Dedicated tests
+    for each pipeline still instantiate with their own fakes when they
+    need specific UPOS / features / fallback behavior.
     """
     originals = {
         "stanza-hi": pipelines._PIPELINE_FACTORIES.get("stanza-hi"),
         "stanza-mr": pipelines._PIPELINE_FACTORIES.get("stanza-mr"),
         "custom-or": pipelines._PIPELINE_FACTORIES.get("custom-or"),
+        "stanza-eu": pipelines._PIPELINE_FACTORIES.get("stanza-eu"),
     }
 
     def _hi_factory() -> HindiPipeline:
@@ -118,9 +120,17 @@ def _fake_real_factories():
             lemmas=default_lemma_table(),
         )
 
+    def _eu_factory() -> BasquePipeline:
+        # Basque is Stanza-backed like Hindi; the real model is too big
+        # for CI's default lane, so wrap a whitespace fake. ``script="Latn"``
+        # matches production so the foreign-fragment heuristic behaves the
+        # same; ``roman_scheme`` stays unset (Latin → no romanization).
+        return BasquePipeline(nlp=_WhitespaceFakeStanza(), script="Latn")
+
     pipelines._PIPELINE_FACTORIES["stanza-hi"] = _hi_factory
     pipelines._PIPELINE_FACTORIES["stanza-mr"] = _mr_factory
     pipelines._PIPELINE_FACTORIES["custom-or"] = _or_factory
+    pipelines._PIPELINE_FACTORIES["stanza-eu"] = _eu_factory
     pipelines.reset_pipeline_cache()
     try:
         yield

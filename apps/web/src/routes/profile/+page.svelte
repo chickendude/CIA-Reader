@@ -188,29 +188,37 @@
               {/if}
             </header>
             <input type="hidden" name="code" value={lang.code} />
-            <label class="field">
-              <span class="field-label">Script preference</span>
-              <select name="scriptPreference">
-                {#each ['native', 'native_with_romanization', 'romanization_only'] as pref (pref)}
-                  <option value={pref} selected={lang.scriptPreference === pref}>
-                    {SCRIPT_PREF_LABELS[pref]}
-                  </option>
-                {/each}
-              </select>
-            </label>
-            <label class="field">
-              <span class="field-label">Romanization scheme</span>
-              <select name="romanizationScheme">
-                {#each lang.supportedRomanizations as scheme (scheme)}
-                  <option
-                    value={scheme}
-                    selected={lang.romanizationScheme === scheme}
-                  >
-                    {ROMAN_LABELS[scheme] ?? scheme}
-                  </option>
-                {/each}
-              </select>
-            </label>
+            {#if lang.supportedRomanizations.length > 0}
+              <label class="field">
+                <span class="field-label">Script preference</span>
+                <select name="scriptPreference">
+                  {#each ['native', 'native_with_romanization', 'romanization_only'] as pref (pref)}
+                    <option value={pref} selected={lang.scriptPreference === pref}>
+                      {SCRIPT_PREF_LABELS[pref]}
+                    </option>
+                  {/each}
+                </select>
+              </label>
+              <label class="field">
+                <span class="field-label">Romanization scheme</span>
+                <select name="romanizationScheme">
+                  {#each lang.supportedRomanizations as scheme (scheme)}
+                    <option
+                      value={scheme}
+                      selected={lang.romanizationScheme === scheme}
+                    >
+                      {ROMAN_LABELS[scheme] ?? scheme}
+                    </option>
+                  {/each}
+                </select>
+              </label>
+            {:else}
+              <!-- Latin-script languages (Basque) render natively; no script
+                   preference or romanization scheme to choose. The hidden
+                   scriptPreference keeps the form payload valid. -->
+              <input type="hidden" name="scriptPreference" value="native" />
+              <p class="muted small">Latin script — rendered as written, no romanization.</p>
+            {/if}
             <div class="form-actions">
               <button type="submit" class="btn secondary">
                 Save {lang.displayName}

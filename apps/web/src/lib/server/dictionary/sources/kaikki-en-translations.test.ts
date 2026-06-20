@@ -14,6 +14,7 @@ import {
   enEntryToImportEntries,
   parseKaikkiEnLine,
 } from './kaikki-en-translations.js';
+import { kaikkiEnTranslationsBasqueSource } from './kaikki-en-translations-basque.js';
 import { kaikkiEnTranslationsHindiSource } from './kaikki-en-translations-hindi.js';
 import { kaikkiEnTranslationsMarathiSource } from './kaikki-en-translations-marathi.js';
 import { kaikkiEnTranslationsOdiaSource } from './kaikki-en-translations-odia.js';
@@ -275,12 +276,27 @@ describe('streaming over the fixture', () => {
     }
   });
 
+  it('Basque importer yields Basque rows with the Latn script identifier', async () => {
+    const out: ImportEntry[] = [];
+    for await (const e of await kaikkiEnTranslationsBasqueSource.entries()) {
+      out.push(e);
+    }
+    expect(out.map((e) => `${e.headword}/${e.pos}=${e.glossDefault}`).sort()).toEqual(
+      ['irakurri/VERB=to read', 'liburu/NOUN=book', 'ur/NOUN=water'].sort(),
+    );
+    for (const e of out) {
+      expect(e.script).toBe('Latn');
+      expect(e.sourceId.startsWith('kaikki-en:eu:')).toBe(true);
+    }
+  });
+
   it('exposes the expected metadata + license on each language source', () => {
     for (const src of [
       kaikkiEnTranslationsHindiSource,
       kaikkiEnTranslationsMarathiSource,
       kaikkiEnTranslationsOdiaSource,
       kaikkiEnTranslationsYiddishSource,
+      kaikkiEnTranslationsBasqueSource,
     ]) {
       expect(src.license).toBe('CC-BY-SA-3.0');
       expect(src.sourceAttribution).toContain('Wiktionary');

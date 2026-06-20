@@ -263,6 +263,10 @@
       </div>
     </section>
 
+    <!-- Latin-script languages (e.g. Basque) have no romanization layer, so
+         the whole section — script preference + scheme picker — is hidden when
+         the registry declares no supported romanizations. -->
+    {#if supportedRomanizations.length > 0}
     <section>
       <h3>Romanization</h3>
       <div class="rs-row">
@@ -302,6 +306,7 @@
         </select>
       </div>
     </section>
+    {/if}
 
     <footer class="rs-foot">
       <button type="button" class="rs-reset" onclick={reset}>Reset to defaults</button>

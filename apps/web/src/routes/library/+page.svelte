@@ -150,7 +150,10 @@
 
   <div class="lib-grid">
     {#if data.tab === 'your' && data.isAuthenticated}
-      <a class="card upload-card" href="/upload">
+      <a
+        class="card upload-card"
+        href={data.language ? `/upload?language=${data.language}` : '/upload'}
+      >
         <div class="upload-card-body">
           <div class="big" aria-hidden="true">+</div>
           <div class="label">Add a text or EPUB</div>
@@ -275,7 +278,9 @@
     <p class="empty">
       {#if data.tab === 'your'}
         You haven't uploaded any texts yet — try the
-        <a href="/upload">+ Add a text</a> tile above.
+        <a href={data.language ? `/upload?language=${data.language}` : '/upload'}
+          >+ Add a text</a
+        > tile above.
       {:else if data.tab === 'shared'}
         No shared texts yet. Sharing lands in a future ticket.
       {:else if data.tab === 'collections'}
