@@ -75,6 +75,11 @@ class NumberForms(BaseModel):
     # an attribute name. The TypeScript mirror in
     # ``apps/web/src/lib/server/nlp-client.ts`` matches.
     odia: NumberLanguageForm
+    # Basque (Euskara). Latin script needs no transliteration, so the
+    # ``romanized`` field is the empty string — the spelled-out form is
+    # already the reading. Basque numerals are base-20 (vigesimal); see
+    # :func:`app.numbers.to_words_eu`.
+    eu: NumberLanguageForm
 
 
 class Token(BaseModel):

@@ -1326,6 +1326,10 @@ export const textTokens = pgTable(
       hi: { spelled: string; romanized: string };
       mr: { spelled: string; romanized: string };
       odia: { spelled: string; romanized: string };
+      // Basque (Latin script): `romanized` is empty — the spelled-out
+      // form is the reading. Optional so chapters processed before
+      // Basque number support keep type-checking.
+      eu?: { spelled: string; romanized: string };
     } | null>(),
   },
   (t) => ({

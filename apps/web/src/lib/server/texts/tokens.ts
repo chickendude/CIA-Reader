@@ -63,6 +63,9 @@ export type RenderedNumberForms = {
    *  because `or` is a reserved Python keyword on the server-side
    *  Pydantic model that emits this payload. */
   odia: RenderedNumberLanguageForm;
+  /** Basque rendering. Latin script, so `romanized` is empty — the
+   *  spelled-out form is already the reading. Base-20 (vigesimal). */
+  eu: RenderedNumberLanguageForm;
 };
 
 export type RenderedToken = {
@@ -411,6 +414,10 @@ export async function loadChapterTokens(
           hi: nf.hi,
           mr: nf.mr,
           odia: nf.odia,
+          // Chapters processed before Basque number support lack `eu`;
+          // fall back to an empty form (only ever read for `eu` texts,
+          // which are all reprocessed with this field present).
+          eu: nf.eu ?? { spelled: '', romanized: '' },
         }
       : null;
 

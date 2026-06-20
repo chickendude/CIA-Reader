@@ -39,7 +39,9 @@
           ? token.numberForms.mr
           : language === 'or'
             ? token.numberForms.odia
-            : null
+            : language === 'eu'
+              ? token.numberForms.eu
+              : null
       : null,
   );
 
@@ -125,11 +127,14 @@
   </div>
   {#if numberForm}
     <!-- T-2.8: digit-only NUM token. Show the spelled-out form for
-         the reading language + its romanization; the side panel shows
-         all three languages on click. -->
+         the reading language + its romanization (the click panel has
+         more). Latin-script languages (Basque) carry no separate
+         romanization, so the stripe is suppressed when it's empty. -->
     <div class="tip-def">
       {numberForm.spelled}
-      <span class="tip-roman num-roman">{numberForm.romanized}</span>
+      {#if numberForm.romanized}
+        <span class="tip-roman num-roman">{numberForm.romanized}</span>
+      {/if}
     </div>
   {:else if isLegacyNumber}
     <div class="tip-def empty" data-testid="legacy-number">Number</div>

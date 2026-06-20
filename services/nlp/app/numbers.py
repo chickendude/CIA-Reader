@@ -5,7 +5,10 @@ token whose surface is purely digits (Latin ``0–9``, Devanagari
 ``०–९``, or Odia ``୦–୯`` — all from one script). The result is a
 :class:`NumberForms` struct with the integer value, all three native-
 script digit renderings, and the spelled-out form + ISO 15919
-romanization in each of the three MVP languages (Hindi, Marathi, Odia).
+romanization in each of the three Indic MVP languages (Hindi, Marathi,
+Odia) plus Basque (``eu``). Basque is Latin-script and base-20, so its
+form carries the spelled-out reading directly with an empty
+``romanized`` field — see :func:`to_words_eu`.
 
 Range
 =====
@@ -575,6 +578,210 @@ def to_words_or(n: int) -> str:
 
 
 # ----------------------------------------------------------------
+# Basque (Euskara) — base-20 (vigesimal)
+# ----------------------------------------------------------------
+#
+# Unlike the Indic languages above, Basque counts in twenties: the
+# "tens" 20/40/60/80 are ``hogei`` / ``berrogei`` (2×20) / ``hirurogei``
+# (3×20) / ``laurogei`` (4×20), and 21–39 are ``hogeita <n>``, 30 being
+# ``hogeita hamar`` (20 + 10). The 0–99 forms below are transcribed
+# verbatim from the curator-supplied "zenbakiak" word list and are the
+# ground truth for this module (the table, plus the composition anchors
+# 101 / 1200 / 1201 / 1984, are covered by the golden tests). ``0`` is
+# ``zero`` (the loanword on the list; ``huts`` is the native synonym).
+#
+# Basque is Latin-script, so there is no transliteration step — the
+# spelled-out form *is* the reading and the ``romanized`` wire field is
+# left empty (see :func:`_language_form_latin`).
+
+# fmt: off
+_EU_BELOW_100: tuple[str, ...] = (
+    "zero",                  # 0
+    "bat",                   # 1
+    "bi",                    # 2
+    "hiru",                  # 3
+    "lau",                   # 4
+    "bost",                  # 5
+    "sei",                   # 6
+    "zazpi",                 # 7
+    "zortzi",                # 8
+    "bederatzi",             # 9
+    "hamar",                 # 10
+    "hamaika",               # 11
+    "hamabi",                # 12
+    "hamahiru",              # 13
+    "hamalau",               # 14
+    "hamabost",              # 15
+    "hamasei",               # 16
+    "hamazazpi",             # 17
+    "hemezortzi",            # 18
+    "hemeretzi",             # 19
+    "hogei",                 # 20
+    "hogeita bat",           # 21
+    "hogeita bi",            # 22
+    "hogeita hiru",          # 23
+    "hogeita lau",           # 24
+    "hogeita bost",          # 25
+    "hogeita sei",           # 26
+    "hogeita zazpi",         # 27
+    "hogeita zortzi",        # 28
+    "hogeita bederatzi",     # 29
+    "hogeita hamar",         # 30
+    "hogeita hamaika",       # 31
+    "hogeita hamabi",        # 32
+    "hogeita hamahiru",      # 33
+    "hogeita hamalau",       # 34
+    "hogeita hamabost",      # 35
+    "hogeita hamasei",       # 36
+    "hogeita hamazazpi",     # 37
+    "hogeita hemezortzi",    # 38
+    "hogeita hemeretzi",     # 39
+    "berrogei",              # 40
+    "berrogeita bat",        # 41
+    "berrogeita bi",         # 42
+    "berrogeita hiru",       # 43
+    "berrogeita lau",        # 44
+    "berrogeita bost",       # 45
+    "berrogeita sei",        # 46
+    "berrogeita zazpi",      # 47
+    "berrogeita zortzi",     # 48
+    "berrogeita bederatzi",  # 49
+    "berrogeita hamar",      # 50
+    "berrogeita hamaika",    # 51
+    "berrogeita hamabi",     # 52
+    "berrogeita hamahiru",   # 53
+    "berrogeita hamalau",    # 54
+    "berrogeita hamabost",   # 55
+    "berrogeita hamasei",    # 56
+    "berrogeita hamazazpi",  # 57
+    "berrogeita hemezortzi", # 58
+    "berrogeita hemeretzi",  # 59
+    "hirurogei",             # 60
+    "hirurogeita bat",       # 61
+    "hirurogeita bi",        # 62
+    "hirurogeita hiru",      # 63
+    "hirurogeita lau",       # 64
+    "hirurogeita bost",      # 65
+    "hirurogeita sei",       # 66
+    "hirurogeita zazpi",     # 67
+    "hirurogeita zortzi",    # 68
+    "hirurogeita bederatzi", # 69
+    "hirurogeita hamar",     # 70
+    "hirurogeita hamaika",   # 71
+    "hirurogeita hamabi",    # 72
+    "hirurogeita hamahiru",  # 73
+    "hirurogeita hamalau",   # 74
+    "hirurogeita hamabost",  # 75
+    "hirurogeita hamasei",   # 76
+    "hirurogeita hamazazpi", # 77
+    "hirurogeita hemezortzi",# 78
+    "hirurogeita hemeretzi", # 79
+    "laurogei",              # 80
+    "laurogeita bat",        # 81
+    "laurogeita bi",         # 82
+    "laurogeita hiru",       # 83
+    "laurogeita lau",        # 84
+    "laurogeita bost",       # 85
+    "laurogeita sei",        # 86
+    "laurogeita zazpi",      # 87
+    "laurogeita zortzi",     # 88
+    "laurogeita bederatzi",  # 89
+    "laurogeita hamar",      # 90
+    "laurogeita hamaika",    # 91
+    "laurogeita hamabi",     # 92
+    "laurogeita hamahiru",   # 93
+    "laurogeita hamalau",    # 94
+    "laurogeita hamabost",   # 95
+    "laurogeita hamasei",    # 96
+    "laurogeita hamazazpi",  # 97
+    "laurogeita hemezortzi", # 98
+    "laurogeita hemeretzi",  # 99
+)
+# fmt: on
+assert len(_EU_BELOW_100) == 100
+
+# Hundreds fuse the digit with the hundred-word: ehun, berrehun,
+# hirurehun, .... Index 0 is unused.
+_EU_HUNDREDS: tuple[str, ...] = (
+    "",  # unused
+    "ehun",
+    "berrehun",
+    "hirurehun",
+    "laurehun",
+    "bostehun",
+    "seiehun",
+    "zazpiehun",
+    "zortziehun",
+    "bederatziehun",
+)
+_EU_THOUSAND = "mila"
+_EU_MILLION = "milioi"
+
+
+def _eu_count(n: int) -> str:
+    """Spell ``1..999`` as a flat multiplier (no ``eta``) for the count
+    that precedes ``mila`` / ``milioi`` — e.g. ``234`` -> ``berrehun
+    hogeita hamalau`` in ``berrehun hogeita hamalau mila``. The single
+    ``eta`` of a Basque numeral is reserved for the whole number's final
+    group by :func:`to_words_eu`; how (and whether) ``eta`` also appears
+    inside a large multiplier is a rarer register left for curator review,
+    so this stays flat.
+    """
+    hundreds, rem = divmod(n, 100)
+    parts: list[str] = []
+    if hundreds:
+        parts.append(_EU_HUNDREDS[hundreds])
+    if rem:
+        parts.append(_EU_BELOW_100[rem])
+    return " ".join(parts)
+
+
+def to_words_eu(n: int) -> str:
+    """Spell out ``n`` in Basque (Euskara), base-20.
+
+    Numbers decompose into up to four ordered groups —
+    ``[millions, thousands, hundreds, below-100]`` — joined with a single
+    ``eta`` immediately before the last non-zero group; everything before
+    it is space-joined. This reproduces the curator list exactly:
+    ``101`` → ``ehun eta bat``, ``1200`` → ``mila eta berrehun``,
+    ``1201`` → ``mila berrehun eta bat``, ``1984`` → ``mila bederatziehun
+    eta laurogeita lau``, ``2000`` → ``bi mila``, ``1_000_000`` →
+    ``milioi bat``, ``10_000_000`` → ``hamar milioi``.
+    """
+    if n < 0 or n > MAX_VALUE:
+        raise ValueError(f"{n} out of range [0, {MAX_VALUE}]")
+    if n < 100:
+        return _EU_BELOW_100[n]
+
+    millions, rest = divmod(n, 1_000_000)
+    thousands, rest = divmod(rest, 1_000)
+    hundreds, below = divmod(rest, 100)
+
+    slots: list[str] = []
+    if millions:
+        # 1 million is ``milioi bat`` (noun + "bat"); 2+ count first.
+        slots.append(
+            f"{_EU_MILLION} bat"
+            if millions == 1
+            else f"{_eu_count(millions)} {_EU_MILLION}"
+        )
+    if thousands:
+        slots.append(
+            _EU_THOUSAND
+            if thousands == 1
+            else f"{_eu_count(thousands)} {_EU_THOUSAND}"
+        )
+    if hundreds:
+        slots.append(_EU_HUNDREDS[hundreds])
+    if below:
+        slots.append(_EU_BELOW_100[below])
+
+    if len(slots) == 1:
+        return slots[0]
+    return " ".join(slots[:-1]) + " eta " + slots[-1]
+
+
+# ----------------------------------------------------------------
 # T-2.8a — sign + decimal extensions
 # ----------------------------------------------------------------
 
@@ -598,7 +805,10 @@ _DECIMAL_POINT: str = "."
 _HI_NEG: str = "ऋण"
 _MR_NEG: str = "उणे"
 _OR_NEG: str = "ଋଣ"
-_NEG_WORDS: dict[str, str] = {"hi": _HI_NEG, "mr": _MR_NEG, "or": _OR_NEG}
+# Basque negatives use ``ken`` ("minus / less") in the arithmetic
+# register: ``-3`` reads ``ken hiru``. Curator-confirmable.
+_EU_NEG: str = "ken"
+_NEG_WORDS: dict[str, str] = {"hi": _HI_NEG, "mr": _MR_NEG, "or": _OR_NEG, "eu": _EU_NEG}
 
 # Per-language "point" word for decimals. Curator-confirmed.
 # Hindi/Marathi use Sanskrit-derived ``daśamlava`` / ``daśāṁśa``;
@@ -606,7 +816,15 @@ _NEG_WORDS: dict[str, str] = {"hi": _HI_NEG, "mr": _MR_NEG, "or": _OR_NEG}
 _HI_POINT: str = "दशमलव"
 _MR_POINT: str = "दशांश"
 _OR_POINT: str = "ଦଶମିକ"
-_POINT_WORDS: dict[str, str] = {"hi": _HI_POINT, "mr": _MR_POINT, "or": _OR_POINT}
+# Basque reads the decimal separator as ``koma``: ``3.14`` → ``hiru koma
+# bat lau`` (each fractional digit spoken individually). Curator-confirmable.
+_EU_POINT: str = "koma"
+_POINT_WORDS: dict[str, str] = {
+    "hi": _HI_POINT,
+    "mr": _MR_POINT,
+    "or": _OR_POINT,
+    "eu": _EU_POINT,
+}
 
 
 def parse_number(surface: str) -> tuple[Sign, int, str | None] | None:
@@ -722,12 +940,14 @@ _FRAC_DIGIT_WORDS: dict[str, tuple[str, ...]] = {
     "hi": _HI_BELOW_100[:10],
     "mr": _MR_BELOW_100[:10],
     "or": _OR_BELOW_100[:10],
+    "eu": _EU_BELOW_100[:10],
 }
 
 _INT_TO_WORDS: dict[str, Callable[[int], str]] = {
     "hi": to_words_hi,
     "mr": to_words_mr,
     "or": to_words_or,
+    "eu": to_words_eu,
 }
 
 
@@ -775,6 +995,15 @@ def _language_form(spelled: str, language: str) -> NumberLanguageForm:
     )
 
 
+def _language_form_latin(spelled: str) -> NumberLanguageForm:
+    """Form for a Latin-script language (Basque): no transliteration —
+    the spelled-out word is already the reading, so ``romanized`` is the
+    empty string. The reader suppresses the romanization stripe when it's
+    empty.
+    """
+    return NumberLanguageForm(spelled=spelled, romanized="")
+
+
 def _canonical_value(sign: Sign, integer: int, fractional: str | None) -> str:
     """Canonical Latin-digit string for the wire ``value`` field.
     ``"-3.14"``, ``"0.001"``, ``"123"``."""
@@ -793,6 +1022,8 @@ def _build_forms(sign: Sign, integer: int, fractional: str | None) -> NumberForm
         # Wire field is ISO 639-1 ``or``; Python attribute is ``odia``
         # (``or`` is a reserved keyword).
         odia=_language_form(spell(sign, integer, fractional, "or"), "or"),
+        # Basque (Latin script): spelled-out form only, no romanization.
+        eu=_language_form_latin(spell(sign, integer, fractional, "eu")),
     )
 
 
@@ -833,6 +1064,7 @@ __all__ = [
     "parse_digits",
     "parse_number",
     "spell",
+    "to_words_eu",
     "to_words_hi",
     "to_words_mr",
     "to_words_or",

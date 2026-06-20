@@ -461,6 +461,16 @@
 
   const numberDisplay = $derived((): NumberDisplay | null => {
     if (!token?.numberForms) return null;
+    if (language === 'eu') {
+      // Basque: Latin-script, so the native digits are the Latin digits
+      // (the header dedupes them) and there's no separate romanization.
+      return {
+        label: 'Basque',
+        nativeDigits: token.numberForms.digitsLatin,
+        spelled: token.numberForms.eu.spelled,
+        romanized: token.numberForms.eu.romanized,
+      };
+    }
     if (language === 'or') {
       return {
         label: 'Odia',
@@ -1140,7 +1150,11 @@
         {#if token.numberForms && numberDisplay()}
           <h2 class="sp-word num-title">
             <span>{token.numberForms.digitsLatin}</span>
-            <span class="num-native">{numberDisplay()?.nativeDigits}</span>
+            {#if numberDisplay()?.nativeDigits !== token.numberForms.digitsLatin}
+              <!-- Latin-script languages (Basque) repeat the Latin digits;
+                   only show a second copy for non-Latin scripts. -->
+              <span class="num-native">{numberDisplay()?.nativeDigits}</span>
+            {/if}
           </h2>
         {:else}
           <h2 class="sp-word">{token.surface}</h2>
@@ -1155,7 +1169,11 @@
           <div class="num-entry">
             <span class="num-lang">{numberDisplay()?.label}</span>
             <span class="num-spelled">{numberDisplay()?.spelled}</span>
-            <span class="num-roman">{numberDisplay()?.romanized}</span>
+            {#if numberDisplay()?.romanized}
+              <!-- Latin-script languages (Basque) have no separate
+                   romanization; the spelled-out form is the reading. -->
+              <span class="num-roman">{numberDisplay()?.romanized}</span>
+            {/if}
           </div>
         </div>
       {:else if isNumberToken}

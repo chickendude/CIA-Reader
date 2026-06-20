@@ -45,6 +45,7 @@ function makeNumberForms(
     hi: { spelled: 'एक सौ तेईस', romanized: 'ek sau teīs' },
     mr: { spelled: 'एकशे तेवीस', romanized: 'ēkaśē tēvīsa' },
     odia: { spelled: 'ଏକ ଶହ ତେଇଶ', romanized: 'ēka śaha tēiśa' },
+    eu: { spelled: 'ehun eta hogeita hiru', romanized: '' },
     ...overrides,
   };
 }
@@ -183,6 +184,38 @@ describe('WordPopup — number-only token block (T-2.8)', () => {
     expect(block?.textContent).toContain('ऋण');
     expect(block?.textContent).toContain('दशमलव');
     expect(block?.textContent).toContain('ऋण तीन दशमलव एक चार');
+  });
+
+  it('renders the Basque (eu) spelled-out reading, suppressing romanization + duplicate digits', () => {
+    // The reader's request: hovering "11" in a Basque text shows
+    // "hamaika". Basque is Latin-script (base-20), so there is no
+    // separate romanization stripe and the heading shows the Latin
+    // digits only once (no native-script duplicate).
+    render(WordPopup, {
+      token: makeToken({
+        surface: '11',
+        features: {},
+        numberForms: makeNumberForms({
+          value: '11',
+          digitsLatin: '11',
+          eu: { spelled: 'hamaika', romanized: '' },
+        }),
+      }),
+      language: 'eu',
+      isOwner: true,
+      onClose: vi.fn(),
+    });
+    const block = document.body.querySelector('[data-testid="number-forms"]');
+    expect(block?.textContent).toContain('Basque');
+    expect(block?.textContent).toContain('hamaika');
+    // No Indic spelling leaks into a Basque reader.
+    expect(block?.textContent).not.toContain('एक सौ तेईस');
+    // Latin-script: the (empty) romanization stripe is suppressed.
+    expect(block?.querySelector('.num-roman')).toBeNull();
+    // Heading shows the Latin digits once — no duplicated native copy.
+    const heading = document.body.querySelector('.num-title');
+    expect(heading?.querySelector('.num-native')).toBeNull();
+    expect(heading?.textContent).toContain('11');
   });
 
   it('shows a reprocess hint for legacy number tokens whose numberForms column is null', () => {
