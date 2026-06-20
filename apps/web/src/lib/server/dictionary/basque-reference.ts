@@ -204,11 +204,38 @@ export function parseEuskaltzaindia(
   return results.slice(0, 30);
 }
 
-// ---- Fetch + short cache ---------------------------------------------
+// ---- Fetch + cache ---------------------------------------------------
 
-type CacheEntry = { at: number; results: BasqueReferenceResult[] };
-const cache = new Map<string, CacheEntry>();
-const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // mirrors the source scraper's 24h.
+//: How long a cached (word, source) entry stays fresh before we re-fetch.
+//: Dictionary entries change rarely and the whole point is to spare the
+//: upstream sites, so this is generous (30 days).
+export const REFERENCE_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+
+export type ReferenceCacheEntry = {
+  results: BasqueReferenceResult[];
+  fetchedAt: number;
+};
+
+/**
+ * Pluggable, global (not per-user) cache for parsed reference results. The
+ * production implementation is DB-backed (see `basque-reference-cache.ts`);
+ * tests inject a fake. `lookupBasqueReference` defaults to no caching so the
+ * pure path stays DB-free and deterministic.
+ */
+export interface ReferenceCache {
+  get(word: string, source: BasqueReferenceSource): Promise<ReferenceCacheEntry | null>;
+  set(word: string, source: BasqueReferenceSource, results: BasqueReferenceResult[], now: number): Promise<void>;
+}
+
+/** No-op cache — always misses, never stores. The default. */
+export const nullReferenceCache: ReferenceCache = {
+  async get() {
+    return null;
+  },
+  async set() {
+    /* no-op */
+  },
+};
 
 export type FetchImpl = (url: string) => Promise<{ ok: boolean; status: number; text: () => Promise<string> }>;
 
@@ -220,10 +247,10 @@ async function lookupOne(
   word: string,
   fetchImpl: FetchImpl,
   now: number,
+  cache: ReferenceCache,
 ): Promise<BasqueReferenceResult[]> {
-  const key = `${source}:${word.toLowerCase()}`;
-  const cached = cache.get(key);
-  if (cached && now - cached.at < CACHE_TTL_MS) return cached.results;
+  const cached = await cache.get(word, source);
+  if (cached && now - cached.fetchedAt < REFERENCE_CACHE_TTL_MS) return cached.results;
 
   const url = source === 'euskaltzaindia' ? euskaltzaindiaUrl(word) : elhuyarUrl(word);
   const res = await fetchImpl(url);
@@ -234,38 +261,35 @@ async function lookupOne(
       ? parseEuskaltzaindia(htmlText, word, url)
       : parseElhuyar(htmlText, source, word, url);
 
-  cache.set(key, { at: now, results });
+  await cache.set(word, source, results, now);
   return results;
 }
 
 /**
  * Look a word up in the requested reference dictionaries. A failed source
  * is skipped (never fails the whole request) so one site being down still
- * returns the others. Results are short-cached in memory per (source, word).
+ * returns the others. Results are read from / written to the supplied
+ * global cache per (word, source) so we don't re-hit the upstream sites.
  */
 export async function lookupBasqueReference(
   word: string,
   sources: BasqueReferenceSource[],
-  opts: { fetchImpl?: FetchImpl; now?: number } = {},
+  opts: { fetchImpl?: FetchImpl; now?: number; cache?: ReferenceCache } = {},
 ): Promise<BasqueReferenceResult[]> {
   const fetchImpl = opts.fetchImpl ?? defaultFetch;
   const now = opts.now ?? Date.now();
-  const trimmed = clean(word);
+  const cache = opts.cache ?? nullReferenceCache;
+  const trimmed = clean(word).toLowerCase();
   if (!trimmed) return [];
 
   const out: BasqueReferenceResult[] = [];
   for (const source of sources) {
     try {
-      out.push(...(await lookupOne(source, trimmed, fetchImpl, now)));
+      out.push(...(await lookupOne(source, trimmed, fetchImpl, now, cache)));
     } catch {
       // Reference aid — one source being unreachable shouldn't 500 the
       // whole panel. The admin still gets whatever else resolved.
     }
   }
   return out;
-}
-
-/** Test seam: clear the in-memory cache between cases. */
-export function _clearBasqueReferenceCache(): void {
-  cache.clear();
 }

@@ -1,8 +1,7 @@
 // @vitest-environment node
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
-  _clearBasqueReferenceCache,
   elhuyarUrl,
   euskaltzaindiaUrl,
   isBasqueReferenceSource,
@@ -10,7 +9,24 @@ import {
   parseElhuyar,
   parseEuskaltzaindia,
   type FetchImpl,
+  type ReferenceCache,
+  type ReferenceCacheEntry,
 } from './basque-reference.js';
+
+/** In-memory ReferenceCache for exercising the cache path without a DB. */
+function memoryCache() {
+  const store = new Map<string, ReferenceCacheEntry>();
+  const key = (w: string, s: string) => `${s}:${w}`;
+  const cache: ReferenceCache = {
+    async get(word, source) {
+      return store.get(key(word, source)) ?? null;
+    },
+    async set(word, source, results, now) {
+      store.set(key(word, source), { results, fetchedAt: now });
+    },
+  };
+  return { cache, store, key };
+}
 
 // Minimal HTML mirroring the upstream selectors the parser relies on.
 const ELHUYAR_ES_HTML = `
@@ -97,7 +113,6 @@ describe('parseEuskaltzaindia', () => {
 });
 
 describe('lookupBasqueReference', () => {
-  beforeEach(() => _clearBasqueReferenceCache());
   afterEach(() => vi.restoreAllMocks());
 
   function htmlFor(url: string): string {
@@ -112,29 +127,59 @@ describe('lookupBasqueReference', () => {
     })) as ReturnType<typeof vi.fn> & FetchImpl;
   }
 
-  it('fetches + parses the requested sources', async () => {
+  const DAY = 24 * 60 * 60 * 1000;
+
+  it('fetches + parses the requested sources and writes them to the cache', async () => {
     const fetchImpl = mockFetch();
+    const { cache, store, key } = memoryCache();
     const out = await lookupBasqueReference('etxe', ['elhuyar_es', 'euskaltzaindia'], {
       fetchImpl,
       now: 1000,
+      cache,
     });
     expect(fetchImpl).toHaveBeenCalledTimes(2);
     expect(out.some((r) => r.source === 'elhuyar_es')).toBe(true);
     expect(out.some((r) => r.source === 'euskaltzaindia')).toBe(true);
+    // Both (word, source) entries were persisted to the global cache.
+    expect(store.get(key('etxe', 'elhuyar_es'))).toBeDefined();
+    expect(store.get(key('etxe', 'euskaltzaindia'))).toBeDefined();
   });
 
-  it('serves a repeated lookup from the cache within the TTL', async () => {
+  it('serves a repeated lookup from the cache within the TTL (no second fetch)', async () => {
     const fetchImpl = mockFetch();
-    await lookupBasqueReference('etxe', ['elhuyar_es'], { fetchImpl, now: 1000 });
-    await lookupBasqueReference('etxe', ['elhuyar_es'], { fetchImpl, now: 2000 });
+    const { cache } = memoryCache();
+    await lookupBasqueReference('etxe', ['elhuyar_es'], { fetchImpl, now: 1000, cache });
+    await lookupBasqueReference('etxe', ['elhuyar_es'], { fetchImpl, now: 2000, cache });
     expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 
-  it('re-fetches once the cache entry is older than the TTL', async () => {
+  it('re-fetches once the cached entry is older than the TTL', async () => {
     const fetchImpl = mockFetch();
-    const day = 24 * 60 * 60 * 1000;
-    await lookupBasqueReference('etxe', ['elhuyar_es'], { fetchImpl, now: 0 });
-    await lookupBasqueReference('etxe', ['elhuyar_es'], { fetchImpl, now: day + 1 });
+    const { cache } = memoryCache();
+    await lookupBasqueReference('etxe', ['elhuyar_es'], { fetchImpl, now: 0, cache });
+    await lookupBasqueReference('etxe', ['elhuyar_es'], {
+      fetchImpl,
+      now: 30 * DAY + 1,
+      cache,
+    });
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+
+  it('shares the cache across calls regardless of which admin triggered it', async () => {
+    const fetchImpl = mockFetch();
+    const { cache } = memoryCache();
+    // Warm the cache once...
+    await lookupBasqueReference('etxe', ['elhuyar_es'], { fetchImpl, now: 1000, cache });
+    // ...a *different* fetch impl proves the second lookup never hit the network.
+    const fetchImpl2 = mockFetch();
+    await lookupBasqueReference('etxe', ['elhuyar_es'], { fetchImpl: fetchImpl2, now: 2000, cache });
+    expect(fetchImpl2).not.toHaveBeenCalled();
+  });
+
+  it('defaults to no caching when no cache is supplied (always fetches)', async () => {
+    const fetchImpl = mockFetch();
+    await lookupBasqueReference('etxe', ['elhuyar_es'], { fetchImpl, now: 1000 });
+    await lookupBasqueReference('etxe', ['elhuyar_es'], { fetchImpl, now: 2000 });
     expect(fetchImpl).toHaveBeenCalledTimes(2);
   });
 
@@ -143,9 +188,11 @@ describe('lookupBasqueReference', () => {
       if (url.includes('euskaltzaindia')) return { ok: false, status: 503, text: async () => '' };
       return { ok: true, status: 200, text: async () => htmlFor(url) };
     }) as unknown as FetchImpl;
+    const { cache } = memoryCache();
     const out = await lookupBasqueReference('etxe', ['euskaltzaindia', 'elhuyar_es'], {
       fetchImpl,
       now: 1000,
+      cache,
     });
     // Euskaltzaindia failed; Elhuyar still came back.
     expect(out.every((r) => r.source === 'elhuyar_es')).toBe(true);
@@ -156,5 +203,12 @@ describe('lookupBasqueReference', () => {
     const fetchImpl = mockFetch();
     expect(await lookupBasqueReference('   ', ['elhuyar_es'], { fetchImpl })).toEqual([]);
     expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it('normalizes the word to lowercase for cache keying', async () => {
+    const fetchImpl = mockFetch();
+    const { cache, store, key } = memoryCache();
+    await lookupBasqueReference('Etxe', ['elhuyar_es'], { fetchImpl, now: 1000, cache });
+    expect(store.get(key('etxe', 'elhuyar_es'))).toBeDefined();
   });
 });

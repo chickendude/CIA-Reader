@@ -14,6 +14,7 @@ import {
   lookupBasqueReference,
   type BasqueReferenceSource,
 } from '$lib/server/dictionary/basque-reference.js';
+import { dbReferenceCache } from '$lib/server/dictionary/basque-reference-cache.js';
 import { isAdmin } from '$lib/server/dictionary/permissions.js';
 import type { RequestHandler } from './$types';
 
@@ -39,6 +40,6 @@ export const GET: RequestHandler = async ({ locals, url }) => {
     sources = [...BASQUE_REFERENCE_SOURCES];
   }
 
-  const results = await lookupBasqueReference(word, sources);
+  const results = await lookupBasqueReference(word, sources, { cache: dbReferenceCache });
   return json({ word, results });
 };

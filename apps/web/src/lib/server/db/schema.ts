@@ -844,6 +844,45 @@ export const dictionaryImports = pgTable(
 );
 
 /**
+ * Global, server-side cache for the admin-only Basque reference lookups
+ * (Elhuyar / Euskaltzaindia). These are proprietary sources we never write
+ * to `translations` and never serve to readers — this table only spares the
+ * upstream sites from repeated hits. Not tied to a user: one row per
+ * (word, source), refreshed when older than the lookup TTL. The admin
+ * reference endpoint is the only reader/writer; see
+ * `$lib/server/dictionary/basque-reference-cache.ts`.
+ */
+export const basqueReferenceCache = pgTable(
+  'basque_reference_cache',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    /** Lowercased lookup word (the resolved lemma). */
+    word: text('word').notNull(),
+    /** Upstream source: 'elhuyar_es' | 'elhuyar_en' | 'euskaltzaindia'. */
+    source: text('source').notNull(),
+    /** Parsed results for this (word, source); shape mirrors
+     *  `BasqueReferenceResult` in basque-reference.ts. */
+    results: jsonb('results')
+      .$type<
+        Array<{
+          source: string;
+          label: string;
+          headword: string;
+          pos: string;
+          definition: string;
+          examples: string[];
+          url: string;
+        }>
+      >()
+      .notNull(),
+    fetchedAt: timestamp('fetched_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    wordSource: unique('basque_reference_cache_word_source_uq').on(t.word, t.source),
+  }),
+);
+
+/**
  * Per-language curator grants (T-3.4).
  *
  * A user with `role='curator'` has edit rights on a language only when a

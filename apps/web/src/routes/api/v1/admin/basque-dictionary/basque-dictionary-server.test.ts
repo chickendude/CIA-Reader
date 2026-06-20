@@ -80,16 +80,20 @@ describe('GET /api/v1/admin/basque-dictionary', () => {
     const body = await res.json();
     expect(body.word).toBe('etxe');
     expect(body.results[0].definition).toBe('casa');
-    expect(lookupBasqueReference).toHaveBeenCalledWith('etxe', [
-      'elhuyar_es',
-      'elhuyar_en',
-      'euskaltzaindia',
-    ]);
+    expect(lookupBasqueReference).toHaveBeenCalledWith(
+      'etxe',
+      ['elhuyar_es', 'elhuyar_en', 'euskaltzaindia'],
+      expect.objectContaining({ cache: expect.anything() }),
+    );
   });
 
   it('filters the sources param to the known set', async () => {
     await callGet('?word=etxe&sources=elhuyar_en,bogus', { id: 'a', role: 'admin' });
-    expect(lookupBasqueReference).toHaveBeenCalledWith('etxe', ['elhuyar_en']);
+    expect(lookupBasqueReference).toHaveBeenCalledWith(
+      'etxe',
+      ['elhuyar_en'],
+      expect.objectContaining({ cache: expect.anything() }),
+    );
   });
 
   it('400s when the sources param has no valid entries', async () => {
