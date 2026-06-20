@@ -7,6 +7,8 @@ unlike Hindi/Marathi these tests run the production configuration
 
 from __future__ import annotations
 
+import pytest
+
 from app.pipelines import get_pipeline, reset_pipeline_cache
 from app.pipelines.yiddish import (
     YiddishPipeline,
@@ -107,6 +109,53 @@ def test_loshn_koydesh_plural_form_phonetic():
     token = result.tokens[0]
     assert token.candidates[0].lemma == "חלום"
     assert token.romanization == "khaloymes"
+
+
+@pytest.mark.parametrize(
+    ("surface", "expected"),
+    [
+        ("במשך", "bemeshekh"),  # preposition "during" — the reported bug
+        ("כלב", "kelev"),  # not in the seed; caught via the Hebrew skeleton
+        ("תורה", "toyre"),
+        ("שלום", "sholem"),
+    ],
+)
+def test_loshn_koydesh_override_romanization(surface, expected):
+    # Loans that aren't in the hand-curated seed get their reading from the
+    # generated loshn_koydesh table; the rule-based mapping would drop the
+    # vowels (במשך → "bmshkh").
+    result = _pipeline().process(surface)
+    assert result.tokens[0].romanization == expected
+
+
+def test_native_word_keeps_rule_romanization_not_dialect():
+    # גייסט ("spirit") is native Germanic vocabulary. Wiktionary romanizes it
+    # "gayst" (Southern Yiddish), but the rule-based YIVO reading is "geyst"
+    # — the override table must NOT touch native words, even when Wiktionary
+    # disagrees, or it would inject a non-YIVO dialect form.
+    result = _pipeline().process("גייסט")
+    assert result.tokens[0].romanization == "geyst"
+
+
+def test_loshn_koydesh_singular_resolves_and_romanizes():
+    # מחבר ("author") is a loan absent from the seed but present in the
+    # generated loshn-koydesh table: it should resolve as a NOUN (not OOV)
+    # and romanize "mekhaber", not the rule's vowel-less "mkhbr".
+    token = _pipeline().process("מחבר").tokens[0]
+    assert token.candidates[0].lemma == "מחבר"
+    assert token.candidates[0].pos == "NOUN"
+    assert token.is_oov is False
+    assert token.romanization == "mekhaber"
+
+
+def test_loshn_koydesh_plural_resolves_to_root():
+    # The reported bug: מחברים must parse to the root מחבר and romanize
+    # "mekhabrem" (per Wiktionary), via the loshn-koydesh inflected-form link.
+    token = _pipeline().process("מחברים").tokens[0]
+    assert token.candidates[0].lemma == "מחבר"
+    assert token.candidates[0].features.get("Number") == "Plur"
+    assert token.is_oov is False
+    assert token.romanization == "mekhabrem"
 
 
 def test_number_forms_deliberately_absent():

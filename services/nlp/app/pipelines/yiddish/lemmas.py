@@ -148,13 +148,13 @@ class YiddishLemmaTable:
 _SEED_PATH = Path(__file__).parent / "data" / "seed_lemmas.json"
 
 
-def load_seed_lemma_table(path: Path | None = None) -> YiddishLemmaTable:
-    """Load the seed lemma table from a JSON file.
+def load_lemma_entries(path: Path) -> list[YiddishLemma]:
+    """Parse a ``seed_lemmas.json``-schema file into a list of lemmas.
 
-    ``path`` is overridable so tests can load a tiny custom fixture.
+    Shared by the hand-curated seed and the generated loshn-koydesh table
+    (:mod:`.loshn_koydesh`), which use the same schema.
     """
-    source = path if path is not None else _SEED_PATH
-    raw = json.loads(source.read_text(encoding="utf-8"))
+    raw = json.loads(path.read_text(encoding="utf-8"))
     entries: list[YiddishLemma] = []
     for headword, fields in raw.get("entries", {}).items():
         entries.append(
@@ -173,12 +173,21 @@ def load_seed_lemma_table(path: Path | None = None) -> YiddishLemmaTable:
                 },
             )
         )
-    return YiddishLemmaTable(entries)
+    return entries
+
+
+def load_seed_lemma_table(path: Path | None = None) -> YiddishLemmaTable:
+    """Load the seed lemma table from a JSON file.
+
+    ``path`` is overridable so tests can load a tiny custom fixture.
+    """
+    return YiddishLemmaTable(load_lemma_entries(path if path is not None else _SEED_PATH))
 
 
 @lru_cache(maxsize=1)
 def default_lemma_table() -> YiddishLemmaTable:
-    """Cached default lemma table used by :func:`build_yiddish_pipeline`."""
+    """Cached seed-only lemma table. The production pipeline merges this with
+    the loshn-koydesh table — see :func:`.build_yiddish_pipeline`."""
     return load_seed_lemma_table()
 
 
@@ -188,5 +197,12 @@ __all__ = [
     "YiddishLemmaTable",
     "canonical_key",
     "default_lemma_table",
+    "load_lemma_entries",
     "load_seed_lemma_table",
+    "seed_lemma_path",
 ]
+
+
+def seed_lemma_path() -> Path:
+    """Path to the committed seed lemma JSON (for the merged-table loader)."""
+    return _SEED_PATH

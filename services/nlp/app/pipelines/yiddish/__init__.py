@@ -30,21 +30,25 @@ follow-up to :mod:`app.numbers`.
 **Accuracy expectation**: same tier as Odia (~70–80% lemma accuracy at
 launch against the golden corpus), improving with dictionary growth
 and crowdsourced corrections. The unpointed loshn-koydesh vocabulary
-is the known weak spot — it's spelled etymologically, so affix rules
-and rule-based romanization both undershoot there.
+is the known weak spot for the affix rules — it's spelled
+etymologically, so they undershoot there. Its *romanization* is handled
+out of band: :mod:`.loshn_koydesh` carries curated readings for the
+loans the rule-based mapping can't sound out.
 """
 
 from __future__ import annotations
 
 import re
 from collections.abc import Callable
+from functools import lru_cache
 
 from app.romanize import UnsupportedScriptError, to_roman
 from app.schemas import LemmaCandidate, Token
 
 from ..base import Pipeline, PipelineResult
 from ..stanza_ud import should_treat_as_word
-from .lemmas import YiddishLemmaTable, default_lemma_table
+from .lemmas import YiddishLemmaTable, load_lemma_entries, seed_lemma_path
+from .loshn_koydesh import load_loshn_koydesh_entries
 from .morph import MorphAnalysis, analyze
 
 YiddishTokenizer = Callable[[str], list[str]]
@@ -184,10 +188,12 @@ class YiddishPipeline(Pipeline):
             candidates[0].pos,
             script="Hebr",
         )
-        # A seed-declared phonetic reading (loshn-koydesh vocabulary:
-        # שבת → shabes) beats the rule-based letter mapping, which is
-        # wrong for etymologically-spelled words. Take the strongest
-        # analysis that declares one.
+        # A declared phonetic reading beats the rule-based letter mapping,
+        # which is wrong for etymologically-spelled loshn-koydesh words
+        # (שלום → "shlum", not "sholem"). These come from the merged lemma
+        # table: the hand-curated seed and the generated loshn-koydesh table
+        # (:mod:`.loshn_koydesh`) both carry curated readings on the headword
+        # and its inflected forms. Take the strongest analysis that has one.
         phonetic = next((a.romanization for a in analyses if a.romanization), None)
         return Token(
             idx=idx,
@@ -212,8 +218,31 @@ class YiddishPipeline(Pipeline):
             return None
 
 
+@lru_cache(maxsize=1)
+def _merged_lemma_table() -> YiddishLemmaTable:
+    """Hand-curated seed merged with the generated loshn-koydesh table.
+
+    The seed is authoritative: a loshn-koydesh entry is dropped whenever the
+    seed analyzer already resolves its headword — whether the seed lists it
+    directly or reaches it through an affix/irregular-form rule. That keeps
+    the seed's hand-curated reading and lemma, e.g. חלומות stays the plural of
+    seed lemma חלום ("khaloymes") rather than becoming its own generated
+    headword. Seed entries are listed first so that on the rare cross-headword
+    form collision the seed analysis is still preferred.
+    """
+    seed = load_lemma_entries(seed_lemma_path())
+    seed_table = YiddishLemmaTable(seed)
+    loshn = [
+        lemma
+        for lemma in load_loshn_koydesh_entries()
+        if not analyze(lemma.headword, seed_table)
+    ]
+    return YiddishLemmaTable(seed + loshn)
+
+
 def build_yiddish_pipeline() -> YiddishPipeline:
-    """Construct a :class:`YiddishPipeline` with the production tokenizer + seed.
+    """Construct a :class:`YiddishPipeline` with the production tokenizer + the
+    merged seed + loshn-koydesh lemma table.
 
     Registered in :mod:`app.pipelines.__init__` as the ``custom-yi``
     factory. Unlike Odia there's nothing to lazy-import — the tokenizer
@@ -221,7 +250,7 @@ def build_yiddish_pipeline() -> YiddishPipeline:
     """
     return YiddishPipeline(
         tokenizer=yiddish_tokenize,
-        lemmas=default_lemma_table(),
+        lemmas=_merged_lemma_table(),
     )
 
 
