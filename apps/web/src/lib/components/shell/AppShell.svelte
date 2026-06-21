@@ -218,7 +218,7 @@
   </button>
 {/if}
 
-<div class="shell">
+<div class="shell" class:reader-route={onReader}>
   <aside class="rail" aria-label="Primary navigation">
     <div class="lang-wrap">
       {#if currentOption}
@@ -855,5 +855,23 @@
   :global(html[data-reader-immersive='1']) .content {
     /* Bottom nav is gone — drop the safe-area padding too. */
     padding-bottom: 0;
+  }
+
+  /* —— Reader route: immersive on every breakpoint ————————————————
+   * The reader owns the whole window — its × button / Esc are the way out, so
+   * the shell's nav chrome is hidden and the content reclaims the full width.
+   * (The rail-toggle chevron lives outside .shell and is hidden in markup.) */
+  .shell.reader-route .top-strip,
+  .shell.reader-route .bottom-nav {
+    display: none;
+  }
+  @media (min-width: 960px) {
+    .shell.reader-route {
+      grid-template-columns: 1fr;
+      grid-template-areas: 'content';
+    }
+    .shell.reader-route .rail {
+      display: none;
+    }
   }
 </style>
