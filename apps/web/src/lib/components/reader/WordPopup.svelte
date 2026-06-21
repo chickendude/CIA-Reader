@@ -1467,7 +1467,25 @@
             {/if}
           </h2>
         {:else}
-          <h2 class="sp-word">{token.surface}</h2>
+          <h2 class="sp-word">
+            <span class="sp-word-text">{payload?.lemma.headword ?? token.surface}</span>
+            {#if payload}
+              <PosPill pos={payload.lemma.pos} class="sp-pos-pill" />
+            {/if}
+            {#if bookFrequency !== null && bookFrequency > 0}
+              <span
+                class="sp-freq-badge"
+                data-testid="book-frequency"
+                aria-label={`this word appears ${bookFrequency} ${
+                  bookFrequency === 1 ? 'time' : 'times'
+                } in the book`}
+              >
+                <span class="sp-freq-count" aria-hidden="true">{bookFrequency}×</span>
+                <!-- prettier-ignore -->
+                <span class="sp-freq-tip" role="tooltip">this word appears {bookFrequency}{bookFrequency === 1 ? ' time' : ' times'} in the book</span>
+              </span>
+            {/if}
+          </h2>
         {/if}
       {#if token.numberForms}
         <!-- T-2.8: digit-only NUM token. Show the Latin digits beside
@@ -1501,21 +1519,6 @@
           <p class="sp-roman">{token.romanization}</p>
         {/if}
         {#if payload}
-          <p class="sp-row">
-            <span class="k">Lemma</span>
-            <span class="v sp-headword">
-              <span>{payload.lemma.headword}</span>
-              <PosPill pos={payload.lemma.pos} class="sp-pos-pill" />
-            </span>
-          </p>
-          {#if bookFrequency !== null && bookFrequency > 0}
-            <p class="sp-row" data-testid="book-frequency">
-              <span class="k">In book</span>
-              <span class="v sp-freq">
-                appears {bookFrequency}{bookFrequency === 1 ? ' time' : '×'}
-              </span>
-            </p>
-          {/if}
           {@const featurePills = getFeaturePills(payload.lemma.pos, token?.features ?? {})}
           {#if featurePills.length > 0}
             <p class="sp-row sp-feats-row" data-testid="feature-pills">
@@ -2202,10 +2205,58 @@
   }
   .sp-word {
     margin: 0 0 0.25rem;
+    /* Reserve room on the right so the freq badge clears the absolutely
+       positioned close button. */
+    padding-right: 1.9rem;
+    display: flex;
+    align-items: baseline;
+    gap: 0.5rem;
     font-family: var(--font-serif-dev, var(--font-serif));
     font-size: 1.85rem;
     line-height: 1.1;
     color: var(--ink, var(--color-fg));
+  }
+  .sp-word-text {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  .sp-freq-badge {
+    position: relative;
+    margin-left: auto;
+    align-self: center;
+    flex-shrink: 0;
+    font-family: var(--font-mono-display, var(--font-mono));
+    font-size: 0.8rem;
+    font-weight: 500;
+    color: var(--ink-2, var(--color-fg));
+    background: color-mix(in oklch, var(--ink, var(--color-fg)) 9%, transparent);
+    border-radius: 999px;
+    padding: 0.12rem 0.5rem;
+    cursor: default;
+    white-space: nowrap;
+  }
+  .sp-freq-tip {
+    position: absolute;
+    top: calc(100% + 6px);
+    right: 0;
+    z-index: 6;
+    width: max-content;
+    max-width: 210px;
+    padding: 0.4rem 0.55rem;
+    border-radius: 6px;
+    background: var(--ink, var(--color-fg));
+    color: var(--paper, var(--color-bg));
+    font-family: var(--font-sans, var(--font-serif));
+    font-size: 0.72rem;
+    font-weight: 400;
+    line-height: 1.3;
+    text-align: left;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 120ms ease;
+  }
+  .sp-freq-badge:hover .sp-freq-tip {
+    opacity: 1;
   }
   .sp-roman {
     margin: 0 0 0.85rem;
@@ -2233,12 +2284,6 @@
     flex: 1;
     color: var(--ink, var(--color-fg));
     font-size: 0.85rem;
-  }
-  .sp-headword {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.45rem;
-    flex-wrap: wrap;
   }
   :global(.sp-pos-pill) {
     flex-shrink: 0;

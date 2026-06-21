@@ -711,6 +711,39 @@ describe('WordPopup — book frequency', () => {
     });
   });
 
+  it('shows the lemma (not the surface) as the title with a right-aligned freq badge', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: unknown) => {
+        const url = String(input);
+        if (url.includes('/frequency')) return jres({ book: 4, text: 1 });
+        return jres({
+          lemma: { id: 'lem-1', headword: 'pena', pos: 'NOUN', glossDefault: null },
+          translations: { personal: [], official: [], community: [] },
+        });
+      }),
+    );
+    render(WordPopup, {
+      // Clicked the inflected form "Penaren"; the header should show the lemma.
+      token: makeToken({ surface: 'Penaren', lemmaId: 'lem-1' }),
+      language: 'eu',
+      isOwner: false,
+      textId: '11111111-1111-1111-1111-111111111111',
+      onClose: vi.fn(),
+    });
+    await waitFor(() => {
+      expect(document.body.querySelector('.sp-word-text')?.textContent).toBe('pena');
+    });
+    // No "Lemma" label row anymore.
+    expect(document.body.querySelector('.sp-head')?.textContent).not.toContain('Lemma');
+    const badge = document.body.querySelector('[data-testid="book-frequency"]');
+    expect(badge?.textContent).toContain('4×');
+    expect(badge?.getAttribute('aria-label')).toBe('this word appears 4 times in the book');
+    expect(badge?.querySelector('.sp-freq-tip')?.textContent).toContain(
+      'appears 4 times in the book',
+    );
+  });
+
   it('omits the frequency row when no textId is supplied', async () => {
     vi.stubGlobal(
       'fetch',
@@ -728,7 +761,7 @@ describe('WordPopup — book frequency', () => {
       onClose: vi.fn(),
     });
     await waitFor(() => {
-      expect(document.body.querySelector('.sp-headword')).not.toBeNull();
+      expect(document.body.querySelector('.sp-pos-pill')).not.toBeNull();
     });
     expect(document.body.querySelector('[data-testid="book-frequency"]')).toBeNull();
   });
@@ -880,7 +913,7 @@ describe('WordPopup — feature pills', () => {
     });
     // Wait for the lemma row so we know the popup payload resolved.
     await waitFor(() => {
-      expect(document.body.querySelector('.sp-headword')).not.toBeNull();
+      expect(document.body.querySelector('.sp-pos-pill')).not.toBeNull();
     });
     expect(
       document.body.querySelector('[data-testid="feature-pills"]'),
@@ -1653,7 +1686,7 @@ describe('WordPopup — POS pill in header', () => {
     });
     await waitFor(() => {
       const pill = document.body.querySelector<HTMLElement>(
-        '.sp-headword [data-testid="pos-pill"]',
+        '.sp-word [data-testid="pos-pill"]',
       );
       if (!pill) throw new Error('missing pos-pill in header');
       expect(pill.querySelector('.pos-abbr')?.textContent).toBe('n');
