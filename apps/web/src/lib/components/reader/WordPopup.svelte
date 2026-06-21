@@ -1280,7 +1280,14 @@
       });
       if (!res.ok) {
         if (res.status === 503) throw new Error('Sentence translation isn’t set up yet.');
-        throw new Error(`Translation failed (${res.status})`);
+        let message = `Translation failed (${res.status})`;
+        try {
+          const errBody = (await res.json()) as { message?: string };
+          if (errBody?.message) message = errBody.message;
+        } catch {
+          /* non-JSON error body */
+        }
+        throw new Error(message);
       }
       const data = (await res.json()) as { sentence: string; translation: string };
       translatedSentence = data.sentence;

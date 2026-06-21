@@ -62,7 +62,19 @@ export async function translateSentence(
       ],
     }),
   });
-  if (!res.ok) throw new Error(`OpenAI request failed (${res.status})`);
+  if (!res.ok) {
+    let detail = '';
+    try {
+      const err = (await res.json()) as { error?: { message?: string } };
+      if (err?.error?.message) detail = `: ${err.error.message}`;
+    } catch {
+      /* non-JSON error body */
+    }
+    if (res.status === 429) {
+      throw new Error(`OpenAI quota/rate limit (429)${detail}`);
+    }
+    throw new Error(`OpenAI request failed (${res.status})${detail}`);
+  }
   const data = (await res.json()) as {
     choices?: Array<{ message?: { content?: string } }>;
   };

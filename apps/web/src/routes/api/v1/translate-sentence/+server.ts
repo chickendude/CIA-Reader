@@ -67,6 +67,9 @@ export const POST: RequestHandler = async (event) => {
     if (e instanceof OpenAiNotConfiguredError) {
       throw error(503, 'Sentence translation is not configured');
     }
-    throw error(502, 'Translation failed');
+    // Surface the upstream reason (e.g. quota/billing) so the UI can show
+    // something actionable rather than a bare 502.
+    const message = e instanceof Error && e.message ? e.message : 'Translation failed';
+    throw error(502, message);
   }
 };
