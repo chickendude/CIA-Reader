@@ -134,6 +134,7 @@
         Export CSV
       </a>
     {/if}
+    <a class="export-link" href="/words/anki">Export to Anki</a>
   </div>
 
   {#if data.rows.length === 0}
