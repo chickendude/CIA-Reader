@@ -8,9 +8,7 @@
  */
 import { LANGUAGES, isSupportedLanguage } from '@ciareader/shared-types';
 
-import { OPENAI_API_KEY, OPENAI_MODEL } from './env.js';
-
-const OPENAI_URL = 'https://api.openai.com/v1/chat/completions';
+import { OPENAI_API_KEY, OPENAI_BASE_URL, OPENAI_MODEL } from './env.js';
 
 const EXTRA_LANGUAGE_NAMES: Record<string, string> = {
   en: 'English',
@@ -35,19 +33,20 @@ export async function translateSentence(
   text: string,
   sourceLanguage: string,
   targetLanguage = 'en',
-  opts: { fetchImpl?: ChatFetch; apiKey?: string; model?: string } = {},
+  opts: { fetchImpl?: ChatFetch; apiKey?: string; model?: string; baseUrl?: string } = {},
 ): Promise<string> {
   const apiKey = opts.apiKey ?? OPENAI_API_KEY;
   if (!apiKey) throw new OpenAiNotConfiguredError();
   const fetchImpl = opts.fetchImpl ?? fetch;
   const model = opts.model ?? OPENAI_MODEL;
+  const baseUrl = (opts.baseUrl ?? OPENAI_BASE_URL).replace(/\/+$/, '');
 
   const system =
     `Translate the user's ${languageName(sourceLanguage)} sentence into ` +
     `${languageName(targetLanguage)}. Reply with only the translation — no quotes, ` +
     `no transliteration, no notes.`;
 
-  const res = await fetchImpl(OPENAI_URL, {
+  const res = await fetchImpl(`${baseUrl}/chat/completions`, {
     method: 'POST',
     headers: {
       authorization: `Bearer ${apiKey}`,
