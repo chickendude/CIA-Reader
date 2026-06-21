@@ -333,6 +333,8 @@
     adminRefWord = null;
     adminRefError = null;
     adminRefLoading = false;
+    adminRefSearch = '';
+    adminRefSuggestions = [];
     bookFrequency = null;
     sentenceTranslation = null;
     translatedSentence = null;
@@ -433,6 +435,12 @@
   let adminRefError = $state<string | null>(null);
   let adminRefResults = $state<BasqueRefResult[] | null>(null);
   let adminRefWord = $state<string | null>(null);
+  // Reference search box (replaces the static header): seeded from the lemma,
+  // editable, with Elhuyar autocomplete so the admin can pick the exact entry
+  // ("Afrika", not "afrikaans") even when the parsed lemma is wrong/mis-cased.
+  let adminRefSearch = $state('');
+  let adminRefSuggestions = $state<string[]>([]);
+  let adminRefSuggestTimer: ReturnType<typeof setTimeout> | null = null;
 
   // The ES | EN | EU tabs select which upstream source's entries show.
   // Persisted so the admin's preferred reference language sticks across
@@ -494,17 +502,21 @@
     }
   }
 
-  async function loadAdminRef(): Promise<void> {
-    const word = adminRefLookupWord;
+  async function loadAdminRef(term?: string, opts: { exact?: boolean } = {}): Promise<void> {
+    const word = (term ?? adminRefLookupWord ?? '').trim();
     if (!word) return;
     adminRefWord = word; // mark requested up front so the effect won't refire
+    adminRefSearch = word; // keep the search box in sync
+    adminRefSuggestions = []; // close the autocomplete dropdown
     adminRefLoading = true;
     adminRefError = null;
     adminRefResults = null;
     try {
-      const res = await fetch(
-        `/api/v1/admin/basque-dictionary?word=${encodeURIComponent(word)}`,
-      );
+      const qs = new URLSearchParams({ word });
+      // An explicit admin search preserves case ("Afrika" ≠ "afrikaans"); the
+      // auto-lemma lookup keeps the lowercasing default.
+      if (opts.exact) qs.set('exact', '1');
+      const res = await fetch(`/api/v1/admin/basque-dictionary?${qs.toString()}`);
       if (!res.ok) throw new Error(`Lookup failed (${res.status})`);
       const data = (await res.json()) as { results: BasqueRefResult[] };
       adminRefResults = data.results;
@@ -514,6 +526,31 @@
     } finally {
       adminRefLoading = false;
     }
+  }
+
+  // Debounced Elhuyar autocomplete for the reference search box.
+  async function fetchAdminRefSuggestions(term: string): Promise<void> {
+    try {
+      const res = await fetch(
+        `/api/v1/admin/basque-dictionary/autocomplete?term=${encodeURIComponent(term)}`,
+      );
+      if (!res.ok) return;
+      const data = (await res.json()) as { terms: string[] };
+      // Drop stale responses if the box moved on.
+      if (adminRefSearch.trim() === term) adminRefSuggestions = data.terms;
+    } catch {
+      /* autocomplete is a convenience — ignore failures */
+    }
+  }
+  function onAdminRefInput(value: string): void {
+    adminRefSearch = value;
+    if (adminRefSuggestTimer) clearTimeout(adminRefSuggestTimer);
+    const q = value.trim();
+    if (q.length < 2) {
+      adminRefSuggestions = [];
+      return;
+    }
+    adminRefSuggestTimer = setTimeout(() => void fetchAdminRefSuggestions(q), 180);
   }
 
   // Auto-load on open — the panel is expanded by default (no toggle).
@@ -1468,7 +1505,22 @@
           </h2>
         {:else}
           <h2 class="sp-word">
-            <span class="sp-word-text">{payload?.lemma.headword ?? token.surface}</span>
+            {#if showAdminRef}
+              <!-- Admin: the lemma may be mis-parsed, so the title itself
+                   searches the reference dictionaries for the exact word. -->
+              <button
+                type="button"
+                class="sp-word-text sp-word-search"
+                data-testid="word-ref-search"
+                title="Search this word in the reference dictionaries"
+                onclick={() =>
+                  void loadAdminRef(payload?.lemma.headword ?? token.surface, { exact: true })}
+              >
+                {payload?.lemma.headword ?? token.surface}
+              </button>
+            {:else}
+              <span class="sp-word-text">{payload?.lemma.headword ?? token.surface}</span>
+            {/if}
             {#if payload}
               <PosPill pos={payload.lemma.pos} class="sp-pos-pill" />
             {/if}
@@ -1930,10 +1982,44 @@
            expanded by default and tabbed by language. Reference-only —
            fetched live, never stored or shown to readers. -->
       <section class="ext-dict" data-testid="admin-ref">
-        <h3 class="sp-section-h">
-          External dictionaries
-          <span class="muted">admin</span>
-        </h3>
+        <div class="ext-search" role="search">
+          <input
+            type="search"
+            class="ext-search-input"
+            data-testid="ref-search"
+            placeholder="Search reference dictionaries…"
+            aria-label="Search reference dictionaries"
+            autocomplete="off"
+            value={adminRefSearch}
+            oninput={(e) => onAdminRefInput((e.currentTarget as HTMLInputElement).value)}
+            onkeydown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                void loadAdminRef(adminRefSearch, { exact: true });
+              } else if (e.key === 'Escape') {
+                adminRefSuggestions = [];
+              }
+            }}
+          />
+          <span class="ext-search-tag muted">admin</span>
+          {#if adminRefSuggestions.length > 0}
+            <ul class="ext-suggest" role="listbox" data-testid="ref-suggest">
+              {#each adminRefSuggestions as s (s)}
+                <li>
+                  <button
+                    type="button"
+                    class="ext-suggest-item"
+                    role="option"
+                    aria-selected="false"
+                    onclick={() => void loadAdminRef(s, { exact: true })}
+                  >
+                    {s}
+                  </button>
+                </li>
+              {/each}
+            </ul>
+          {/if}
+        </div>
         <div class="ext-tabs" role="tablist" aria-label="Reference language">
           {#each REFERENCE_LANGUAGE_TABS as lang (lang)}
             <button
@@ -2514,6 +2600,85 @@
     margin-top: 0.75rem;
     border-top: 1px solid var(--rule-2, var(--color-border));
     padding-top: 0.5rem;
+  }
+  .ext-search {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin: 0.25rem 0 0.4rem;
+  }
+  .ext-search-input {
+    flex: 1;
+    min-width: 0;
+    padding: 0.3rem 0.55rem;
+    border: 1px solid var(--rule, var(--color-border));
+    border-radius: 6px;
+    background: var(--paper, var(--color-bg));
+    color: var(--ink, var(--color-fg));
+    font-size: 0.85rem;
+  }
+  .ext-search-input:focus-visible {
+    outline: 2px solid var(--accent, var(--color-accent));
+    outline-offset: -1px;
+  }
+  .ext-search-tag {
+    font-size: 0.66rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    flex-shrink: 0;
+  }
+  .ext-suggest {
+    position: absolute;
+    top: calc(100% + 2px);
+    left: 0;
+    right: 0;
+    z-index: 8;
+    margin: 0;
+    padding: 0.2rem;
+    list-style: none;
+    max-height: 220px;
+    overflow-y: auto;
+    border: 1px solid var(--rule, var(--color-border));
+    border-radius: 6px;
+    background: var(--paper, var(--color-bg));
+    box-shadow: 0 6px 20px color-mix(in oklch, var(--ink, #000) 18%, transparent);
+  }
+  .ext-suggest-item {
+    display: block;
+    width: 100%;
+    text-align: left;
+    padding: 0.3rem 0.45rem;
+    border: 0;
+    border-radius: 4px;
+    background: transparent;
+    color: var(--ink, var(--color-fg));
+    font-size: 0.85rem;
+    cursor: pointer;
+  }
+  .ext-suggest-item:hover,
+  .ext-suggest-item:focus-visible {
+    background: color-mix(in oklch, var(--accent, var(--color-accent)) 14%, transparent);
+    outline: none;
+  }
+  /* The lemma title doubles as a reference-search trigger for admins. */
+  .sp-word-search {
+    appearance: none;
+    border: 0;
+    background: transparent;
+    padding: 0;
+    margin: 0;
+    font: inherit;
+    color: inherit;
+    cursor: pointer;
+    text-align: left;
+    text-decoration-line: underline;
+    text-decoration-style: dotted;
+    text-underline-offset: 4px;
+    text-decoration-color: color-mix(in oklch, var(--accent, var(--color-accent)) 45%, transparent);
+  }
+  .sp-word-search:hover {
+    text-decoration-style: solid;
   }
   .ext-tabs {
     display: flex;

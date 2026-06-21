@@ -40,6 +40,12 @@ export const GET: RequestHandler = async ({ locals, url }) => {
     sources = [...BASQUE_REFERENCE_SOURCES];
   }
 
-  const results = await lookupBasqueReference(word, sources, { cache: dbReferenceCache });
+  // `exact=1` (an admin searching a precise term picked from autocomplete)
+  // preserves case; the default lemma lookup lowercases.
+  const preserveCase = url.searchParams.get('exact') === '1';
+  const results = await lookupBasqueReference(word, sources, {
+    cache: dbReferenceCache,
+    preserveCase,
+  });
   return json({ word, results });
 };
