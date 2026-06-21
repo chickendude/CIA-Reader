@@ -39,6 +39,7 @@
     showRomanization = false,
     isOwner = false,
     isAdmin = false,
+    textId,
   }: {
     chapter: ChapterView;
     /** T-6.2: drives the CorrectionModal's dictionary-search
@@ -47,6 +48,8 @@
     showRomanization?: boolean;
     isOwner?: boolean;
     isAdmin?: boolean;
+    /** Owning text id — drives the popup's book-wide frequency lookup. */
+    textId: string;
   } = $props();
 
   // Text direction comes from the shared registry (rtl for Yiddish's
@@ -627,6 +630,7 @@
   {language}
   {isOwner}
   {isAdmin}
+  {textId}
   onClose={closePopup}
   onPhraseCreated={(phraseId: string) => {
     void onPhraseCreated(phraseId);

@@ -676,6 +676,64 @@ describe('WordPopup — admin Basque reference panel', () => {
   });
 });
 
+describe('WordPopup — book frequency', () => {
+  function jres(payload: unknown) {
+    return new Response(JSON.stringify(payload), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+  }
+
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('shows "appears N× in this book" for a lemma token', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: unknown) => {
+        const url = String(input);
+        if (url.includes('/frequency')) return jres({ book: 5, text: 2 });
+        return jres({
+          lemma: { id: 'lem-1', headword: 'etxe', pos: 'NOUN', glossDefault: null },
+          translations: { personal: [], official: [], community: [] },
+        });
+      }),
+    );
+    render(WordPopup, {
+      token: makeToken({ surface: 'etxe', lemmaId: 'lem-1' }),
+      language: 'eu',
+      isOwner: false,
+      textId: '11111111-1111-1111-1111-111111111111',
+      onClose: vi.fn(),
+    });
+    await waitFor(() => {
+      const el = document.body.querySelector('[data-testid="book-frequency"]');
+      expect(el?.textContent).toContain('5');
+    });
+  });
+
+  it('omits the frequency row when no textId is supplied', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        jres({
+          lemma: { id: 'lem-1', headword: 'etxe', pos: 'NOUN', glossDefault: null },
+          translations: { personal: [], official: [], community: [] },
+        }),
+      ),
+    );
+    render(WordPopup, {
+      token: makeToken({ surface: 'etxe', lemmaId: 'lem-1' }),
+      language: 'eu',
+      isOwner: false,
+      onClose: vi.fn(),
+    });
+    await waitFor(() => {
+      expect(document.body.querySelector('.sp-headword')).not.toBeNull();
+    });
+    expect(document.body.querySelector('[data-testid="book-frequency"]')).toBeNull();
+  });
+});
+
 describe('WordPopup — feature pills', () => {
   function makePayload() {
     return {

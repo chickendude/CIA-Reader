@@ -594,7 +594,7 @@
               </header>
             {/if}
             <article class:title-in-body={titleInBody}>
-              <ChapterBody chapter={current} {language} {showRomanization} {isOwner} {isAdmin} />
+              <ChapterBody chapter={current} {language} {showRomanization} {isOwner} {isAdmin} {textId} />
             </article>
           {/if}
         </div>

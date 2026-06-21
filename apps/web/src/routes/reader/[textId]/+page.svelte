@@ -504,6 +504,7 @@
       chapterIdx={data.anchor.chapterIdx}
       initialTokenIdx={data.anchor.tokenIdx}
       wordsPerPage={readerSettings.wordsPerPage}
+      textId={data.text.id}
       language={data.text.language as LanguageCode}
       {showRomanization}
       isOwner={data.isOwner}

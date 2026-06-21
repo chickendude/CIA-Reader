@@ -249,7 +249,7 @@
           <span class="muted">({chapter.tokenCount.toLocaleString()} words)</span>
         </h2>
       {/if}
-      <ChapterBody {chapter} {language} {showRomanization} {isOwner} {isAdmin} />
+      <ChapterBody {chapter} {language} {showRomanization} {isOwner} {isAdmin} {textId} />
     </section>
   {/each}
 </div>

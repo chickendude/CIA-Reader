@@ -98,6 +98,7 @@
     language,
     isOwner,
     isAdmin = false,
+    textId = '',
     onClose,
     onStatusChange,
     onCorrectionApplied,
@@ -132,6 +133,9 @@
     /** T-… Basque dictionary: gates the admin-only Elhuyar/Euskaltzaindia
      *  reference panel. Threaded from the reader loader's `isAdmin`. */
     isAdmin?: boolean;
+    /** Owning text id — drives the "appears N× in this book" lookup.
+     *  Optional so tests can mount without it; always supplied by the reader. */
+    textId?: string;
     onClose: () => void;
     onStatusChange?: (
       lemmaId: string,
@@ -305,6 +309,10 @@
   });
   const sheetOpen = $derived(isDesktop || token !== null);
 
+  // Book-wide occurrence count for the current lemma ("appears N× in this
+  // book"), fetched lazily per word so a learner can prioritise frequent ones.
+  let bookFrequency = $state<number | null>(null);
+
   // Re-fetch translations whenever the token prop changes. `$effect`
   // runs the body each time `token` (and thus `token.id` / `lemmaId`)
   // changes — which happens when the parent rebinds the popup to a
@@ -319,6 +327,7 @@
     adminRefWord = null;
     adminRefError = null;
     adminRefLoading = false;
+    bookFrequency = null;
     if (!t) {
       payload = null;
       loadError = null;
@@ -347,6 +356,21 @@
         if (!cancelled) {
           loadError = `Network error: ${(e as Error).message}`;
         }
+      }
+    })();
+    // Book-wide frequency — best-effort, non-blocking, doesn't affect the rest
+    // of the popup if it fails.
+    void (async () => {
+      if (!textId) return;
+      try {
+        const res = await fetch(
+          `/api/v1/texts/${textId}/lemmas/${t.lemmaId}/frequency`,
+        );
+        if (cancelled || !res.ok) return;
+        const data = (await res.json()) as { book: number; text: number };
+        bookFrequency = data.book;
+      } catch {
+        /* frequency is a nice-to-have; ignore failures */
       }
     })();
     return () => {
@@ -1409,6 +1433,14 @@
               <PosPill pos={payload.lemma.pos} class="sp-pos-pill" />
             </span>
           </p>
+          {#if bookFrequency !== null && bookFrequency > 0}
+            <p class="sp-row" data-testid="book-frequency">
+              <span class="k">In book</span>
+              <span class="v sp-freq">
+                appears {bookFrequency}{bookFrequency === 1 ? ' time' : '×'}
+              </span>
+            </p>
+          {/if}
           {@const featurePills = getFeaturePills(payload.lemma.pos, token?.features ?? {})}
           {#if featurePills.length > 0}
             <p class="sp-row sp-feats-row" data-testid="feature-pills">

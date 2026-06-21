@@ -38,6 +38,7 @@
     showRomanization = false,
     isOwner = false,
     isAdmin = false,
+    textId,
     language,
     onProgress,
   }: {
@@ -48,6 +49,7 @@
     showRomanization?: boolean;
     isOwner?: boolean;
     isAdmin?: boolean;
+    textId: string;
     language: import('@ciareader/shared-types').LanguageCode;
     onProgress?: (anchor: ProgressAnchor) => void;
   } = $props();
@@ -490,6 +492,7 @@
     {language}
     {isOwner}
     {isAdmin}
+    {textId}
     onClose={closePopup}
     {onStatusChange}
     {onCorrectionApplied}
