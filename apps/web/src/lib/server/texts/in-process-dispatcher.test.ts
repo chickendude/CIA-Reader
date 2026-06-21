@@ -187,6 +187,7 @@ describe('processTextNow', () => {
             hi: { spelled: 'एक सौ तेईस', romanized: 'ek sau teīs' },
             mr: { spelled: 'एकशे तेवीस', romanized: 'ēkaśē tēvīsa' },
             odia: { spelled: 'ଏକ ଶହ ତେଇଶ', romanized: 'ēka śaha tēiśa' },
+            eu: { spelled: 'ehun eta hogeita hiru', romanized: '' },
           },
           candidates: [
             { lemma: 'बोलना', pos: 'verb', score: 0.9, features: { Tense: 'Pres' } },
@@ -473,6 +474,7 @@ describe('processTextNow', () => {
             hi: { spelled: 'दस लाख तेरह हज़ार तीन सौ बाईस', romanized: 'das lākh terah hazār tīn sau bāīs' },
             mr: { spelled: 'दहा लाख तेरा हजार तीनशे बावीस', romanized: 'dahā lākha tērā hajāra tīnaśē bāvīsa' },
             odia: { spelled: 'ଦଶ ଲକ୍ଷ ତେର ହଜାର ତିନି ଶହ ବାଇଶ', romanized: 'daśa lakṣa tēra hajāra tini śaha bāiśa' },
+            eu: { spelled: 'milioi bat hamahiru mila hirurehun eta hogeita bi', romanized: '' },
           },
           candidates: [
             { lemma: '1,013,322', pos: 'NUM', score: 1.0, features: {} },

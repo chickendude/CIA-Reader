@@ -37,6 +37,8 @@
     wordsPerPage = 250,
     showRomanization = false,
     isOwner = false,
+    isAdmin = false,
+    textId,
     language,
     onProgress,
   }: {
@@ -46,6 +48,8 @@
     wordsPerPage?: number;
     showRomanization?: boolean;
     isOwner?: boolean;
+    isAdmin?: boolean;
+    textId: string;
     language: import('@ciareader/shared-types').LanguageCode;
     onProgress?: (anchor: ProgressAnchor) => void;
   } = $props();
@@ -487,6 +491,8 @@
     anchorRect={activeRect}
     {language}
     {isOwner}
+    {isAdmin}
+    {textId}
     onClose={closePopup}
     {onStatusChange}
     {onCorrectionApplied}

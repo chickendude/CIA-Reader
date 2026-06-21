@@ -9,7 +9,11 @@
  */
 import { describe, expect, it } from 'vitest';
 
-import { bucketTranslations, deriveProvenance } from './lookups.js';
+import {
+  bucketTranslations,
+  deriveProvenance,
+  distinctDefinitionLanguages,
+} from './lookups.js';
 import type { Translation } from '../db/schema.js';
 
 let _id = 0;
@@ -313,5 +317,38 @@ describe('bucketTranslations — moderation visibility', () => {
     expect(curator.community.map((t) => t.body).sort()).toEqual(['hidden', 'visible']);
     const admin = bucketTranslations(rows, { id: 'adm', role: 'admin' });
     expect(admin.community.map((t) => t.body).sort()).toEqual(['hidden', 'visible']);
+  });
+});
+
+describe('distinctDefinitionLanguages', () => {
+  it('returns the sorted unique targetLanguages across all buckets', () => {
+    const rows: Translation[] = [
+      row({ source: 'official_dictionary', body: 'house', targetLanguage: 'en' }),
+      row({ source: 'official_dictionary', body: 'casa', targetLanguage: 'es' }),
+      row({ source: 'user', submittedBy: 'u1', body: 'etxea', targetLanguage: 'eu' }),
+      row({ source: 'user', submittedBy: 'u2', body: 'home', targetLanguage: 'en' }),
+    ];
+    const buckets = bucketTranslations(rows, { id: 'u1', role: 'user' });
+    expect(distinctDefinitionLanguages(buckets)).toEqual(['en', 'es', 'eu']);
+  });
+
+  it('is empty when the lemma has no visible translations', () => {
+    expect(distinctDefinitionLanguages(bucketTranslations([], null))).toEqual([]);
+  });
+
+  it('omits languages present only on hidden rows the viewer cannot see', () => {
+    const rows: Translation[] = [
+      row({ source: 'official_dictionary', body: 'house', targetLanguage: 'en' }),
+      row({
+        source: 'user',
+        submittedBy: 'u2',
+        body: 'oculto',
+        targetLanguage: 'es',
+        hidden: true,
+      }),
+    ];
+    // Anonymous viewer: bucketTranslations filters the hidden Spanish row,
+    // so 'es' must not surface as an available definition language.
+    expect(distinctDefinitionLanguages(bucketTranslations(rows, null))).toEqual(['en']);
   });
 });

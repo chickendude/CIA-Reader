@@ -29,7 +29,11 @@ import { eq } from 'drizzle-orm';
 
 import { db, schema } from '../db/index.js';
 import type { LanguageCode } from '@ciareader/shared-types';
-import { isSupportedLanguage, LANGUAGES } from '@ciareader/shared-types';
+import {
+  isSupportedLanguage,
+  LANGUAGES,
+  SUPPORTED_LANGUAGE_CODES,
+} from '@ciareader/shared-types';
 import type { Collection, Text, TextChapter, User } from '../db/schema.js';
 import {
   splitIntoChapters,
@@ -73,22 +77,6 @@ export class EpubLanguageMismatchError extends TextValidationError {
         ` but you selected ${selectedName}. Re-select the language or upload a different file.`,
     );
     this.name = 'EpubLanguageMismatchError';
-  }
-}
-
-/**
- * Thrown when an EPUB's `<dc:language>` is set to something outside
- * the supported set (Hindi / Marathi / Odia). MVP only handles three
- * languages — an English / French / etc. EPUB would tokenize as
- * garbage if we just trusted the user's dropdown.
- */
-export class EpubLanguageUnsupportedError extends TextValidationError {
-  constructor(public readonly declaredLanguage: string) {
-    super(
-      `This EPUB is declared as language '${declaredLanguage}', which isn't supported yet ` +
-        `(only Hindi / Marathi / Odia are available).`,
-    );
-    this.name = 'EpubLanguageUnsupportedError';
   }
 }
 
@@ -161,7 +149,7 @@ function validateInput(
 ): { language: LanguageCode; title: string; body: string } {
   if (!isSupportedLanguage(input.language)) {
     throw new TextValidationError(
-      `Unsupported language '${input.language}' (expected one of: hi, mr, or)`,
+      `Unsupported language '${input.language}' (expected one of: ${SUPPORTED_LANGUAGE_CODES.join(', ')})`,
     );
   }
   const title = normalizeTitle(input.title ?? '');
@@ -452,7 +440,7 @@ export async function createChapterBookFromEpub(
 ): Promise<ChapterBookResult> {
   if (!isSupportedLanguage(input.language)) {
     throw new TextValidationError(
-      `Unsupported language '${input.language}' (expected one of: hi, mr, or)`,
+      `Unsupported language '${input.language}' (expected one of: ${SUPPORTED_LANGUAGE_CODES.join(', ')})`,
     );
   }
   const language = input.language as LanguageCode;
@@ -478,14 +466,21 @@ export async function createChapterBookFromEpub(
   // Language verification (T-EPUB language gate). Only fires when the
   // EPUB actually declares its language — most authoring tools do, but
   // we don't penalize files that don't.
-  if (parsed.language !== null && parsed.language !== language) {
-    if (isSupportedLanguage(parsed.language)) {
-      throw new EpubLanguageMismatchError(
-        parsed.language as LanguageCode,
-        input.language,
-      );
-    }
-    throw new EpubLanguageUnsupportedError(parsed.language);
+  //
+  // When the declared language is itself one we support but differs from
+  // the user's pick, that's almost always a forgotten dropdown change
+  // (more likely now the dropdown defaults to the library's language), so
+  // we surface it. But an *unsupported* declared tag tells us nothing
+  // useful: EPUB <dc:language> is frequently wrong for minority languages
+  // (a Basque book published in Spain is routinely tagged `es`, a Yiddish
+  // book tagged `he`). In that case we trust the user's explicit
+  // selection rather than blocking a legitimate upload.
+  if (
+    parsed.language !== null &&
+    parsed.language !== language &&
+    isSupportedLanguage(parsed.language)
+  ) {
+    throw new EpubLanguageMismatchError(parsed.language as LanguageCode, input.language);
   }
 
   const drafts = buildChapterDrafts(parsed.chapters);
@@ -542,7 +537,7 @@ export async function createChapterBookFromZip(
 ): Promise<ChapterBookResult> {
   if (!isSupportedLanguage(input.language)) {
     throw new TextValidationError(
-      `Unsupported language '${input.language}' (expected one of: hi, mr, or)`,
+      `Unsupported language '${input.language}' (expected one of: ${SUPPORTED_LANGUAGE_CODES.join(', ')})`,
     );
   }
   const language = input.language as LanguageCode;

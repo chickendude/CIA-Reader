@@ -22,7 +22,7 @@ export const themePreference = pgEnum('theme_preference', ['system', 'light', 'd
 // adding a new language means extending both sides in lockstep. The registry
 // is the human-facing source of truth, but Postgres needs its own enum so
 // FK-like integrity is enforced at the DB layer.
-export const language = pgEnum('language', ['hi', 'mr', 'or', 'yi']);
+export const language = pgEnum('language', ['hi', 'mr', 'or', 'yi', 'eu']);
 
 // Romanization schemes a user can pick. Subset of the registry's
 // RomanizationScheme — the DB only needs to store choices users can make.
@@ -844,6 +844,75 @@ export const dictionaryImports = pgTable(
 );
 
 /**
+ * Global, server-side cache for the admin-only Basque reference lookups
+ * (Elhuyar / Euskaltzaindia). These are proprietary sources we never write
+ * to `translations` and never serve to readers — this table only spares the
+ * upstream sites from repeated hits. Not tied to a user: one row per
+ * (word, source), refreshed when older than the lookup TTL. The admin
+ * reference endpoint is the only reader/writer; see
+ * `$lib/server/dictionary/basque-reference-cache.ts`.
+ */
+export const basqueReferenceCache = pgTable(
+  'basque_reference_cache',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    /** Lowercased lookup word (the resolved lemma). */
+    word: text('word').notNull(),
+    /** Upstream source: 'elhuyar_es' | 'elhuyar_en' | 'euskaltzaindia'. */
+    source: text('source').notNull(),
+    /** Parsed results for this (word, source); shape mirrors
+     *  `BasqueReferenceResult` in basque-reference.ts. */
+    results: jsonb('results')
+      .$type<
+        Array<{
+          source: string;
+          label: string;
+          headword: string;
+          pos: string;
+          definition: string;
+          examples: string[];
+          url: string;
+        }>
+      >()
+      .notNull(),
+    fetchedAt: timestamp('fetched_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    wordSource: unique('basque_reference_cache_word_source_uq').on(t.word, t.source),
+  }),
+);
+
+/**
+ * Cache of OpenAI sentence translations, keyed by (source language, target
+ * language, model, sentence hash). Global (not per-user) so a sentence is
+ * translated once regardless of who hits it; keeps gpt-4o cost + latency down.
+ */
+export const sentenceTranslations = pgTable(
+  'sentence_translations',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    /** Source language code. */
+    language: text('language').notNull(),
+    targetLanguage: text('target_language').notNull(),
+    /** OpenAI model used (cache invalidates implicitly when the model changes). */
+    model: text('model').notNull(),
+    /** sha256 of the source sentence. */
+    textHash: text('text_hash').notNull(),
+    text: text('text').notNull(),
+    translation: text('translation').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    key: unique('sentence_translations_key_uq').on(
+      t.language,
+      t.targetLanguage,
+      t.model,
+      t.textHash,
+    ),
+  }),
+);
+
+/**
  * Per-language curator grants (T-3.4).
  *
  * A user with `role='curator'` has edit rights on a language only when a
@@ -1326,6 +1395,10 @@ export const textTokens = pgTable(
       hi: { spelled: string; romanized: string };
       mr: { spelled: string; romanized: string };
       odia: { spelled: string; romanized: string };
+      // Basque (Latin script): `romanized` is empty — the spelled-out
+      // form is the reading. Optional so chapters processed before
+      // Basque number support keep type-checking.
+      eu?: { spelled: string; romanized: string };
     } | null>(),
   },
   (t) => ({
@@ -1370,6 +1443,14 @@ export const userKnownLemmas = pgTable(
     updatedAt: timestamp('updated_at', { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // The sentence the word was "mined" from, captured at mark-time so the
+    // Anki export can show the context the user first met it in. Null when the
+    // status was set outside a reading context (e.g. the words page).
+    minedSentence: text('mined_sentence'),
+    minedChapterId: uuid('mined_chapter_id').references(() => textChapters.id, {
+      onDelete: 'set null',
+    }),
+    minedTokenIdx: integer('mined_token_idx'),
   },
   (t) => ({
     pk: primaryKey({ columns: [t.userId, t.lemmaId] }),

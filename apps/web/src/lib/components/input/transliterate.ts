@@ -413,6 +413,10 @@ export function looksLikeNativeScript(s: string, language: LanguageCode): boolea
   if (script === 'Deva') return /[ऀ-ॿ]/.test(s);
   if (script === 'Orya') return /[଀-୿]/.test(s);
   if (script === 'Hebr') return /[\u0590-\u05FF\uFB1D-\uFB4F]/.test(s);
+  // Latin-script languages (e.g. Basque) write *in* Latin, so any input is
+  // already native \u2014 there is nothing to transliterate. Returning true keeps
+  // <ScriptAwareInput> in its plain "native" mode, not the romanization path.
+  if (script === 'Latn') return true;
   return false;
 }
 

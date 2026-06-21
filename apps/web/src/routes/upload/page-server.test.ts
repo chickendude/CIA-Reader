@@ -35,11 +35,11 @@ const USER = {
   emailVerifiedAt: new Date('2026-01-01T00:00:00Z'),
 };
 
-async function callLoad(user: typeof USER | null) {
+async function callLoad(user: typeof USER | null, urlStr = 'http://x/upload') {
   const { load } = (await import('./+page.server.js')) as Mod;
   const event = {
     locals: { user },
-    url: new URL('http://x/upload'),
+    url: new URL(urlStr),
   } as unknown as Parameters<Mod['load']>[0];
   try {
     return await load(event);
@@ -140,6 +140,25 @@ describe('/upload loader', () => {
     const res = (await callLoad(null)) as { status: number; location: string };
     expect(res.status).toBe(303);
     expect(res.location).toBe('/login?next=%2Fupload');
+  });
+
+  it('pre-selects the language from ?language= (e.g. the Basque library card)', async () => {
+    const data = (await callLoad(USER, 'http://x/upload?language=eu')) as {
+      selectedLanguage: string;
+    };
+    expect(data.selectedLanguage).toBe('eu');
+  });
+
+  it('defaults selectedLanguage to the first supported language without ?language=', async () => {
+    const data = (await callLoad(USER)) as { selectedLanguage: string };
+    expect(data.selectedLanguage).toBe('hi');
+  });
+
+  it('ignores an unrecognized ?language= and falls back to the default', async () => {
+    const data = (await callLoad(USER, 'http://x/upload?language=xx')) as {
+      selectedLanguage: string;
+    };
+    expect(data.selectedLanguage).toBe('hi');
   });
 });
 
@@ -292,6 +311,28 @@ describe('/upload epub action', () => {
     expect(createChapterBookFromEpub).toHaveBeenCalledWith(
       { id: USER.id },
       expect.objectContaining({ title: 'A Hindi Novel' }),
+    );
+  });
+
+  it('accepts any registry-supported language, not just the Indic MVP three', async () => {
+    // Regression: the action used to hardcode hi/mr/or, rejecting Basque
+    // (and Yiddish) EPUBs. Validation now comes from the shared registry.
+    createChapterBookFromEpub.mockResolvedValueOnce({
+      kind: 'text',
+      text: { id: 'text-eu', ownerId: USER.id },
+      chapter: { id: 'c0' },
+      chapters: [{ id: 'c0' }],
+    });
+    const res = (await callEpubAction({
+      language: 'eu',
+      title: 'Euskal liburua',
+      file: fakeFile(),
+    })) as { status: number; location: string };
+    expect(res.status).toBe(303);
+    expect(res.location).toBe('/reader/text-eu');
+    expect(createChapterBookFromEpub).toHaveBeenCalledWith(
+      { id: USER.id },
+      expect.objectContaining({ language: 'eu', title: 'Euskal liburua' }),
     );
   });
 

@@ -32,7 +32,13 @@ const profileFormSchema = z.object({
 const languageFormSchema = z.object({
   code: z.string(),
   scriptPreference: z.enum(['native', 'native_with_romanization', 'romanization_only']),
-  romanizationScheme: z.enum(['iso15919', 'iast', 'hunterian', 'itrans']),
+  // Optional: Latin-script languages (Basque) have no romanization, so the
+  // form omits the field (an empty <select> posts ''). Coerce '' → undefined
+  // and let the action apply the registry's per-language rules below.
+  romanizationScheme: z.preprocess(
+    (v) => (v === '' ? undefined : v),
+    z.enum(['iso15919', 'iast', 'hunterian', 'itrans', 'yivo']).optional(),
+  ),
 });
 
 const apiKeyCreateSchema = z.object({
@@ -143,14 +149,21 @@ export const actions: Actions = {
     }
     // Reject romanization schemes the registry says this language doesn't support.
     // Otherwise a user could set Odia to a scheme the registry doesn't advertise for it.
+    // Latin-script languages (Basque) declare no romanizations — skip the check and
+    // let upsertUserLanguage apply its inert column default.
     const allowed = LANGUAGES[parsed.data.code].supportedRomanizations;
-    if (!(allowed as readonly string[]).includes(parsed.data.romanizationScheme)) {
-      return fail(400, {
-        ok: false,
-        section: 'language',
-        code: parsed.data.code,
-        message: `Romanization '${parsed.data.romanizationScheme}' is not supported for ${parsed.data.code}. Allowed: ${allowed.join(', ')}`,
-      } satisfies LanguageActionResult);
+    if (allowed.length > 0) {
+      if (
+        !parsed.data.romanizationScheme ||
+        !(allowed as readonly string[]).includes(parsed.data.romanizationScheme)
+      ) {
+        return fail(400, {
+          ok: false,
+          section: 'language',
+          code: parsed.data.code,
+          message: `Romanization '${parsed.data.romanizationScheme ?? ''}' is not supported for ${parsed.data.code}. Allowed: ${allowed.join(', ')}`,
+        } satisfies LanguageActionResult);
+      }
     }
     await upsertUserLanguage(locals.user.id, parsed.data.code, {
       scriptPreference: parsed.data.scriptPreference,

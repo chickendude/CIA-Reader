@@ -19,12 +19,22 @@ describe('language registry (shared-types)', () => {
     }
   });
 
-  it('every descriptor has at least one recommended font and one romanization', () => {
+  it('every descriptor has at least one recommended font', () => {
+    for (const code of SUPPORTED_LANGUAGE_CODES) {
+      expect(LANGUAGES[code].recommendedFonts.length).toBeGreaterThan(0);
+    }
+  });
+
+  it('romanization defaults are consistent with the supported list', () => {
     for (const code of SUPPORTED_LANGUAGE_CODES) {
       const descriptor = LANGUAGES[code];
-      expect(descriptor.recommendedFonts.length).toBeGreaterThan(0);
-      expect(descriptor.supportedRomanizations.length).toBeGreaterThan(0);
-      expect(descriptor.supportedRomanizations).toContain(descriptor.defaultRomanization);
+      if (descriptor.supportedRomanizations.length > 0) {
+        expect(descriptor.defaultRomanization).toBeDefined();
+        expect(descriptor.supportedRomanizations).toContain(descriptor.defaultRomanization);
+      } else {
+        // Latin-script languages (Basque) declare no romanization layer.
+        expect(descriptor.defaultRomanization).toBeUndefined();
+      }
     }
   });
 
@@ -32,6 +42,14 @@ describe('language registry (shared-types)', () => {
     expect(LANGUAGES.hi.script).toBe('Deva');
     expect(LANGUAGES.mr.script).toBe('Deva');
     expect(LANGUAGES.or.script).toBe('Orya');
+  });
+
+  it('Basque (eu) is Latin-script, ltr, Stanza-backed, with no romanization', () => {
+    expect(LANGUAGES.eu.script).toBe('Latn');
+    expect(LANGUAGES.eu.textDirection).toBe('ltr');
+    expect(LANGUAGES.eu.pipelineId).toBe('stanza-eu');
+    expect(LANGUAGES.eu.supportedRomanizations).toEqual([]);
+    expect(LANGUAGES.eu.defaultRomanization).toBeUndefined();
   });
 
   it('getLanguage() returns the descriptor for a valid code', () => {

@@ -115,8 +115,9 @@
      overflow:hidden would clip an outline on the leftmost word in
      a page). */
   .word.anchor {
-    outline: 2px solid var(--accent, var(--color-accent));
-    outline-offset: -2px;
+    outline: 1px solid color-mix(in oklch, var(--accent, var(--color-accent)) 45%, transparent);
+    outline-offset: -1px;
+    background: color-mix(in oklch, var(--accent, var(--color-accent)) 8%, transparent);
     border-radius: 3px;
   }
 </style>

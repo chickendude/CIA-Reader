@@ -44,6 +44,7 @@
     language,
     showRomanization = false,
     isOwner = false,
+    isAdmin = false,
     onProgress,
     fontSize,
     lineSpacing,
@@ -62,6 +63,7 @@
     language: import('@ciareader/shared-types').LanguageCode;
     showRomanization?: boolean;
     isOwner?: boolean;
+    isAdmin?: boolean;
     onProgress?: (anchor: ProgressAnchor) => void;
     fontSize?: number;
     lineSpacing?: number;
@@ -592,7 +594,7 @@
               </header>
             {/if}
             <article class:title-in-body={titleInBody}>
-              <ChapterBody chapter={current} {language} {showRomanization} {isOwner} />
+              <ChapterBody chapter={current} {language} {showRomanization} {isOwner} {isAdmin} {textId} />
             </article>
           {/if}
         </div>
@@ -643,7 +645,9 @@
   <div class="reader-foot-meta">
     <span class="pager-pages">
       Page {pageInChapter + 1} of {pageCount}
-      <span class="muted">· Ch. {counterCurrent} / {counterTotal}</span>
+      <span class="muted">
+        · Ch. {counterCurrent} / {counterTotal} · {(current?.tokenCount ?? 0).toLocaleString()} words
+      </span>
     </span>
     <span class="muted">{formatPctRange(startPct, endPct, pctPrecision)}</span>
   </div>

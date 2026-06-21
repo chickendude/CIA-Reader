@@ -24,6 +24,7 @@ import {
   type BulkPromoteResult,
   type BulkAttributionResult,
 } from '$lib/server/dictionary/bulk.js';
+import { isSupportedLanguage, type LanguageCode } from '@ciareader/shared-types';
 import { CuratorValidationError } from '$lib/server/dictionary/curator.js';
 import { ForbiddenError, isAdmin } from '$lib/server/dictionary/permissions.js';
 import { MissingReasonError } from '$lib/server/dictionary/audit.js';
@@ -247,7 +248,7 @@ export const actions: Actions = {
       } satisfies AttributionResult);
     }
     const language = parsed.data.language;
-    if (language && language !== 'hi' && language !== 'mr' && language !== 'or') {
+    if (language && !isSupportedLanguage(language)) {
       return fail(400, {
         ok: false,
         section: 'attribution',
@@ -263,7 +264,7 @@ export const actions: Actions = {
           newAttribution: parsed.data.clearAttribution
             ? null
             : parsed.data.newAttribution,
-          language: language as 'hi' | 'mr' | 'or' | undefined,
+          language: language as LanguageCode | undefined,
         },
         parsed.data.reason,
       );

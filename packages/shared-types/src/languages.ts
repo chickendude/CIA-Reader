@@ -10,11 +10,19 @@
  */
 
 // ISO 639-1 language codes we support (MVP + near-term).
-export type LanguageCode = 'hi' | 'mr' | 'or' | 'yi';
+export type LanguageCode = 'hi' | 'mr' | 'or' | 'yi' | 'eu';
 
 // ISO 15924 script codes. Kept explicit so Urdu/Sindhi (multi-script) can be
 // modeled cleanly later without retrofitting.
-export type ScriptCode = 'Deva' | 'Orya' | 'Beng' | 'Guru' | 'Gujr' | 'Arab' | 'Hebr';
+export type ScriptCode =
+  | 'Deva'
+  | 'Orya'
+  | 'Beng'
+  | 'Guru'
+  | 'Gujr'
+  | 'Arab'
+  | 'Hebr'
+  | 'Latn';
 
 export type RomanizationScheme =
   | 'iso15919'
@@ -33,7 +41,10 @@ export interface LanguageDescriptor {
   script: ScriptCode;
   textDirection: TextDirection;
   supportedRomanizations: RomanizationScheme[];
-  defaultRomanization: RomanizationScheme;
+  // Optional: Latin-script languages (e.g. Basque) need no romanization layer —
+  // the text is already Latin. When `supportedRomanizations` is empty this is
+  // omitted, and the reader hides its romanization controls entirely.
+  defaultRomanization?: RomanizationScheme;
   recommendedFonts: string[]; // Font-family names, shortlist for the reader settings.
   pipelineId: string; // Which NLP pipeline handles this language ('stanza-hi', 'custom-or', ...).
   notes?: string;
@@ -102,6 +113,20 @@ export const LANGUAGES: Readonly<Record<LanguageCode, LanguageDescriptor>> = {
     pipelineId: 'custom-yi',
     notes:
       'No Stanza model exists for Yiddish. We ship a custom pipeline (Hebrew-script tokenizer + rule-based morphological analyzer over a seed lemma table), mirroring the Odia approach. First RTL language — UI direction comes from textDirection.',
+  },
+  eu: {
+    code: 'eu',
+    displayName: 'Basque',
+    nativeName: 'Euskara',
+    script: 'Latn',
+    textDirection: 'ltr',
+    // First Latin-script language: the text is already Latin, so there is no
+    // romanization layer. An empty list disables the reader's romanization UI.
+    supportedRomanizations: [],
+    recommendedFonts: ['Noto Serif', 'Noto Sans', 'Source Serif 4', 'Georgia'],
+    pipelineId: 'stanza-eu',
+    notes:
+      "Stanza ships a strong Basque model (UD_Basque-BDT: tokenize/pos/lemma, no MWT), so Basque reuses the generic Stanza UD pipeline like Hindi/Marathi. First Latin-script language — no transliteration, no romanization, no RTL.",
   },
 } as const;
 

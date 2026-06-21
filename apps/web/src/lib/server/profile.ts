@@ -169,8 +169,11 @@ export function withDefaultsForAllLanguages(
           // Per-language registry default — ISO 15919 for the Indic
           // languages, YIVO for Yiddish. A hardcoded iso15919 here
           // would request a scheme the Hebrew script can't render.
-          romanizationScheme: LANGUAGES[code]
-            .defaultRomanization as UserLanguage['romanizationScheme'],
+          // Latin-script languages (Basque) have no romanization; the
+          // value is stored to satisfy the NOT NULL column but the reader
+          // never surfaces it, so the iso15919 fallback is inert.
+          romanizationScheme: (LANGUAGES[code].defaultRomanization ??
+            'iso15919') as UserLanguage['romanizationScheme'],
           isDefault: true,
         };
   });

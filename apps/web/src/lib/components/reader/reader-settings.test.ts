@@ -96,6 +96,15 @@ describe('recommendedFontsFor', () => {
     // Must not leak Devanagari fonts into Odia.
     expect(list).not.toContain('Mukta');
   });
+
+  it('returns a Latin shortlist for Basque (eu), with the system-default null head', () => {
+    const list = recommendedFontsFor('eu');
+    expect(list[0]).toBeNull();
+    expect(list).toContain('Noto Serif');
+    // Must not leak script-specific fonts from other languages.
+    expect(list).not.toContain('Noto Serif Devanagari');
+    expect(list).not.toContain('Noto Sans Oriya');
+  });
 });
 
 describe('READING_WIDTH_REM', () => {

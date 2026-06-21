@@ -45,6 +45,7 @@ function makeNumberForms(
     hi: { spelled: 'एक सौ तेईस', romanized: 'ek sau teīs' },
     mr: { spelled: 'एकशे तेवीस', romanized: 'ēkaśē tēvīsa' },
     odia: { spelled: 'ଏକ ଶହ ତେଇଶ', romanized: 'ēka śaha tēiśa' },
+    eu: { spelled: 'ehun eta hogeita hiru', romanized: '' },
     ...overrides,
   };
 }
@@ -185,6 +186,38 @@ describe('WordPopup — number-only token block (T-2.8)', () => {
     expect(block?.textContent).toContain('ऋण तीन दशमलव एक चार');
   });
 
+  it('renders the Basque (eu) spelled-out reading, suppressing romanization + duplicate digits', () => {
+    // The reader's request: hovering "11" in a Basque text shows
+    // "hamaika". Basque is Latin-script (base-20), so there is no
+    // separate romanization stripe and the heading shows the Latin
+    // digits only once (no native-script duplicate).
+    render(WordPopup, {
+      token: makeToken({
+        surface: '11',
+        features: {},
+        numberForms: makeNumberForms({
+          value: '11',
+          digitsLatin: '11',
+          eu: { spelled: 'hamaika', romanized: '' },
+        }),
+      }),
+      language: 'eu',
+      isOwner: true,
+      onClose: vi.fn(),
+    });
+    const block = document.body.querySelector('[data-testid="number-forms"]');
+    expect(block?.textContent).toContain('Basque');
+    expect(block?.textContent).toContain('hamaika');
+    // No Indic spelling leaks into a Basque reader.
+    expect(block?.textContent).not.toContain('एक सौ तेईस');
+    // Latin-script: the (empty) romanization stripe is suppressed.
+    expect(block?.querySelector('.num-roman')).toBeNull();
+    // Heading shows the Latin digits once — no duplicated native copy.
+    const heading = document.body.querySelector('.num-title');
+    expect(heading?.querySelector('.num-native')).toBeNull();
+    expect(heading?.textContent).toContain('11');
+  });
+
   it('shows a reprocess hint for legacy number tokens whose numberForms column is null', () => {
     // Pre-#340 chapter: the dispatcher auto-created a "1,013,322 / NUM"
     // lemma row, so lemmaId is set. The popup must NOT render that
@@ -289,6 +322,519 @@ describe('WordPopup — translation reporting (T-11.1)', () => {
   });
 });
 
+describe('WordPopup — definition-language filter (Basque dictionary)', () => {
+  function official(id: string, body: string, targetLanguage: string) {
+    return {
+      id,
+      source: 'official_dictionary',
+      submittedBy: null,
+      body,
+      targetLanguage,
+      sourceAttribution: 'Wiktionary',
+      parentTranslationId: null,
+      provenance: { kind: 'imported', attribution: 'Wiktionary' },
+      voteScore: 0,
+      viewerVote: null,
+    };
+  }
+
+  function basquePayload() {
+    return {
+      lemma: { id: 'lem-eu', headword: 'etxe', pos: 'NOUN', glossDefault: 'house' },
+      translations: {
+        personal: [],
+        official: [
+          official('off-en', 'house', 'en'),
+          official('off-es', 'casa', 'es'),
+          official('off-eu', 'eraikin bat', 'eu'),
+        ],
+        community: [],
+      },
+      definitionLanguages: ['en', 'es', 'eu'],
+    };
+  }
+
+  function res(payload: unknown) {
+    return new Response(JSON.stringify(payload), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+  }
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('renders a chip + badge per definition language and shows all by default', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(res(basquePayload())));
+    render(WordPopup, {
+      token: makeToken({ surface: 'etxe', lemmaId: 'lem-eu' }),
+      language: 'eu',
+      isOwner: false,
+      onClose: vi.fn(),
+    });
+    await waitFor(() => {
+      expect(document.body.querySelector('.official-row')).not.toBeNull();
+    });
+    for (const code of ['en', 'es', 'eu']) {
+      expect(
+        document.body.querySelector(`[data-testid="def-lang-chip-${code}"]`),
+      ).not.toBeNull();
+    }
+    const list = document.body.querySelector('.translations')!;
+    expect(list.textContent).toContain('house');
+    expect(list.textContent).toContain('casa');
+    expect(list.textContent).toContain('eraikin bat');
+    // Each row is badged with its definition language.
+    expect(list.textContent).toContain('Spanish');
+    expect(list.textContent).toContain('Euskara');
+  });
+
+  it('hides a language when its chip is toggled off', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(res(basquePayload())));
+    render(WordPopup, {
+      token: makeToken({ surface: 'etxe', lemmaId: 'lem-eu' }),
+      language: 'eu',
+      isOwner: false,
+      onClose: vi.fn(),
+    });
+    await waitFor(() => {
+      expect(document.body.querySelector('.official-row')).not.toBeNull();
+    });
+    const esChip = document.body.querySelector<HTMLButtonElement>(
+      '[data-testid="def-lang-chip-es"]',
+    )!;
+    esChip.click();
+    await waitFor(() => {
+      expect(document.body.querySelector('.translations')!.textContent).not.toContain(
+        'casa',
+      );
+    });
+    const list = document.body.querySelector('.translations')!;
+    expect(list.textContent).toContain('house');
+    expect(list.textContent).toContain('eraikin bat');
+    expect(esChip.getAttribute('data-active')).toBe('0');
+  });
+
+  function fakeStorage(seed: Record<string, string> = {}) {
+    const store = new Map<string, string>(Object.entries(seed));
+    return {
+      store,
+      api: {
+        getItem: (k: string) => store.get(k) ?? null,
+        setItem: (k: string, v: string) => void store.set(k, v),
+        removeItem: (k: string) => void store.delete(k),
+        clear: () => store.clear(),
+        key: () => null,
+        length: 0,
+      },
+    };
+  }
+
+  const PREF_KEY = 'ciareader:hidden-definition-languages';
+
+  it('persists a toggled-off language to localStorage', async () => {
+    const storage = fakeStorage();
+    vi.stubGlobal('localStorage', storage.api);
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(res(basquePayload())));
+
+    render(WordPopup, {
+      token: makeToken({ surface: 'etxe', lemmaId: 'lem-eu' }),
+      language: 'eu',
+      isOwner: false,
+      onClose: vi.fn(),
+    });
+    await waitFor(() => {
+      expect(document.body.querySelector('.official-row')).not.toBeNull();
+    });
+    document.body
+      .querySelector<HTMLButtonElement>('[data-testid="def-lang-chip-es"]')!
+      .click();
+    await waitFor(() => {
+      expect(storage.store.get(PREF_KEY)).toBeDefined();
+    });
+    expect(JSON.parse(storage.store.get(PREF_KEY)!)).toContain('es');
+  });
+
+  it('re-applies a persisted hidden language from the start', async () => {
+    const storage = fakeStorage({ [PREF_KEY]: JSON.stringify(['es']) });
+    vi.stubGlobal('localStorage', storage.api);
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(res(basquePayload())));
+
+    render(WordPopup, {
+      token: makeToken({ surface: 'etxe', lemmaId: 'lem-eu' }),
+      language: 'eu',
+      isOwner: false,
+      onClose: vi.fn(),
+    });
+    await waitFor(() => {
+      expect(document.body.querySelector('.official-row')).not.toBeNull();
+    });
+    // Spanish is hidden from the first render; English/Basque remain.
+    const list = document.body.querySelector('.translations')!;
+    expect(list.textContent).not.toContain('casa');
+    expect(list.textContent).toContain('house');
+    expect(
+      document.body
+        .querySelector('[data-testid="def-lang-chip-es"]')!
+        .getAttribute('data-active'),
+    ).toBe('0');
+  });
+
+  it('omits the filter entirely when only one definition language is present', async () => {
+    const payload = basquePayload();
+    payload.translations.official = [official('off-en', 'house', 'en')];
+    payload.definitionLanguages = ['en'];
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(res(payload)));
+    render(WordPopup, {
+      token: makeToken({ surface: 'etxe', lemmaId: 'lem-eu' }),
+      language: 'eu',
+      isOwner: false,
+      onClose: vi.fn(),
+    });
+    await waitFor(() => {
+      expect(document.body.querySelector('.official-row')).not.toBeNull();
+    });
+    expect(document.body.querySelector('[data-testid="def-lang-filter"]')).toBeNull();
+    // No per-row badge either, since there's nothing to disambiguate.
+    expect(document.body.querySelector('.def-lang-badge')).toBeNull();
+  });
+});
+
+describe('WordPopup — admin Basque reference panel', () => {
+  function jres(payload: unknown) {
+    return new Response(JSON.stringify(payload), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+  }
+
+  const TRANSLATIONS = {
+    lemma: { id: 'lem-eu', headword: 'etxe', pos: 'NOUN', glossDefault: 'house' },
+    translations: { personal: [], official: [], community: [] },
+    definitionLanguages: ['en'],
+  };
+  const REFERENCE = {
+    word: 'etxe',
+    results: [
+      {
+        source: 'elhuyar_es',
+        label: 'Elhuyar eu-es',
+        headword: 'etxe',
+        pos: 'iz.',
+        definition: 'casa',
+        examples: ['etxe handia : casa grande'],
+        url: 'https://hiztegiak.elhuyar.eus/eu/etxe',
+      },
+      {
+        source: 'elhuyar_en',
+        label: 'Elhuyar eu-en',
+        headword: 'etxe',
+        pos: 'iz.',
+        definition: 'house',
+        examples: [],
+        url: 'https://hiztegiak.elhuyar.eus/eu/etxe',
+      },
+      {
+        source: 'euskaltzaindia',
+        label: 'Euskaltzaindiaren Hiztegia',
+        headword: 'etxe',
+        pos: 'iz.',
+        definition: 'Bizitzeko eraikina.',
+        examples: ['etxe berria'],
+        url: 'https://www.euskaltzaindia.eus/',
+      },
+    ],
+  };
+
+  function stubFetch() {
+    const fetchMock = vi.fn(async (input: unknown) => {
+      const url = String(input);
+      if (url.includes('/admin/basque-dictionary')) return jres(REFERENCE);
+      return jres(TRANSLATIONS);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    return fetchMock;
+  }
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('auto-loads (no toggle) and shows ES/EN/EU tabs with the active entry, no source label/link', async () => {
+    const fetchMock = stubFetch();
+    render(WordPopup, {
+      token: makeToken({ surface: 'etxe', lemmaId: 'lem-eu' }),
+      language: 'eu',
+      isOwner: false,
+      isAdmin: true,
+      onClose: vi.fn(),
+    });
+    // Expanded by default: the Spanish entry appears with no click.
+    await waitFor(() => {
+      expect(document.body.querySelector('[data-testid="admin-ref"]')!.textContent).toContain(
+        'casa',
+      );
+    });
+    expect(
+      fetchMock.mock.calls.some((c) =>
+        String(c[0]).includes('/admin/basque-dictionary?word=etxe'),
+      ),
+    ).toBe(true);
+    // The three language tabs render; no collapsible toggle.
+    for (const lang of ['es', 'en', 'eu']) {
+      expect(document.body.querySelector(`[data-testid="ref-tab-${lang}"]`)).not.toBeNull();
+    }
+    expect(document.body.querySelector('[data-testid="admin-ref-toggle"]')).toBeNull();
+    // Per-entry source label + "source" link are gone (the tab conveys it).
+    const panel = document.body.querySelector('[data-testid="admin-ref"]')!;
+    expect(panel.querySelector('.admin-ref-link')).toBeNull();
+    expect(panel.textContent).not.toContain('Elhuyar eu-es');
+    expect(panel.textContent).not.toContain('source');
+  });
+
+  it('switches the upstream source when another tab is selected', async () => {
+    stubFetch();
+    render(WordPopup, {
+      token: makeToken({ surface: 'etxe', lemmaId: 'lem-eu' }),
+      language: 'eu',
+      isOwner: false,
+      isAdmin: true,
+      onClose: vi.fn(),
+    });
+    await waitFor(() => {
+      expect(document.body.querySelector('[data-testid="admin-ref"]')!.textContent).toContain(
+        'casa',
+      );
+    });
+    document.body.querySelector<HTMLButtonElement>('[data-testid="ref-tab-en"]')!.click();
+    await waitFor(() => {
+      expect(document.body.querySelector('[data-testid="admin-ref"]')!.textContent).toContain(
+        'house',
+      );
+    });
+    // Spanish entry is no longer shown under the English tab.
+    expect(document.body.querySelector('[data-testid="admin-ref"]')!.textContent).not.toContain(
+      'casa',
+    );
+  });
+
+  it('keeps examples behind a hover trigger (only when an entry has them)', async () => {
+    stubFetch();
+    render(WordPopup, {
+      token: makeToken({ surface: 'etxe', lemmaId: 'lem-eu' }),
+      language: 'eu',
+      isOwner: false,
+      isAdmin: true,
+      onClose: vi.fn(),
+    });
+    // ES entry has an example → a trigger button whose popover holds the text.
+    await waitFor(() => {
+      expect(document.body.querySelector('.ext-ex')).not.toBeNull();
+    });
+    expect(document.body.querySelector('.ext-ex .ext-ex-pop')!.textContent).toContain(
+      'casa grande',
+    );
+    // EN entry has no examples → no trigger.
+    document.body.querySelector<HTMLButtonElement>('[data-testid="ref-tab-en"]')!.click();
+    await waitFor(() => {
+      expect(document.body.querySelector('[data-testid="admin-ref"]')!.textContent).toContain(
+        'house',
+      );
+    });
+    expect(document.body.querySelector('.ext-ex')).toBeNull();
+  });
+
+  it('is absent for a non-admin', async () => {
+    stubFetch();
+    render(WordPopup, {
+      token: makeToken({ surface: 'etxe', lemmaId: 'lem-eu' }),
+      language: 'eu',
+      isOwner: false,
+      isAdmin: false,
+      onClose: vi.fn(),
+    });
+    await waitFor(() => {
+      expect(document.body.querySelector('[data-testid="word-popup"]')).not.toBeNull();
+    });
+    expect(document.body.querySelector('[data-testid="admin-ref"]')).toBeNull();
+  });
+
+  it('is absent for an admin reading a non-Basque language', async () => {
+    stubFetch();
+    render(WordPopup, {
+      token: makeToken({ surface: 'पानी', lemmaId: 'lem-eu' }),
+      language: 'hi',
+      isOwner: false,
+      isAdmin: true,
+      onClose: vi.fn(),
+    });
+    await waitFor(() => {
+      expect(document.body.querySelector('[data-testid="word-popup"]')).not.toBeNull();
+    });
+    expect(document.body.querySelector('[data-testid="admin-ref"]')).toBeNull();
+  });
+});
+
+describe('WordPopup — book frequency', () => {
+  function jres(payload: unknown) {
+    return new Response(JSON.stringify(payload), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+  }
+
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('shows "appears N× in this book" for a lemma token', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: unknown) => {
+        const url = String(input);
+        if (url.includes('/frequency')) return jres({ book: 5, text: 2 });
+        return jres({
+          lemma: { id: 'lem-1', headword: 'etxe', pos: 'NOUN', glossDefault: null },
+          translations: { personal: [], official: [], community: [] },
+        });
+      }),
+    );
+    render(WordPopup, {
+      token: makeToken({ surface: 'etxe', lemmaId: 'lem-1' }),
+      language: 'eu',
+      isOwner: false,
+      textId: '11111111-1111-1111-1111-111111111111',
+      onClose: vi.fn(),
+    });
+    await waitFor(() => {
+      const el = document.body.querySelector('[data-testid="book-frequency"]');
+      expect(el?.textContent).toContain('5');
+    });
+  });
+
+  it('shows the lemma (not the surface) as the title with a right-aligned freq badge', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: unknown) => {
+        const url = String(input);
+        if (url.includes('/frequency')) return jres({ book: 4, text: 1 });
+        return jres({
+          lemma: { id: 'lem-1', headword: 'pena', pos: 'NOUN', glossDefault: null },
+          translations: { personal: [], official: [], community: [] },
+        });
+      }),
+    );
+    render(WordPopup, {
+      // Clicked the inflected form "Penaren"; the header should show the lemma.
+      token: makeToken({ surface: 'Penaren', lemmaId: 'lem-1' }),
+      language: 'eu',
+      isOwner: false,
+      textId: '11111111-1111-1111-1111-111111111111',
+      onClose: vi.fn(),
+    });
+    await waitFor(() => {
+      expect(document.body.querySelector('.sp-word-text')?.textContent).toBe('pena');
+    });
+    // No "Lemma" label row anymore.
+    expect(document.body.querySelector('.sp-head')?.textContent).not.toContain('Lemma');
+    const badge = document.body.querySelector('[data-testid="book-frequency"]');
+    expect(badge?.textContent).toContain('4×');
+    expect(badge?.getAttribute('aria-label')).toBe('this word appears 4 times in the book');
+    expect(badge?.querySelector('.sp-freq-tip')?.textContent).toContain(
+      'appears 4 times in the book',
+    );
+  });
+
+  it('omits the frequency row when no textId is supplied', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        jres({
+          lemma: { id: 'lem-1', headword: 'etxe', pos: 'NOUN', glossDefault: null },
+          translations: { personal: [], official: [], community: [] },
+        }),
+      ),
+    );
+    render(WordPopup, {
+      token: makeToken({ surface: 'etxe', lemmaId: 'lem-1' }),
+      language: 'eu',
+      isOwner: false,
+      onClose: vi.fn(),
+    });
+    await waitFor(() => {
+      expect(document.body.querySelector('.sp-pos-pill')).not.toBeNull();
+    });
+    expect(document.body.querySelector('[data-testid="book-frequency"]')).toBeNull();
+  });
+});
+
+describe('WordPopup — sentence translation', () => {
+  function jres(payload: unknown) {
+    return new Response(JSON.stringify(payload), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+  }
+  const LEMMA = {
+    lemma: { id: 'lem-1', headword: 'etxe', pos: 'NOUN', glossDefault: null },
+    translations: { personal: [], official: [], community: [] },
+  };
+
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('translates the sentence on demand and shows the result', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: unknown) => {
+        const url = String(input);
+        if (url.includes('/translate-sentence')) {
+          return jres({ sentence: 'Portuetxe kalea.', translation: 'Portuetxe street.' });
+        }
+        if (url.includes('/frequency')) return jres({ book: 0, text: 0 });
+        return jres(LEMMA);
+      }),
+    );
+    render(WordPopup, {
+      token: makeToken({
+        surface: 'etxe',
+        lemmaId: 'lem-1',
+        chapterId: '22222222-2222-2222-2222-222222222222',
+      }),
+      language: 'eu',
+      isOwner: false,
+      onClose: vi.fn(),
+    });
+    await waitFor(() => {
+      expect(
+        document.body.querySelector('[data-testid="translate-sentence-btn"]'),
+      ).not.toBeNull();
+    });
+    document.body
+      .querySelector<HTMLButtonElement>('[data-testid="translate-sentence-btn"]')!
+      .click();
+    await waitFor(() => {
+      expect(
+        document.body.querySelector('[data-testid="sentence-translate"]')!.textContent,
+      ).toContain('Portuetxe street.');
+    });
+  });
+
+  it('hides the button for client tokens without a chapter id', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => jres(LEMMA)));
+    render(WordPopup, {
+      token: makeToken({ surface: 'etxe', lemmaId: 'lem-1' }),
+      language: 'eu',
+      isOwner: false,
+      onClose: vi.fn(),
+    });
+    await waitFor(() => {
+      expect(document.body.querySelector('[data-testid="word-popup"]')).not.toBeNull();
+    });
+    expect(
+      document.body.querySelector('[data-testid="translate-sentence-btn"]'),
+    ).toBeNull();
+  });
+});
+
 describe('WordPopup — feature pills', () => {
   function makePayload() {
     return {
@@ -367,7 +913,7 @@ describe('WordPopup — feature pills', () => {
     });
     // Wait for the lemma row so we know the popup payload resolved.
     await waitFor(() => {
-      expect(document.body.querySelector('.sp-headword')).not.toBeNull();
+      expect(document.body.querySelector('.sp-pos-pill')).not.toBeNull();
     });
     expect(
       document.body.querySelector('[data-testid="feature-pills"]'),
@@ -1140,7 +1686,7 @@ describe('WordPopup — POS pill in header', () => {
     });
     await waitFor(() => {
       const pill = document.body.querySelector<HTMLElement>(
-        '.sp-headword [data-testid="pos-pill"]',
+        '.sp-word [data-testid="pos-pill"]',
       );
       if (!pill) throw new Error('missing pos-pill in header');
       expect(pill.querySelector('.pos-abbr')?.textContent).toBe('n');

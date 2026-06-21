@@ -14,3 +14,12 @@ export const SMTP_PORT = Number(env.SMTP_PORT ?? 1025);
 export const SMTP_USER = env.SMTP_USER ?? '';
 export const SMTP_PASS = env.SMTP_PASS ?? '';
 export const SMTP_FROM = env.SMTP_FROM ?? 'no-reply@ciareader.local';
+
+// OpenAI-compatible chat API — powers sentence-level translation. Empty key
+// disables the feature (the endpoint returns 503), so dev works without it.
+// `OPENAI_BASE_URL` lets you point at any OpenAI-compatible provider (e.g. a
+// free Gemini or Groq endpoint) without code changes — just set the base URL,
+// key, and model together.
+export const OPENAI_API_KEY = env.OPENAI_API_KEY ?? '';
+export const OPENAI_MODEL = env.OPENAI_MODEL ?? 'gpt-4o';
+export const OPENAI_BASE_URL = env.OPENAI_BASE_URL ?? 'https://api.openai.com/v1';

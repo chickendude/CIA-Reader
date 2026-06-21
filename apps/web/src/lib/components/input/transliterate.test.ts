@@ -100,6 +100,24 @@ describe('nfc', () => {
   });
 });
 
+describe('latinToNative / looksLikeNativeScript — Basque (eu, Latin)', () => {
+  it('passes Basque text through unchanged (no transliteration)', () => {
+    expect(latinToNative('eu', 'etxea')).toBe('etxea');
+    expect(latinToNative('eu', 'Kaixo mundua!')).toBe('Kaixo mundua!');
+    // Latin diacritics Basque uses (ñ, ç, ü) survive verbatim.
+    expect(latinToNative('eu', 'gauza')).toBe('gauza');
+  });
+
+  it('always treats Latin-script input as native (plain input mode)', () => {
+    expect(looksLikeNativeScript('etxea', 'eu')).toBe(true);
+    expect(looksLikeNativeScript('Euskara', 'eu')).toBe(true);
+  });
+
+  it('still returns false for empty input', () => {
+    expect(looksLikeNativeScript('', 'eu')).toBe(false);
+  });
+});
+
 describe('latinToNative — Yiddish YIVO (yi)', () => {
   // Mirror of `_yivo_to_hebrew` in services/nlp/app/romanize.py —
   // the canonical cases below are asserted on both sides.

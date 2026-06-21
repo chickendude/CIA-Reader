@@ -99,6 +99,32 @@ fallback tier) folds both conventions — plus the floating pasekh
 position in pasekh tsvey yudn — onto one key, so imports may keep
 whatever convention the upstream source uses.
 
+## Basque
+
+| Source | Publisher | License | Status |
+|---|---|---|---|
+| [Wiktionary Basque (via Kaikki.org)](https://kaikki.org/dictionary/Basque/) | Wiktionary contributors | CC-BY-SA 3.0 | **Registered** (`kaikki-basque`) — fetched via `scripts/fetch-dictionary-sources.sh kaikki-basque`; standard Latin orthography. First Latin-script importer — proves the script-aware path doesn't assume a non-Latin script. Glosses in **English** (`targetLanguage: 'en'`). |
+| [Wiktionary Spanish edition — "Vasco" (via Kaikki.org)](https://kaikki.org/eswiktionary/Vasco/) | Wiktionary contributors | CC-BY-SA 3.0 | **Registered** (`kaikki-basque-es`) — same Basque headwords glossed in **Spanish** (`targetLanguage: 'es'`); fetched via `scripts/fetch-dictionary-sources.sh kaikki-basque-es` (a non-English edition, so it uses the `fetch_kaikki_edition` helper). |
+| [Wiktionary English Translations sections (via Kaikki.org)](https://kaikki.org/dictionary/English/) | Wiktionary contributors | CC-BY-SA 3.0 | **Registered** (`kaikki-en-translations-basque`) — inverted from English entries' `translations[]`, sharing the same cached English dump as the other importers |
+| [Euskaltzaindiaren Hiztegia (Basque Academy dictionary)](https://www.euskaltzaindia.eus/) | Euskaltzaindia (Royal Academy of the Basque Language) | All rights reserved | **Not stored.** Surfaced **admin-only**, on-demand, as a monolingual reference/verification aid (`GET /api/v1/admin/basque-dictionary`); fetched + parsed server-side, short-cached, never written to `translations` or shown to readers. |
+| Elhuyar Hiztegiak (eu-es / eu-en) | Elhuyar Fundazioa | Proprietary | **Not stored.** Same admin-only reference path as Euskaltzaindia above. |
+
+Coverage: medium for core vocabulary. Basque is **Latin-script**, so there is
+no romanization layer (the reader renders headwords as written). Morphology is
+handled by the Stanza UD_Basque-BDT model rather than a custom analyzer or seed
+lemma table; the Kaikki import supplies the dictionary glosses on top of that.
+Basque is agglutinative with a rich case system, so expect inflected surfaces to
+lemmatize back to a smaller set of citation forms — the curator editor (T-3.7)
+and community submissions (T-6.3) fill gloss gaps post-launch as for the others.
+
+Basque ships definitions in three "definition languages" (`translations.targetLanguage`):
+**English** (`kaikki-basque`) and **Spanish** (`kaikki-basque-es`) from public CC-BY-SA
+Wiktionary editions, plus **monolingual Basque** (`eu`) which has no open bulk source and
+accrues via curators/community over time. The reader popup groups translations by
+definition language, all shown by default and individually toggleable. A separate
+admin-only verification panel surfaces Elhuyar / Euskaltzaindia lookups as a curation aid
+(reference-only, never stored) — see the Basque rejected sources above.
+
 ## Cross-source duplication
 
 Multiple sources may ship the same `(language, headword, pos)` triple —

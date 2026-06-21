@@ -12,7 +12,7 @@ def test_health_ok():
     assert resp.status_code == 200
     body = resp.json()
     assert body["status"] == "ok"
-    assert set(body["languages"]) == {"hi", "mr", "or", "yi"}
+    assert set(body["languages"]) == {"hi", "mr", "or", "yi", "eu"}
 
 
 def test_healthz_alias_returns_same_payload():
@@ -64,6 +64,21 @@ def test_process_yiddish_canned():
     shrayb = word_tokens[1]
     assert shrayb["candidates"][0]["lemma"] == "שרייַבן"
     assert shrayb["romanization"] == "shrayb"
+
+
+def test_process_basque_canned():
+    # Basque is Stanza-backed (stanza-eu); conftest fakes the model with a
+    # whitespace tokenizer, so we assert tokenization shape — three words
+    # plus the whitespace gap tokens between them — rather than exact lemmas.
+    resp = client.post("/process", json={"language": "eu", "text": "Egun on mundua"})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["language"] == "eu"
+    assert body["pipeline_id"] == "stanza-eu"
+    word_tokens = [t for t in body["tokens"] if t["is_word"]]
+    assert len(word_tokens) == 3
+    # Latin script — no romanization layer is produced.
+    assert all(t["romanization"] is None for t in word_tokens)
 
 
 def test_process_rejects_unsupported_language():

@@ -63,11 +63,17 @@ export type RenderedNumberForms = {
    *  because `or` is a reserved Python keyword on the server-side
    *  Pydantic model that emits this payload. */
   odia: RenderedNumberLanguageForm;
+  /** Basque rendering. Latin script, so `romanized` is empty — the
+   *  spelled-out form is already the reading. Base-20 (vigesimal). */
+  eu: RenderedNumberLanguageForm;
 };
 
 export type RenderedToken = {
   id: string;
   idx: number;
+  /** Owning chapter id — lets the reader capture the mined sentence when a
+   *  word is marked Learning (the popup posts chapterId + idx). */
+  chapterId: string;
   surface: string;
   isWord: boolean;
   isAmbiguous: boolean;
@@ -411,12 +417,17 @@ export async function loadChapterTokens(
           hi: nf.hi,
           mr: nf.mr,
           odia: nf.odia,
+          // Chapters processed before Basque number support lack `eu`;
+          // fall back to an empty form (only ever read for `eu` texts,
+          // which are all reprocessed with this field present).
+          eu: nf.eu ?? { spelled: '', romanized: '' },
         }
       : null;
 
     return {
       id: t.id,
       idx: t.idx,
+      chapterId,
       surface: t.surface,
       isWord: isMarkedNonWord ? false : t.isWord,
       isAmbiguous: candidates.length > 0,
@@ -514,8 +525,21 @@ export async function setKnownLemmaStatus(args: {
   lemmaId: string;
   status: 'unknown' | 'learning' | 'known' | 'ignored';
   now?: Date;
+  /** When set, record the sentence (and its location) the word was mined
+   *  from, for the Anki export. Omit to leave any existing context intact. */
+  minedSentence?: string;
+  minedChapterId?: string;
+  minedTokenIdx?: number;
 }): Promise<UserKnownLemma> {
   const now = args.now ?? new Date();
+  const minedFields =
+    args.minedSentence !== undefined
+      ? {
+          minedSentence: args.minedSentence,
+          minedChapterId: args.minedChapterId ?? null,
+          minedTokenIdx: args.minedTokenIdx ?? null,
+        }
+      : {};
 
   // Look up the lemma to find its language — needed for the per-
   // language cache update. A missing lemma is a 404; the caller
@@ -567,6 +591,26 @@ export async function setKnownLemmaStatus(args: {
       .returning()) as UserKnownLemma[];
     if (!inserted) throw new Error('Failed to insert user_known_lemmas');
     result = inserted;
+  }
+
+  // Mined-sentence columns are written separately and best-effort: the core
+  // status change above always succeeds, and if the `mined_*` columns don't
+  // exist yet (migration 0047 not applied) this just no-ops rather than
+  // failing the whole request.
+  if (Object.keys(minedFields).length > 0) {
+    try {
+      await db
+        .update(schema.userKnownLemmas)
+        .set(minedFields)
+        .where(
+          (await import('drizzle-orm')).and(
+            eq(schema.userKnownLemmas.userId, args.userId),
+            eq(schema.userKnownLemmas.lemmaId, args.lemmaId),
+          )!,
+        );
+    } catch {
+      // columns missing / transient error — status is already saved
+    }
   }
 
   // Recompute the cache for this user × language. Counted as the

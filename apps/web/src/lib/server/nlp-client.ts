@@ -54,6 +54,9 @@ export interface NumberForms {
   // reserved Python keyword and can't be an attribute name on the
   // server-side Pydantic model. The TypeScript mirror matches.
   odia: NumberLanguageForm;
+  // Basque (Euskara). Latin script, so `romanized` is the empty string —
+  // the spelled-out form is already the reading. Base-20 (vigesimal).
+  eu: NumberLanguageForm;
 }
 
 export interface NlpToken {

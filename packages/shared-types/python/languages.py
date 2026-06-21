@@ -10,8 +10,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Literal
 
-LanguageCode = Literal["hi", "mr", "or", "yi"]
-ScriptCode = Literal["Deva", "Orya", "Beng", "Guru", "Gujr", "Arab", "Hebr"]
+LanguageCode = Literal["hi", "mr", "or", "yi", "eu"]
+ScriptCode = Literal["Deva", "Orya", "Beng", "Guru", "Gujr", "Arab", "Hebr", "Latn"]
 RomanizationScheme = Literal["iso15919", "iast", "hunterian", "itrans", "velthuis", "yivo"]
 TextDirection = Literal["ltr", "rtl"]
 
@@ -24,9 +24,12 @@ class LanguageDescriptor:
     script: ScriptCode
     text_direction: TextDirection
     supported_romanizations: tuple[RomanizationScheme, ...]
-    default_romanization: RomanizationScheme
     recommended_fonts: tuple[str, ...]
     pipeline_id: str
+    # Optional: Latin-script languages (e.g. Basque) need no romanization layer —
+    # the text is already Latin. Ordered after the required fields so the
+    # dataclass default is legal; all entries pass it (or omit it) by keyword.
+    default_romanization: RomanizationScheme | None = field(default=None)
     notes: str | None = field(default=None)
 
 
@@ -99,6 +102,25 @@ LANGUAGES: dict[LanguageCode, LanguageDescriptor] = {
             "(Hebrew-script tokenizer + rule-based morphological analyzer "
             "over a seed lemma table), mirroring the Odia approach. First "
             "RTL language — UI direction comes from text_direction."
+        ),
+    ),
+    "eu": LanguageDescriptor(
+        code="eu",
+        display_name="Basque",
+        native_name="Euskara",
+        script="Latn",
+        text_direction="ltr",
+        # First Latin-script language: the text is already Latin, so there is
+        # no romanization layer. An empty list disables the reader's
+        # romanization UI; default_romanization is left as None.
+        supported_romanizations=(),
+        recommended_fonts=("Noto Serif", "Noto Sans", "Source Serif 4", "Georgia"),
+        pipeline_id="stanza-eu",
+        notes=(
+            "Stanza ships a strong Basque model (UD_Basque-BDT: "
+            "tokenize/pos/lemma, no MWT), so Basque reuses the generic "
+            "Stanza UD pipeline like Hindi/Marathi. First Latin-script "
+            "language — no transliteration, no romanization, no RTL."
         ),
     ),
 }

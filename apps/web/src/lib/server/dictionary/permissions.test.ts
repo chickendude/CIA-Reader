@@ -114,7 +114,7 @@ describe('canEditDictionary', () => {
 describe('listGrantedLanguages', () => {
   it('returns every supported language for an admin without hitting the DB', async () => {
     const langs = await listGrantedLanguages({ id: 'a1', role: 'admin' });
-    expect(langs.sort()).toEqual(['hi', 'mr', 'or', 'yi']);
+    expect(langs.sort()).toEqual(['eu', 'hi', 'mr', 'or', 'yi']);
   });
 
   it('returns [] for a plain user', async () => {

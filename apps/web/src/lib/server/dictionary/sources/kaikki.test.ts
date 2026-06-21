@@ -16,6 +16,8 @@ import {
   mapKaikkiPos,
   parseKaikkiLine,
 } from './kaikki.js';
+import { kaikkiBasqueEsSource } from './kaikki-basque-es.js';
+import { kaikkiBasqueSource } from './kaikki-basque.js';
 import { kaikkiHindiSource } from './kaikki-hindi.js';
 import { kaikkiMarathiSource } from './kaikki-marathi.js';
 import { kaikkiOdiaSource } from './kaikki-odia.js';
@@ -27,6 +29,8 @@ const HINDI_FIXTURE = resolve(FIXTURES, 'kaikki-hindi.jsonl');
 const MARATHI_FIXTURE = resolve(FIXTURES, 'kaikki-marathi.jsonl');
 const ODIA_FIXTURE = resolve(FIXTURES, 'kaikki-odia.jsonl');
 const YIDDISH_FIXTURE = resolve(FIXTURES, 'kaikki-yiddish.jsonl');
+const BASQUE_FIXTURE = resolve(FIXTURES, 'kaikki-basque.jsonl');
+const BASQUE_ES_FIXTURE = resolve(FIXTURES, 'kaikki-basque-es.jsonl');
 
 const HINDI_OPTS = { script: 'Deva' as const, sourceIdPrefix: 'kaikki:hi' };
 
@@ -249,6 +253,23 @@ describe('kaikkiToImportEntry', () => {
     );
     expect(r!.headword).toBe('क़'.normalize('NFC'));
   });
+
+  it('stamps targetLanguage on every translation when glossLanguage is set', () => {
+    const r = kaikkiToImportEntry(
+      { word: 'etxe', pos: 'noun', senses: [{ glosses: ['casa'] }, { glosses: ['hogar'] }] },
+      { script: 'Latn', sourceIdPrefix: 'kaikki:eu-es', glossLanguage: 'es' },
+    );
+    expect(r!.translations).toHaveLength(2);
+    for (const t of r!.translations) expect(t.targetLanguage).toBe('es');
+  });
+
+  it('leaves targetLanguage undefined when glossLanguage is omitted (runner defaults to en)', () => {
+    const r = kaikkiToImportEntry(
+      { word: 'पानी', pos: 'noun', senses: [{ glosses: ['water'] }] },
+      HINDI_OPTS,
+    );
+    expect(r!.translations[0]!.targetLanguage).toBeUndefined();
+  });
 });
 
 describe('makeKaikkiSource (factory smoke)', () => {
@@ -423,5 +444,87 @@ describe('kaikkiYiddishSource (streaming over fixture)', () => {
     expect(bukh.forms?.map((f) => f.surface)).toContain('ביכער');
     const shraybn = out.find((e) => e.headword === 'שרײַבן')!;
     expect(shraybn.forms?.map((f) => f.surface)).toContain('געשריבן');
+  });
+});
+
+describe('kaikkiBasqueSource (streaming over fixture)', () => {
+  beforeEach(() => {
+    process.env.KAIKKI_BASQUE_FILE = BASQUE_FIXTURE;
+  });
+  afterEach(() => {
+    delete process.env.KAIKKI_BASQUE_FILE;
+  });
+
+  it('exposes the expected metadata + Latin script identifier', () => {
+    expect(kaikkiBasqueSource.name).toBe('kaikki-basque');
+    expect(kaikkiBasqueSource.language).toBe('eu');
+    expect(kaikkiBasqueSource.license).toBe('CC-BY-SA-3.0');
+    expect(kaikkiBasqueSource.sourceAttribution).toContain('Basque');
+  });
+
+  it('uses the Latin script (Latn) — first Latin-script import path', async () => {
+    const out: ImportEntry[] = [];
+    for await (const entry of await kaikkiBasqueSource.entries()) {
+      out.push(entry);
+    }
+    expect(out.length).toBeGreaterThan(0);
+    for (const e of out) {
+      expect(e.script).toBe('Latn');
+      expect(e.sourceId.startsWith('kaikki:eu:')).toBe(true);
+    }
+    // Spot-check known entries from the fixture.
+    expect(out.find((e) => e.headword === 'etxe' && e.pos === 'NOUN')).toBeDefined();
+    expect(out.find((e) => e.headword === 'idatzi' && e.pos === 'VERB')).toBeDefined();
+    // The 'suffix' POS isn't in the POS map and must be skipped.
+    expect(out.find((e) => e.headword === '-tik')).toBeUndefined();
+  });
+
+  it('carries inflected forms (plural, participle) for lemma_forms', async () => {
+    const out: ImportEntry[] = [];
+    for await (const entry of await kaikkiBasqueSource.entries()) {
+      out.push(entry);
+    }
+    const etxe = out.find((e) => e.headword === 'etxe')!;
+    expect(etxe.forms?.map((f) => f.surface)).toContain('etxeak');
+    const idatzi = out.find((e) => e.headword === 'idatzi')!;
+    expect(idatzi.forms?.map((f) => f.surface)).toContain('idazten');
+  });
+
+  it('stamps English as the definition language (targetLanguage "en")', async () => {
+    const out: ImportEntry[] = [];
+    for await (const entry of await kaikkiBasqueSource.entries()) out.push(entry);
+    const etxe = out.find((e) => e.headword === 'etxe')!;
+    for (const t of etxe.translations) expect(t.targetLanguage).toBe('en');
+  });
+});
+
+describe('kaikkiBasqueEsSource (Spanish-glossed, streaming over fixture)', () => {
+  beforeEach(() => {
+    process.env.KAIKKI_BASQUE_ES_FILE = BASQUE_ES_FIXTURE;
+  });
+  afterEach(() => {
+    delete process.env.KAIKKI_BASQUE_ES_FILE;
+  });
+
+  it('exposes eu metadata with the Spanish-edition attribution + distinct prefix', () => {
+    expect(kaikkiBasqueEsSource.name).toBe('kaikki-basque-es');
+    expect(kaikkiBasqueEsSource.language).toBe('eu');
+    expect(kaikkiBasqueEsSource.license).toBe('CC-BY-SA-3.0');
+    expect(kaikkiBasqueEsSource.sourceAttribution).toContain('eswiktionary');
+  });
+
+  it('stamps every translation with targetLanguage "es" and a kaikki:eu-es source_id', async () => {
+    const out: ImportEntry[] = [];
+    for await (const entry of await kaikkiBasqueEsSource.entries()) out.push(entry);
+    expect(out.length).toBeGreaterThan(0);
+    for (const e of out) {
+      expect(e.script).toBe('Latn');
+      expect(e.sourceId.startsWith('kaikki:eu-es:')).toBe(true);
+      for (const t of e.translations) expect(t.targetLanguage).toBe('es');
+    }
+    // Spot-check a Spanish gloss; the 'suffix' POS is skipped.
+    const etxe = out.find((e) => e.headword === 'etxe' && e.pos === 'NOUN')!;
+    expect(etxe.translations[0]!.body).toBe('casa');
+    expect(out.find((e) => e.headword === '-tik')).toBeUndefined();
   });
 });

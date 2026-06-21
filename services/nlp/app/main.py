@@ -104,6 +104,11 @@ async def romanize(req: RomanizeRequest) -> RomanizeResponse:
     # what `to_roman` expects without making the caller pass them.
     script = desc.script
     scheme = desc.default_romanization
+    if scheme is None:
+        # Latin-script languages (e.g. Basque) have no romanization layer —
+        # the surfaces are already Latin. Return a None for every input so
+        # callers get a well-formed, same-length response.
+        return RomanizeResponse(romanizations=[None for _ in req.surfaces])
     out: list[str | None] = []
     for raw in req.surfaces:
         s = unicodedata.normalize("NFC", raw)

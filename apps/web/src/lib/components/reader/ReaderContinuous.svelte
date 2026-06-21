@@ -40,6 +40,7 @@
     initialTokenIdx = 0,
     showRomanization = false,
     isOwner = false,
+    isAdmin = false,
     textId,
     language,
     onProgress,
@@ -51,6 +52,7 @@
     initialTokenIdx?: number;
     showRomanization?: boolean;
     isOwner?: boolean;
+    isAdmin?: boolean;
     textId: string;
     language: import('@ciareader/shared-types').LanguageCode;
     onProgress?: (anchor: ProgressAnchor) => void;
@@ -247,7 +249,7 @@
           <span class="muted">({chapter.tokenCount.toLocaleString()} words)</span>
         </h2>
       {/if}
-      <ChapterBody {chapter} {language} {showRomanization} {isOwner} />
+      <ChapterBody {chapter} {language} {showRomanization} {isOwner} {isAdmin} {textId} />
     </section>
   {/each}
 </div>

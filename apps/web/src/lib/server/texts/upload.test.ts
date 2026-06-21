@@ -129,7 +129,6 @@ const {
   TextValidationError,
   EpubParseError,
   EpubLanguageMismatchError,
-  EpubLanguageUnsupportedError,
   ZipParseError,
   createPastedText,
   createTxtText,
@@ -598,31 +597,30 @@ describe('createChapterBookFromEpub', () => {
     expect(createChapterBookCollectionMock).not.toHaveBeenCalled();
   });
 
-  it('rejects an EPUB declared as an unsupported language', async () => {
+  it('trusts the user selection when the declared language is unsupported (e.g. a Basque book tagged es)', async () => {
+    // EPUB <dc:language> is unreliable for minority languages — Basque
+    // books published in Spain are routinely tagged `es`, Yiddish books
+    // `he`. An unsupported declared tag tells us nothing, so the user's
+    // explicit dropdown selection wins rather than blocking the upload.
+    createChapterBookCollectionMock.mockResolvedValueOnce({
+      collection: { id: 'col-1' },
+      texts: [{ id: 'text-1' }, { id: 'text-2' }],
+      items: [],
+    });
     const epubBytes = await buildFixtureEpub(
       [
-        {
-          id: 'ch1',
-          href: 'ch1.xhtml',
-          title: 'A',
-          bodyHtml: '<p>body.</p>',
-        },
-        {
-          id: 'ch2',
-          href: 'ch2.xhtml',
-          title: 'B',
-          bodyHtml: '<p>body.</p>',
-        },
+        { id: 'ch1', href: 'ch1.xhtml', title: 'A', bodyHtml: '<p>body.</p>' },
+        { id: 'ch2', href: 'ch2.xhtml', title: 'B', bodyHtml: '<p>body.</p>' },
       ],
-      'en',
+      'es',
     );
-    await expect(
-      createChapterBookFromEpub(OWNER, {
-        language: 'hi',
-        title: 'X',
-        epubBytes,
-      }),
-    ).rejects.toBeInstanceOf(EpubLanguageUnsupportedError);
+    const result = await createChapterBookFromEpub(OWNER, {
+      language: 'eu',
+      title: 'X',
+      epubBytes,
+    });
+    expect(result.kind).toBe('collection');
+    expect(createChapterBookCollectionMock).toHaveBeenCalledOnce();
   });
 
   it('trusts the user selection when the EPUB has no <dc:language>', async () => {

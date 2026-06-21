@@ -35,6 +35,7 @@ from app.pipelines.yiddish import build_yiddish_pipeline
 _GOLDEN_DIR = Path(__file__).resolve().parent / "golden"
 _HINDI_CORPUS = _GOLDEN_DIR / "hindi_corpus.json"
 _MARATHI_CORPUS = _GOLDEN_DIR / "marathi_corpus.json"
+_BASQUE_CORPUS = _GOLDEN_DIR / "basque_corpus.json"
 _ODIA_CORPUS = (
     Path(__file__).resolve().parent.parent
     / "app"
@@ -62,6 +63,10 @@ ODIA_LEMMA_FLOOR = 0.70
 # morphology over a seed table, with the unpointed loshn-koydesh
 # vocabulary as the known weak spot.
 YIDDISH_LEMMA_FLOOR = 0.70
+# Basque is Stanza-backed (UD_Basque-BDT), a well-resourced UD model, so
+# it lands in the Hindi tier. The floor sits below the observed ~1.0 on
+# the golden corpus to leave headroom for model-version drift.
+EUSKARA_LEMMA_FLOOR = 0.85
 
 
 # ---- corpus-structure sanity (default suite) ----
@@ -69,8 +74,8 @@ YIDDISH_LEMMA_FLOOR = 0.70
 
 @pytest.mark.parametrize(
     "path",
-    [_HINDI_CORPUS, _MARATHI_CORPUS, _ODIA_CORPUS, _YIDDISH_CORPUS],
-    ids=["hindi", "marathi", "odia", "yiddish"],
+    [_HINDI_CORPUS, _MARATHI_CORPUS, _ODIA_CORPUS, _YIDDISH_CORPUS, _BASQUE_CORPUS],
+    ids=["hindi", "marathi", "odia", "yiddish", "basque"],
 )
 def test_corpus_loads_and_has_unique_ids(path: Path):
     corpus = load_corpus(path)
@@ -129,6 +134,7 @@ def _clean_pipeline_cache():
     # restores state afterwards so later tests in the same worker don't
     # see a contaminated cache.
     from app import pipelines
+    from app.pipelines.basque import build_basque_pipeline
     from app.pipelines.hindi import build_hindi_pipeline
     from app.pipelines.marathi import build_marathi_pipeline
     from app.pipelines.odia import build_odia_pipeline
@@ -137,6 +143,7 @@ def _clean_pipeline_cache():
     pipelines._PIPELINE_FACTORIES["stanza-hi"] = build_hindi_pipeline
     pipelines._PIPELINE_FACTORIES["stanza-mr"] = build_marathi_pipeline
     pipelines._PIPELINE_FACTORIES["custom-or"] = build_odia_pipeline
+    pipelines._PIPELINE_FACTORIES["stanza-eu"] = build_basque_pipeline
     reset_pipeline_cache()
     try:
         yield
@@ -164,6 +171,20 @@ def test_marathi_real_pipeline_meets_lemma_floor(_clean_pipeline_cache):
     summary = result.summary()
     assert summary["lemma_accuracy"] >= MARATHI_LEMMA_FLOOR, (
         f"Marathi lemma accuracy regressed: {summary}\n"
+        "First failures:\n" + "\n".join(result.failures[:30])
+    )
+
+
+@pytest.mark.real_models
+def test_basque_real_pipeline_meets_lemma_floor(_clean_pipeline_cache):
+    # Basque needs the real Stanza UD_Basque-BDT model (like Hi/Mr), so it
+    # only runs in the nlp-accuracy lane. The golden corpus is pinned to the
+    # model's current analysis, so this guards against model-version drift.
+    pipeline = get_pipeline("eu")
+    result = evaluate(pipeline, load_corpus(_BASQUE_CORPUS))
+    summary = result.summary()
+    assert summary["lemma_accuracy"] >= EUSKARA_LEMMA_FLOOR, (
+        f"Basque lemma accuracy regressed: {summary}\n"
         "First failures:\n" + "\n".join(result.failures[:30])
     )
 

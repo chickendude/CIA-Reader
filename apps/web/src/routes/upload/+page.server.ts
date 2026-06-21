@@ -31,7 +31,12 @@ import {
   MAX_ZIP_BYTES,
   MIN_TITLE_LEN,
 } from '$lib/server/texts/upload.js';
-import { LANGUAGES, SUPPORTED_LANGUAGE_CODES, type LanguageCode } from '@ciareader/shared-types';
+import {
+  LANGUAGES,
+  SUPPORTED_LANGUAGE_CODES,
+  isSupportedLanguage,
+  type LanguageCode,
+} from '@ciareader/shared-types';
 import type { Actions, PageServerLoad } from './$types';
 
 // Source-type-aware schemas: paste keeps the tight 1MB cap, txt
@@ -58,7 +63,14 @@ export const load: PageServerLoad = async ({ locals, url }) => {
   if (!locals.user) {
     throw redirect(303, `/login?next=${encodeURIComponent(url.pathname)}`);
   }
+  // Pre-select the language the user arrived from — the library's
+  // "Add a text" card links to e.g. /upload?language=eu. Fall back to the
+  // first supported language when the param is absent or unrecognized.
+  const requested = url.searchParams.get('language');
+  const selectedLanguage: LanguageCode =
+    requested && isSupportedLanguage(requested) ? requested : SUPPORTED_LANGUAGE_CODES[0]!;
   return {
+    selectedLanguage,
     languages: SUPPORTED_LANGUAGE_CODES.map((code) => ({
       code,
       displayName: LANGUAGES[code].displayName,
@@ -164,11 +176,7 @@ export const actions: Actions = {
     const language = fd.get('language')?.toString() ?? '';
     const titleRaw = fd.get('title')?.toString() ?? '';
     const file = fd.get('file');
-    if (
-      language !== 'hi' &&
-      language !== 'mr' &&
-      language !== 'or'
-    ) {
+    if (!isSupportedLanguage(language)) {
       return fail(400, {
         ok: false,
         section: 'epub',
@@ -257,7 +265,7 @@ export const actions: Actions = {
     const language = fd.get('language')?.toString() ?? '';
     const titleRaw = fd.get('title')?.toString() ?? '';
     const file = fd.get('file');
-    if (language !== 'hi' && language !== 'mr' && language !== 'or') {
+    if (!isSupportedLanguage(language)) {
       return fail(400, {
         ok: false,
         section: 'zip',

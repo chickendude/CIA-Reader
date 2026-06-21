@@ -36,7 +36,7 @@ import { db, schema } from '../db/index.js';
 import { recordLemmaEdit } from './audit.js';
 import { ForbiddenError, isAdmin } from './permissions.js';
 import { CuratorValidationError } from './curator.js';
-import type { LanguageCode } from '@ciareader/shared-types';
+import { isSupportedLanguage, type LanguageCode } from '@ciareader/shared-types';
 import type { Lemma, Translation, User } from '../db/schema.js';
 
 type Editor = Pick<User, 'id' | 'role'>;
@@ -102,7 +102,9 @@ function normalizeHeadword(raw: string): string {
 }
 
 function isLanguageCode(s: string): s is LanguageCode {
-  return s === 'hi' || s === 'mr' || s === 'or';
+  // Delegate to the shared registry so new languages (Yiddish, Basque, …)
+  // are accepted for bulk import without touching this guard.
+  return isSupportedLanguage(s);
 }
 
 export async function bulkImportTranslations(

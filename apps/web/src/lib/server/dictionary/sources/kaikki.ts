@@ -19,7 +19,7 @@ import { fileURLToPath } from 'node:url';
 
 import type { LanguageCode } from '@ciareader/shared-types';
 
-import type { DictionaryImportSource, ImportEntry } from '../types.js';
+import type { DictionaryImportSource, ImportEntry, TranslationPayload } from '../types.js';
 
 export type KaikkiSense = {
   glosses?: string[];
@@ -126,6 +126,14 @@ export type KaikkiSourceOptions = {
   sourceIdPrefix: string;
   attribution: string;
   license: string;
+  /**
+   * Definition language of the glosses in this dump (ISO 639-1), stamped
+   * onto every emitted translation's `targetLanguage`. Different Kaikki
+   * editions gloss the same headword in different languages — the English
+   * Wiktionary glosses in English, the Spanish edition in Spanish. Omit
+   * to let the runner default to `'en'`.
+   */
+  glossLanguage?: string;
   /** Env var that overrides the default file path (used by tests). */
   envVar: string;
   /**
@@ -143,7 +151,7 @@ export type KaikkiSourceOptions = {
  */
 export function kaikkiToImportEntry(
   raw: KaikkiEntry,
-  opts: Pick<KaikkiSourceOptions, 'script' | 'sourceIdPrefix'>,
+  opts: Pick<KaikkiSourceOptions, 'script' | 'sourceIdPrefix' | 'glossLanguage'>,
 ): ImportEntry | null {
   const pos = mapKaikkiPos(raw.pos);
   if (!pos) return null;
@@ -155,7 +163,7 @@ export function kaikkiToImportEntry(
   const glossHash = hashGlosses(senses);
   const sourceId = `${opts.sourceIdPrefix}:${headword}:${pos}:${glossHash}`;
 
-  const translations: Array<{ sourceId: string; body: string }> = [];
+  const translations: TranslationPayload[] = [];
   for (let i = 0; i < senses.length; i += 1) {
     const sense = senses[i] as KaikkiSense;
     const body = glossesOf(sense)
@@ -163,7 +171,9 @@ export function kaikkiToImportEntry(
       .filter(Boolean)
       .join('; ');
     if (!body) continue;
-    translations.push({ sourceId: `${sourceId}:s${i}`, body });
+    const translation: TranslationPayload = { sourceId: `${sourceId}:s${i}`, body };
+    if (opts.glossLanguage) translation.targetLanguage = opts.glossLanguage;
+    translations.push(translation);
   }
   if (translations.length === 0) return null;
 
@@ -194,7 +204,7 @@ export function kaikkiToImportEntry(
 
 async function* streamKaikkiSource(
   filePath: string,
-  opts: Pick<KaikkiSourceOptions, 'script' | 'sourceIdPrefix'>,
+  opts: Pick<KaikkiSourceOptions, 'script' | 'sourceIdPrefix' | 'glossLanguage'>,
 ): AsyncIterable<ImportEntry> {
   const stream = createReadStream(filePath, { encoding: 'utf-8' });
   const rl = createInterface({ input: stream, crlfDelay: Infinity });

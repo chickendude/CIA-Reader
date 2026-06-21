@@ -14,6 +14,7 @@ import { error, json } from '@sveltejs/kit';
 import { z } from 'zod';
 
 import { requireUser } from '$lib/server/auth/require-user.js';
+import { sentenceAround } from '$lib/server/texts/sentences.js';
 import { setKnownLemmaStatus } from '$lib/server/texts/tokens.js';
 import type { RequestHandler } from './$types';
 
@@ -21,6 +22,10 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
 const body = z.object({
   status: z.enum(['unknown', 'learning', 'known', 'ignored']),
+  // Optional reading context — when present we capture the sentence the word
+  // was mined from for the Anki export.
+  chapterId: z.string().uuid().optional(),
+  tokenIdx: z.number().int().nonnegative().optional(),
 });
 
 export const PATCH: RequestHandler = async (event) => {
@@ -28,7 +33,7 @@ export const PATCH: RequestHandler = async (event) => {
   const lemmaId = event.params.lemmaId;
   if (!lemmaId || !UUID_RE.test(lemmaId)) throw error(400, 'Invalid lemma id');
 
-  let parsed: { status: 'unknown' | 'learning' | 'known' | 'ignored' };
+  let parsed: z.infer<typeof body>;
   try {
     const json_body = await event.request.json();
     const result = body.safeParse(json_body);
@@ -39,11 +44,29 @@ export const PATCH: RequestHandler = async (event) => {
     throw error(400, 'Invalid JSON body');
   }
 
+  // Reconstruct the mined sentence when the reader supplied context.
+  let mined: { minedSentence: string; minedChapterId: string; minedTokenIdx: number } | undefined;
+  if (parsed.chapterId !== undefined && parsed.tokenIdx !== undefined) {
+    try {
+      const sentence = await sentenceAround(parsed.chapterId, parsed.tokenIdx);
+      if (sentence) {
+        mined = {
+          minedSentence: sentence,
+          minedChapterId: parsed.chapterId,
+          minedTokenIdx: parsed.tokenIdx,
+        };
+      }
+    } catch {
+      // Capturing context is best-effort; never fail the status change over it.
+    }
+  }
+
   try {
     const row = await setKnownLemmaStatus({
       userId: user.id,
       lemmaId,
       status: parsed.status,
+      ...mined,
     });
     return json({
       knownLemma: {
