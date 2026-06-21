@@ -10,6 +10,7 @@
   import ReaderSettings from '$lib/components/reader/ReaderSettings.svelte';
   import { ProgressWriter, type ProgressAnchor } from '$lib/components/reader/progress-client.js';
   import { computePctRead } from '$lib/components/reader/reader-progress.js';
+  import { buildReaderAnchorUrl } from '$lib/components/reader/url-anchor.js';
   import {
     isImmersiveAttributeSet,
     setImmersiveAttribute,
@@ -160,16 +161,23 @@
 
   function mirrorAnchorToUrl(anchor: ProgressAnchor) {
     if (typeof window === 'undefined') return;
-    const key = `${data.mode}:${anchor.chapterIdx}:${anchor.tokenIdx}:${showRomanization ? 1 : 0}`;
-    if (key === lastUrlAnchorKey) return;
-    lastUrlAnchorKey = key;
     const url = new URL(window.location.href);
-    url.searchParams.set('mode', data.mode);
-    url.searchParams.set('chapter', String(anchor.chapterIdx));
-    url.searchParams.set('token', String(anchor.tokenIdx));
-    if (showRomanization) url.searchParams.set('roman', '1');
-    else url.searchParams.delete('roman');
-    window.history.replaceState(window.history.state, '', url.toString());
+    // `endOfChapter=1` is the one-shot cross-text "prev" handoff: it opens the
+    // reader at the chapter's LAST page on arrival, then must be cleared. If it
+    // lingers in the URL, every refresh re-jumps to the last page instead of
+    // resuming the page the reader actually reports — so always strip it once we
+    // have a real anchor, even when the dedup key is unchanged.
+    const hadEndOfChapter = url.searchParams.has('endOfChapter');
+    const key = `${data.mode}:${anchor.chapterIdx}:${anchor.tokenIdx}:${showRomanization ? 1 : 0}`;
+    if (key === lastUrlAnchorKey && !hadEndOfChapter) return;
+    lastUrlAnchorKey = key;
+    const next = buildReaderAnchorUrl(window.location.href, {
+      mode: data.mode,
+      chapterIdx: anchor.chapterIdx,
+      tokenIdx: anchor.tokenIdx,
+      showRomanization,
+    });
+    window.history.replaceState(window.history.state, '', next);
   }
 
   function onReaderProgress(anchor: ProgressAnchor) {

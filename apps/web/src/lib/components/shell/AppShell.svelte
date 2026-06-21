@@ -130,6 +130,11 @@
     }),
   );
   const activeId = $derived(getActiveTabId($page.url.pathname, tabs));
+
+  // The reader is immersive: it renders full-bleed over the shell and owns
+  // its own exit (the × button / Esc). Hide the rail-toggle chevron there so
+  // no nav chrome pokes through on top of the text.
+  const onReader = $derived($page.url.pathname.startsWith('/reader/'));
   const groups = $derived(groupTabsBySection(tabs));
 
   // T-5.26: hamburger toggle for the rail / shell chrome. Reuses the
@@ -183,33 +188,35 @@
      rail's inner-right edge when expanded (chevron points left, "tuck
      it in"), and snaps to the viewport's left edge when collapsed
      (chevron points right, "pull it out"). -->
-<button
-  type="button"
-  class="rail-toggle"
-  data-collapsed={collapsed ? '1' : '0'}
-  aria-label={collapsed ? 'Show navigation' : 'Hide navigation'}
-  aria-pressed={collapsed}
-  title={collapsed ? 'Show navigation' : 'Hide navigation'}
-  onclick={toggleCollapsed}
->
-  <svg
-    viewBox="0 0 24 24"
-    width="14"
-    height="14"
-    fill="none"
-    stroke="currentColor"
-    stroke-width="2"
-    stroke-linecap="round"
-    stroke-linejoin="round"
-    aria-hidden="true"
+{#if !onReader}
+  <button
+    type="button"
+    class="rail-toggle"
+    data-collapsed={collapsed ? '1' : '0'}
+    aria-label={collapsed ? 'Show navigation' : 'Hide navigation'}
+    aria-pressed={collapsed}
+    title={collapsed ? 'Show navigation' : 'Hide navigation'}
+    onclick={toggleCollapsed}
   >
-    {#if collapsed}
-      <path d="M9 6l6 6-6 6" />
-    {:else}
-      <path d="M15 6l-6 6 6 6" />
-    {/if}
-  </svg>
-</button>
+    <svg
+      viewBox="0 0 24 24"
+      width="14"
+      height="14"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="2"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      aria-hidden="true"
+    >
+      {#if collapsed}
+        <path d="M9 6l6 6-6 6" />
+      {:else}
+        <path d="M15 6l-6 6 6 6" />
+      {/if}
+    </svg>
+  </button>
+{/if}
 
 <div class="shell">
   <aside class="rail" aria-label="Primary navigation">
