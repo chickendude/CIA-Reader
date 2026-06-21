@@ -331,7 +331,12 @@
 
   function onChapterClick(event: MouseEvent) {
     const found = findToken(event.target as HTMLElement);
-    if (!found) return;
+    if (!found) {
+      // Clicking off a word clears the selection outline (and closes the
+      // mobile sheet); the desktop side panel falls back to its empty state.
+      closePopup();
+      return;
+    }
 
     // T-14.3a: shift-click range select. When the user clicks
     // a second token while holding shift and an existing

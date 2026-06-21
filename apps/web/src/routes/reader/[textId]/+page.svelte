@@ -225,6 +225,12 @@
   onMount(() => {
     liveStatus = data.text.status;
 
+    // Reading is immersive: hide the app-shell rail / bottom nav so the
+    // text owns the screen. The × button (→ library) and Esc are the ways
+    // out; leaving the reader restores the chrome (cleanup below).
+    setImmersiveAttribute(true);
+    writePersistedImmersive(true);
+
     // T-5.26: AppShell hydrates the immersive flag now. The reader
     // only owns the Esc-to-exit shortcut — quick way out of
     // full-screen reading without hunting for the hamburger button.
@@ -309,6 +315,9 @@
       void progressWriter?.flush();
       topRO?.disconnect();
       document.documentElement.style.removeProperty('--reader-top-h');
+      // Leaving the reader restores the app-shell chrome everywhere else.
+      setImmersiveAttribute(false);
+      writePersistedImmersive(false);
     };
   });
 
