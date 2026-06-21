@@ -220,6 +220,78 @@ describe('kaikkiToImportEntry', () => {
     expect(r!.forms![0]!.features).toEqual({});
   });
 
+  const EU_ROOT_OPTS = {
+    script: 'Latn' as const,
+    sourceIdPrefix: 'kaikki:eu',
+    rootFormsOnly: true,
+  };
+
+  it('rootFormsOnly: keeps the root entry but drops its inflection table', () => {
+    const r = kaikkiToImportEntry(
+      {
+        word: 'etxe',
+        pos: 'noun',
+        senses: [{ glosses: ['house'] }],
+        forms: [
+          { form: 'etxea', tags: ['absolutive', 'singular'] },
+          { form: 'etxean', tags: ['inessive', 'singular'] },
+        ],
+      },
+      EU_ROOT_OPTS,
+    );
+    expect(r).not.toBeNull();
+    expect(r!.headword).toBe('etxe');
+    expect(r!.forms).toBeUndefined();
+  });
+
+  it('rootFormsOnly: skips a "form-of" entry (an inflection of another lemma)', () => {
+    const r = kaikkiToImportEntry(
+      {
+        word: 'etxean',
+        pos: 'noun',
+        senses: [
+          {
+            glosses: ['inessive singular of etxe'],
+            form_of: [{ word: 'etxe' }],
+            tags: ['form-of'],
+          },
+        ],
+      },
+      EU_ROOT_OPTS,
+    );
+    expect(r).toBeNull();
+  });
+
+  it('rootFormsOnly: keeps an entry that has a real sense beside a form-of sense', () => {
+    const r = kaikkiToImportEntry(
+      {
+        word: 'maite',
+        pos: 'adj',
+        senses: [
+          { glosses: ['beloved, dear'] },
+          { glosses: ['inflection of maitatu'], form_of: [{ word: 'maitatu' }] },
+        ],
+      },
+      EU_ROOT_OPTS,
+    );
+    expect(r).not.toBeNull();
+    expect(r!.headword).toBe('maite');
+  });
+
+  it('without rootFormsOnly, the inflection table is still imported', () => {
+    const r = kaikkiToImportEntry(
+      {
+        word: 'etxe',
+        pos: 'noun',
+        senses: [{ glosses: ['house'] }],
+        forms: [{ form: 'etxean', tags: ['inessive'] }],
+      },
+      { script: 'Latn', sourceIdPrefix: 'kaikki:eu' },
+    );
+    expect(r!.forms).toHaveLength(1);
+    expect(r!.forms![0]!.surface).toBe('etxean');
+  });
+
   it('NFC-normalizes the headword', () => {
     const r = kaikkiToImportEntry(
       { word: 'क़', pos: 'noun', senses: [{ glosses: ['letter qa'] }] },
@@ -453,15 +525,15 @@ describe('kaikkiBasqueSource (streaming over fixture)', () => {
     expect(out.find((e) => e.headword === '-tik')).toBeUndefined();
   });
 
-  it('carries inflected forms (plural, participle) for lemma_forms', async () => {
+  it('imports root forms only — drops each entry inflection table', async () => {
     const out: ImportEntry[] = [];
     for await (const entry of await kaikkiBasqueSource.entries()) {
       out.push(entry);
     }
-    const etxe = out.find((e) => e.headword === 'etxe')!;
-    expect(etxe.forms?.map((f) => f.surface)).toContain('etxeak');
-    const idatzi = out.find((e) => e.headword === 'idatzi')!;
-    expect(idatzi.forms?.map((f) => f.surface)).toContain('idazten');
+    // Basque morphology is handled by the Stanza pipeline, so the importer
+    // keeps only citation forms and skips the conjugated/declined surfaces.
+    expect(out.find((e) => e.headword === 'etxe')!.forms).toBeUndefined();
+    for (const e of out) expect(e.forms ?? []).toHaveLength(0);
   });
 
   it('stamps English as the definition language (targetLanguage "en")', async () => {

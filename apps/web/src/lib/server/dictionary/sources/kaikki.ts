@@ -26,6 +26,9 @@ export type KaikkiSense = {
   raw_glosses?: string[];
   english?: string[];
   tags?: string[];
+  /** Present when this sense defines an inflection of another lemma
+   *  (e.g. "inessive singular of etxe"). Used to skip non-root entries. */
+  form_of?: Array<{ word?: string }>;
 };
 
 export type KaikkiEntry = {
@@ -114,6 +117,15 @@ export type KaikkiSourceOptions = {
    * to let the runner default to `'en'`.
    */
   glossLanguage?: string;
+  /**
+   * Import only root / citation forms — skip the per-entry inflection table
+   * (`forms[]` → `lemma_forms`) AND any Wiktionary "form-of" entry (one whose
+   * every sense is an inflection of another lemma, e.g. "inessive of etxe").
+   * Right for languages whose morphology is handled by the NLP pipeline
+   * (Stanza for Basque) rather than by dictionary form-matching, so the
+   * dictionary stays a list of dictionary headwords, not declined surfaces.
+   */
+  rootFormsOnly?: boolean;
   /** Env var that overrides the default file path (used by tests). */
   envVar: string;
   /**
@@ -129,9 +141,26 @@ export type KaikkiSourceOptions = {
  * null when the row is unimportable — unknown POS, no usable glosses,
  * empty headword.
  */
+/**
+ * True when the entry is an inflected form of another lemma rather than a
+ * citation/root headword — i.e. every gloss-bearing sense is a "form-of"
+ * sense (carries `form_of`, or a `form-of` tag). Wiktionary lists such
+ * entries with glosses like "inessive singular of etxe"; with
+ * `rootFormsOnly` we drop them so the dictionary holds only root forms.
+ */
+function isInflectedFormEntry(senses: KaikkiSense[]): boolean {
+  const glossed = senses.filter((s) => glossesOf(s).some((g) => g.trim()));
+  if (glossed.length === 0) return false;
+  return glossed.every(
+    (s) =>
+      (s.form_of?.length ?? 0) > 0 ||
+      (s.tags ?? []).some((t) => t === 'form-of' || t === 'inflection-of'),
+  );
+}
+
 export function kaikkiToImportEntry(
   raw: KaikkiEntry,
-  opts: Pick<KaikkiSourceOptions, 'script' | 'sourceIdPrefix' | 'glossLanguage'>,
+  opts: Pick<KaikkiSourceOptions, 'script' | 'sourceIdPrefix' | 'glossLanguage' | 'rootFormsOnly'>,
 ): ImportEntry | null {
   const pos = mapKaikkiPos(raw.pos);
   if (!pos) return null;
@@ -139,6 +168,8 @@ export function kaikkiToImportEntry(
   if (!headword) return null;
   const senses = raw.senses ?? [];
   if (senses.length === 0) return null;
+  // Root-forms-only: drop entries that merely inflect another lemma.
+  if (opts.rootFormsOnly && isInflectedFormEntry(senses)) return null;
 
   const glossHash = hashGlosses(senses);
   const sourceId = `${opts.sourceIdPrefix}:${headword}:${pos}:${glossHash}`;
@@ -163,11 +194,15 @@ export function kaikkiToImportEntry(
   // "honorific") that don't map onto UD-style FEATS without a manual
   // conversion table. For MVP we keep the surface form so it's
   // discoverable in fallback lookups but leave `features` empty.
-  const forms = (raw.forms ?? [])
-    .filter((f) => typeof f.form === 'string' && f.form.length > 0)
-    .map((f) => f.form.normalize('NFC'))
-    .filter((surface) => surface !== headword)
-    .map((surface) => ({ surface, features: {} as Record<string, string> }));
+  // With `rootFormsOnly` we skip the inflection table entirely — those are
+  // the conjugated/declined surfaces we don't want in the dictionary.
+  const forms = opts.rootFormsOnly
+    ? []
+    : (raw.forms ?? [])
+        .filter((f) => typeof f.form === 'string' && f.form.length > 0)
+        .map((f) => f.form.normalize('NFC'))
+        .filter((surface) => surface !== headword)
+        .map((surface) => ({ surface, features: {} as Record<string, string> }));
 
   const entry: ImportEntry = {
     sourceId,
@@ -183,7 +218,7 @@ export function kaikkiToImportEntry(
 
 async function* streamKaikkiSource(
   filePath: string,
-  opts: Pick<KaikkiSourceOptions, 'script' | 'sourceIdPrefix' | 'glossLanguage'>,
+  opts: Pick<KaikkiSourceOptions, 'script' | 'sourceIdPrefix' | 'glossLanguage' | 'rootFormsOnly'>,
 ): AsyncIterable<ImportEntry> {
   const stream = createReadStream(filePath, { encoding: 'utf-8' });
   const rl = createInterface({ input: stream, crlfDelay: Infinity });
