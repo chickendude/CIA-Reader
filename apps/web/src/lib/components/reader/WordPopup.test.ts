@@ -734,6 +734,74 @@ describe('WordPopup — book frequency', () => {
   });
 });
 
+describe('WordPopup — sentence translation', () => {
+  function jres(payload: unknown) {
+    return new Response(JSON.stringify(payload), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+  }
+  const LEMMA = {
+    lemma: { id: 'lem-1', headword: 'etxe', pos: 'NOUN', glossDefault: null },
+    translations: { personal: [], official: [], community: [] },
+  };
+
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('translates the sentence on demand and shows the result', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: unknown) => {
+        const url = String(input);
+        if (url.includes('/translate-sentence')) {
+          return jres({ sentence: 'Portuetxe kalea.', translation: 'Portuetxe street.' });
+        }
+        if (url.includes('/frequency')) return jres({ book: 0, text: 0 });
+        return jres(LEMMA);
+      }),
+    );
+    render(WordPopup, {
+      token: makeToken({
+        surface: 'etxe',
+        lemmaId: 'lem-1',
+        chapterId: '22222222-2222-2222-2222-222222222222',
+      }),
+      language: 'eu',
+      isOwner: false,
+      onClose: vi.fn(),
+    });
+    await waitFor(() => {
+      expect(
+        document.body.querySelector('[data-testid="translate-sentence-btn"]'),
+      ).not.toBeNull();
+    });
+    document.body
+      .querySelector<HTMLButtonElement>('[data-testid="translate-sentence-btn"]')!
+      .click();
+    await waitFor(() => {
+      expect(
+        document.body.querySelector('[data-testid="sentence-translate"]')!.textContent,
+      ).toContain('Portuetxe street.');
+    });
+  });
+
+  it('hides the button for client tokens without a chapter id', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => jres(LEMMA)));
+    render(WordPopup, {
+      token: makeToken({ surface: 'etxe', lemmaId: 'lem-1' }),
+      language: 'eu',
+      isOwner: false,
+      onClose: vi.fn(),
+    });
+    await waitFor(() => {
+      expect(document.body.querySelector('[data-testid="word-popup"]')).not.toBeNull();
+    });
+    expect(
+      document.body.querySelector('[data-testid="translate-sentence-btn"]'),
+    ).toBeNull();
+  });
+});
+
 describe('WordPopup — feature pills', () => {
   function makePayload() {
     return {

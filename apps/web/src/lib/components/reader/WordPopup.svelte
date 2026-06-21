@@ -313,6 +313,12 @@
   // book"), fetched lazily per word so a learner can prioritise frequent ones.
   let bookFrequency = $state<number | null>(null);
 
+  // OpenAI sentence translation for the sentence the current token sits in.
+  let sentenceTranslation = $state<string | null>(null);
+  let translatedSentence = $state<string | null>(null);
+  let translating = $state(false);
+  let translateError = $state<string | null>(null);
+
   // Re-fetch translations whenever the token prop changes. `$effect`
   // runs the body each time `token` (and thus `token.id` / `lemmaId`)
   // changes — which happens when the parent rebinds the popup to a
@@ -328,6 +334,10 @@
     adminRefError = null;
     adminRefLoading = false;
     bookFrequency = null;
+    sentenceTranslation = null;
+    translatedSentence = null;
+    translating = false;
+    translateError = null;
     if (!t) {
       payload = null;
       loadError = null;
@@ -1255,6 +1265,32 @@
       writeError = (e as Error).message;
     }
   }
+
+  // ---- Sentence translation (OpenAI) ------------------------------
+  async function translateSentence(): Promise<void> {
+    const t = token;
+    if (!t?.chapterId) return;
+    translating = true;
+    translateError = null;
+    try {
+      const res = await fetch('/api/v1/translate-sentence', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ chapterId: t.chapterId, tokenIdx: t.idx, language }),
+      });
+      if (!res.ok) {
+        if (res.status === 503) throw new Error('Sentence translation isn’t set up yet.');
+        throw new Error(`Translation failed (${res.status})`);
+      }
+      const data = (await res.json()) as { sentence: string; translation: string };
+      translatedSentence = data.sentence;
+      sentenceTranslation = data.translation;
+    } catch (e) {
+      translateError = (e as Error).message;
+    } finally {
+      translating = false;
+    }
+  }
 </script>
 
 <svelte:window onkeydown={handleKeydown} />
@@ -1544,6 +1580,32 @@
       {#if writeError}
         <p class="err small">Could not save: {writeError}</p>
       {/if}
+    {/if}
+
+    {#if token.chapterId && token.isWord && !isNumberToken}
+      <!-- OpenAI sentence-level translation for the sentence this word sits
+           in. Lazy: only fetched when the reader asks. -->
+      <div class="sp-translate" data-testid="sentence-translate">
+        {#if sentenceTranslation}
+          {#if translatedSentence}
+            <p class="sp-translate-src">{translatedSentence}</p>
+          {/if}
+          <p class="sp-translate-out">{sentenceTranslation}</p>
+        {:else}
+          <button
+            type="button"
+            class="sp-translate-btn"
+            data-testid="translate-sentence-btn"
+            onclick={translateSentence}
+            disabled={translating}
+          >
+            {translating ? 'Translating…' : 'Translate sentence'}
+          </button>
+        {/if}
+        {#if translateError}
+          <p class="err small" data-testid="translate-error">{translateError}</p>
+        {/if}
+      </div>
     {/if}
 
     {#if payload}
@@ -2268,6 +2330,31 @@
     background: var(--card, var(--color-bg));
     color: var(--ink, var(--color-fg));
     box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+  }
+
+  .sp-translate {
+    margin: 0.5rem 0;
+  }
+  .sp-translate-btn {
+    padding: 0.3rem 0.7rem;
+    font: inherit;
+    font-size: 0.8rem;
+    color: var(--ink, var(--color-fg));
+    background: var(--paper, var(--color-bg));
+    border: 1px solid var(--rule, var(--color-border));
+    border-radius: 7px;
+    cursor: pointer;
+  }
+  .sp-translate-src {
+    margin: 0 0 0.2rem;
+    font-size: 0.85rem;
+    font-style: italic;
+    color: var(--ink-3, var(--color-fg-muted));
+  }
+  .sp-translate-out {
+    margin: 0;
+    font-size: 0.92rem;
+    color: var(--ink, var(--color-fg));
   }
 
   .sp-section-h {

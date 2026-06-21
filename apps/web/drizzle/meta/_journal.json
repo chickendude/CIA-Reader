@@ -337,6 +337,13 @@
       "when": 1782001652199,
       "tag": "0047_right_elektra",
       "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1782002730387,
+      "tag": "0048_overconfident_stark_industries",
+      "breakpoints": true
     }
   ]
 }

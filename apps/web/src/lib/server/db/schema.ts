@@ -883,6 +883,36 @@ export const basqueReferenceCache = pgTable(
 );
 
 /**
+ * Cache of OpenAI sentence translations, keyed by (source language, target
+ * language, model, sentence hash). Global (not per-user) so a sentence is
+ * translated once regardless of who hits it; keeps gpt-4o cost + latency down.
+ */
+export const sentenceTranslations = pgTable(
+  'sentence_translations',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    /** Source language code. */
+    language: text('language').notNull(),
+    targetLanguage: text('target_language').notNull(),
+    /** OpenAI model used (cache invalidates implicitly when the model changes). */
+    model: text('model').notNull(),
+    /** sha256 of the source sentence. */
+    textHash: text('text_hash').notNull(),
+    text: text('text').notNull(),
+    translation: text('translation').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    key: unique('sentence_translations_key_uq').on(
+      t.language,
+      t.targetLanguage,
+      t.model,
+      t.textHash,
+    ),
+  }),
+);
+
+/**
  * Per-language curator grants (T-3.4).
  *
  * A user with `role='curator'` has edit rights on a language only when a

@@ -14,3 +14,8 @@ export const SMTP_PORT = Number(env.SMTP_PORT ?? 1025);
 export const SMTP_USER = env.SMTP_USER ?? '';
 export const SMTP_PASS = env.SMTP_PASS ?? '';
 export const SMTP_FROM = env.SMTP_FROM ?? 'no-reply@ciareader.local';
+
+// OpenAI — powers sentence-level translation in the reader. Empty key
+// disables the feature (the endpoint returns 503), so dev works without it.
+export const OPENAI_API_KEY = env.OPENAI_API_KEY ?? '';
+export const OPENAI_MODEL = env.OPENAI_MODEL ?? 'gpt-4o';
