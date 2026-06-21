@@ -107,6 +107,7 @@ describe('loadChapterTokens', () => {
           hi: { spelled: 'एक सौ तेईस', romanized: 'ek sau teīs' },
           mr: { spelled: 'एकशे तेवीस', romanized: 'ēkaśē tēvīsa' },
           odia: { spelled: 'ଏକ ଶହ ତେଇଶ', romanized: 'ēka śaha tēiśa' },
+          eu: { spelled: 'ehun eta hogeita hiru', romanized: '' },
         },
       }),
     ]);

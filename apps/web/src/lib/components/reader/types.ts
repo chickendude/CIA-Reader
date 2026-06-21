@@ -96,6 +96,9 @@ export type ServerNumberForms = {
   /** Odia rendering. Field is `odia`, not ISO 639-1 `or`, because
    *  `or` is a reserved keyword on the Python side. */
   odia: ServerNumberLanguageForm;
+  /** Basque rendering. Latin script, so `romanized` is empty — the
+   *  spelled-out (base-20) form is itself the reading. */
+  eu: ServerNumberLanguageForm;
 };
 
 /** Per-token row from the NLP worker (T-5.2). When present, the
@@ -104,6 +107,10 @@ export type ServerNumberForms = {
 export type ServerToken = {
   id: string;
   idx: number;
+  /** Owning chapter id (server tokens only). Lets the popup capture the mined
+   *  sentence when a word is marked Learning. Absent on client-tokenized
+   *  fallback tokens. */
+  chapterId?: string;
   surface: string;
   isWord: boolean;
   isAmbiguous: boolean;

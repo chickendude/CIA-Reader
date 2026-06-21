@@ -23,6 +23,7 @@ from app.numbers import (
     parse_digits,
     parse_number,
     spell,
+    to_words_eu,
     to_words_hi,
     to_words_mr,
     to_words_or,
@@ -252,11 +253,203 @@ def test_to_words_or_pinned(n: int, expected: str) -> None:
 
 
 # ----------------------------------------------------------------
+# Basque (Euskara) spelled-out — base-20 (vigesimal). The full 0–99
+# table and the composition anchors are transcribed from the
+# curator-supplied "zenbakiak" word list and pinned here so a
+# transcription typo in ``_EU_BELOW_100`` — or a regression in
+# ``to_words_eu``'s single-``eta`` placement — trips CI rather than
+# shipping a wrong reading. Basque is Latin-script, so there is no
+# romanization to check; the spelled-out form is the reading.
+# ----------------------------------------------------------------
+
+_BASQUE_BELOW_100: list[tuple[int, str]] = [
+    (0, "zero"),
+    (1, "bat"),
+    (2, "bi"),
+    (3, "hiru"),
+    (4, "lau"),
+    (5, "bost"),
+    (6, "sei"),
+    (7, "zazpi"),
+    (8, "zortzi"),
+    (9, "bederatzi"),
+    (10, "hamar"),
+    (11, "hamaika"),
+    (12, "hamabi"),
+    (13, "hamahiru"),
+    (14, "hamalau"),
+    (15, "hamabost"),
+    (16, "hamasei"),
+    (17, "hamazazpi"),
+    (18, "hemezortzi"),
+    (19, "hemeretzi"),
+    (20, "hogei"),
+    (21, "hogeita bat"),
+    (22, "hogeita bi"),
+    (23, "hogeita hiru"),
+    (24, "hogeita lau"),
+    (25, "hogeita bost"),
+    (26, "hogeita sei"),
+    (27, "hogeita zazpi"),
+    (28, "hogeita zortzi"),
+    (29, "hogeita bederatzi"),
+    (30, "hogeita hamar"),
+    (31, "hogeita hamaika"),
+    (32, "hogeita hamabi"),
+    (33, "hogeita hamahiru"),
+    (34, "hogeita hamalau"),
+    (35, "hogeita hamabost"),
+    (36, "hogeita hamasei"),
+    (37, "hogeita hamazazpi"),
+    (38, "hogeita hemezortzi"),
+    (39, "hogeita hemeretzi"),
+    (40, "berrogei"),
+    (41, "berrogeita bat"),
+    (42, "berrogeita bi"),
+    (43, "berrogeita hiru"),
+    (44, "berrogeita lau"),
+    (45, "berrogeita bost"),
+    (46, "berrogeita sei"),
+    (47, "berrogeita zazpi"),
+    (48, "berrogeita zortzi"),
+    (49, "berrogeita bederatzi"),
+    (50, "berrogeita hamar"),
+    (51, "berrogeita hamaika"),
+    (52, "berrogeita hamabi"),
+    (53, "berrogeita hamahiru"),
+    (54, "berrogeita hamalau"),
+    (55, "berrogeita hamabost"),
+    (56, "berrogeita hamasei"),
+    (57, "berrogeita hamazazpi"),
+    (58, "berrogeita hemezortzi"),
+    (59, "berrogeita hemeretzi"),
+    (60, "hirurogei"),
+    (61, "hirurogeita bat"),
+    (62, "hirurogeita bi"),
+    (63, "hirurogeita hiru"),
+    (64, "hirurogeita lau"),
+    (65, "hirurogeita bost"),
+    (66, "hirurogeita sei"),
+    (67, "hirurogeita zazpi"),
+    (68, "hirurogeita zortzi"),
+    (69, "hirurogeita bederatzi"),
+    (70, "hirurogeita hamar"),
+    (71, "hirurogeita hamaika"),
+    (72, "hirurogeita hamabi"),
+    (73, "hirurogeita hamahiru"),
+    (74, "hirurogeita hamalau"),
+    (75, "hirurogeita hamabost"),
+    (76, "hirurogeita hamasei"),
+    (77, "hirurogeita hamazazpi"),
+    (78, "hirurogeita hemezortzi"),
+    (79, "hirurogeita hemeretzi"),
+    (80, "laurogei"),
+    (81, "laurogeita bat"),
+    (82, "laurogeita bi"),
+    (83, "laurogeita hiru"),
+    (84, "laurogeita lau"),
+    (85, "laurogeita bost"),
+    (86, "laurogeita sei"),
+    (87, "laurogeita zazpi"),
+    (88, "laurogeita zortzi"),
+    (89, "laurogeita bederatzi"),
+    (90, "laurogeita hamar"),
+    (91, "laurogeita hamaika"),
+    (92, "laurogeita hamabi"),
+    (93, "laurogeita hamahiru"),
+    (94, "laurogeita hamalau"),
+    (95, "laurogeita hamabost"),
+    (96, "laurogeita hamasei"),
+    (97, "laurogeita hamazazpi"),
+    (98, "laurogeita hemezortzi"),
+    (99, "laurogeita hemeretzi"),
+]
+
+
+# Hundreds / thousands / millions composition, with the single ``eta``
+# landing immediately before the last non-zero group. Every value here
+# is taken verbatim from the curator word list.
+_BASQUE_COMPOSED: list[tuple[int, str]] = [
+    (100, "ehun"),
+    (101, "ehun eta bat"),
+    (102, "ehun eta bi"),
+    (110, "ehun eta hamar"),
+    (120, "ehun eta hogei"),
+    (200, "berrehun"),
+    (234, "berrehun eta hogeita hamalau"),
+    (300, "hirurehun"),
+    (400, "laurehun"),
+    (500, "bostehun"),
+    (600, "seiehun"),
+    (700, "zazpiehun"),
+    (800, "zortziehun"),
+    (900, "bederatziehun"),
+    (1_000, "mila"),
+    (1_200, "mila eta berrehun"),
+    (1_201, "mila berrehun eta bat"),
+    (1_984, "mila bederatziehun eta laurogeita lau"),
+    (2_000, "bi mila"),
+    (1_000_000, "milioi bat"),
+    (10_000_000, "hamar milioi"),
+]
+
+
+@pytest.mark.parametrize("n,expected", _BASQUE_BELOW_100)
+def test_to_words_eu_below_100(n: int, expected: str) -> None:
+    assert to_words_eu(n) == expected
+
+
+@pytest.mark.parametrize("n,expected", _BASQUE_COMPOSED)
+def test_to_words_eu_composed(n: int, expected: str) -> None:
+    assert to_words_eu(n) == expected
+
+
+def test_number_forms_basque() -> None:
+    """The reader's explicit request: hovering ``11`` shows ``hamaika``.
+    Basque is Latin-script, so ``romanized`` is empty — the spelled-out
+    form is itself the reading."""
+    nf = number_forms("11")
+    assert nf is not None
+    assert nf.eu.spelled == "hamaika"
+    assert nf.eu.romanized == ""
+
+    assert number_forms("1").eu.spelled == "bat"  # type: ignore[union-attr]
+    assert (
+        number_forms("1984").eu.spelled  # type: ignore[union-attr]
+        == "mila bederatziehun eta laurogeita lau"
+    )
+
+
+def test_number_forms_serializes_basque_field() -> None:
+    """The wire field for Basque is ``eu``; the TypeScript mirror in
+    apps/web/src/lib/server/nlp-client.ts depends on it being present."""
+    nf = number_forms("1")
+    assert nf is not None
+    payload = nf.model_dump()
+    assert "eu" in payload
+    assert payload["eu"]["romanized"] == ""
+
+
+@pytest.mark.parametrize(
+    "sign,integer,fractional,expected",
+    [
+        ("-", 3, None, "ken hiru"),
+        ("+", 3, "14", "hiru koma bat lau"),
+        ("-", 2, "5", "ken bi koma bost"),
+    ],
+)
+def test_spell_basque_signed_decimal(
+    sign: str, integer: int, fractional: str | None, expected: str
+) -> None:
+    assert spell(sign, integer, fractional, "eu") == expected  # type: ignore[arg-type]
+
+
+# ----------------------------------------------------------------
 # Range guards.
 # ----------------------------------------------------------------
 
 
-@pytest.mark.parametrize("converter", [to_words_hi, to_words_mr, to_words_or])
+@pytest.mark.parametrize("converter", [to_words_hi, to_words_mr, to_words_or, to_words_eu])
 @pytest.mark.parametrize("n", [-1, MAX_VALUE + 1, 100_000_000])
 def test_to_words_out_of_range(converter, n: int) -> None:
     with pytest.raises(ValueError):
@@ -272,7 +465,7 @@ def test_to_words_out_of_range(converter, n: int) -> None:
 # ----------------------------------------------------------------
 
 
-@pytest.mark.parametrize("converter", [to_words_hi, to_words_mr, to_words_or])
+@pytest.mark.parametrize("converter", [to_words_hi, to_words_mr, to_words_or, to_words_eu])
 def test_below_100_sweep_non_empty(converter) -> None:
     seen: set[str] = set()
     for i in range(100):

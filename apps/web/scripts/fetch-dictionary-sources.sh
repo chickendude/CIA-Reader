@@ -123,6 +123,22 @@ fetch_kaikki() {
   download_with_conditional "$lang_slug" "$url" "$out"
 }
 
+fetch_kaikki_edition() {
+  # A non-English Wiktionary edition (so the glosses are in that edition's
+  # language). Its dumps live under a per-edition host segment and a
+  # category name rather than the /dictionary/<Language>/ path fetch_kaikki
+  # uses — e.g. the Spanish edition's Basque ("Vasco") dump at
+  # https://kaikki.org/eswiktionary/Vasco/kaikki.org-dictionary-Vasco.jsonl.
+  local lang_slug="$1"   # kebab-case slug, e.g. kaikki-basque-es
+  local edition="$2"     # edition host segment, e.g. eswiktionary
+  local category="$3"    # category/language name in the URL, e.g. Vasco
+  local out="$DATA_ROOT/$lang_slug"
+  mkdir -p "$out"
+  if skip_if_fresh "$lang_slug" "$out/raw.jsonl"; then return; fi
+  local url="https://kaikki.org/${edition}/${category}/kaikki.org-dictionary-${category}.jsonl"
+  download_with_conditional "$lang_slug" "$url" "$out"
+}
+
 fetch_kaikki_en_translations() {
   # The English Wiktionary dump is shared by all three
   # kaikki-en-translations-* importers (HI / MR / OR) — they each
@@ -158,6 +174,7 @@ case "${1-all}" in
     fetch_kaikki kaikki-odia Odia
     fetch_kaikki kaikki-yiddish Yiddish
     fetch_kaikki kaikki-basque Basque
+    fetch_kaikki_edition kaikki-basque-es eswiktionary Vasco
     fetch_kaikki_en_translations
     ;;
   kaikki-hindi)
@@ -174,6 +191,9 @@ case "${1-all}" in
     ;;
   kaikki-basque)
     fetch_kaikki kaikki-basque Basque
+    ;;
+  kaikki-basque-es)
+    fetch_kaikki_edition kaikki-basque-es eswiktionary Vasco
     ;;
   kaikki-en-translations)
     fetch_kaikki_en_translations
@@ -197,7 +217,7 @@ case "${1-all}" in
     ;;
   *)
     echo "unknown source: $1" >&2
-    echo "available: kaikki-hindi, kaikki-marathi, kaikki-odia, kaikki-yiddish, kaikki-basque, kaikki-en-translations" >&2
+    echo "available: kaikki-hindi, kaikki-marathi, kaikki-odia, kaikki-yiddish, kaikki-basque, kaikki-basque-es, kaikki-en-translations" >&2
     echo "  loshn-koydesh detection aids (not imported): kaikki-hebrew, kaikki-aramaic, loshn-koydesh-aids" >&2
     exit 1
     ;;

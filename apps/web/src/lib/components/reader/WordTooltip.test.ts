@@ -148,6 +148,7 @@ describe('WordTooltip — number tokens (T-2.8)', () => {
         hi: { spelled: 'एक सौ तेईस', romanized: 'ek sau teīs' },
         mr: { spelled: 'एकशे तेवीस', romanized: 'ēkaśē tēvīsa' },
         odia: { spelled: 'ଏକ ଶହ ତେଇଶ', romanized: 'ēka śaha tēiśa' },
+        eu: { spelled: 'ehun eta hogeita hiru', romanized: '' },
       },
     });
   }
@@ -182,6 +183,19 @@ describe('WordTooltip — number tokens (T-2.8)', () => {
     });
     const def = document.body.querySelector('.tip-def');
     expect(def?.textContent).toContain('ଏକ ଶହ ତେଇଶ');
+  });
+
+  it('switches to the Basque form (no romanization stripe) when the reader is in Basque', () => {
+    render(WordTooltip, {
+      token: makeNumberToken(),
+      anchorRect: ANCHOR,
+      language: 'eu',
+    });
+    const def = document.body.querySelector('.tip-def');
+    expect(def?.textContent).toContain('ehun eta hogeita hiru');
+    // No Indic spelling leaks; Latin-script carries no romanization.
+    expect(def?.textContent).not.toContain('एक सौ तेईस');
+    expect(def?.querySelector('.num-roman')).toBeNull();
   });
 
   it('suppresses the head romanization for number tokens (the digits would be redundant)', () => {

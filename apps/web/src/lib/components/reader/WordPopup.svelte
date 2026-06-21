@@ -26,6 +26,18 @@
   import ReportTranslationModal from './ReportTranslationModal.svelte';
   import { getFeaturePills } from './feature-labels.js';
   import { customizableOfficialIds } from './customize-eligibility.js';
+  import {
+    definitionLanguageName,
+    HIDDEN_DEFINITION_LANGUAGES_KEY,
+    parseHiddenDefinitionLanguages,
+    serializeHiddenDefinitionLanguages,
+    ACTIVE_REFERENCE_LANGUAGE_KEY,
+    parseReferenceLanguage,
+    REFERENCE_LANGUAGE_TABS,
+    referenceSourceLanguage,
+    type ReferenceLanguage,
+  } from './definition-languages.js';
+  import { browser } from '$app/environment';
   import type { LanguageCode } from '@ciareader/shared-types';
   import { looksLikeNumberToken, type ServerToken } from './types.js';
 
@@ -60,6 +72,9 @@
       official: PublicTranslation[];
       community: PublicTranslation[];
     };
+    /** Distinct definition languages present across the buckets (T-… Basque
+     *  dictionary). Drives the per-language filter chips. */
+    definitionLanguages?: string[];
   };
 
   type NumberDisplay = {
@@ -82,6 +97,8 @@
     selectionError,
     language,
     isOwner,
+    isAdmin = false,
+    textId = '',
     onClose,
     onStatusChange,
     onCorrectionApplied,
@@ -113,6 +130,12 @@
     language: LanguageCode;
     anchorRect?: { top: number; left: number; bottom: number; right: number };
     isOwner: boolean;
+    /** T-… Basque dictionary: gates the admin-only Elhuyar/Euskaltzaindia
+     *  reference panel. Threaded from the reader loader's `isAdmin`. */
+    isAdmin?: boolean;
+    /** Owning text id — drives the "appears N× in this book" lookup.
+     *  Optional so tests can mount without it; always supplied by the reader. */
+    textId?: string;
     onClose: () => void;
     onStatusChange?: (
       lemmaId: string,
@@ -286,6 +309,16 @@
   });
   const sheetOpen = $derived(isDesktop || token !== null);
 
+  // Book-wide occurrence count for the current lemma ("appears N× in this
+  // book"), fetched lazily per word so a learner can prioritise frequent ones.
+  let bookFrequency = $state<number | null>(null);
+
+  // OpenAI sentence translation for the sentence the current token sits in.
+  let sentenceTranslation = $state<string | null>(null);
+  let translatedSentence = $state<string | null>(null);
+  let translating = $state(false);
+  let translateError = $state<string | null>(null);
+
   // Re-fetch translations whenever the token prop changes. `$effect`
   // runs the body each time `token` (and thus `token.id` / `lemmaId`)
   // changes — which happens when the parent rebinds the popup to a
@@ -293,6 +326,18 @@
   // instead of leaving the old one stuck.
   $effect(() => {
     const t = token;
+    // Clear the reference panel whenever the popup rebinds to a different
+    // word; the auto-load effect refetches for the new word. The active
+    // tab is intentionally preserved across words.
+    adminRefResults = null;
+    adminRefWord = null;
+    adminRefError = null;
+    adminRefLoading = false;
+    bookFrequency = null;
+    sentenceTranslation = null;
+    translatedSentence = null;
+    translating = false;
+    translateError = null;
     if (!t) {
       payload = null;
       loadError = null;
@@ -323,9 +368,160 @@
         }
       }
     })();
+    // Book-wide frequency — best-effort, non-blocking, doesn't affect the rest
+    // of the popup if it fails.
+    void (async () => {
+      if (!textId) return;
+      try {
+        const res = await fetch(
+          `/api/v1/texts/${textId}/lemmas/${t.lemmaId}/frequency`,
+        );
+        if (cancelled || !res.ok) return;
+        const data = (await res.json()) as { book: number; text: number };
+        bookFrequency = data.book;
+      } catch {
+        /* frequency is a nice-to-have; ignore failures */
+      }
+    })();
+    // If this sentence was already translated (globally cached), show it the
+    // moment the word opens — no button click, no OpenAI call (cachedOnly).
+    void (async () => {
+      if (!t.chapterId || !t.isWord || isNumberToken) return;
+      try {
+        const res = await fetch('/api/v1/translate-sentence', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            chapterId: t.chapterId,
+            tokenIdx: t.idx,
+            language,
+            cachedOnly: true,
+          }),
+        });
+        if (cancelled || !res.ok) return;
+        const data = (await res.json()) as {
+          sentence: string;
+          translation: string | null;
+        };
+        if (data.translation) {
+          translatedSentence = data.sentence;
+          sentenceTranslation = data.translation;
+        }
+      } catch {
+        /* saved-translation preview is best-effort */
+      }
+    })();
     return () => {
       cancelled = true;
     };
+  });
+
+  // ---- Admin-only Basque reference panel (Elhuyar / Euskaltzaindia) ---
+  // Proprietary dictionaries shown to admins only, as a curation aid.
+  // Lazy: nothing is fetched until the section is expanded. Reference-only
+  // — the endpoint never writes to our DB.
+  type BasqueRefResult = {
+    source: string;
+    label: string;
+    headword: string;
+    pos: string;
+    definition: string;
+    examples: string[];
+    url: string;
+  };
+  let adminRefLoading = $state(false);
+  let adminRefError = $state<string | null>(null);
+  let adminRefResults = $state<BasqueRefResult[] | null>(null);
+  let adminRefWord = $state<string | null>(null);
+
+  // The ES | EN | EU tabs select which upstream source's entries show.
+  // Persisted so the admin's preferred reference language sticks across
+  // words; `null` until they pick, then we default to the first tab that
+  // has results.
+  function readActiveRefTab(): ReferenceLanguage | null {
+    if (!browser) return null;
+    try {
+      return parseReferenceLanguage(
+        localStorage.getItem(ACTIVE_REFERENCE_LANGUAGE_KEY),
+      );
+    } catch {
+      return null;
+    }
+  }
+  let activeRefTab = $state<ReferenceLanguage | null>(readActiveRefTab());
+
+  // We look up the resolved NLP lemma; for an OOV token (no lemma) we fall
+  // back to the surface. Waiting for the lemma when there is one avoids a
+  // double fetch (surface, then lemma) as the payload resolves.
+  const adminRefLookupWord = $derived(
+    payload?.lemma.headword ?? (token && !token.lemmaId ? token.surface : null),
+  );
+  const showAdminRef = $derived(
+    isAdmin &&
+      language === 'eu' &&
+      !!token?.isWord &&
+      // Skip numerals — they have their own spelled-out block, not a
+      // dictionary entry. (`isNumberToken` is declared below, so inline
+      // the same check here to avoid a use-before-declaration.)
+      token?.numberForms == null &&
+      !looksLikeNumberToken(token?.surface ?? '') &&
+      !!adminRefLookupWord,
+  );
+
+  function refResultsFor(lang: ReferenceLanguage): BasqueRefResult[] {
+    return (adminRefResults ?? []).filter(
+      (r) => referenceSourceLanguage(r.source) === lang,
+    );
+  }
+  const refTabsWithResults = $derived(
+    REFERENCE_LANGUAGE_TABS.filter((l) => refResultsFor(l).length > 0),
+  );
+  // Honour the admin's pick; otherwise land on the first tab that has
+  // something so the panel isn't empty on open.
+  const effectiveRefTab: ReferenceLanguage = $derived(
+    activeRefTab ?? refTabsWithResults[0] ?? 'es',
+  );
+  const shownRefResults = $derived(refResultsFor(effectiveRefTab));
+
+  function selectRefTab(lang: ReferenceLanguage): void {
+    activeRefTab = lang;
+    if (browser) {
+      try {
+        localStorage.setItem(ACTIVE_REFERENCE_LANGUAGE_KEY, lang);
+      } catch {
+        /* storage disabled — in-memory state still works */
+      }
+    }
+  }
+
+  async function loadAdminRef(): Promise<void> {
+    const word = adminRefLookupWord;
+    if (!word) return;
+    adminRefWord = word; // mark requested up front so the effect won't refire
+    adminRefLoading = true;
+    adminRefError = null;
+    adminRefResults = null;
+    try {
+      const res = await fetch(
+        `/api/v1/admin/basque-dictionary?word=${encodeURIComponent(word)}`,
+      );
+      if (!res.ok) throw new Error(`Lookup failed (${res.status})`);
+      const data = (await res.json()) as { results: BasqueRefResult[] };
+      adminRefResults = data.results;
+    } catch (e) {
+      adminRefError = e instanceof Error ? e.message : 'Lookup failed';
+      adminRefResults = null;
+    } finally {
+      adminRefLoading = false;
+    }
+  }
+
+  // Auto-load on open — the panel is expanded by default (no toggle).
+  $effect(() => {
+    if (!showAdminRef) return;
+    const word = adminRefLookupWord;
+    if (!word || adminRefWord === word) return;
+    void loadAdminRef();
   });
 
   function handleKeydown(e: KeyboardEvent) {
@@ -361,6 +557,83 @@
       ...payload.translations.official,
       ...payload.translations.community,
     ];
+  });
+
+  // ---- Definition-language filter (Basque dictionary) -------------
+  // Each translation is glossed in some language (`targetLanguage`).
+  // Basque carries English + Spanish + (eventually) monolingual Basque,
+  // so we let the reader hide languages they don't read. The choice is a
+  // pure display preference persisted in localStorage (no migration, not
+  // cross-device).
+  function readHiddenDefLangs(): Set<string> {
+    if (!browser) return new Set<string>();
+    try {
+      return parseHiddenDefinitionLanguages(
+        localStorage.getItem(HIDDEN_DEFINITION_LANGUAGES_KEY),
+      );
+    } catch {
+      // localStorage can be absent/disabled (private mode, test env) —
+      // fall back to "nothing hidden".
+      return new Set<string>();
+    }
+  }
+
+  let hiddenDefLangs = $state<Set<string>>(readHiddenDefLangs());
+
+  const definitionLanguages = $derived(payload?.definitionLanguages ?? []);
+  // Only worth showing the filter when there's more than one language to
+  // choose between — single-language readers (e.g. Hindi → English only)
+  // never see the control.
+  const showDefLangFilter = $derived(definitionLanguages.length >= 2);
+
+  function isDefLangVisible(code: string): boolean {
+    return !hiddenDefLangs.has(code);
+  }
+
+  function toggleDefLang(code: string): void {
+    const next = new Set(hiddenDefLangs);
+    if (next.has(code)) next.delete(code);
+    else next.add(code);
+    hiddenDefLangs = next;
+    if (browser) {
+      try {
+        localStorage.setItem(
+          HIDDEN_DEFINITION_LANGUAGES_KEY,
+          serializeHiddenDefinitionLanguages(next),
+        );
+      } catch {
+        /* storage disabled / over quota — the in-memory state still works */
+      }
+    }
+  }
+
+  // Translations rendered in the list (everything except the primary
+  // personal editor slot), after the language filter. Used to drive the
+  // "all hidden" empty-state.
+  const visibleListTranslations = $derived(() => {
+    if (!payload) return [];
+    return [
+      ...payload.translations.personal.slice(1),
+      ...payload.translations.official,
+      ...payload.translations.community,
+    ].filter((t) => isDefLangVisible(t.targetLanguage));
+  });
+
+  // List rows that exist before the language filter (the primary personal
+  // editor slot is rendered separately, so it's excluded here). When this
+  // is non-zero but nothing survives the filter, the list shows an
+  // "all hidden" empty-state rather than looking broken.
+  const totalListCount = $derived(() => {
+    if (!payload) return 0;
+    const personalRest =
+      payload.translations.personal.length > 0
+        ? payload.translations.personal.length - 1
+        : 0;
+    return (
+      personalRest +
+      payload.translations.official.length +
+      payload.translations.community.length
+    );
   });
 
   // ---- Add-translation flow ---------------------------------------
@@ -461,6 +734,16 @@
 
   const numberDisplay = $derived((): NumberDisplay | null => {
     if (!token?.numberForms) return null;
+    if (language === 'eu') {
+      // Basque: Latin-script, so the native digits are the Latin digits
+      // (the header dedupes them) and there's no separate romanization.
+      return {
+        label: 'Basque',
+        nativeDigits: token.numberForms.digitsLatin,
+        spelled: token.numberForms.eu.spelled,
+        romanized: token.numberForms.eu.romanized,
+      };
+    }
     if (language === 'or') {
       return {
         label: 'Odia',
@@ -991,11 +1274,15 @@
     const previous = optimisticStatus;
     optimisticStatus = status;
     writeError = null;
+    // Capture the mined sentence when we have reading context (server tokens
+    // carry chapterId; the API reconstructs the sentence around this token).
+    const context =
+      token.chapterId != null ? { chapterId: token.chapterId, tokenIdx: token.idx } : {};
     try {
       const res = await fetch(`/api/v1/me/known-lemmas/${lemmaId}`, {
         method: 'PATCH',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ status }),
+        body: JSON.stringify({ status, ...context }),
       });
       if (!res.ok) {
         throw new Error(`PATCH failed: ${res.status}`);
@@ -1004,6 +1291,39 @@
     } catch (e) {
       optimisticStatus = previous;
       writeError = (e as Error).message;
+    }
+  }
+
+  // ---- Sentence translation (OpenAI) ------------------------------
+  async function translateSentence(): Promise<void> {
+    const t = token;
+    if (!t?.chapterId) return;
+    translating = true;
+    translateError = null;
+    try {
+      const res = await fetch('/api/v1/translate-sentence', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ chapterId: t.chapterId, tokenIdx: t.idx, language }),
+      });
+      if (!res.ok) {
+        if (res.status === 503) throw new Error('Sentence translation isn’t set up yet.');
+        let message = `Translation failed (${res.status})`;
+        try {
+          const errBody = (await res.json()) as { message?: string };
+          if (errBody?.message) message = errBody.message;
+        } catch {
+          /* non-JSON error body */
+        }
+        throw new Error(message);
+      }
+      const data = (await res.json()) as { sentence: string; translation: string };
+      translatedSentence = data.sentence;
+      sentenceTranslation = data.translation;
+    } catch (e) {
+      translateError = (e as Error).message;
+    } finally {
+      translating = false;
     }
   }
 </script>
@@ -1140,10 +1460,32 @@
         {#if token.numberForms && numberDisplay()}
           <h2 class="sp-word num-title">
             <span>{token.numberForms.digitsLatin}</span>
-            <span class="num-native">{numberDisplay()?.nativeDigits}</span>
+            {#if numberDisplay()?.nativeDigits !== token.numberForms.digitsLatin}
+              <!-- Latin-script languages (Basque) repeat the Latin digits;
+                   only show a second copy for non-Latin scripts. -->
+              <span class="num-native">{numberDisplay()?.nativeDigits}</span>
+            {/if}
           </h2>
         {:else}
-          <h2 class="sp-word">{token.surface}</h2>
+          <h2 class="sp-word">
+            <span class="sp-word-text">{payload?.lemma.headword ?? token.surface}</span>
+            {#if payload}
+              <PosPill pos={payload.lemma.pos} class="sp-pos-pill" />
+            {/if}
+            {#if bookFrequency !== null && bookFrequency > 0}
+              <span
+                class="sp-freq-badge"
+                data-testid="book-frequency"
+                aria-label={`this word appears ${bookFrequency} ${
+                  bookFrequency === 1 ? 'time' : 'times'
+                } in the book`}
+              >
+                <span class="sp-freq-count" aria-hidden="true">{bookFrequency}×</span>
+                <!-- prettier-ignore -->
+                <span class="sp-freq-tip" role="tooltip">this word appears {bookFrequency}{bookFrequency === 1 ? ' time' : ' times'} in the book</span>
+              </span>
+            {/if}
+          </h2>
         {/if}
       {#if token.numberForms}
         <!-- T-2.8: digit-only NUM token. Show the Latin digits beside
@@ -1155,7 +1497,11 @@
           <div class="num-entry">
             <span class="num-lang">{numberDisplay()?.label}</span>
             <span class="num-spelled">{numberDisplay()?.spelled}</span>
-            <span class="num-roman">{numberDisplay()?.romanized}</span>
+            {#if numberDisplay()?.romanized}
+              <!-- Latin-script languages (Basque) have no separate
+                   romanization; the spelled-out form is the reading. -->
+              <span class="num-roman">{numberDisplay()?.romanized}</span>
+            {/if}
           </div>
         </div>
       {:else if isNumberToken}
@@ -1173,13 +1519,6 @@
           <p class="sp-roman">{token.romanization}</p>
         {/if}
         {#if payload}
-          <p class="sp-row">
-            <span class="k">Lemma</span>
-            <span class="v sp-headword">
-              <span>{payload.lemma.headword}</span>
-              <PosPill pos={payload.lemma.pos} class="sp-pos-pill" />
-            </span>
-          </p>
           {@const featurePills = getFeaturePills(payload.lemma.pos, token?.features ?? {})}
           {#if featurePills.length > 0}
             <p class="sp-row sp-feats-row" data-testid="feature-pills">
@@ -1281,14 +1620,67 @@
       {/if}
     {/if}
 
+    {#if token.chapterId && token.isWord && !isNumberToken}
+      <!-- OpenAI sentence-level translation for the sentence this word sits
+           in. Lazy: only fetched when the reader asks. -->
+      <div class="sp-translate" data-testid="sentence-translate">
+        {#if sentenceTranslation}
+          {#if translatedSentence}
+            <p class="sp-translate-src">{translatedSentence}</p>
+          {/if}
+          <p class="sp-translate-out">{sentenceTranslation}</p>
+        {:else}
+          <button
+            type="button"
+            class="sp-translate-btn"
+            data-testid="translate-sentence-btn"
+            onclick={translateSentence}
+            disabled={translating}
+          >
+            {translating ? 'Translating…' : 'Translate sentence'}
+          </button>
+        {/if}
+        {#if translateError}
+          <p class="err small" data-testid="translate-error">{translateError}</p>
+        {/if}
+      </div>
+    {/if}
+
     {#if payload}
       <h3 class="sp-section-h">
         Translations
         <span class="muted">{allTranslations().length}</span>
       </h3>
 
+      {#if showDefLangFilter}
+        <div
+          class="def-lang-filter"
+          role="group"
+          aria-label="Filter definitions by language"
+          data-testid="def-lang-filter"
+        >
+          {#each definitionLanguages as code (code)}
+            <button
+              type="button"
+              class="def-lang-chip"
+              data-active={isDefLangVisible(code) ? '1' : '0'}
+              aria-pressed={isDefLangVisible(code)}
+              data-testid={`def-lang-chip-${code}`}
+              onclick={() => toggleDefLang(code)}
+              title={isDefLangVisible(code)
+                ? `Hide ${definitionLanguageName(code)} definitions`
+                : `Show ${definitionLanguageName(code)} definitions`}
+            >
+              {definitionLanguageName(code)}
+            </button>
+          {/each}
+        </div>
+      {/if}
+
       <ul class="translations">
-        {#each payload.translations.personal.slice(1) as t (t.id)}
+        {#each payload.translations.personal
+          .slice(1)
+          .filter((t) => isDefLangVisible(t.targetLanguage)) as t (t.id)}
           <li class="personal-row" data-testid="personal-row">
             {#if editingId === t.id}
               <form
@@ -1316,6 +1708,11 @@
             {:else}
               <div class="personal-body">
                 <span class="personal-text">{t.body}</span>
+                {#if showDefLangFilter}
+                  <span class="def-lang-badge">
+                    {definitionLanguageName(t.targetLanguage)}
+                  </span>
+                {/if}
                 {#if isOwner}
                   <div class="personal-actions">
                     <button
@@ -1347,10 +1744,15 @@
             {/if}
           </li>
         {/each}
-        {#each payload.translations.official as t (t.id)}
+        {#each payload.translations.official.filter((t) => isDefLangVisible(t.targetLanguage)) as t (t.id)}
           <li class="official-row">
             <div class="official-body">
               {t.body}
+              {#if showDefLangFilter}
+                <span class="def-lang-badge">
+                  {definitionLanguageName(t.targetLanguage)}
+                </span>
+              {/if}
               {#if customizableIds().has(t.id)}
                 <button
                   type="button"
@@ -1401,10 +1803,15 @@
             {/if}
           </li>
         {/each}
-        {#each payload.translations.community as t (t.id)}
+        {#each payload.translations.community.filter((t) => isDefLangVisible(t.targetLanguage)) as t (t.id)}
           <li class="community-row">
             <div class="community-body">
               {t.body}
+              {#if showDefLangFilter}
+                <span class="def-lang-badge">
+                  {definitionLanguageName(t.targetLanguage)}
+                </span>
+              {/if}
               {#if isOwner}
                 {#if reportedIds.has(t.id)}
                   <span class="reported-badge" data-testid="reported-badge">
@@ -1455,6 +1862,10 @@
         {/each}
         {#if allTranslations().length === 0}
           <li class="muted">No translations yet.</li>
+        {:else if showDefLangFilter && totalListCount() > 0 && visibleListTranslations().length === 0}
+          <li class="muted" data-testid="def-lang-all-hidden">
+            All definitions are hidden by the language filter above.
+          </li>
         {/if}
       </ul>
       {#if reportToast}
@@ -1512,6 +1923,73 @@
           + Add my translation
         </button>
       {/if}
+    {/if}
+
+    {#if showAdminRef}
+      <!-- Admin-only external dictionaries (Elhuyar / Euskaltzaindia),
+           expanded by default and tabbed by language. Reference-only —
+           fetched live, never stored or shown to readers. -->
+      <section class="ext-dict" data-testid="admin-ref">
+        <h3 class="sp-section-h">
+          External dictionaries
+          <span class="muted">admin</span>
+        </h3>
+        <div class="ext-tabs" role="tablist" aria-label="Reference language">
+          {#each REFERENCE_LANGUAGE_TABS as lang (lang)}
+            <button
+              type="button"
+              role="tab"
+              class="ext-tab"
+              data-active={effectiveRefTab === lang ? '1' : '0'}
+              aria-selected={effectiveRefTab === lang}
+              data-testid={`ref-tab-${lang}`}
+              title={definitionLanguageName(lang)}
+              onclick={() => selectRefTab(lang)}
+            >
+              {lang.toUpperCase()}
+            </button>
+          {/each}
+        </div>
+        {#if adminRefLoading}
+          <p class="muted small" data-testid="admin-ref-loading">
+            Looking up “{adminRefLookupWord}”…
+          </p>
+        {:else if adminRefError}
+          <p class="err small" data-testid="admin-ref-error">{adminRefError}</p>
+        {:else if shownRefResults.length > 0}
+          <ul class="ext-list">
+            {#each shownRefResults as r, i (r.source + i)}
+              <li class="ext-row">
+                <div class="ext-def">
+                  {#if r.pos}<span class="ext-pos">{r.pos}</span>{/if}
+                  <span>{r.definition}</span>
+                  {#if r.examples.length > 0}
+                    <button
+                      type="button"
+                      class="ext-ex"
+                      aria-label="Show {r.examples.length} example{r.examples
+                        .length === 1
+                        ? ''
+                        : 's'}"
+                    >
+                      <span class="ext-ex-icon" aria-hidden="true">❝</span>
+                      <span class="ext-ex-pop" role="note">
+                        {#each r.examples as ex (ex)}
+                          <span class="ext-ex-item">{ex}</span>
+                        {/each}
+                      </span>
+                    </button>
+                  {/if}
+                </div>
+              </li>
+            {/each}
+          </ul>
+        {:else}
+          <p class="muted small" data-testid="admin-ref-empty">
+            No {definitionLanguageName(effectiveRefTab)} entries.
+          </p>
+        {/if}
+      </section>
     {/if}
 
     <!-- T-6.2: "Fix" affordance — every popup gets it, even the
@@ -1727,10 +2205,58 @@
   }
   .sp-word {
     margin: 0 0 0.25rem;
+    /* Reserve room on the right so the freq badge clears the absolutely
+       positioned close button. */
+    padding-right: 1.9rem;
+    display: flex;
+    align-items: baseline;
+    gap: 0.5rem;
     font-family: var(--font-serif-dev, var(--font-serif));
     font-size: 1.85rem;
     line-height: 1.1;
     color: var(--ink, var(--color-fg));
+  }
+  .sp-word-text {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  .sp-freq-badge {
+    position: relative;
+    margin-left: auto;
+    align-self: center;
+    flex-shrink: 0;
+    font-family: var(--font-mono-display, var(--font-mono));
+    font-size: 0.8rem;
+    font-weight: 500;
+    color: var(--ink-2, var(--color-fg));
+    background: color-mix(in oklch, var(--ink, var(--color-fg)) 9%, transparent);
+    border-radius: 999px;
+    padding: 0.12rem 0.5rem;
+    cursor: default;
+    white-space: nowrap;
+  }
+  .sp-freq-tip {
+    position: absolute;
+    top: calc(100% + 6px);
+    right: 0;
+    z-index: 6;
+    width: max-content;
+    max-width: 210px;
+    padding: 0.4rem 0.55rem;
+    border-radius: 6px;
+    background: var(--ink, var(--color-fg));
+    color: var(--paper, var(--color-bg));
+    font-family: var(--font-sans, var(--font-serif));
+    font-size: 0.72rem;
+    font-weight: 400;
+    line-height: 1.3;
+    text-align: left;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 120ms ease;
+  }
+  .sp-freq-badge:hover .sp-freq-tip {
+    opacity: 1;
   }
   .sp-roman {
     margin: 0 0 0.85rem;
@@ -1758,12 +2284,6 @@
     flex: 1;
     color: var(--ink, var(--color-fg));
     font-size: 0.85rem;
-  }
-  .sp-headword {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.45rem;
-    flex-wrap: wrap;
   }
   :global(.sp-pos-pill) {
     flex-shrink: 0;
@@ -1892,6 +2412,31 @@
     box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
   }
 
+  .sp-translate {
+    margin: 0.5rem 0;
+  }
+  .sp-translate-btn {
+    padding: 0.3rem 0.7rem;
+    font: inherit;
+    font-size: 0.8rem;
+    color: var(--ink, var(--color-fg));
+    background: var(--paper, var(--color-bg));
+    border: 1px solid var(--rule, var(--color-border));
+    border-radius: 7px;
+    cursor: pointer;
+  }
+  .sp-translate-src {
+    margin: 0 0 0.2rem;
+    font-size: 0.85rem;
+    font-style: italic;
+    color: var(--ink-3, var(--color-fg-muted));
+  }
+  .sp-translate-out {
+    margin: 0;
+    font-size: 0.92rem;
+    color: var(--ink, var(--color-fg));
+  }
+
   .sp-section-h {
     font-size: 0.66rem;
     letter-spacing: 0.08em;
@@ -1915,6 +2460,153 @@
     font-size: 0.88rem;
     line-height: 1.4;
     color: var(--ink, var(--color-fg));
+  }
+  .def-lang-filter {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+    margin: 0 0 0.5rem;
+  }
+  .def-lang-chip {
+    padding: 0.12rem 0.55rem;
+    font: inherit;
+    font-size: 0.72rem;
+    border-radius: 999px;
+    border: 1px solid var(--rule, var(--color-border));
+    background: var(--paper, var(--color-bg));
+    /* Full foreground in both states so the label stays ≥4.5:1; the
+       on/off distinction is carried by the fill, border, and strike. */
+    color: var(--ink, var(--color-fg));
+    cursor: pointer;
+  }
+  .def-lang-chip[data-active='1'] {
+    border-color: color-mix(
+      in oklch,
+      var(--accent, var(--color-accent)) 30%,
+      var(--rule, var(--color-border))
+    );
+    background: color-mix(
+      in oklch,
+      var(--accent, var(--color-accent)) 10%,
+      var(--paper, var(--color-bg))
+    );
+  }
+  .def-lang-chip[data-active='0'] {
+    text-decoration: line-through;
+    background: color-mix(in oklch, var(--ink, var(--color-fg)) 4%, transparent);
+  }
+  .def-lang-chip:focus-visible {
+    outline: 2px solid var(--accent, var(--color-accent));
+    outline-offset: 1px;
+  }
+  .def-lang-badge {
+    margin-left: 0.4rem;
+    padding: 0.05rem 0.4rem;
+    font-size: 0.62rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    white-space: nowrap;
+    color: var(--ink-3, var(--color-fg-muted));
+    background: color-mix(in oklch, var(--ink, var(--color-fg)) 6%, transparent);
+    border-radius: 999px;
+  }
+  .ext-dict {
+    margin-top: 0.75rem;
+    border-top: 1px solid var(--rule-2, var(--color-border));
+    padding-top: 0.5rem;
+  }
+  .ext-tabs {
+    display: flex;
+    gap: 0.25rem;
+    margin: 0.25rem 0 0.5rem;
+  }
+  .ext-tab {
+    padding: 0.15rem 0.7rem;
+    font: inherit;
+    font-size: 0.74rem;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+    border: 1px solid var(--rule, var(--color-border));
+    border-radius: 999px;
+    background: var(--paper, var(--color-bg));
+    color: var(--ink, var(--color-fg));
+    cursor: pointer;
+  }
+  .ext-tab[data-active='1'] {
+    border-color: color-mix(
+      in oklch,
+      var(--accent, var(--color-accent)) 35%,
+      var(--rule, var(--color-border))
+    );
+    background: color-mix(
+      in oklch,
+      var(--accent, var(--color-accent)) 14%,
+      var(--paper, var(--color-bg))
+    );
+  }
+  .ext-tab:focus-visible {
+    outline: 2px solid var(--accent, var(--color-accent));
+    outline-offset: 1px;
+  }
+  .ext-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 0.5rem;
+  }
+  .ext-row {
+    font-size: 0.84rem;
+    line-height: 1.45;
+  }
+  .ext-def {
+    color: var(--ink, var(--color-fg));
+  }
+  .ext-pos {
+    font-style: italic;
+    font-size: 0.74rem;
+    color: var(--ink-3, var(--color-fg-muted));
+    margin-right: 0.3rem;
+  }
+  /* Examples are hidden behind a hover/focus icon to keep the entry compact. */
+  .ext-ex {
+    position: relative;
+    display: inline-flex;
+    margin-left: 0.3rem;
+    padding: 0;
+    border: 0;
+    background: none;
+    font: inherit;
+    cursor: help;
+    vertical-align: baseline;
+  }
+  .ext-ex-icon {
+    font-size: 0.72rem;
+    color: var(--ink-3, var(--color-fg-muted));
+  }
+  .ext-ex-pop {
+    display: none;
+    position: absolute;
+    left: 0;
+    top: 1.3em;
+    z-index: 5;
+    min-width: 12rem;
+    max-width: 18rem;
+    padding: 0.4rem 0.55rem;
+    background: var(--card, var(--color-bg));
+    border: 1px solid var(--rule, var(--color-border));
+    border-radius: 6px;
+    box-shadow: 0 6px 20px color-mix(in oklch, var(--ink, var(--color-fg)) 18%, transparent);
+  }
+  .ext-ex:hover .ext-ex-pop,
+  .ext-ex:focus-within .ext-ex-pop {
+    display: grid;
+    gap: 0.3rem;
+  }
+  .ext-ex-item {
+    font-size: 0.78rem;
+    font-style: italic;
+    color: var(--ink-2, var(--color-fg));
   }
   .community-row {
     display: flex;

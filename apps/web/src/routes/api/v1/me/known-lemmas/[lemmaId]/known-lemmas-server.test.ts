@@ -5,6 +5,7 @@ import { jsonContract } from '$lib/test/json-contract.js';
 
 const setKnownLemmaStatus = vi.fn();
 const requireUser = vi.fn();
+const sentenceAround = vi.fn();
 
 vi.mock('$lib/server/texts/tokens.js', async () => {
   const actual = await vi.importActual<typeof import('$lib/server/texts/tokens.js')>(
@@ -15,6 +16,10 @@ vi.mock('$lib/server/texts/tokens.js', async () => {
     setKnownLemmaStatus: (...a: unknown[]) => setKnownLemmaStatus(...a),
   };
 });
+
+vi.mock('$lib/server/texts/sentences.js', () => ({
+  sentenceAround: (...a: unknown[]) => sentenceAround(...a),
+}));
 
 vi.mock('$lib/server/auth/require-user.js', () => ({
   requireUser: (...a: unknown[]) => requireUser(...a),
@@ -56,6 +61,7 @@ async function callPatch(
 beforeEach(() => {
   setKnownLemmaStatus.mockReset();
   requireUser.mockReset();
+  sentenceAround.mockReset();
 });
 
 afterEach(() => {
@@ -123,5 +129,46 @@ describe('PATCH /api/v1/me/known-lemmas/:lemmaId', () => {
     };
     expect(res.status).toBe(401);
     expect(setKnownLemmaStatus).not.toHaveBeenCalled();
+  });
+
+  it('captures the mined sentence when reading context is supplied', async () => {
+    setKnownLemmaStatus.mockResolvedValueOnce({
+      userId: USER.id,
+      lemmaId: VALID_ID,
+      status: 'learning',
+      updatedAt: new Date('2026-04-27T00:00:00Z'),
+    });
+    sentenceAround.mockResolvedValueOnce('Portuetxe kalea, 88 bis.');
+    const res = (await callPatch({
+      status: 'learning',
+      chapterId: VALID_ID,
+      tokenIdx: 5,
+    })) as Response;
+    expect(res.status).toBe(200);
+    expect(sentenceAround).toHaveBeenCalledWith(VALID_ID, 5);
+    expect(setKnownLemmaStatus).toHaveBeenCalledWith({
+      userId: USER.id,
+      lemmaId: VALID_ID,
+      status: 'learning',
+      minedSentence: 'Portuetxe kalea, 88 bis.',
+      minedChapterId: VALID_ID,
+      minedTokenIdx: 5,
+    });
+  });
+
+  it('skips context capture when the reconstructed sentence is empty', async () => {
+    setKnownLemmaStatus.mockResolvedValueOnce({
+      userId: USER.id,
+      lemmaId: VALID_ID,
+      status: 'learning',
+      updatedAt: new Date('2026-04-27T00:00:00Z'),
+    });
+    sentenceAround.mockResolvedValueOnce('');
+    await callPatch({ status: 'learning', chapterId: VALID_ID, tokenIdx: 5 });
+    expect(setKnownLemmaStatus).toHaveBeenCalledWith({
+      userId: USER.id,
+      lemmaId: VALID_ID,
+      status: 'learning',
+    });
   });
 });
