@@ -107,6 +107,10 @@ export type ServerNumberForms = {
 export type ServerToken = {
   id: string;
   idx: number;
+  /** Owning chapter id (server tokens only). Lets the popup capture the mined
+   *  sentence when a word is marked Learning. Absent on client-tokenized
+   *  fallback tokens. */
+  chapterId?: string;
   surface: string;
   isWord: boolean;
   isAmbiguous: boolean;

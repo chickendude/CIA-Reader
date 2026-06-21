@@ -1236,11 +1236,15 @@
     const previous = optimisticStatus;
     optimisticStatus = status;
     writeError = null;
+    // Capture the mined sentence when we have reading context (server tokens
+    // carry chapterId; the API reconstructs the sentence around this token).
+    const context =
+      token.chapterId != null ? { chapterId: token.chapterId, tokenIdx: token.idx } : {};
     try {
       const res = await fetch(`/api/v1/me/known-lemmas/${lemmaId}`, {
         method: 'PATCH',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ status }),
+        body: JSON.stringify({ status, ...context }),
       });
       if (!res.ok) {
         throw new Error(`PATCH failed: ${res.status}`);

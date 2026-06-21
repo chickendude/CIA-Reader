@@ -71,6 +71,9 @@ export type RenderedNumberForms = {
 export type RenderedToken = {
   id: string;
   idx: number;
+  /** Owning chapter id — lets the reader capture the mined sentence when a
+   *  word is marked Learning (the popup posts chapterId + idx). */
+  chapterId: string;
   surface: string;
   isWord: boolean;
   isAmbiguous: boolean;
@@ -424,6 +427,7 @@ export async function loadChapterTokens(
     return {
       id: t.id,
       idx: t.idx,
+      chapterId,
       surface: t.surface,
       isWord: isMarkedNonWord ? false : t.isWord,
       isAmbiguous: candidates.length > 0,
@@ -521,8 +525,21 @@ export async function setKnownLemmaStatus(args: {
   lemmaId: string;
   status: 'unknown' | 'learning' | 'known' | 'ignored';
   now?: Date;
+  /** When set, record the sentence (and its location) the word was mined
+   *  from, for the Anki export. Omit to leave any existing context intact. */
+  minedSentence?: string;
+  minedChapterId?: string;
+  minedTokenIdx?: number;
 }): Promise<UserKnownLemma> {
   const now = args.now ?? new Date();
+  const minedFields =
+    args.minedSentence !== undefined
+      ? {
+          minedSentence: args.minedSentence,
+          minedChapterId: args.minedChapterId ?? null,
+          minedTokenIdx: args.minedTokenIdx ?? null,
+        }
+      : {};
 
   // Look up the lemma to find its language — needed for the per-
   // language cache update. A missing lemma is a 404; the caller
@@ -551,7 +568,7 @@ export async function setKnownLemmaStatus(args: {
   if (row) {
     const [updated] = (await db
       .update(schema.userKnownLemmas)
-      .set({ status: args.status, updatedAt: now })
+      .set({ status: args.status, updatedAt: now, ...minedFields })
       .where(
         // Composite PK condition.
         (await import('drizzle-orm')).and(
@@ -570,6 +587,7 @@ export async function setKnownLemmaStatus(args: {
         lemmaId: args.lemmaId,
         status: args.status,
         updatedAt: now,
+        ...minedFields,
       })
       .returning()) as UserKnownLemma[];
     if (!inserted) throw new Error('Failed to insert user_known_lemmas');

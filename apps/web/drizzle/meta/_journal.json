@@ -330,6 +330,13 @@
       "when": 1781996281840,
       "tag": "0046_gifted_drax",
       "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1782001652199,
+      "tag": "0047_right_elektra",
+      "breakpoints": true
     }
   ]
 }

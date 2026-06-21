@@ -1413,6 +1413,14 @@ export const userKnownLemmas = pgTable(
     updatedAt: timestamp('updated_at', { withTimezone: true })
       .notNull()
       .defaultNow(),
+    // The sentence the word was "mined" from, captured at mark-time so the
+    // Anki export can show the context the user first met it in. Null when the
+    // status was set outside a reading context (e.g. the words page).
+    minedSentence: text('mined_sentence'),
+    minedChapterId: uuid('mined_chapter_id').references(() => textChapters.id, {
+      onDelete: 'set null',
+    }),
+    minedTokenIdx: integer('mined_token_idx'),
   },
   (t) => ({
     pk: primaryKey({ columns: [t.userId, t.lemmaId] }),
