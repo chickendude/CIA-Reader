@@ -645,7 +645,9 @@
   <div class="reader-foot-meta">
     <span class="pager-pages">
       Page {pageInChapter + 1} of {pageCount}
-      <span class="muted">· Ch. {counterCurrent} / {counterTotal}</span>
+      <span class="muted">
+        · Ch. {counterCurrent} / {counterTotal} · {(current?.tokenCount ?? 0).toLocaleString()} words
+      </span>
     </span>
     <span class="muted">{formatPctRange(startPct, endPct, pctPrecision)}</span>
   </div>

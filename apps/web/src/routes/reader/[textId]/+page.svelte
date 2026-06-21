@@ -347,15 +347,6 @@
     <div class="reader-meta">
       {#if data.collectionContext}
         <p class="reader-coll-strip">
-          <a class="reader-coll-link" href={`/collections/${data.collectionContext.collectionId}`}>
-            {data.collectionContext.collectionTitle}
-          </a>
-          <span class="reader-coll-pos">
-            Chapter {data.collectionContext.position + 1} of {data.collectionContext.totalCount}
-            <span class="reader-coll-tokens">
-              · {data.chapters[data.anchor.chapterIdx]?.tokenCount?.toLocaleString() ?? 0} words
-            </span>
-          </span>
           <span class="reader-coll-nav">
             {#if data.collectionContext.prevTextId}
               <a
@@ -629,21 +620,6 @@
     text-transform: uppercase;
     letter-spacing: 0.05em;
     flex-wrap: wrap;
-  }
-  .reader-coll-link {
-    color: var(--ink-2, var(--color-fg));
-    text-decoration: none;
-    font-weight: 500;
-  }
-  .reader-coll-link:hover {
-    text-decoration: underline;
-  }
-  .reader-coll-pos {
-    font-family: var(--font-mono-display, var(--font-mono));
-    font-feature-settings: 'tnum';
-  }
-  .reader-coll-tokens {
-    color: var(--ink-3, var(--color-fg-muted));
   }
   .reader-coll-nav {
     display: flex;
