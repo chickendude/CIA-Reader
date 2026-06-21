@@ -568,7 +568,7 @@ export async function setKnownLemmaStatus(args: {
   if (row) {
     const [updated] = (await db
       .update(schema.userKnownLemmas)
-      .set({ status: args.status, updatedAt: now, ...minedFields })
+      .set({ status: args.status, updatedAt: now })
       .where(
         // Composite PK condition.
         (await import('drizzle-orm')).and(
@@ -587,11 +587,30 @@ export async function setKnownLemmaStatus(args: {
         lemmaId: args.lemmaId,
         status: args.status,
         updatedAt: now,
-        ...minedFields,
       })
       .returning()) as UserKnownLemma[];
     if (!inserted) throw new Error('Failed to insert user_known_lemmas');
     result = inserted;
+  }
+
+  // Mined-sentence columns are written separately and best-effort: the core
+  // status change above always succeeds, and if the `mined_*` columns don't
+  // exist yet (migration 0047 not applied) this just no-ops rather than
+  // failing the whole request.
+  if (Object.keys(minedFields).length > 0) {
+    try {
+      await db
+        .update(schema.userKnownLemmas)
+        .set(minedFields)
+        .where(
+          (await import('drizzle-orm')).and(
+            eq(schema.userKnownLemmas.userId, args.userId),
+            eq(schema.userKnownLemmas.lemmaId, args.lemmaId),
+          )!,
+        );
+    } catch {
+      // columns missing / transient error — status is already saved
+    }
   }
 
   // Recompute the cache for this user × language. Counted as the
