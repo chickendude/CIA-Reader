@@ -89,6 +89,30 @@ describe('POST /api/v1/translate-sentence', () => {
     expect(setCachedTranslation).toHaveBeenCalled();
   });
 
+  it('cachedOnly returns the saved translation without calling OpenAI', async () => {
+    getCachedTranslation.mockResolvedValueOnce('A house.');
+    const res = (await callPost({ ...VALID, cachedOnly: true })) as Response;
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      sentence: 'Etxe bat.',
+      translation: 'A house.',
+      cached: true,
+    });
+    expect(translateSentence).not.toHaveBeenCalled();
+  });
+
+  it('cachedOnly returns null on a miss — never calls OpenAI or caches', async () => {
+    const res = (await callPost({ ...VALID, cachedOnly: true })) as Response;
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      sentence: 'Etxe bat.',
+      translation: null,
+      cached: false,
+    });
+    expect(translateSentence).not.toHaveBeenCalled();
+    expect(setCachedTranslation).not.toHaveBeenCalled();
+  });
+
   it('422s when no sentence can be reconstructed', async () => {
     sentenceAround.mockResolvedValueOnce('');
     const res = (await callPost(VALID)) as { status: number };

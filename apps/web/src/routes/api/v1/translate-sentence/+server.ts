@@ -1,11 +1,16 @@
 /**
  * POST /api/v1/translate-sentence
  *
- * Body: { chapterId, tokenIdx, language, targetLanguage? }
+ * Body: { chapterId, tokenIdx, language, targetLanguage?, cachedOnly? }
  *
  * Reconstructs the sentence around the given token (server-side, so we don't
  * trust client text), translates it with OpenAI (gpt-4o by default), and caches
  * the result globally. Auth-gated. Returns { sentence, translation, cached }.
+ *
+ * `cachedOnly: true` makes it a pure cache lookup: returns the saved translation
+ * if one exists, or `{ translation: null }` on a miss — never calling OpenAI.
+ * The reader uses this to show an already-saved translation the moment a word
+ * opens, without re-spending on the API.
  */
 import { error, json } from '@sveltejs/kit';
 import { z } from 'zod';
@@ -30,6 +35,7 @@ const body = z.object({
   tokenIdx: z.number().int().nonnegative(),
   language: z.string().refine(isSupportedLanguage, 'Unsupported language'),
   targetLanguage: z.string().min(2).max(8).optional(),
+  cachedOnly: z.boolean().optional(),
 });
 
 export const POST: RequestHandler = async (event) => {
@@ -58,6 +64,9 @@ export const POST: RequestHandler = async (event) => {
 
   const cached = await getCachedTranslation(key);
   if (cached) return json({ sentence, translation: cached, cached: true });
+
+  // Cache-only lookup (reader popup open): never spend on OpenAI for a miss.
+  if (parsed.cachedOnly) return json({ sentence, translation: null, cached: false });
 
   try {
     const translation = await translateSentence(sentence, parsed.language, targetLanguage);

@@ -383,6 +383,34 @@
         /* frequency is a nice-to-have; ignore failures */
       }
     })();
+    // If this sentence was already translated (globally cached), show it the
+    // moment the word opens — no button click, no OpenAI call (cachedOnly).
+    void (async () => {
+      if (!t.chapterId || !t.isWord || isNumberToken) return;
+      try {
+        const res = await fetch('/api/v1/translate-sentence', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            chapterId: t.chapterId,
+            tokenIdx: t.idx,
+            language,
+            cachedOnly: true,
+          }),
+        });
+        if (cancelled || !res.ok) return;
+        const data = (await res.json()) as {
+          sentence: string;
+          translation: string | null;
+        };
+        if (data.translation) {
+          translatedSentence = data.sentence;
+          sentenceTranslation = data.translation;
+        }
+      } catch {
+        /* saved-translation preview is best-effort */
+      }
+    })();
     return () => {
       cancelled = true;
     };
