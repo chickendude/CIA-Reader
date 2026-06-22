@@ -106,6 +106,16 @@ services:
       OMP_NUM_THREADS: "3"
       MKL_NUM_THREADS: "3"
       OPENBLAS_NUM_THREADS: "3"
+      # PDF OCR (scanned pages) via Google Vision. Empty unless set in
+      # infra/.env — born-digital PDFs need no creds, so leaving these
+      # unset just disables scanned-page OCR (it errors at request time).
+      GOOGLE_APPLICATION_CREDENTIALS: ${GOOGLE_APPLICATION_CREDENTIALS:-}
+      GOOGLE_CLOUD_PROJECT: ${GOOGLE_CLOUD_PROJECT:-}
+    volumes:
+      # Drop a GCP service-account JSON at infra/secrets/gcp-vision.json
+      # and point GOOGLE_APPLICATION_CREDENTIALS at /secrets/gcp-vision.json.
+      # Docker creates ./secrets if absent; it's mounted read-only.
+      - ./secrets:/secrets:ro
     deploy:
       resources:
         limits:
@@ -149,6 +159,11 @@ services:
       DATABASE_URL: postgres://${POSTGRES_USER:-ciareader}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-ciareader}
       REDIS_URL: redis://redis:6379
       AUDIO_LOCAL_ROOT: /srv/audio
+      # PDF page images (image reader) — persisted on the pdf-data
+      # volume, mirroring audio. The web container both writes (during
+      # OCR ingest) and serves (/pdf-assets) these, so it's the only
+      # container that needs the volume.
+      PDF_LOCAL_ROOT: /srv/pdf
       # adapter-node defaults to PORT=3000; we standardize on 5173
       # across dev + prod so EXPOSE / healthcheck / Caddy all line up.
       PORT: "5173"
@@ -172,6 +187,7 @@ services:
       NODE_OPTIONS: "--max-old-space-size=2600"
     volumes:
       - audio-data:/srv/audio
+      - pdf-data:/srv/pdf
     networks:
       - internal
     deploy:
@@ -323,6 +339,9 @@ volumes:
                     # mode. Switching to Hetzner Object Storage (S3 API)
                     # is a follow-up — env hooks (AUDIO_S3_*) are already
                     # documented in .env.prod.example.
+  pdf-data: {}      # PDF page images for the image reader (local-fs mode).
+                    # NOT regenerable — the source PDF is never uploaded —
+                    # so include this in backups (see infra/backup).
   rclone-config: {} # Backup service's rclone config (Dropbox/B2/etc OAuth
                     # token). Survives container recreation so re-auth
                     # isn't needed after every deploy.
