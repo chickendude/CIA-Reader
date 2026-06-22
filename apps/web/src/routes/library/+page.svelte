@@ -77,9 +77,10 @@
   const nextOffset = $derived(activePage.offset + activePage.limit);
 
   function hrefWith(overrides: Record<string, string | null>): string {
+    // Language is set globally (rail switcher / home grid), not via the URL,
+    // so it's no longer carried as a query param here (#436).
     const params = new URLSearchParams();
     params.set('tab', data.tab);
-    if (data.language) params.set('language', data.language);
     if (activePage.offset > 0) params.set('offset', String(activePage.offset));
     if (activePage.limit !== 20) params.set('limit', String(activePage.limit));
     for (const [k, v] of Object.entries(overrides)) {
@@ -132,27 +133,11 @@
     </nav>
   </header>
 
-  <form method="get" class="filters">
-    <input type="hidden" name="tab" value={data.tab} />
-    <label>
-      <span class="filter-label">Language</span>
-      <select name="language">
-        <option value="">All languages</option>
-        {#each data.languages as lang (lang.code)}
-          <option value={lang.code} selected={data.language === lang.code}>
-            {lang.displayName} ({lang.nativeName})
-          </option>
-        {/each}
-      </select>
-    </label>
-    <button type="submit" class="filter-go">Filter</button>
-  </form>
-
   <div class="lib-grid">
     {#if data.tab === 'your' && data.isAuthenticated}
       <a
         class="card upload-card"
-        href={data.language ? `/upload?language=${data.language}` : '/upload'}
+        href="/upload"
       >
         <div class="upload-card-body">
           <div class="big" aria-hidden="true">+</div>
@@ -278,9 +263,7 @@
     <p class="empty">
       {#if data.tab === 'your'}
         You haven't uploaded any texts yet — try the
-        <a href={data.language ? `/upload?language=${data.language}` : '/upload'}
-          >+ Add a text</a
-        > tile above.
+        <a href="/upload">+ Add a text</a> tile above.
       {:else if data.tab === 'shared'}
         No shared texts yet. Sharing lands in a future ticket.
       {:else if data.tab === 'collections'}
@@ -413,48 +396,6 @@
       transparent
     );
     color: var(--ink, var(--color-fg));
-  }
-
-  .filters {
-    display: flex;
-    align-items: end;
-    gap: 0.5rem;
-    margin-bottom: 1rem;
-  }
-  .filters label {
-    flex: 1;
-    max-width: 18rem;
-  }
-  .filter-label {
-    display: block;
-    font-size: 0.62rem;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    color: var(--ink-3, var(--color-fg-muted));
-    margin-bottom: 0.25rem;
-  }
-  .filters select {
-    display: block;
-    width: 100%;
-    padding: 0.45rem 0.65rem;
-    font: inherit;
-    font-size: 0.85rem;
-    border: 1px solid var(--rule, var(--color-border));
-    border-radius: 8px;
-    background: var(--card, var(--color-bg));
-    color: var(--ink, var(--color-fg));
-    min-height: 36px;
-  }
-  .filter-go {
-    height: 36px;
-    padding: 0 0.85rem;
-    font-family: var(--font-sans, var(--font-ui));
-    font-size: 0.78rem;
-    background: var(--ink, var(--color-fg));
-    color: var(--paper, var(--color-bg));
-    border: 1px solid var(--ink, var(--color-fg));
-    border-radius: 8px;
-    cursor: pointer;
   }
 
   .lib-grid {

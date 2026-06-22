@@ -41,11 +41,17 @@ vi.mock('$lib/server/collections.js', () => ({
 type LoadFn = (typeof import('./+page.server.js'))['load'];
 const USER = { id: 'user-1', role: 'user' as const };
 
-async function callLoad(url: string, user: typeof USER | null = USER) {
+async function callLoad(
+  url: string,
+  user: typeof USER | null = USER,
+  currentLanguage: string | null = 'hi',
+) {
   const { load } = await import('./+page.server.js');
   const event = {
     locals: { user },
     url: new URL(url),
+    // #436: the library scopes to the layout's resolved current language.
+    parent: async () => ({ currentLanguage }),
   } as unknown as Parameters<LoadFn>[0];
   try {
     return await load(event);
@@ -125,25 +131,31 @@ describe('/library loader', () => {
     expect(listSharedTexts).toHaveBeenCalled();
   });
 
-  it('forwards a language filter to the underlying service', async () => {
+  it('scopes the listing to the current language (#436)', async () => {
     listOwnedTexts.mockResolvedValueOnce({
       cards: [],
       totalCount: 0,
       limit: 20,
       offset: 0,
     });
-    await callLoad('http://x/library?tab=your&language=mr');
+    await callLoad('http://x/library?tab=your', USER, 'mr');
     expect(listOwnedTexts).toHaveBeenCalledWith(
       { id: USER.id },
       expect.objectContaining({ language: 'mr' }),
     );
   });
 
-  it('rejects an unsupported language with 400', async () => {
-    const res = (await callLoad('http://x/library?language=xx')) as {
-      status: number;
+  it('echoes the current language back to the page (#436)', async () => {
+    listOwnedTexts.mockResolvedValueOnce({
+      cards: [],
+      totalCount: 0,
+      limit: 20,
+      offset: 0,
+    });
+    const data = (await callLoad('http://x/library?tab=your', USER, 'or')) as {
+      language: string;
     };
-    expect(res.status).toBe(400);
+    expect(data.language).toBe('or');
   });
 
   it('paginates collection cards before fetching comprehension (T-12.5)', async () => {

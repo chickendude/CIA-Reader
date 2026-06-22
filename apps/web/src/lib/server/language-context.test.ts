@@ -4,9 +4,11 @@ import { describe, expect, it } from 'vitest';
 import {
   LANG_COOKIE,
   LANG_COOKIE_MAX_AGE,
+  addableLanguageOptions,
   languageOption,
   resolveCurrentLanguage,
 } from './language-context.js';
+import { SUPPORTED_LANGUAGE_CODES } from '@ciareader/shared-types';
 
 describe('resolveCurrentLanguage', () => {
   it("returns the user's only language when there's no cookie", () => {
@@ -57,6 +59,33 @@ describe('languageOption', () => {
     const or = languageOption('or');
     // 'ଓଡ଼ିଆ' starts with 'ଓ'.
     expect(or.glyph).toBe('ଓ');
+  });
+});
+
+describe('addableLanguageOptions', () => {
+  it('returns every supported language the user has not added', () => {
+    const opts = addableLanguageOptions(['hi', 'mr']);
+    const codes = opts.map((o) => o.code);
+    expect(codes).not.toContain('hi');
+    expect(codes).not.toContain('mr');
+    expect(codes.length).toBe(SUPPORTED_LANGUAGE_CODES.length - 2);
+    // Carries the same shape as languageOption for direct rendering.
+    expect(opts[0]).toMatchObject({
+      code: expect.any(String),
+      displayName: expect.any(String),
+      nativeName: expect.any(String),
+      glyph: expect.any(String),
+    });
+  });
+
+  it('returns an empty list when the user already has every language', () => {
+    expect(addableLanguageOptions(SUPPORTED_LANGUAGE_CODES)).toEqual([]);
+  });
+
+  it('offers all supported languages when the user has none', () => {
+    expect(addableLanguageOptions([]).map((o) => o.code)).toEqual([
+      ...SUPPORTED_LANGUAGE_CODES,
+    ]);
   });
 });
 

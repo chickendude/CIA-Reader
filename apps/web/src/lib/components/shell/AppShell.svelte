@@ -26,6 +26,7 @@
     setImmersiveAttribute,
     writePersistedImmersive,
   } from '../reader/immersive.js';
+  import { switchCurrentLanguage } from './language-switch.js';
   import type { Snippet } from 'svelte';
 
   interface LanguageOption {
@@ -50,6 +51,9 @@
     /** Languages the signed-in user has a `user_languages` row for —
      *  the picker's options. Empty for anonymous visitors. */
     availableLanguages?: LanguageOption[];
+    /** Supported languages the user hasn't added yet — the switcher's
+     *  "Add a language" options (#436). Empty for anonymous visitors. */
+    addableLanguages?: LanguageOption[];
     children: Snippet;
   }
 
@@ -57,6 +61,7 @@
     user,
     currentLanguage = null,
     availableLanguages = [],
+    addableLanguages = [],
     children,
   }: Props = $props();
 
@@ -95,6 +100,8 @@
     };
   });
 
+  // Switch to a language the user already reads. Adding a *new* language
+  // happens on the dedicated /languages/new page (#436), not here.
   async function pickLanguage(code: string) {
     if (switching) return;
     if (code === currentLanguage) {
@@ -104,17 +111,10 @@
     switching = true;
     switchError = null;
     try {
-      const res = await fetch('/api/v1/me/current-language', {
-        method: 'PUT',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ code }),
-      });
-      if (!res.ok) {
-        throw new Error(`PUT failed: ${res.status}`);
-      }
+      await switchCurrentLanguage(code);
       langPickerOpen = false;
-      // Re-run every loader so the new currentLanguage is picked up
-      // (rail indicator, home grid, library filter, words filter…).
+      // Re-run every loader so the new currentLanguage is picked up (rail
+      // indicator, home grid, library / words / upload scoping…).
       await invalidateAll();
     } catch (e) {
       switchError = (e as Error).message;
@@ -348,9 +348,10 @@
   </nav>
 </div>
 
-<!-- T-5.25: language picker. Anchored under the top-left brand icon.
-     Manage / add / remove languages still happens on /profile — this
-     dropdown is just the runtime switcher. -->
+<!-- T-5.25 / #436: language switcher. Anchored under the top-left brand
+     icon. Lists the languages you read (switch in place); adding a new
+     language is its own page, reached via the "Add a language" button at
+     the foot. Fine-grained per-language settings live on /profile. -->
 {#snippet langDropdown()}
   <div class="lang-dropdown" role="menu" aria-label="Languages">
     {#if availableLanguages.length === 0}
@@ -384,10 +385,17 @@
         {/each}
       </ul>
     {/if}
+
     {#if switchError}
       <p class="lang-err" role="alert">Could not switch: {switchError}</p>
     {/if}
-    <a class="lang-manage" href="/profile">Manage languages →</a>
+
+    {#if addableLanguages.length > 0}
+      <div class="lang-foot">
+        <!-- Adding a language is its own page (#436). -->
+        <a class="lang-add-btn" href="/languages/new">Add a language</a>
+      </div>
+    {/if}
   </div>
 {/snippet}
 
@@ -833,15 +841,35 @@
     font-size: 0.78rem;
     margin: 0;
   }
-  .lang-manage {
-    align-self: flex-start;
-    color: var(--accent-ink, var(--color-accent));
-    text-decoration: none;
-    font-size: 0.85rem;
-    padding: 0.4rem 0;
+
+  /* —— Footer action (#436) —————————————————————————————————————
+   * A single "Add a language" button under the active list, separated
+   * by a rule. It navigates to the dedicated add page rather than
+   * adding inline. */
+  .lang-foot {
+    border-top: 1px solid var(--rule, var(--color-border));
+    padding-top: 0.55rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
   }
-  .lang-manage:hover {
-    text-decoration: underline;
+
+  /* "Add a language": filled so it reads as the call-to-action.
+   * Ink-on-paper clears WCAG AA in every theme. */
+  .lang-add-btn {
+    text-align: center;
+    color: var(--paper, var(--color-bg));
+    background: var(--ink, var(--color-fg));
+    border: 1px solid var(--ink, var(--color-fg));
+    border-radius: 8px;
+    text-decoration: none;
+    font-family: var(--font-sans, var(--font-ui));
+    font-size: 0.8rem;
+    font-weight: 500;
+    padding: 0.5rem 0.6rem;
+  }
+  .lang-add-btn:hover {
+    background: color-mix(in oklch, var(--ink, var(--color-fg)) 88%, transparent);
   }
 
   /* —— Immersive mode (mobile-only) ————————————————————————————

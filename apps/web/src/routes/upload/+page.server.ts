@@ -59,23 +59,23 @@ const txtFormSchema = z.object({
 
 const formSchema = z.union([txtFormSchema, pasteFormSchema]);
 
-export const load: PageServerLoad = async ({ locals, url }) => {
+export const load: PageServerLoad = async ({ locals, url, parent }) => {
   if (!locals.user) {
     throw redirect(303, `/login?next=${encodeURIComponent(url.pathname)}`);
   }
-  // Pre-select the language the user arrived from — the library's
-  // "Add a text" card links to e.g. /upload?language=eu. Fall back to the
-  // first supported language when the param is absent or unrecognized.
-  const requested = url.searchParams.get('language');
+  // The upload targets the current language (#436) — the site is split by
+  // language, so a text is imported into whichever language the rail
+  // switcher has active. Fall back to the first supported code in the
+  // (signed-in-but-no-language) edge case the resolver guards against.
+  const { currentLanguage } = await parent();
   const selectedLanguage: LanguageCode =
-    requested && isSupportedLanguage(requested) ? requested : SUPPORTED_LANGUAGE_CODES[0]!;
+    currentLanguage && isSupportedLanguage(currentLanguage)
+      ? (currentLanguage as LanguageCode)
+      : SUPPORTED_LANGUAGE_CODES[0]!;
   return {
     selectedLanguage,
-    languages: SUPPORTED_LANGUAGE_CODES.map((code) => ({
-      code,
-      displayName: LANGUAGES[code].displayName,
-      nativeName: LANGUAGES[code].nativeName,
-    })),
+    selectedLanguageName: LANGUAGES[selectedLanguage].nativeName,
+    selectedLanguageDisplay: LANGUAGES[selectedLanguage].displayName,
     limits: {
       maxTitleLength: MAX_TITLE_LEN,
       // The browser uses the paste cap by default and bumps to the

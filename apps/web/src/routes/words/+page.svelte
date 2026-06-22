@@ -27,8 +27,9 @@
   };
 
   function hrefWith(overrides: Record<string, string | null>): string {
+    // Language is no longer a URL param — the rail switcher's current
+    // language scopes the list (#436). Only status + query live in the URL.
     const params = new URLSearchParams();
-    if (data.filters.language) params.set('language', data.filters.language);
     if (data.filters.status !== 'all') params.set('status', data.filters.status);
     if (data.filters.q) params.set('q', data.filters.q);
     for (const [k, v] of Object.entries(overrides)) {
@@ -70,9 +71,8 @@
       <h1 class="title">Words</h1>
       <p class="sub">
         {data.rows.length}{data.truncated ? '+' : ''} entries
-        {#if data.filters.language}
-          · {data.languages.find((l) => l.code === data.filters.language)
-            ?.nativeName}
+        {#if data.languageName}
+          · {data.languageName}
         {/if}
       </p>
     </div>
@@ -86,13 +86,6 @@
           autocomplete="off"
         />
       </div>
-      {#if data.filters.language}
-        <input
-          type="hidden"
-          name="language"
-          value={data.filters.language}
-        />
-      {/if}
       {#if data.filters.status !== 'all'}
         <input type="hidden" name="status" value={data.filters.status} />
       {/if}
@@ -112,23 +105,7 @@
     {/each}
   </nav>
 
-  <div class="language-row" aria-label="Language filter">
-    <a
-      class="language-chip"
-      data-active={data.filters.language === null ? '1' : '0'}
-      href={hrefWith({ language: null })}
-    >
-      All
-    </a>
-    {#each data.languages as language (language.code)}
-      <a
-        class="language-chip"
-        data-active={data.filters.language === language.code ? '1' : '0'}
-        href={hrefWith({ language: language.code })}
-      >
-        {language.nativeName}
-      </a>
-    {/each}
+  <div class="language-row" aria-label="Export">
     {#if data.filters.language}
       <a class="export-link" href={exportHref(data.filters.language)}>
         Export CSV
@@ -139,8 +116,8 @@
 
   {#if data.rows.length === 0}
     <p class="empty">
-      {#if data.filters.q || data.filters.status !== 'all' || data.filters.language}
-        No words match those filters. <a href={hrefWith({ q: null, status: null, language: null })}>Clear all</a>.
+      {#if data.filters.q || data.filters.status !== 'all'}
+        No words match those filters. <a href={hrefWith({ q: null, status: null })}>Clear all</a>.
       {:else}
         You haven't marked any words yet. Open a text and click any word to
         add it to your vocabulary.
@@ -320,7 +297,6 @@
     flex-wrap: wrap;
     margin: -0.25rem 0 0.9rem;
   }
-  .language-chip,
   .export-link {
     min-height: 32px;
     display: inline-flex;
@@ -331,24 +307,7 @@
     padding: 0 0.7rem;
     font-family: var(--font-sans, var(--font-ui));
     font-size: 0.76rem;
-    color: var(--ink-2, var(--color-fg-muted));
     text-decoration: none;
-    background: var(--paper, var(--color-bg));
-  }
-  .language-chip[data-active='1'] {
-    border-color: color-mix(
-      in oklch,
-      var(--ink, var(--color-fg)) 22%,
-      var(--rule, var(--color-border))
-    );
-    color: var(--ink, var(--color-fg));
-    background: color-mix(
-      in oklch,
-      var(--ink, var(--color-fg)) 6%,
-      var(--paper, var(--color-bg))
-    );
-  }
-  .export-link {
     margin-left: auto;
     background: var(--ink, var(--color-fg));
     border-color: var(--ink, var(--color-fg));

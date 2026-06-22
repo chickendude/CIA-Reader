@@ -35,11 +35,17 @@ const USER = {
   emailVerifiedAt: new Date('2026-01-01T00:00:00Z'),
 };
 
-async function callLoad(user: typeof USER | null, urlStr = 'http://x/upload') {
+async function callLoad(
+  user: typeof USER | null,
+  currentLanguage: string | null = 'hi',
+  urlStr = 'http://x/upload',
+) {
   const { load } = (await import('./+page.server.js')) as Mod;
   const event = {
     locals: { user },
     url: new URL(urlStr),
+    // #436: the upload target follows the layout's current language.
+    parent: async () => ({ currentLanguage }),
   } as unknown as Parameters<Mod['load']>[0];
   try {
     return await load(event);
@@ -118,19 +124,14 @@ afterEach(() => {
 });
 
 describe('/upload loader', () => {
-  it('returns the language list and the input limits for an authenticated user', async () => {
+  it('returns the input limits for an authenticated user', async () => {
     const data = (await callLoad(USER)) as {
-      languages: Array<{ code: string }>;
       limits: {
         maxTitleLength: number;
         maxPasteBytes: number;
         maxTxtBytes: number;
       };
     };
-    expect(data.languages.length).toBeGreaterThan(0);
-    expect(data.languages.map((l) => l.code)).toEqual(
-      expect.arrayContaining(['hi', 'mr', 'or']),
-    );
     expect(data.limits.maxPasteBytes).toBeGreaterThan(0);
     // .txt path must allow strictly more bytes than paste.
     expect(data.limits.maxTxtBytes).toBeGreaterThan(data.limits.maxPasteBytes);
@@ -142,22 +143,19 @@ describe('/upload loader', () => {
     expect(res.location).toBe('/login?next=%2Fupload');
   });
 
-  it('pre-selects the language from ?language= (e.g. the Basque library card)', async () => {
-    const data = (await callLoad(USER, 'http://x/upload?language=eu')) as {
+  it('targets the current language (#436)', async () => {
+    const data = (await callLoad(USER, 'eu')) as {
       selectedLanguage: string;
+      selectedLanguageName: string;
+      selectedLanguageDisplay: string;
     };
     expect(data.selectedLanguage).toBe('eu');
+    expect(data.selectedLanguageDisplay).toBe('Basque');
+    expect(data.selectedLanguageName).toBe('Euskara');
   });
 
-  it('defaults selectedLanguage to the first supported language without ?language=', async () => {
-    const data = (await callLoad(USER)) as { selectedLanguage: string };
-    expect(data.selectedLanguage).toBe('hi');
-  });
-
-  it('ignores an unrecognized ?language= and falls back to the default', async () => {
-    const data = (await callLoad(USER, 'http://x/upload?language=xx')) as {
-      selectedLanguage: string;
-    };
+  it('falls back to the first supported language when none is current', async () => {
+    const data = (await callLoad(USER, null)) as { selectedLanguage: string };
     expect(data.selectedLanguage).toBe('hi');
   });
 });

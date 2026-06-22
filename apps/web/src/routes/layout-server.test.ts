@@ -99,6 +99,28 @@ describe('root +layout.server.ts load', () => {
     expect(data.currentLanguage).toBe('mr');
   });
 
+  it('lists not-yet-added supported languages in addableLanguages (#436)', async () => {
+    userLanguageRows.mockResolvedValue([{ language: 'hi' }, { language: 'mr' }]);
+    const data = await load(
+      makeEvent({
+        locals: { user: { id: 'u1', email: 'a@b.c', displayName: null, role: 'user' } },
+        cookie: 'hi',
+      }),
+    );
+    if (!data) throw new Error('load returned void');
+    const codes = data.addableLanguages.map((l: { code: string }) => l.code);
+    expect(codes).not.toContain('hi');
+    expect(codes).not.toContain('mr');
+    // The remaining MVP languages are offered for one-tap add.
+    expect(codes).toEqual(expect.arrayContaining(['or']));
+  });
+
+  it('offers no addableLanguages to anonymous visitors (#436)', async () => {
+    const data = await load(makeEvent({ locals: {} }));
+    if (!data) throw new Error('load returned void');
+    expect(data.addableLanguages).toEqual([]);
+  });
+
   it('falls back when the cia_lang cookie does not match an active language', async () => {
     userLanguageRows.mockResolvedValue([{ language: 'hi' }]);
     const data = await load(

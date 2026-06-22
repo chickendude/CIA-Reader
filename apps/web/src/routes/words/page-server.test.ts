@@ -54,13 +54,21 @@ describe('words +page.server.ts load', () => {
   type LoadInput = {
     locals: { user: { id: string } | null };
     url: URL;
+    currentLanguage: string | null;
   };
 
   async function callLoad(input: Partial<LoadInput> = {}) {
     const { load } = await import('./+page.server.js');
     const url = input.url ?? new URL('http://x/words');
     const locals = input.locals ?? { user: { id: 'u1' } };
-    return load({ url, locals } as unknown as Parameters<typeof load>[0]);
+    // #436: the words list scopes to the layout's resolved current language.
+    const currentLanguage =
+      'currentLanguage' in input ? input.currentLanguage : 'hi';
+    return load({
+      url,
+      locals,
+      parent: async () => ({ currentLanguage }),
+    } as unknown as Parameters<typeof load>[0]);
   }
 
   it('redirects unauthenticated visitors to /login with a next param', async () => {
@@ -90,21 +98,14 @@ describe('words +page.server.ts load', () => {
     const data = await callLoad({});
     expect(data?.rows).toHaveLength(1);
     expect(data?.rows[0]?.headword).toBe('प्रभात');
-    expect(data?.filters).toEqual({ language: null, status: 'all', q: '' });
+    expect(data?.filters).toEqual({ language: 'hi', status: 'all', q: '' });
     expect(data?.truncated).toBe(false);
   });
 
-  it('echoes the language filter when valid', async () => {
-    const data = await callLoad({
-      url: new URL('http://x/words?language=hi'),
-    });
-    expect(data?.filters.language).toBe('hi');
-  });
-
-  it("rejects an unsupported language with 400", async () => {
-    await expect(
-      callLoad({ url: new URL('http://x/words?language=fr') }),
-    ).rejects.toMatchObject({ status: 400 });
+  it('scopes the list to the current language (#436)', async () => {
+    const data = await callLoad({ currentLanguage: 'mr' });
+    expect(data?.filters.language).toBe('mr');
+    expect(data?.languageName).toBe('मराठी');
   });
 
   it("rejects an unknown status with 400", async () => {
