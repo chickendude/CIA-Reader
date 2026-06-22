@@ -44,6 +44,15 @@
      *  reads of an official text) we still live-preview but skip the
      *  network call. */
     canPersist?: boolean;
+    /** #435: when true, the popover shows an admin-only section with
+     *  the "flag undefined words" overlay toggle. */
+    isAdmin?: boolean;
+    /** #435: current state of the admin overlay. Owned by the reader
+     *  page (persisted to localStorage there, not via the per-language
+     *  settings API), so it lives outside `settings`. */
+    flagUndefined?: boolean;
+    /** #435: called when the admin flips the overlay toggle. */
+    onFlagUndefinedChange?: (on: boolean) => void;
     /** Override hook for tests. Real callers omit this. */
     fetcher?: typeof fetch;
   }
@@ -55,6 +64,9 @@
     settings,
     onChange,
     canPersist = true,
+    isAdmin = false,
+    flagUndefined = false,
+    onFlagUndefinedChange,
     fetcher = fetch,
   }: Props = $props();
 
@@ -308,6 +320,36 @@
     </section>
     {/if}
 
+    <!-- #435: admin-only overlay that tints words whose lemma has no
+         definition yet, so curators can spot dictionary gaps while
+         reading. Outside the per-language settings persistence — the
+         reader page owns this flag and stores it in localStorage. -->
+    {#if isAdmin}
+    <section data-testid="rs-admin">
+      <h3>Admin</h3>
+      <div class="rs-row">
+        <span class="rs-l">Undefined words</span>
+        <div class="rs-seg" role="group" aria-label="Highlight words with no definition">
+          <button
+            type="button"
+            data-testid="rs-flag-undefined-on"
+            data-active={flagUndefined ? '1' : '0'}
+            aria-pressed={flagUndefined}
+            onclick={() => onFlagUndefinedChange?.(true)}
+          >Flag</button>
+          <button
+            type="button"
+            data-testid="rs-flag-undefined-off"
+            data-active={flagUndefined ? '0' : '1'}
+            aria-pressed={!flagUndefined}
+            onclick={() => onFlagUndefinedChange?.(false)}
+          >Off</button>
+        </div>
+      </div>
+      <p class="rs-hint">Tints words with no definition yet so you can spot gaps.</p>
+    </section>
+    {/if}
+
     <footer class="rs-foot">
       <button type="button" class="rs-reset" onclick={reset}>Reset to defaults</button>
       {#if saveError}
@@ -411,5 +453,11 @@
     margin: 0;
     color: var(--err, #b94545);
     font-size: 0.78rem;
+  }
+  .rs-hint {
+    margin: 0;
+    color: var(--ink-3, var(--color-fg-muted));
+    font-size: 0.72rem;
+    line-height: 1.4;
   }
 </style>

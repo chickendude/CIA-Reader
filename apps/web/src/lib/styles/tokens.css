@@ -88,6 +88,12 @@
   --w-known-bg: transparent;
   --w-ignored-bg: transparent;
   --w-ignored-ink: var(--ink-4);
+  /* #435: admin "no definition yet" overlay. A magenta hue (≈330)
+   * deliberately apart from the saffron status palette so flagged
+   * words never read as a learning state. Ink is dark enough on the
+   * pale tint to clear WCAG AA at body size. */
+  --w-undefined-bg: oklch(0.9 0.06 330);
+  --w-undefined-ink: oklch(0.36 0.14 330);
 
   --shadow-1:
     0 1px 0 rgba(255, 255, 255, 0.5) inset, 0 1px 2px rgba(67, 47, 14, 0.06);
@@ -141,6 +147,9 @@
   --w-l1-bg: oklch(0.84 0.08 75);
   --w-l2-bg: oklch(0.76 0.12 70);
   --w-l3-bg: oklch(0.68 0.13 65);
+  /* #435: tuned for the warmer sepia paper. */
+  --w-undefined-bg: oklch(0.82 0.07 330);
+  --w-undefined-ink: oklch(0.32 0.14 330);
 }
 
 [data-theme='dark'] {
@@ -199,6 +208,10 @@
   --w-l1-bg: oklch(0.3 0.05 70);
   --w-l2-bg: oklch(0.38 0.08 68);
   --w-l3-bg: oklch(0.46 0.11 65);
+  /* #435: dark tint with a near-white violet ink so flagged words
+   * stay legible on the dark paper. */
+  --w-undefined-bg: oklch(0.4 0.1 330);
+  --w-undefined-ink: oklch(0.95 0.05 330);
 
   --shadow-1:
     0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 1px 2px rgba(0, 0, 0, 0.4);
@@ -404,4 +417,21 @@ html[data-hl='colored_text'] .word[data-s='5'] {
   text-decoration: line-through;
   text-decoration-color: var(--ink-4);
   text-decoration-thickness: 0.5px;
+}
+
+/* —— Admin overlay: flag words with no definition yet (#435) ————————
+ * Admins toggle `data-flag-undefined` on <html> from the reader
+ * settings popover. While it's set, every word whose lemma carries no
+ * canonical gloss (TokenSpan tags it `.no-definition`) gets a distinct
+ * magenta tint that overrides whatever highlight mode is active, so
+ * dictionary gaps are obvious while reading. Declared after every
+ * `data-hl` rule above so it wins at equal specificity in all three
+ * modes; `box-shadow`/`color` are reset so the status tint can't bleed
+ * through. The class is inert without the attribute, so non-admins
+ * (and any reader who never flips the toggle) see nothing. */
+html[data-flag-undefined='1'] .word.no-definition {
+  background: var(--w-undefined-bg);
+  color: var(--w-undefined-ink);
+  box-shadow: none;
+  border-radius: 3px;
 }

@@ -17,6 +17,11 @@
     writePersistedImmersive,
   } from '$lib/components/reader/immersive.js';
   import {
+    readPersistedFlagUndefined,
+    setFlagUndefinedAttribute,
+    writePersistedFlagUndefined,
+  } from '$lib/components/reader/undefined-highlight.js';
+  import {
     READING_WIDTH_REM,
     type ReaderSettings as ReaderSettingsT,
   } from '$lib/components/reader/reader-settings.js';
@@ -57,6 +62,18 @@
     readerSettings = data.readerSettings;
   });
   let settingsOpen = $state(false);
+
+  // #435: admin-only overlay that tints words whose lemma has no
+  // definition yet. The flag is hydrated from localStorage on mount
+  // (admins only) and mirrored onto <html> by the effect below; the
+  // reader settings popover flips it. Persisting outside the
+  // per-language settings keeps it a personal diagnostic preference
+  // rather than a shared reading setting.
+  let flagUndefined = $state(false);
+  function setFlagUndefined(on: boolean) {
+    flagUndefined = on;
+    writePersistedFlagUndefined(on);
+  }
 
   // T-2.8: admin-only "Reprocess this text" affordance. Re-runs the
   // NLP pipeline (POSTs `/api/v1/admin/texts/:id/reprocess`) and
@@ -133,6 +150,15 @@
       if (previous == null) html.removeAttribute('data-hl');
       else html.setAttribute('data-hl', previous);
     };
+  });
+
+  // #435: mirror the admin overlay flag onto <html> so tokens.css
+  // paints `.word.no-definition`. Only admins can turn it on; clearing
+  // on unmount keeps the attribute scoped to the reader route.
+  $effect(() => {
+    if (typeof document === 'undefined') return;
+    setFlagUndefinedAttribute(data.isAdmin && flagUndefined);
+    return () => setFlagUndefinedAttribute(false);
   });
 
   function shouldPoll(s: typeof data.text.status): boolean {
@@ -232,6 +258,11 @@
 
   onMount(() => {
     liveStatus = data.text.status;
+
+    // #435: restore the admin's overlay preference. Read after mount
+    // (not during SSR) so the localStorage access is browser-only; the
+    // effect above syncs it onto <html> once the state lands.
+    if (data.isAdmin) flagUndefined = readPersistedFlagUndefined();
 
     // Reading is immersive: hide the app-shell rail / bottom nav so the
     // text owns the screen. The × button (→ library) and Esc are the ways
@@ -551,6 +582,9 @@
     readerSettings = next;
   }}
   canPersist={data.canPersistSettings}
+  isAdmin={data.isAdmin}
+  {flagUndefined}
+  onFlagUndefinedChange={setFlagUndefined}
 />
 
 <style>
