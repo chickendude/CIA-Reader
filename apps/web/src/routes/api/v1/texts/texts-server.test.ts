@@ -37,7 +37,18 @@ vi.mock('$lib/server/auth/rate-limits.js', async () => {
   };
 });
 
+const listOwnedTexts = vi.fn();
+const listSharedTexts = vi.fn();
+const listOfficialTexts = vi.fn();
+
+vi.mock('$lib/server/texts/library.js', () => ({
+  listOwnedTexts: (...a: unknown[]) => listOwnedTexts(...a),
+  listSharedTexts: (...a: unknown[]) => listSharedTexts(...a),
+  listOfficialTexts: (...a: unknown[]) => listOfficialTexts(...a),
+}));
+
 type PostFn = (typeof import('./+server.js'))['POST'];
+type GetFn = (typeof import('./+server.js'))['GET'];
 
 const USER = { id: 'user-1', role: 'user' as const };
 
@@ -71,6 +82,9 @@ beforeEach(() => {
   createTxtText.mockReset();
   requireUser.mockReset();
   consumeRateLimit.mockReset();
+  listOwnedTexts.mockReset();
+  listSharedTexts.mockReset();
+  listOfficialTexts.mockReset();
   consumeRateLimit.mockResolvedValue({
     limit: 50,
     remaining: 49,
@@ -232,5 +246,77 @@ describe('POST /api/v1/texts', () => {
     const json = await res.json();
     expect(json.error).toBe('rate_limited');
     expect(createPastedText).not.toHaveBeenCalled();
+  });
+});
+
+const PAGE = { cards: [], totalCount: 0, limit: 20, offset: 0 };
+
+async function callGet(query = '', user: typeof USER | null = USER) {
+  if (user) {
+    requireUser.mockResolvedValueOnce(user);
+  } else {
+    requireUser.mockImplementationOnce(() => {
+      throw { status: 401, body: { message: 'Unauthorized' } };
+    });
+  }
+  const { GET } = await import('./+server.js');
+  const url = `http://x/api/v1/texts${query}`;
+  const event = {
+    url: new URL(url),
+    request: new Request(url),
+  } as unknown as Parameters<GetFn>[0];
+  try {
+    return await GET(event);
+  } catch (e) {
+    return e as { status: number };
+  }
+}
+
+describe('GET /api/v1/texts', () => {
+  it('defaults to owned scope and returns the page', async () => {
+    listOwnedTexts.mockResolvedValueOnce({ ...PAGE, totalCount: 2 });
+    const res = (await callGet('')) as Response;
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.totalCount).toBe(2);
+    expect(listOwnedTexts).toHaveBeenCalledWith(
+      { id: USER.id },
+      { limit: undefined, offset: undefined, language: undefined },
+    );
+    expect(listOfficialTexts).not.toHaveBeenCalled();
+  });
+
+  it('serves official scope without requiring auth', async () => {
+    listOfficialTexts.mockResolvedValueOnce(PAGE);
+    const res = (await callGet('?scope=official', null)) as Response;
+    expect(res.status).toBe(200);
+    expect(listOfficialTexts).toHaveBeenCalledTimes(1);
+    expect(requireUser).not.toHaveBeenCalled();
+  });
+
+  it('passes language + pagination through to the shared query', async () => {
+    listSharedTexts.mockResolvedValueOnce(PAGE);
+    await callGet('?scope=shared&language=hi&limit=5&offset=10');
+    expect(listSharedTexts).toHaveBeenCalledWith(
+      { id: USER.id },
+      { limit: 5, offset: 10, language: 'hi' },
+    );
+  });
+
+  it('rejects an unsupported language with 400', async () => {
+    const res = (await callGet('?language=xx')) as { status: number };
+    expect(res.status).toBe(400);
+    expect(listOwnedTexts).not.toHaveBeenCalled();
+  });
+
+  it('rejects an unknown scope with 400', async () => {
+    const res = (await callGet('?scope=bogus')) as { status: number };
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 401 for owned scope when unauthenticated', async () => {
+    const res = (await callGet('?scope=owned', null)) as { status: number };
+    expect(res.status).toBe(401);
+    expect(listOwnedTexts).not.toHaveBeenCalled();
   });
 });
