@@ -89,6 +89,31 @@ class ReaderScreenTest {
     }
 
     @Test
+    fun chapterChevronNavigatesNext() {
+        var next = false
+        compose.setContent {
+            CiaReaderTheme {
+                ReaderScreenContent(
+                    state = ReaderUiState(isLoading = false, title = "Book", chapterCount = 2, chapterIdx = 0),
+                    onBack = {},
+                    onWordTap = {},
+                    onDismissWord = {},
+                    onPrevChapter = {},
+                    onNextChapter = { next = true },
+                    onRetry = {},
+                    onSetStatus = {},
+                    onRecordPosition = { _, _ -> },
+                    onRestoreConsumed = {},
+                    onToggleRomanize = {},
+                    onTogglePageMode = {},
+                )
+            }
+        }
+        compose.onNodeWithContentDescription("Next chapter").performClick()
+        assertTrue(next)
+    }
+
+    @Test
     fun showsSettingsButton() {
         compose.setContent {
             CiaReaderTheme {

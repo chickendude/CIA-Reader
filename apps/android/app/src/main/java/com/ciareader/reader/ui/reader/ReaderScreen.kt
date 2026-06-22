@@ -20,7 +20,6 @@ import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.BottomAppBar
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ColorScheme
@@ -124,11 +123,27 @@ internal fun ReaderScreenContent(
         topBar = {
             TopAppBar(
                 title = {
-                    Text(
-                        state.title.ifEmpty { "Reader" },
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        IconButton(onClick = onPrevChapter, enabled = state.canGoPrev) {
+                            Icon(
+                                painter = painterResource(R.drawable.ic_chevron_left),
+                                contentDescription = "Previous chapter",
+                            )
+                        }
+                        Text(
+                            state.title.ifEmpty { "Reader" },
+                            modifier = Modifier.weight(1f),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            textAlign = TextAlign.Center,
+                        )
+                        IconButton(onClick = onNextChapter, enabled = state.canGoNext) {
+                            Icon(
+                                painter = painterResource(R.drawable.ic_chevron_right),
+                                contentDescription = "Next chapter",
+                            )
+                        }
+                    }
                 },
                 navigationIcon = { TextButton(onClick = onBack) { Text("Back") } },
                 actions = {
@@ -140,18 +155,6 @@ internal fun ReaderScreenContent(
                     }
                 },
             )
-        },
-        bottomBar = {
-            if (state.canGoPrev || state.canGoNext) {
-                ChapterNavBar(
-                    chapterIdx = state.chapterIdx,
-                    chapterCount = state.chapterCount,
-                    hasPrev = state.canGoPrev,
-                    hasNext = state.canGoNext,
-                    onPrev = onPrevChapter,
-                    onNext = onNextChapter,
-                )
-            }
         },
     ) { padding ->
         Box(
@@ -498,26 +501,6 @@ private fun SwitchRow(label: String, checked: Boolean, onToggle: () -> Unit) {
     ) {
         Text(label, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
         Switch(checked = checked, onCheckedChange = { onToggle() })
-    }
-}
-
-@Composable
-private fun ChapterNavBar(
-    chapterIdx: Int,
-    chapterCount: Int,
-    hasPrev: Boolean,
-    hasNext: Boolean,
-    onPrev: () -> Unit,
-    onNext: () -> Unit,
-) {
-    BottomAppBar {
-        TextButton(onClick = onPrev, enabled = hasPrev) { Text("Previous") }
-        Spacer(Modifier.weight(1f))
-        if (chapterCount > 1) {
-            Text("Ch. ${chapterIdx + 1} / $chapterCount")
-        }
-        Spacer(Modifier.weight(1f))
-        TextButton(onClick = onNext, enabled = hasNext) { Text("Next") }
     }
 }
 

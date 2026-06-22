@@ -60,7 +60,15 @@ fun CiaReaderNavHost(onLogout: () -> Unit) {
             val collectionId = entry.arguments?.getString("collectionId")
             ReaderScreen(
                 onBack = { navController.popBackStack() },
-                onOpenChapterText = { textId -> navController.navigate(Routes.reader(textId, collectionId)) },
+                // Replace the current reader rather than stacking chapters, so Back
+                // exits the reader (to the book / library) instead of walking back
+                // through every chapter you opened.
+                onOpenChapterText = { textId ->
+                    navController.navigate(Routes.reader(textId, collectionId)) {
+                        popUpTo(Routes.READER) { inclusive = true }
+                        launchSingleTop = true
+                    }
+                },
             )
         }
     }
