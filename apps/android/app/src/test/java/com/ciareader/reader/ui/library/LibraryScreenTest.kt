@@ -5,6 +5,7 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import com.ciareader.reader.data.collection.CollectionSummary
 import com.ciareader.reader.data.language.Language
 import com.ciareader.reader.data.library.TextCard
 import com.ciareader.reader.ui.theme.CiaReaderTheme
@@ -25,6 +26,7 @@ class LibraryScreenTest {
     private fun setContent(
         state: LibraryUiState,
         onOpenText: (String) -> Unit = {},
+        onOpenCollection: (String) -> Unit = {},
         onSelectLanguage: (String) -> Unit = {},
         onRetry: () -> Unit = {},
         onLogout: () -> Unit = {},
@@ -35,6 +37,7 @@ class LibraryScreenTest {
                     state = state,
                     onSelectLanguage = onSelectLanguage,
                     onOpenText = onOpenText,
+                    onOpenCollection = onOpenCollection,
                     onRetry = onRetry,
                     onLogout = onLogout,
                 )
@@ -60,16 +63,34 @@ class LibraryScreenTest {
     }
 
     @Test
+    fun showsCollectionsAndTapOpens() {
+        var opened: String? = null
+        setContent(
+            LibraryUiState(
+                isLoading = false,
+                languages = listOf(lang("eu", "Basque")),
+                currentLanguage = "eu",
+                collections = listOf(
+                    CollectionSummary("c1", "Afrika express", "eu", "chapter_book", 12),
+                ),
+            ),
+            onOpenCollection = { opened = it },
+        )
+        compose.onNodeWithText("Afrika express").assertIsDisplayed()
+        compose.onNodeWithText("Afrika express").performClick()
+        assertEquals("c1", opened)
+    }
+
+    @Test
     fun showsEmptyState() {
         setContent(
             LibraryUiState(
                 isLoading = false,
                 languages = listOf(lang("hi", "Hindi")),
                 currentLanguage = "hi",
-                texts = emptyList(),
             ),
         )
-        compose.onNodeWithText("No texts yet").assertIsDisplayed()
+        compose.onNodeWithText("Nothing here yet").assertIsDisplayed()
     }
 
     @Test
@@ -79,7 +100,6 @@ class LibraryScreenTest {
                 isLoading = false,
                 languages = listOf(lang("hi", "Hindi")),
                 currentLanguage = "hi",
-                texts = emptyList(),
             ),
         )
         compose.onNodeWithText("Hindi").assertIsDisplayed()

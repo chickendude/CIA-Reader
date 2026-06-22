@@ -7,6 +7,8 @@ import com.ciareader.reader.data.auth.AuthApi
 import com.ciareader.reader.data.auth.TokenRefreshApi
 import com.ciareader.reader.data.language.LanguagesApi
 import com.ciareader.reader.data.library.LibraryApi
+import com.ciareader.reader.data.collection.CollectionsApi
+import com.ciareader.reader.data.reader.ReaderApi
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -113,6 +115,16 @@ object NetworkModule {
     @Singleton
     fun provideLanguagesApi(@Authenticated retrofit: Retrofit): LanguagesApi =
         retrofit.create(LanguagesApi::class.java)
+
+    @Provides
+    @Singleton
+    fun provideReaderApi(@Authenticated retrofit: Retrofit): ReaderApi =
+        retrofit.create(ReaderApi::class.java)
+
+    @Provides
+    @Singleton
+    fun provideCollectionsApi(@Authenticated retrofit: Retrofit): CollectionsApi =
+        retrofit.create(CollectionsApi::class.java)
 
     private val JSON_MEDIA_TYPE = "application/json".toMediaType()
 }

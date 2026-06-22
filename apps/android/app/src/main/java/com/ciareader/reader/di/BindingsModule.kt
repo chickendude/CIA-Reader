@@ -8,6 +8,10 @@ import com.ciareader.reader.data.language.LanguageRepository
 import com.ciareader.reader.data.language.LanguageRepositoryImpl
 import com.ciareader.reader.data.library.LibraryRepository
 import com.ciareader.reader.data.library.LibraryRepositoryImpl
+import com.ciareader.reader.data.collection.CollectionRepository
+import com.ciareader.reader.data.collection.CollectionRepositoryImpl
+import com.ciareader.reader.data.reader.ReaderRepository
+import com.ciareader.reader.data.reader.ReaderRepositoryImpl
 import dagger.Binds
 import dagger.Module
 import dagger.hilt.InstallIn
@@ -33,4 +37,12 @@ abstract class BindingsModule {
     @Binds
     @Singleton
     abstract fun bindLanguageRepository(impl: LanguageRepositoryImpl): LanguageRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindReaderRepository(impl: ReaderRepositoryImpl): ReaderRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindCollectionRepository(impl: CollectionRepositoryImpl): CollectionRepository
 }

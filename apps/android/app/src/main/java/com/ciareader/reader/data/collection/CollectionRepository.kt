@@ -1,0 +1,71 @@
+package com.ciareader.reader.data.collection
+
+import com.ciareader.reader.core.network.Outcome
+import com.ciareader.reader.core.network.apiCall
+import javax.inject.Inject
+import javax.inject.Singleton
+
+/** A book/course the user owns (a collection of texts). */
+data class CollectionSummary(
+    val id: String,
+    val title: String,
+    val language: String,
+    val kind: String,
+    val textCount: Int,
+)
+
+data class CollectionChapter(
+    val textId: String,
+    val title: String,
+    val position: Int,
+    val status: String,
+) {
+    val isReady: Boolean get() = status == "ready"
+}
+
+data class CollectionDetail(
+    val id: String,
+    val title: String,
+    val chapters: List<CollectionChapter>,
+)
+
+interface CollectionRepository {
+    suspend fun myCollections(): Outcome<List<CollectionSummary>>
+    suspend fun detail(collectionId: String): Outcome<CollectionDetail>
+}
+
+@Singleton
+class CollectionRepositoryImpl @Inject constructor(
+    private val api: CollectionsApi,
+) : CollectionRepository {
+
+    override suspend fun myCollections(): Outcome<List<CollectionSummary>> =
+        apiCall {
+            api.myCollections().collections.map {
+                CollectionSummary(
+                    id = it.collection.id,
+                    title = it.collection.title,
+                    language = it.collection.language,
+                    kind = it.collection.kind,
+                    textCount = it.textCount,
+                )
+            }
+        }
+
+    override suspend fun detail(collectionId: String): Outcome<CollectionDetail> =
+        apiCall {
+            val dto = api.detail(collectionId)
+            CollectionDetail(
+                id = dto.collection.id,
+                title = dto.collection.title,
+                chapters = dto.items.map {
+                    CollectionChapter(
+                        textId = it.text.id,
+                        title = it.text.title,
+                        position = it.position,
+                        status = it.text.status,
+                    )
+                },
+            )
+        }
+}
