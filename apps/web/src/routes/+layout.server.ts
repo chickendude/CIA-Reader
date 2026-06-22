@@ -4,6 +4,7 @@ import { db } from '$lib/server/db/index.js';
 import { userLanguages } from '$lib/server/db/schema.js';
 import {
   LANG_COOKIE,
+  addableLanguageOptions,
   languageOption,
   resolveCurrentLanguage,
 } from '$lib/server/language-context.js';
@@ -19,7 +20,9 @@ import type { LayoutServerLoad } from './$types';
  * Also resolves the active language (T-5.25): the rail's language
  * indicator + picker reads `availableLanguages` (the user's
  * `user_languages` rows) and `currentLanguage` (cookie-driven
- * choice, validated against the active list).
+ * choice, validated against the active list). `addableLanguages`
+ * (#436) carries the supported languages the user hasn't added yet
+ * so the switcher can offer "Add a language" inline.
  */
 export const load: LayoutServerLoad = async ({ locals, cookies }) => {
   let activeCodes: LanguageCode[] = [];
@@ -57,5 +60,8 @@ export const load: LayoutServerLoad = async ({ locals, cookies }) => {
       : null,
     currentLanguage,
     availableLanguages: activeCodes.map(languageOption),
+    // Only signed-in users can add a language; anonymous visitors get an
+    // empty list (the switcher isn't shown for them anyway).
+    addableLanguages: locals.user?.id ? addableLanguageOptions(activeCodes) : [],
   };
 };

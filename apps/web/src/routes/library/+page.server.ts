@@ -12,7 +12,7 @@
  * default unauth visitors to 'official' so the public landing is the
  * curated library, not a "please log in" wall.
  */
-import { error, redirect } from '@sveltejs/kit';
+import { redirect } from '@sveltejs/kit';
 
 import {
   DEFAULT_PAGE_SIZE,
@@ -30,7 +30,6 @@ import {
   estimatedComprehensionForCollections,
   estimatedComprehensionForTexts,
 } from '$lib/server/learning-stats.js';
-import { LANGUAGES, isSupportedLanguage } from '@ciareader/shared-types';
 import type { LanguageCode } from '@ciareader/shared-types';
 import type { PageServerLoad } from './$types';
 
@@ -55,7 +54,7 @@ function readInt(url: URL, key: string, fallback: number): number {
   return Number.isFinite(n) ? n : fallback;
 }
 
-export const load: PageServerLoad = async ({ url, locals }) => {
+export const load: PageServerLoad = async ({ url, locals, parent }) => {
   const tab = readTab(url.searchParams.get('tab'), Boolean(locals.user));
 
   // Auth gate: 'your' / 'shared' require a logged-in user. 'official'
@@ -67,12 +66,10 @@ export const load: PageServerLoad = async ({ url, locals }) => {
     );
   }
 
-  const langRaw = url.searchParams.get('language');
-  const language: LanguageCode | null =
-    langRaw && isSupportedLanguage(langRaw) ? (langRaw as LanguageCode) : null;
-  if (langRaw && !language) {
-    throw error(400, `Unsupported language '${langRaw}'`);
-  }
+  // The library is scoped to the current language (#436) — set in the rail
+  // switcher (or the home grid), not a per-page dropdown.
+  const { currentLanguage } = await parent();
+  const language = (currentLanguage as LanguageCode | null) ?? null;
 
   const limit = Math.min(
     Math.max(readInt(url, 'limit', DEFAULT_PAGE_SIZE), 1),
@@ -238,11 +235,6 @@ export const load: PageServerLoad = async ({ url, locals }) => {
     chapterBookCards,
     collectionsPage,
     language,
-    languages: Object.values(LANGUAGES).map((d) => ({
-      code: d.code,
-      displayName: d.displayName,
-      nativeName: d.nativeName,
-    })),
     isAuthenticated: Boolean(locals.user),
   };
 };

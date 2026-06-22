@@ -72,3 +72,15 @@ export function languageOption(code: LanguageCode): LanguageOption {
     glyph: [...desc.nativeName][0] ?? code.toUpperCase().slice(0, 1),
   };
 }
+
+/** Supported languages the user hasn't added yet — the "Add a language"
+ *  options in the rail switcher (#436). Order follows the registry so the
+ *  list is stable across renders. */
+export function addableLanguageOptions(
+  activeCodes: readonly LanguageCode[],
+): LanguageOption[] {
+  const active = new Set(activeCodes);
+  return SUPPORTED_LANGUAGE_CODES.filter((code) => !active.has(code)).map(
+    languageOption,
+  );
+}

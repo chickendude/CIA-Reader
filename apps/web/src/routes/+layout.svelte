@@ -17,6 +17,7 @@
   user={data.user}
   currentLanguage={data.currentLanguage}
   availableLanguages={data.availableLanguages}
+  addableLanguages={data.addableLanguages}
 >
   {@render children()}
 </AppShell>

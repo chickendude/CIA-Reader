@@ -1,10 +1,11 @@
 /**
- * Words manager loader (T-10.6).
+ * Words manager loader (T-10.6, scoped by language in #436).
  *
- * Lists the caller's vocabulary — every lemma they've touched —
- * filtered by an optional language code, an optional status bucket,
- * and an optional free-text query. Joined against `lemmas` so we
- * read headword + POS + gloss in a single query.
+ * Lists the caller's vocabulary — every lemma they've touched — for the
+ * current language (the site is split by language; the rail switcher picks
+ * it), narrowed by an optional status bucket and an optional free-text
+ * query. Joined against `lemmas` so we read headword + POS + gloss in a
+ * single query.
  *
  * Auth required. Anonymous visitors are bounced to /login with a
  * `next` param so they return here after signing in.
@@ -14,12 +15,7 @@ import { error, redirect } from '@sveltejs/kit';
 
 import { db } from '$lib/server/db/index.js';
 import { lemmas, userKnownLemmas } from '$lib/server/db/schema.js';
-import {
-  isSupportedLanguage,
-  LANGUAGES,
-  SUPPORTED_LANGUAGE_CODES,
-  type LanguageCode,
-} from '@ciareader/shared-types';
+import { LANGUAGES, type LanguageCode } from '@ciareader/shared-types';
 import type { PageServerLoad } from './$types';
 
 export type WordsStatus = 'all' | 'unknown' | 'learning' | 'known' | 'ignored';
@@ -44,14 +40,6 @@ export type WordRow = {
   updatedAt: Date;
 };
 
-function readLanguage(raw: string | null): LanguageCode | null {
-  if (!raw) return null;
-  if (!isSupportedLanguage(raw)) {
-    throw error(400, `Unsupported language '${raw}'`);
-  }
-  return raw as LanguageCode;
-}
-
 function readStatus(raw: string | null): WordsStatus {
   if (!raw) return 'all';
   if (!VALID_STATUSES.includes(raw as WordsStatus)) {
@@ -60,7 +48,7 @@ function readStatus(raw: string | null): WordsStatus {
   return raw as WordsStatus;
 }
 
-export const load: PageServerLoad = async ({ url, locals }) => {
+export const load: PageServerLoad = async ({ url, locals, parent }) => {
   if (!locals.user) {
     throw redirect(
       303,
@@ -68,7 +56,9 @@ export const load: PageServerLoad = async ({ url, locals }) => {
     );
   }
 
-  const language = readLanguage(url.searchParams.get('language'));
+  // The current language drives the page (#436) — the rail switcher sets it.
+  const { currentLanguage } = await parent();
+  const language = (currentLanguage as LanguageCode | null) ?? null;
   const status = readStatus(url.searchParams.get('status'));
   const q = (url.searchParams.get('q') ?? '').trim();
 
@@ -118,10 +108,8 @@ export const load: PageServerLoad = async ({ url, locals }) => {
       status,
       q,
     },
-    languages: SUPPORTED_LANGUAGE_CODES.map((code) => ({
-      code,
-      displayName: LANGUAGES[code].displayName,
-      nativeName: LANGUAGES[code].nativeName,
-    })),
+    // Native name of the active language for the heading. No per-page
+    // picker anymore — switching languages happens in the rail (#436).
+    languageName: language ? LANGUAGES[language].nativeName : null,
   };
 };

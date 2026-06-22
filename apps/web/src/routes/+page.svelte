@@ -1,16 +1,51 @@
 <!--
-  Home (T-5.12).
+  Home (T-5.12, language-set on click in #436).
 
   Replaces the M0 diagnostic dashboard with the CIAR design's
   language-pick landing: hero copy + a card grid where each card
   shows a supported language's native + Roman name, script, and the
   signed-in user's known-word count for that language. Clicking a
-  card jumps to the library filtered to that language.
+  card makes that language current (adding it to the user's list if
+  needed) and opens the library — the site is split by language.
 -->
 <script lang="ts">
+  import { goto } from '$app/navigation';
+  import {
+    switchCurrentLanguage,
+    addLanguage,
+  } from '$lib/components/shell/language-switch.js';
   import type { PageData } from './$types';
 
   let { data }: { data: PageData } = $props();
+
+  // null = idle; otherwise the code mid-switch (disables the grid so a
+  // double-tap can't fire two requests).
+  let choosing = $state<string | null>(null);
+
+  async function choose(code: string, e: MouseEvent) {
+    // Honor modifier-clicks (open in new tab) and let no-JS fall back to
+    // the href — only hijack a plain left click.
+    if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) {
+      return;
+    }
+    e.preventDefault();
+    if (choosing) return;
+    choosing = code;
+    try {
+      // Signed-in: add-or-switch (idempotent). Anonymous: cookie only.
+      if (data.user) await addLanguage(code);
+      else await switchCurrentLanguage(code);
+    } catch {
+      // Swallow — fall through to the navigation so the user isn't stuck
+      // on the grid; the library just opens on the unchanged language.
+    } finally {
+      choosing = null;
+    }
+    // invalidateAll re-runs the root layout load so it re-reads the cookie we
+    // just set — otherwise the shared layout (and the library's parent()
+    // currentLanguage) would keep the stale pick across this navigation.
+    await goto('/library', { invalidateAll: true });
+  }
 </script>
 
 <svelte:head>
@@ -30,8 +65,11 @@
     {#each data.languages as L (L.code)}
       <a
         class="lang-card card"
-        href={`/library?language=${L.code}`}
-        aria-label={`Open the ${L.displayName} library`}
+        href="/library"
+        aria-label={`Read in ${L.displayName}`}
+        data-busy={choosing === L.code ? '1' : '0'}
+        aria-busy={choosing === L.code}
+        onclick={(e) => choose(L.code, e)}
       >
         <div class="lc-native">{L.nativeName}</div>
         <div class="lc-en">{L.displayName}</div>
@@ -119,6 +157,10 @@
       var(--card-edge, var(--color-border))
     );
     transform: translateY(-1px);
+  }
+  .lang-card[data-busy='1'] {
+    opacity: 0.6;
+    pointer-events: none;
   }
   .lc-native {
     font-family: var(--font-serif-dev, var(--font-serif));

@@ -8,13 +8,9 @@
     form,
   }: { data: PageData; form: ActionData } = $props();
 
-  // Initial state seeded from any failed-submit echo (paste-action
-  // values), else the language the user arrived from (data.selectedLanguage,
-  // derived from ?language= — e.g. the Basque library's "Add a text" card),
-  // so the form doesn't silently default to Hindi.
-  let language = $state(
-    untrack(() => form?.values?.language ?? data.selectedLanguage),
-  );
+  // The upload language is fixed to the current language (#436) — the site
+  // is split by language and the rail switcher picks it — so there's no
+  // per-form language chooser; it's submitted as a hidden field below.
   let title = $state(untrack(() => form?.values?.title ?? ''));
   let body = $state(untrack(() => form?.values?.body ?? ''));
 
@@ -235,16 +231,18 @@
     ondragover={onDragOver}
     ondrop={onDrop}
   >
-    <label>
-      Language
-      <select name="language" bind:value={language} required>
-        {#each data.languages as lang (lang.code)}
-          <option value={lang.code}>
-            {lang.displayName} ({lang.nativeName})
-          </option>
-        {/each}
-      </select>
-    </label>
+    <!-- Language is fixed to the current language (#436). Submitted as a
+         hidden field; switch languages from the menu in the top-left. -->
+    <input type="hidden" name="language" value={data.selectedLanguage} />
+    <div class="lang-fixed">
+      <span class="lang-fixed-label">Importing into</span>
+      <span class="lang-fixed-value">
+        {data.selectedLanguageName} · {data.selectedLanguageDisplay}
+      </span>
+      <span class="lang-fixed-hint">
+        Change the language from the menu in the top-left.
+      </span>
+    </div>
 
     <label>
       Title {#if isFileMode}<span class="hint">(optional)</span>{/if}
@@ -363,8 +361,7 @@
     font-size: 0.9rem;
   }
   form input,
-  form textarea,
-  form select {
+  form textarea {
     display: block;
     width: 100%;
     margin-top: 0.25rem;
@@ -375,6 +372,33 @@
     background: var(--color-bg);
     color: var(--color-fg);
     min-height: 44px;
+  }
+
+  /* Fixed-language banner (#436): a read-only stand-in for the old
+     language <select>, since the upload target now follows the current
+     language. */
+  .lang-fixed {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    padding: 0.6rem 0.75rem;
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+    background: var(--color-bg);
+  }
+  .lang-fixed-label {
+    font-size: 0.62rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--color-fg-muted);
+  }
+  .lang-fixed-value {
+    font-size: 1rem;
+    color: var(--color-fg);
+  }
+  .lang-fixed-hint {
+    font-size: 0.75rem;
+    color: var(--color-fg-muted);
   }
   form textarea {
     min-height: 12rem;
