@@ -7,7 +7,7 @@ import {
   languageOption,
   resolveCurrentLanguage,
 } from '$lib/server/language-context.js';
-import type { LanguageCode } from '@ciareader/shared-types';
+import { isSupportedLanguage, type LanguageCode } from '@ciareader/shared-types';
 import type { LayoutServerLoad } from './$types';
 
 /**
@@ -29,7 +29,13 @@ export const load: LayoutServerLoad = async ({ locals, cookies }) => {
         .select({ language: userLanguages.language })
         .from(userLanguages)
         .where(eq(userLanguages.userId, locals.user.id));
-      activeCodes = rows.map((r) => r.language as LanguageCode);
+      // Filter to codes this build's registry knows about. A user may
+      // carry a row for a language added in a newer deploy (staged
+      // language rollout, or a worktree behind main); `languageOption`
+      // would otherwise crash the whole layout on the unknown code.
+      activeCodes = rows
+        .map((r) => r.language as string)
+        .filter(isSupportedLanguage);
     } catch (err) {
       // Don't take the layout offline over a bad query — the picker
       // just renders empty in that case.
