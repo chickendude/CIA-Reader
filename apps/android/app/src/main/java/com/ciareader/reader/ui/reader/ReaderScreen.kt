@@ -45,6 +45,7 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -347,8 +348,12 @@ private fun PagedChapter(
     val measurer = rememberTextMeasurer()
 
     BoxWithConstraints(modifier.fillMaxSize().padding(16.dp)) {
-        val widthPx = constraints.maxWidth
-        val heightPx = constraints.maxHeight
+        // maxWidth/maxHeight (the BoxWithConstraints scope) → px for the measure pass.
+        val availableWidth = maxWidth
+        val availableHeight = maxHeight
+        val density = LocalDensity.current
+        val widthPx = with(density) { availableWidth.roundToPx() }
+        val heightPx = with(density) { availableHeight.roundToPx() }
         // One measure pass at the page width; group lines into page-sized ranges.
         val pages = remember(annotated, widthPx, heightPx, style) {
             if (widthPx <= 0 || heightPx <= 0 || annotated.isEmpty()) {
