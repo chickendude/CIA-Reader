@@ -29,6 +29,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
@@ -104,6 +105,7 @@ fun ReaderScreen(
             val tid = ref.textId
             if (tid != null) onOpenChapterText(tid) else ref.chapterIdx?.let { viewModel.loadChapter(it) }
         },
+        onProgress = viewModel::setProgress,
     )
 }
 
@@ -124,6 +126,7 @@ internal fun ReaderScreenContent(
     onSetFontSize: (Int) -> Unit = {},
     onSetLineSpacing: (Float) -> Unit = {},
     onSelectChapter: (ReaderChapterRef) -> Unit = {},
+    onProgress: (Float) -> Unit = {},
 ) {
     var showSettings by remember { mutableStateOf(false) }
     var showChapters by remember { mutableStateOf(false) }
@@ -193,6 +196,7 @@ internal fun ReaderScreenContent(
                         onPrev = onPrevChapter,
                         onNext = onNextChapter,
                         onWordTap = onWordTap,
+                        onProgress = onProgress,
                         modifier = Modifier.fillMaxSize(),
                     )
 
@@ -207,8 +211,17 @@ internal fun ReaderScreenContent(
                         restoreTokenIdx = state.restoreTokenIdx,
                         onRecordPosition = onRecordPosition,
                         onRestoreConsumed = onRestoreConsumed,
+                        onProgress = onProgress,
                         modifier = Modifier.fillMaxSize(),
                     )
+            }
+            if (!state.isLoading && state.errorMessage == null) {
+                LinearProgressIndicator(
+                    progress = { state.progress },
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .fillMaxWidth(),
+                )
             }
         }
     }
@@ -268,6 +281,7 @@ private fun ChapterText(
     restoreTokenIdx: Int?,
     onRecordPosition: (Int, Double) -> Unit,
     onRestoreConsumed: () -> Unit,
+    onProgress: (Float) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val scheme = MaterialTheme.colorScheme
@@ -317,6 +331,7 @@ private fun ChapterText(
                 0.0
             }
             onRecordPosition(tokenIdx, pct)
+            onProgress((pct / 100.0).toFloat())
         }
     }
 
@@ -357,6 +372,7 @@ private fun PagedChapter(
     onPrev: () -> Unit,
     onNext: () -> Unit,
     onWordTap: (ReaderToken) -> Unit,
+    onProgress: (Float) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val scheme = MaterialTheme.colorScheme
@@ -426,6 +442,11 @@ private fun PagedChapter(
                     leading == 1 && settled == 0 -> onPrev()
                     trailing == 1 && settled == total - 1 -> onNext()
                 }
+            }
+        }
+        LaunchedEffect(pagerState, total) {
+            snapshotFlow { pagerState.currentPage }.collect { p ->
+                onProgress(if (total > 1) p.toFloat() / (total - 1) else 0f)
             }
         }
 

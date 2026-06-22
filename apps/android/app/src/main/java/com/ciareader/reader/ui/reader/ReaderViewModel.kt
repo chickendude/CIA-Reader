@@ -49,6 +49,7 @@ data class ReaderUiState(
     val chapters: List<ReaderChapterRef> = emptyList(),
     val fontSize: Int = SettingsStore.DEFAULT_FONT_SIZE_SP,
     val lineSpacing: Float = SettingsStore.DEFAULT_LINE_SPACING,
+    val progress: Float = 0f,
     val errorMessage: String? = null,
 ) {
     val hasPrev: Boolean get() = chapterIdx > 0
@@ -212,6 +213,9 @@ class ReaderViewModel @Inject constructor(
 
     /** The UI has scrolled to the restored anchor; don't scroll there again. */
     fun onRestoreConsumed() = _state.update { it.copy(restoreTokenIdx = null) }
+
+    /** Live reading-progress fraction (0..1) for the bottom bar. UI-only. */
+    fun setProgress(fraction: Float) = _state.update { it.copy(progress = fraction.coerceIn(0f, 1f)) }
 
     /** Toggle native ⇄ romanized rendering and remember the choice. */
     fun toggleRomanization() {
