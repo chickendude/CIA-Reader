@@ -134,12 +134,12 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/stanza_resources
-          key: stanza-models-hi-mr-v1-${{ hashFiles('services/nlp/pyproject.toml') }}
-      - name: Download Stanza Hi + Mr models
+          key: stanza-models-hi-mr-eu-v1-${{ hashFiles('services/nlp/pyproject.toml') }}
+      - name: Download Stanza Hi + Mr + Eu models
         run: |
           python - <<'PY'
           import stanza
-          for lang in ("hi", "mr"):
+          for lang in ("hi", "mr", "eu"):
               stanza.download(lang, processors="tokenize,pos,lemma", verbose=False)
           PY
       - name: Run real-pipeline accuracy thresholds

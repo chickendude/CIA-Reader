@@ -182,6 +182,49 @@ describe('loadChapterTokens', () => {
     expect(result![2]).toMatchObject({ id: 't3', glossDefault: null });
   });
 
+  it('sets hasDefinition from the effective gloss for the admin overlay (#435)', async () => {
+    stage([
+      tokenRow({ id: 't1', idx: 0, lemmaId: 'lem-a' }),
+      tokenRow({ id: 't2', idx: 1, lemmaId: 'lem-b' }),
+      // OOV word: no lemma id at all → no definition.
+      tokenRow({ id: 't3', idx: 2, lemmaId: null, isOov: true }),
+    ]);
+    stage([]); // token_corrections
+    stage([]); // user_known_lemmas
+    stage([
+      { id: 'lem-a', language: 'hi', headword: 'पानी', glossDefault: 'water' },
+      { id: 'lem-b', language: 'hi', headword: 'rare', glossDefault: null },
+    ]);
+    stage([]); // personal translations
+    stage([]); // sibling fallback — no rows for lem-b
+    const result = await loadChapterTokens('chap-1', 'user-1');
+    // Lemma with a gloss → defined.
+    expect(result![0]).toMatchObject({ id: 't1', hasDefinition: true });
+    // Lemma exists but gloss is null and no sibling → undefined.
+    expect(result![1]).toMatchObject({ id: 't2', hasDefinition: false });
+    // OOV word (no lemma) → undefined.
+    expect(result![2]).toMatchObject({ id: 't3', hasDefinition: false });
+  });
+
+  it('hasDefinition follows the T-3.14 sibling-gloss fallback (#435)', async () => {
+    stage([tokenRow({ id: 't1', idx: 0, lemmaId: 'lem-propn' })]);
+    stage([]); // token_corrections
+    stage([]); // user_known_lemmas
+    stage([
+      { id: 'lem-propn', language: 'hi', headword: 'पार्क', glossDefault: null },
+    ]);
+    stage([]); // personal translations
+    stage([{ language: 'hi', headword: 'पार्क', glossDefault: 'park' }]);
+    const result = await loadChapterTokens('chap-1', 'user-1');
+    // The linked lemma had no gloss, but a same-headword sibling does —
+    // the overlay must agree with the tooltip and treat it as defined.
+    expect(result![0]).toMatchObject({
+      id: 't1',
+      glossDefault: 'park',
+      hasDefinition: true,
+    });
+  });
+
   it('falls back to a sibling lemma\'s gloss when the linked lemma has none (T-3.14)', async () => {
     // Common case: NLP tagged "पार्क" as PROPN with no gloss; the
     // dictionary entry is under "पार्क/NOUN" with the actual gloss.

@@ -292,6 +292,32 @@ describe('kaikkiToImportEntry', () => {
     expect(r!.forms![0]!.surface).toBe('etxean');
   });
 
+  it('skips transliteration forms so romanizations never become surfaces', () => {
+    // Kaikki attaches a word's romanization as a form object whose Latin
+    // string differs from the native headword; left in, it pollutes
+    // lemma_forms.surface (regression: 31k Latin junk rows for Yiddish).
+    const r = kaikkiToImportEntry(
+      {
+        word: 'במשך',
+        pos: 'noun',
+        senses: [{ glosses: ['during'] }],
+        forms: [
+          { form: 'bemeshekh', tags: ['romanization'] },
+          { form: 'bʼmšḵ', tags: ['transliteration'] },
+          { form: 'bemeshech', tags: ['Romanisation'] },
+          { form: 'במשכן', tags: ['plural'] },
+        ],
+      },
+      { script: 'Hebr', sourceIdPrefix: 'kaikki:yi' },
+    );
+    // Only the genuine native-script inflected form survives.
+    expect(r!.forms).toHaveLength(1);
+    expect(r!.forms![0]!.surface).toBe('במשכן');
+    const surfaces = r!.forms!.map((f) => f.surface);
+    expect(surfaces).not.toContain('bemeshekh');
+    expect(surfaces.some((s) => /[a-zA-Z]/.test(s))).toBe(false);
+  });
+
   it('NFC-normalizes the headword', () => {
     const r = kaikkiToImportEntry(
       { word: 'क़', pos: 'noun', senses: [{ glosses: ['letter qa'] }] },

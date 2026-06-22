@@ -109,6 +109,15 @@ export type RenderedToken = {
    *  form + romanization. Null on every other token. */
   numberForms: RenderedNumberForms | null;
   status: 'known' | 'learning' | 'ignored' | 'unknown';
+  /** #435: true when this word's lemma (or a same-headword sibling)
+   *  carries a canonical short gloss — i.e. the dictionary has a
+   *  definition for it. False for OOV words and for lemmas with no
+   *  gloss on file yet. Drives the admin-only "flag undefined words"
+   *  reader overlay so curators can spot dictionary gaps while
+   *  reading. Derived from the same `glossDefault` (incl. the T-3.14
+   *  sibling fallback) the hover tooltip uses, so the overlay agrees
+   *  with what a reader actually sees on hover. */
+  hasDefinition: boolean;
 };
 
 /**
@@ -407,6 +416,13 @@ export async function loadChapterTokens(
     }
     candidates.sort((a, b) => b.score - a.score);
 
+    // #435: resolve the effective gloss once so both the tooltip
+    // payload and the `hasDefinition` flag read the same value (incl.
+    // the sibling fallback applied to `glossByLemma` above).
+    const effectiveGloss = effectiveLemmaId
+      ? glossByLemma.get(effectiveLemmaId) ?? null
+      : null;
+
     const nf = t.numberForms;
     const renderedNumberForms: RenderedNumberForms | null = nf
       ? {
@@ -437,9 +453,7 @@ export async function loadChapterTokens(
       isOov: isMarkedNonWord ? false : t.isOov,
       lemmaId: effectiveLemmaId,
       romanization: t.romanization,
-      glossDefault: effectiveLemmaId
-        ? glossByLemma.get(effectiveLemmaId) ?? null
-        : null,
+      glossDefault: effectiveGloss,
       personalGloss: effectiveLemmaId
         ? personalGlossByLemma.get(effectiveLemmaId) ?? null
         : null,
@@ -447,6 +461,7 @@ export async function loadChapterTokens(
       features: t.features,
       numberForms: renderedNumberForms,
       status,
+      hasDefinition: effectiveGloss != null,
     };
   });
 }
