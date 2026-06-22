@@ -108,6 +108,8 @@ class ReaderScreenTest {
         }
         compose.onNodeWithText("नमस्ते").assertIsDisplayed()
         compose.onNodeWithText("greeting").assertIsDisplayed()
+        // Attribution is intentionally not surfaced in the reader (web parity).
+        compose.onNodeWithText("Platts").assertDoesNotExist()
         compose.onNodeWithText("Known").assertIsDisplayed()
         compose.onNodeWithText("Known").performClick()
         assertEquals(KnownStatus.KNOWN, chosen)
