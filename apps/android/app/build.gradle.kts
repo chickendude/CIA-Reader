@@ -65,6 +65,14 @@ android {
         compose = true
         buildConfig = true
     }
+
+    testOptions {
+        unitTests {
+            // Robolectric needs merged Android resources/manifest to host
+            // Compose UI tests on the JVM.
+            isIncludeAndroidResources = true
+        }
+    }
 }
 
 dependencies {
@@ -97,6 +105,10 @@ dependencies {
 
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
+    // Robolectric runs Compose UI tests on the JVM (no emulator in CI).
+    testImplementation(libs.robolectric)
+    testImplementation(platform(libs.androidx.compose.bom))
+    testImplementation(libs.androidx.ui.test.junit4)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(platform(libs.androidx.compose.bom))

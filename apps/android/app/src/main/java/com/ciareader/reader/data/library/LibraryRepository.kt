@@ -1,0 +1,44 @@
+package com.ciareader.reader.data.library
+
+import com.ciareader.reader.core.network.Outcome
+import com.ciareader.reader.core.network.apiCall
+import javax.inject.Inject
+import javax.inject.Singleton
+
+/** Which library tab to list. Maps to the endpoint's `scope` param. */
+enum class LibraryScope(val wire: String) {
+    OWNED("owned"),
+    SHARED("shared"),
+    OFFICIAL("official"),
+}
+
+/** UI-facing library entry (the wire DTO trimmed to what a card needs). */
+data class TextCard(
+    val id: String,
+    val title: String,
+    val language: String,
+    val status: String,
+) {
+    val isReady: Boolean get() = status == "ready"
+}
+
+interface LibraryRepository {
+    suspend fun listTexts(scope: LibraryScope, language: String): Outcome<List<TextCard>>
+}
+
+@Singleton
+class LibraryRepositoryImpl @Inject constructor(
+    private val api: LibraryApi,
+) : LibraryRepository {
+    override suspend fun listTexts(scope: LibraryScope, language: String): Outcome<List<TextCard>> =
+        apiCall {
+            api.listTexts(scope = scope.wire, language = language).cards.map { it.toDomain() }
+        }
+}
+
+private fun TextCardDto.toDomain() = TextCard(
+    id = id,
+    title = title,
+    language = language,
+    status = status,
+)

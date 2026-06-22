@@ -45,7 +45,7 @@ fun LoginScreen(viewModel: LoginViewModel = hiltViewModel()) {
 }
 
 @Composable
-private fun LoginScreenContent(
+internal fun LoginScreenContent(
     state: LoginUiState,
     onEmailChange: (String) -> Unit,
     onPasswordChange: (String) -> Unit,
