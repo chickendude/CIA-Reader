@@ -32,6 +32,7 @@ data class ReaderUiState(
     val restoreTokenIdx: Int? = null,
     val romanize: Boolean = false,
     val isRtl: Boolean = false,
+    val pageMode: Boolean = false,
     val errorMessage: String? = null,
 ) {
     val hasPrev: Boolean get() = chapterIdx > 0
@@ -72,6 +73,7 @@ class ReaderViewModel @Inject constructor(
                             title = meta.data.title,
                             chapterCount = chapterCount,
                             romanize = settings.showRomanization(),
+                            pageMode = settings.pageMode(),
                             isRtl = isRtlLanguage(meta.data.language),
                         )
                     }
@@ -177,6 +179,13 @@ class ReaderViewModel @Inject constructor(
         val next = !_state.value.romanize
         _state.update { it.copy(romanize = next) }
         viewModelScope.launch { settings.setShowRomanization(next) }
+    }
+
+    /** Toggle continuous-scroll ⇄ page mode and remember the choice. */
+    fun togglePageMode() {
+        val next = !_state.value.pageMode
+        _state.update { it.copy(pageMode = next) }
+        viewModelScope.launch { settings.setPageMode(next) }
     }
 
     fun retry() {

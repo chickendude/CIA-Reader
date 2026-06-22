@@ -198,6 +198,30 @@ class ReaderViewModelTest {
     }
 
     @Test
+    fun togglesPageModeAndPersists() = runTest(mainRule.dispatcher) {
+        val repo = FakeReaderRepository(meta = meta(1), chapters = mapOf(0 to Chapter(0, listOf(word("a")))))
+        val settings = FakeSettingsStore(paged = false)
+        val v = vm(repo, settings = settings)
+        advanceUntilIdle()
+
+        assertFalse(v.state.value.pageMode)
+        v.togglePageMode()
+        advanceUntilIdle()
+
+        assertTrue(v.state.value.pageMode)
+        assertEquals(true, settings.lastSetPageMode)
+    }
+
+    @Test
+    fun restoresPageModePreference() = runTest(mainRule.dispatcher) {
+        val repo = FakeReaderRepository(meta = meta(1), chapters = mapOf(0 to Chapter(0, listOf(word("a")))))
+        val v = vm(repo, settings = FakeSettingsStore(paged = true))
+        advanceUntilIdle()
+
+        assertTrue(v.state.value.pageMode)
+    }
+
+    @Test
     fun marksRtlForHebrewScriptLanguage() = runTest(mainRule.dispatcher) {
         val repo = FakeReaderRepository(meta = meta(1, language = "yi"), chapters = mapOf(0 to Chapter(0, emptyList())))
         val v = vm(repo)
@@ -270,13 +294,19 @@ private class FakeDictionaryRepository(
 
 private class FakeSettingsStore(
     private val romanization: Boolean = false,
+    private val paged: Boolean = false,
 ) : SettingsStore {
     var lastSetRomanization: Boolean? = null
+    var lastSetPageMode: Boolean? = null
     override val currentLanguage: Flow<String?> = MutableStateFlow(null)
     override suspend fun currentLanguage(): String? = null
     override suspend fun setCurrentLanguage(code: String) {}
     override suspend fun showRomanization(): Boolean = romanization
     override suspend fun setShowRomanization(value: Boolean) {
         lastSetRomanization = value
+    }
+    override suspend fun pageMode(): Boolean = paged
+    override suspend fun setPageMode(value: Boolean) {
+        lastSetPageMode = value
     }
 }

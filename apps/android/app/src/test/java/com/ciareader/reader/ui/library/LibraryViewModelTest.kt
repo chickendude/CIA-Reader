@@ -197,4 +197,10 @@ private class FakeSettingsStore(initial: String? = null) : SettingsStore {
     override suspend fun setShowRomanization(value: Boolean) {
         romanize = value
     }
+
+    private var pageMode = false
+    override suspend fun pageMode(): Boolean = pageMode
+    override suspend fun setPageMode(value: Boolean) {
+        pageMode = value
+    }
 }

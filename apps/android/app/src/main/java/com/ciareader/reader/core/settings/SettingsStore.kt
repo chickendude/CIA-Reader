@@ -27,6 +27,10 @@ interface SettingsStore {
     /** Whether the reader shows romanization in place of the native script. */
     suspend fun showRomanization(): Boolean
     suspend fun setShowRomanization(value: Boolean)
+
+    /** Whether the reader paginates into pages (page mode) vs. continuous scroll. */
+    suspend fun pageMode(): Boolean
+    suspend fun setPageMode(value: Boolean)
 }
 
 private val Context.settingsDataStore by preferencesDataStore(name = "settings")
@@ -52,8 +56,16 @@ class DataStoreSettingsStore @Inject constructor(
         context.settingsDataStore.edit { it[SHOW_ROMANIZATION] = value }
     }
 
+    override suspend fun pageMode(): Boolean =
+        context.settingsDataStore.data.map { it[PAGE_MODE] ?: false }.first()
+
+    override suspend fun setPageMode(value: Boolean) {
+        context.settingsDataStore.edit { it[PAGE_MODE] = value }
+    }
+
     private companion object {
         val CURRENT_LANGUAGE = stringPreferencesKey("current_language")
         val SHOW_ROMANIZATION = booleanPreferencesKey("show_romanization")
+        val PAGE_MODE = booleanPreferencesKey("page_mode")
     }
 }
