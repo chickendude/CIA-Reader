@@ -415,10 +415,15 @@
     color: var(--ink-2, var(--color-fg));
     cursor: pointer;
   }
+  /* Selected segment: the soft accent tint is a *translucent* fill, so
+     it pairs with the strong page ink — NOT `--accent-ink`, which is
+     tuned dark to sit on a SOLID accent surface and reads as dark-on-dark
+     over this tint in dark mode (#438). Same pairing as ScriptAwareInput's
+     pressed toggle. */
   .rs-seg button[data-active='1'] {
     background: var(--accent-soft, color-mix(in oklch, var(--accent, var(--color-accent)) 18%, transparent));
-    color: var(--accent-ink, var(--color-fg));
-    font-weight: 500;
+    color: var(--ink, var(--color-fg));
+    font-weight: 600;
   }
   input[type='range'] {
     width: 100%;
