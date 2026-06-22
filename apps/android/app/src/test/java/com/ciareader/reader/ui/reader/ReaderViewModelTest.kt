@@ -10,6 +10,7 @@ import com.ciareader.reader.data.reader.ChapterRef
 import com.ciareader.reader.data.reader.KnownStatus
 import com.ciareader.reader.data.reader.ReaderRepository
 import com.ciareader.reader.data.reader.ReaderToken
+import com.ciareader.reader.data.reader.ReadingProgress
 import com.ciareader.reader.data.reader.TextMeta
 import com.ciareader.reader.util.MainDispatcherRule
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -139,6 +140,32 @@ class ReaderViewModelTest {
         assertEquals(2, v.state.value.tokens.size)
     }
 
+    @Test
+    fun restoresSavedChapterAndToken() = runTest(mainRule.dispatcher) {
+        val repo = FakeReaderRepository(
+            meta = meta(2),
+            chapters = mapOf(0 to Chapter(0, listOf(word("a"))), 1 to Chapter(1, listOf(word("b")))),
+            savedProgress = ReadingProgress(chapterIdx = 1, tokenIdx = 7, pctRead = 42.0),
+        )
+        val v = vm(repo)
+        advanceUntilIdle()
+
+        assertEquals(1, v.state.value.chapterIdx)
+        assertEquals(7, v.state.value.restoreTokenIdx)
+    }
+
+    @Test
+    fun recordPositionWritesDebouncedProgress() = runTest(mainRule.dispatcher) {
+        val repo = FakeReaderRepository(meta = meta(1), chapters = mapOf(0 to Chapter(0, listOf(word("a")))))
+        val v = vm(repo)
+        advanceUntilIdle()
+
+        v.recordPosition(tokenIdx = 12, pctRead = 30.0)
+        advanceUntilIdle()
+
+        assertEquals(ReadingProgress(0, 12, 30.0), repo.lastSaved)
+    }
+
     private fun word(surface: String) =
         ReaderToken(0, surface, true, KnownStatus.UNKNOWN, null, null, null, false, false, false)
 
@@ -157,13 +184,29 @@ private class FakeReaderRepository(
     private val chapters: Map<Int, Chapter> = emptyMap(),
     private val metaError: String? = null,
     private val chapterError: String? = null,
+    private val savedProgress: ReadingProgress? = null,
 ) : ReaderRepository {
+    var lastSaved: ReadingProgress? = null
+
     override suspend fun textMeta(textId: String): Outcome<TextMeta> =
         metaError?.let { Outcome.Failure(it) } ?: Outcome.Success(meta!!)
 
     override suspend fun chapter(textId: String, chapterIdx: Int): Outcome<Chapter> =
         chapterError?.let { Outcome.Failure(it) }
             ?: Outcome.Success(chapters[chapterIdx] ?: Chapter(chapterIdx, emptyList()))
+
+    override suspend fun progress(textId: String): Outcome<ReadingProgress?> =
+        Outcome.Success(savedProgress)
+
+    override suspend fun saveProgress(
+        textId: String,
+        chapterIdx: Int,
+        tokenIdx: Int,
+        pctRead: Double,
+    ): Outcome<Unit> {
+        lastSaved = ReadingProgress(chapterIdx, tokenIdx, pctRead)
+        return Outcome.Success(Unit)
+    }
 }
 
 private class FakeDictionaryRepository(

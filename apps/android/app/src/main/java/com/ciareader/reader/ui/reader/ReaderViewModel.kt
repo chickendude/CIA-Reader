@@ -10,6 +10,8 @@ import com.ciareader.reader.data.reader.KnownStatus
 import com.ciareader.reader.data.reader.ReaderRepository
 import com.ciareader.reader.data.reader.ReaderToken
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -26,6 +28,7 @@ data class ReaderUiState(
     val selectedWord: ReaderToken? = null,
     val wordTranslations: LemmaTranslations? = null,
     val isWordLoading: Boolean = false,
+    val restoreTokenIdx: Int? = null,
     val errorMessage: String? = null,
 ) {
     val hasPrev: Boolean get() = chapterIdx > 0
@@ -45,6 +48,8 @@ class ReaderViewModel @Inject constructor(
     private val _state = MutableStateFlow(ReaderUiState())
     val state: StateFlow<ReaderUiState> = _state.asStateFlow()
 
+    private var progressJob: Job? = null
+
     init {
         loadInitial()
     }
@@ -57,25 +62,34 @@ class ReaderViewModel @Inject constructor(
                     _state.update { it.copy(isLoading = false, errorMessage = meta.message) }
 
                 is Outcome.Success -> {
-                    _state.update {
-                        it.copy(
-                            title = meta.data.title,
-                            chapterCount = meta.data.chapterCount.coerceAtLeast(1),
-                        )
+                    val chapterCount = meta.data.chapterCount.coerceAtLeast(1)
+                    _state.update { it.copy(title = meta.data.title, chapterCount = chapterCount) }
+                    // Resume where the reader left off (chapter clamped to range);
+                    // restore the token only within that saved chapter.
+                    val saved = when (val p = repository.progress(textId)) {
+                        is Outcome.Success -> p.data
+                        is Outcome.Failure -> null
                     }
-                    loadChapter(0)
+                    val startChapter = (saved?.chapterIdx ?: 0).coerceIn(0, chapterCount - 1)
+                    val restoreToken = saved?.takeIf { it.chapterIdx == startChapter }?.tokenIdx
+                    loadChapter(startChapter, restoreToken)
                 }
             }
         }
     }
 
-    fun loadChapter(chapterIdx: Int) {
+    fun loadChapter(chapterIdx: Int, restoreTokenIdx: Int? = null) {
         _state.update { it.copy(isLoading = true, errorMessage = null, selectedWord = null, wordTranslations = null) }
         viewModelScope.launch {
             when (val chapter = repository.chapter(textId, chapterIdx)) {
                 is Outcome.Success ->
                     _state.update {
-                        it.copy(isLoading = false, chapterIdx = chapterIdx, tokens = chapter.data.tokens)
+                        it.copy(
+                            isLoading = false,
+                            chapterIdx = chapterIdx,
+                            tokens = chapter.data.tokens,
+                            restoreTokenIdx = restoreTokenIdx,
+                        )
                     }
 
                 is Outcome.Failure ->
@@ -135,7 +149,23 @@ class ReaderViewModel @Inject constructor(
         if (_state.value.hasPrev) loadChapter(_state.value.chapterIdx - 1)
     }
 
+    /** Debounced reading-progress write-back as the user scrolls. */
+    fun recordPosition(tokenIdx: Int, pctRead: Double) {
+        progressJob?.cancel()
+        progressJob = viewModelScope.launch {
+            delay(PROGRESS_DEBOUNCE_MS)
+            repository.saveProgress(textId, _state.value.chapterIdx, tokenIdx, pctRead)
+        }
+    }
+
+    /** The UI has scrolled to the restored anchor; don't scroll there again. */
+    fun onRestoreConsumed() = _state.update { it.copy(restoreTokenIdx = null) }
+
     fun retry() {
         if (_state.value.title.isEmpty()) loadInitial() else loadChapter(_state.value.chapterIdx)
+    }
+
+    private companion object {
+        const val PROGRESS_DEBOUNCE_MS = 800L
     }
 }
