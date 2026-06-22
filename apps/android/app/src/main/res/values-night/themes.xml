@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      Dark-mode window theme (night variant of values/themes.xml). Uses the
+      framework dark Material parent so the window background / splash is dark
+      in system dark mode — otherwise a light window shows before Compose
+      draws. In-app colors still come from MaterialTheme (Compose).
+    -->
+    <style name="Theme.CiaReader" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">?android:colorBackground</item>
+    </style>
+</resources>
