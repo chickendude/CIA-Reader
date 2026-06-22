@@ -56,6 +56,16 @@ NON_WORD_UPOS: frozenset[str] = frozenset({"PUNCT", "SYM"})
 # at decimals or comma-joined phrases.
 _TRAILING_SPLIT_MARKS: tuple[str, ...] = ("।", "॥", "?", "!")
 
+# Leading dialogue dashes that Latin-script prose (Basque especially)
+# glues to the first word of a quotation — "–Ondo" / "—Ondo" — when no
+# space follows the dash. Left attached, the dash blocks dictionary
+# lookup and, worse, drags the word through Stanza's character seq2seq
+# lemma fallback, which mangled "–Ondo" into the lemma "hondo" (#437).
+# Restricted to the en/em dash: the ASCII hyphen-minus is deliberately
+# excluded so compounds ("kale-garbitzaile") and negative numbers
+# ("-15") keep their shape.
+_LEADING_SPLIT_MARKS: tuple[str, ...] = ("–", "—")
+
 _SCRIPT_RANGES: dict[str, tuple[tuple[int, int], ...]] = {
     "Deva": ((0x0900, 0x097F),),
     "Orya": ((0x0B00, 0x0B7F),),
@@ -117,24 +127,26 @@ def should_treat_as_word(surface: str, upos: str, *, script: str | None) -> bool
     return True
 
 
-def _is_allcaps_word(surface: str) -> bool:
-    """Return True for a multi-letter, fully-uppercase surface.
+def _needs_lowercase_relemma(surface: str) -> bool:
+    """Return True for a multi-letter word whose casing can miss Stanza's
+    lowercase-keyed lemma cache.
 
-    Headings and emphasised words ("HITZAURREA") confuse Stanza's
-    lemmatizer: its dictionary cache is keyed on normal case, so an
-    all-caps form that misses the cache falls through to the character
-    seq2seq model, which can drop or duplicate letters
-    ("HITZAURREA" → "hitzaure" instead of "hitzaurre"). Title-case
-    ("Hitzaurrea") and lowercase forms hit the cache and lemmatize
-    correctly, so they return False here.
+    Stanza caches dictionary lemmas keyed on the *lowercased* surface, so
+    any form that isn't already all-lowercase can miss the cache and fall
+    through to the character seq2seq model. That fallback drops or
+    duplicates letters in all-caps headings ("HITZAURREA" → "hitzaure"
+    instead of "hitzaurre") and *inserts* an etymological h in sentence-
+    or dialogue-initial title-case words ("Ondo" → "hondo", #437).
+    Re-lemmatizing a lowercased copy recovers the cached lemma in both
+    cases.
 
-    ``str.isupper()`` is only True when there is at least one cased
-    character and every cased character is uppercase, so non-cased
-    scripts (Devanagari, Odia, Hebrew) always return False — the
-    re-lemmatization path never fires for them. The ≥2-letter floor
-    skips single initials ("A") where a re-run buys nothing.
+    Already-lowercase words return False (cache hit). Non-cased scripts
+    (Devanagari, Odia, Hebrew) also return False because
+    ``surface.lower() == surface`` for them, so the re-lemmatization path
+    never fires there. The ≥2-letter floor skips single initials ("A")
+    where a re-run buys nothing.
     """
-    if not surface.isupper():
+    if surface == surface.lower():
         return False
     return sum(1 for ch in surface if ch.isalpha()) >= 2
 
@@ -153,6 +165,22 @@ def _trailing_split_mark(surface: str) -> str | None:
     last = surface[-1]
     if last in _TRAILING_SPLIT_MARKS:
         return last
+    return None
+
+
+def _leading_split_mark(surface: str) -> str | None:
+    """Return the leading dialogue dash to peel off, or None.
+
+    Mirrors :func:`_trailing_split_mark`. A surface that is *only* the
+    mark (Stanza already split it correctly) is left alone; we only
+    intervene when the dash is glued to a following word. See
+    ``_LEADING_SPLIT_MARKS``.
+    """
+    if len(surface) < 2:
+        return None
+    first = surface[0]
+    if first in _LEADING_SPLIT_MARKS:
+        return first
     return None
 
 
@@ -232,8 +260,9 @@ class StanzaUDPipeline(Pipeline):
         tokens: list[Token] = []
         idx = 0
         cursor = 0
-        # Memoizes the lowercased re-lemmatization of all-caps words so a
-        # heading repeated across a chapter only runs the extra pass once.
+        # Memoizes the lowercased re-lemmatization of upper/title-case
+        # words so a heading or a repeated dialogue-initial word only
+        # runs the extra pass once per chapter.
         relemma_cache: dict[str, str | None] = {}
         for sentence in doc.sentences:
             for word in sentence.words:
@@ -245,6 +274,16 @@ class StanzaUDPipeline(Pipeline):
                         tokens.append(self._make_gap_token(idx, gap))
                         idx += 1
                 surface = word.text
+                lemma = word.lemma or surface
+                # Peel a glued leading dialogue dash off the surface
+                # before the per-word Token shaping (see
+                # `_LEADING_SPLIT_MARKS`). It is emitted as its own
+                # boundary token below, ahead of the word.
+                leading_mark = _leading_split_mark(surface)
+                if leading_mark:
+                    surface = surface[len(leading_mark):]
+                    if lemma.startswith(leading_mark):
+                        lemma = lemma[len(leading_mark):]
                 # Split a trailing sentence-end mark off the surface
                 # before the per-word Token shaping. Stanza's Hindi
                 # tokenizer occasionally glues the danda to its
@@ -252,7 +291,6 @@ class StanzaUDPipeline(Pipeline):
                 # them, leaving the dictionary lookup with no chance
                 # of matching. See `_TRAILING_SPLIT_MARKS`.
                 trailing_mark = _trailing_split_mark(surface)
-                lemma = word.lemma or surface
                 if trailing_mark:
                     # Recompute lemma + surface for the word part. If
                     # Stanza's lemma was the glued form (the OOV
@@ -268,17 +306,26 @@ class StanzaUDPipeline(Pipeline):
                     upos,
                     script=self._script,
                 )
-                # Repair the lemma of an all-caps lexical word by
-                # re-lemmatizing a lowercased copy (see
-                # ``_is_allcaps_word``). PROPN / NUM / SYM / X are skipped:
-                # a proper noun's capitalized lemma and the
+                # Repair the lemma of an upper/title/mixed-case lexical
+                # word by re-lemmatizing a lowercased copy (see
+                # ``_needs_lowercase_relemma``). PROPN / NUM / SYM / X are
+                # skipped: a proper noun's capitalized lemma and the
                 # ``lemma == surface`` contract for the rest would only
                 # regress under lowercasing.
-                if is_word and upos not in NON_OOV_UPOS and _is_allcaps_word(surface):
+                if (
+                    is_word
+                    and upos not in NON_OOV_UPOS
+                    and _needs_lowercase_relemma(surface)
+                ):
                     repaired = self._relemmatize_lower(surface, relemma_cache)
                     if repaired:
                         lemma = repaired
                 is_oov = is_word and lemma == surface and upos not in NON_OOV_UPOS
+                if leading_mark:
+                    # Emit the dialogue dash as its own non-word boundary
+                    # token, ahead of the word it was glued to.
+                    tokens.append(self._make_punct_token(idx, leading_mark))
+                    idx += 1
                 tokens.append(
                     Token(
                         idx=idx,
@@ -304,25 +351,7 @@ class StanzaUDPipeline(Pipeline):
                     # reader paints it as a non-word boundary marker
                     # and the phrase-create logic refuses to span
                     # across sentence ends.
-                    tokens.append(
-                        Token(
-                            idx=idx,
-                            surface=trailing_mark,
-                            is_word=False,
-                            candidates=[
-                                LemmaCandidate(
-                                    lemma=trailing_mark,
-                                    pos="PUNCT",
-                                    score=1.0,
-                                    features={},
-                                ),
-                            ],
-                            is_ambiguous=False,
-                            is_oov=False,
-                            romanization=None,
-                            number_forms=None,
-                        )
-                    )
+                    tokens.append(self._make_punct_token(idx, trailing_mark))
                     idx += 1
                 if has_offsets and end is not None:
                     cursor = end
@@ -380,6 +409,24 @@ class StanzaUDPipeline(Pipeline):
             romanization=None,
         )
 
+    def _make_punct_token(self, idx: int, mark: str) -> Token:
+        """A punctuation mark peeled off a Stanza word — a leading
+        dialogue dash or a trailing sentence-end mark — emitted as its
+        own boundary token so the reader paints it as a non-word and
+        phrase-create refuses to span across it."""
+        return Token(
+            idx=idx,
+            surface=mark,
+            is_word=False,
+            candidates=[
+                LemmaCandidate(lemma=mark, pos="PUNCT", score=1.0, features={}),
+            ],
+            is_ambiguous=False,
+            is_oov=False,
+            romanization=None,
+            number_forms=None,
+        )
+
     def _romanize(self, surface: str) -> str | None:
         if not self._script or not self._roman_scheme:
             return None
@@ -399,7 +446,8 @@ __all__ = [
     "NON_WORD_UPOS",
     "StanzaLike",
     "StanzaUDPipeline",
-    "_is_allcaps_word",
+    "_leading_split_mark",
+    "_needs_lowercase_relemma",
     "_trailing_split_mark",
     "parse_feats",
     "should_treat_as_word",
