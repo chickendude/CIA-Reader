@@ -36,6 +36,8 @@ data class ReaderUiState(
     val pageMode: Boolean = false,
     val prevTextId: String? = null,
     val nextTextId: String? = null,
+    val fontSize: Int = SettingsStore.DEFAULT_FONT_SIZE_SP,
+    val lineSpacing: Float = SettingsStore.DEFAULT_LINE_SPACING,
     val errorMessage: String? = null,
 ) {
     val hasPrev: Boolean get() = chapterIdx > 0
@@ -84,6 +86,8 @@ class ReaderViewModel @Inject constructor(
                             chapterCount = chapterCount,
                             romanize = settings.showRomanization(),
                             pageMode = settings.pageMode(),
+                            fontSize = settings.fontSizeSp(),
+                            lineSpacing = settings.lineSpacing(),
                             isRtl = isRtlLanguage(meta.data.language),
                         )
                     }
@@ -199,6 +203,20 @@ class ReaderViewModel @Inject constructor(
         viewModelScope.launch { settings.setPageMode(next) }
     }
 
+    /** Reader body font size in sp, clamped + remembered. */
+    fun setFontSize(sp: Int) {
+        val v = sp.coerceIn(FONT_SIZE_MIN, FONT_SIZE_MAX)
+        _state.update { it.copy(fontSize = v) }
+        viewModelScope.launch { settings.setFontSizeSp(v) }
+    }
+
+    /** Reader line-height multiple, clamped + remembered. */
+    fun setLineSpacing(value: Float) {
+        val v = value.coerceIn(LINE_SPACING_MIN, LINE_SPACING_MAX)
+        _state.update { it.copy(lineSpacing = v) }
+        viewModelScope.launch { settings.setLineSpacing(v) }
+    }
+
     /** When reading a book, find the adjacent chapter-texts for Prev/Next. */
     private suspend fun loadSiblings() {
         val cid = collectionId ?: return
@@ -226,6 +244,10 @@ class ReaderViewModel @Inject constructor(
 
     private companion object {
         const val PROGRESS_DEBOUNCE_MS = 800L
+        const val FONT_SIZE_MIN = 14
+        const val FONT_SIZE_MAX = 28
+        const val LINE_SPACING_MIN = 1.2f
+        const val LINE_SPACING_MAX = 2.2f
         private val RTL_LANGUAGES = setOf("yi", "ur", "fa", "ar", "he", "sd")
         fun isRtlLanguage(code: String) = code.lowercase() in RTL_LANGUAGES
     }

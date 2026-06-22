@@ -286,6 +286,33 @@ class ReaderViewModelTest {
         assertFalse(v.state.value.canGoNext)
     }
 
+    @Test
+    fun setFontSizeClampsAndPersists() = runTest(mainRule.dispatcher) {
+        val repo = FakeReaderRepository(meta = meta(1), chapters = mapOf(0 to Chapter(0, listOf(word("a")))))
+        val settings = FakeSettingsStore()
+        val v = vm(repo, settings = settings)
+        advanceUntilIdle()
+
+        v.setFontSize(22)
+        advanceUntilIdle()
+        assertEquals(22, v.state.value.fontSize)
+        assertEquals(22, settings.lastSetFontSize)
+
+        v.setFontSize(999)
+        advanceUntilIdle()
+        assertEquals(28, v.state.value.fontSize) // clamped to max
+    }
+
+    @Test
+    fun restoresFontSettings() = runTest(mainRule.dispatcher) {
+        val repo = FakeReaderRepository(meta = meta(1), chapters = mapOf(0 to Chapter(0, listOf(word("a")))))
+        val v = vm(repo, settings = FakeSettingsStore(fontSize = 24, lineSpacingValue = 2.0f))
+        advanceUntilIdle()
+
+        assertEquals(24, v.state.value.fontSize)
+        assertEquals(2.0f, v.state.value.lineSpacing, 0.0001f)
+    }
+
     private fun word(surface: String) =
         ReaderToken(0, surface, true, KnownStatus.UNKNOWN, null, null, null, false, false, false)
 
@@ -342,6 +369,8 @@ private class FakeDictionaryRepository(
 private class FakeSettingsStore(
     private val romanization: Boolean = false,
     private val paged: Boolean = false,
+    private val fontSize: Int = 18,
+    private val lineSpacingValue: Float = 1.5f,
 ) : SettingsStore {
     var lastSetRomanization: Boolean? = null
     var lastSetPageMode: Boolean? = null
@@ -355,6 +384,17 @@ private class FakeSettingsStore(
     override suspend fun pageMode(): Boolean = paged
     override suspend fun setPageMode(value: Boolean) {
         lastSetPageMode = value
+    }
+
+    var lastSetFontSize: Int? = null
+    var lastSetLineSpacing: Float? = null
+    override suspend fun fontSizeSp(): Int = fontSize
+    override suspend fun setFontSizeSp(value: Int) {
+        lastSetFontSize = value
+    }
+    override suspend fun lineSpacing(): Float = lineSpacingValue
+    override suspend fun setLineSpacing(value: Float) {
+        lastSetLineSpacing = value
     }
 }
 

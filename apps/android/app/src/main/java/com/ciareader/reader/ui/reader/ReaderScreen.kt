@@ -2,6 +2,7 @@
 
 package com.ciareader.reader.ui.reader
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -12,6 +13,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.ScrollState
@@ -25,10 +27,11 @@ import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconToggleButton
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -43,6 +46,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextLayoutResult
@@ -91,6 +96,8 @@ fun ReaderScreen(
         onRestoreConsumed = viewModel::onRestoreConsumed,
         onToggleRomanize = viewModel::toggleRomanization,
         onTogglePageMode = viewModel::togglePageMode,
+        onSetFontSize = viewModel::setFontSize,
+        onSetLineSpacing = viewModel::setLineSpacing,
     )
 }
 
@@ -108,7 +115,10 @@ internal fun ReaderScreenContent(
     onRestoreConsumed: () -> Unit,
     onToggleRomanize: () -> Unit,
     onTogglePageMode: () -> Unit,
+    onSetFontSize: (Int) -> Unit = {},
+    onSetLineSpacing: (Float) -> Unit = {},
 ) {
+    var showSettings by remember { mutableStateOf(false) }
     Scaffold(
         topBar = {
             TopAppBar(
@@ -121,20 +131,10 @@ internal fun ReaderScreenContent(
                 },
                 navigationIcon = { TextButton(onClick = onBack) { Text("Back") } },
                 actions = {
-                    TextButton(onClick = onTogglePageMode) {
-                        Text(if (state.pageMode) "Scroll" else "Page")
-                    }
-                    IconToggleButton(
-                        checked = state.romanize,
-                        onCheckedChange = { onToggleRomanize() },
-                    ) {
+                    IconButton(onClick = { showSettings = true }) {
                         Icon(
-                            painter = painterResource(R.drawable.ic_translate),
-                            contentDescription = if (state.romanize) {
-                                "Show native script"
-                            } else {
-                                "Show romanization"
-                            },
+                            painter = painterResource(R.drawable.ic_settings),
+                            contentDescription = "Reader settings",
                         )
                     }
                 },
@@ -170,6 +170,8 @@ internal fun ReaderScreenContent(
                         tokens = state.tokens,
                         romanize = state.romanize,
                         rtl = state.isRtl,
+                        fontSize = state.fontSize,
+                        lineSpacing = state.lineSpacing,
                         onWordTap = onWordTap,
                         modifier = Modifier.fillMaxSize(),
                     )
@@ -179,6 +181,8 @@ internal fun ReaderScreenContent(
                         tokens = state.tokens,
                         romanize = state.romanize,
                         rtl = state.isRtl,
+                        fontSize = state.fontSize,
+                        lineSpacing = state.lineSpacing,
                         onWordTap = onWordTap,
                         restoreTokenIdx = state.restoreTokenIdx,
                         onRecordPosition = onRecordPosition,
@@ -200,6 +204,21 @@ internal fun ReaderScreenContent(
             )
         }
     }
+
+    if (showSettings) {
+        ModalBottomSheet(onDismissRequest = { showSettings = false }) {
+            ReaderSettingsSheet(
+                fontSize = state.fontSize,
+                lineSpacing = state.lineSpacing,
+                pageMode = state.pageMode,
+                romanize = state.romanize,
+                onSetFontSize = onSetFontSize,
+                onSetLineSpacing = onSetLineSpacing,
+                onTogglePageMode = onTogglePageMode,
+                onToggleRomanize = onToggleRomanize,
+            )
+        }
+    }
 }
 
 /** The text to render for a token — romanization for words when enabled. */
@@ -211,6 +230,8 @@ private fun ChapterText(
     tokens: List<ReaderToken>,
     romanize: Boolean,
     rtl: Boolean,
+    fontSize: Int,
+    lineSpacing: Float,
     onWordTap: (ReaderToken) -> Unit,
     restoreTokenIdx: Int?,
     onRecordPosition: (Int, Double) -> Unit,
@@ -271,6 +292,8 @@ private fun ChapterText(
         text = annotated,
         onTextLayout = { layout = it },
         style = MaterialTheme.typography.bodyLarge.copy(
+            fontSize = fontSize.sp,
+            lineHeight = (fontSize * lineSpacing).sp,
             textDirection = if (rtl) TextDirection.Rtl else TextDirection.Content,
             textAlign = if (rtl) TextAlign.Right else TextAlign.Start,
         ),
@@ -293,11 +316,15 @@ private fun PagedChapter(
     tokens: List<ReaderToken>,
     romanize: Boolean,
     rtl: Boolean,
+    fontSize: Int,
+    lineSpacing: Float,
     onWordTap: (ReaderToken) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val scheme = MaterialTheme.colorScheme
     val style = MaterialTheme.typography.bodyLarge.copy(
+        fontSize = fontSize.sp,
+        lineHeight = (fontSize * lineSpacing).sp,
         textDirection = if (rtl) TextDirection.Rtl else TextDirection.Content,
         textAlign = if (rtl) TextAlign.Right else TextAlign.Start,
     )
@@ -387,6 +414,86 @@ private fun PageText(
                 }
             },
     )
+}
+
+@Composable
+internal fun ReaderSettingsSheet(
+    fontSize: Int,
+    lineSpacing: Float,
+    pageMode: Boolean,
+    romanize: Boolean,
+    onSetFontSize: (Int) -> Unit,
+    onSetLineSpacing: (Float) -> Unit,
+    onTogglePageMode: () -> Unit,
+    onToggleRomanize: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(24.dp),
+    ) {
+        Text("Reader settings", style = MaterialTheme.typography.titleMedium)
+        Spacer(Modifier.height(12.dp))
+        StepperRow(
+            label = "Font size",
+            value = "${fontSize}pt",
+            decreaseDesc = "Decrease font size",
+            increaseDesc = "Increase font size",
+            onDecrease = { onSetFontSize(fontSize - 1) },
+            onIncrease = { onSetFontSize(fontSize + 1) },
+        )
+        StepperRow(
+            label = "Line spacing",
+            value = "%.1f".format(lineSpacing),
+            decreaseDesc = "Decrease line spacing",
+            increaseDesc = "Increase line spacing",
+            onDecrease = { onSetLineSpacing(lineSpacing - 0.1f) },
+            onIncrease = { onSetLineSpacing(lineSpacing + 0.1f) },
+        )
+        SwitchRow(label = "Page mode", checked = pageMode, onToggle = onTogglePageMode)
+        SwitchRow(label = "Romanization", checked = romanize, onToggle = onToggleRomanize)
+    }
+}
+
+@Composable
+private fun StepperRow(
+    label: String,
+    value: String,
+    decreaseDesc: String,
+    increaseDesc: String,
+    onDecrease: () -> Unit,
+    onIncrease: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(label, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
+        IconButton(onClick = onDecrease, modifier = Modifier.semantics { contentDescription = decreaseDesc }) {
+            Text("−", style = MaterialTheme.typography.titleLarge)
+        }
+        Text(value, style = MaterialTheme.typography.bodyMedium)
+        IconButton(onClick = onIncrease, modifier = Modifier.semantics { contentDescription = increaseDesc }) {
+            Text("+", style = MaterialTheme.typography.titleLarge)
+        }
+    }
+}
+
+@Composable
+private fun SwitchRow(label: String, checked: Boolean, onToggle: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onToggle() }
+            .padding(vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(label, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
+        Switch(checked = checked, onCheckedChange = { onToggle() })
+    }
 }
 
 @Composable

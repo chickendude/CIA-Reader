@@ -89,33 +89,7 @@ class ReaderScreenTest {
     }
 
     @Test
-    fun romanizeToggleInvokesCallback() {
-        var toggled = false
-        compose.setContent {
-            CiaReaderTheme {
-                ReaderScreenContent(
-                    state = ReaderUiState(isLoading = false, title = "Book"),
-                    onBack = {},
-                    onWordTap = {},
-                    onDismissWord = {},
-                    onPrevChapter = {},
-                    onNextChapter = {},
-                    onRetry = {},
-                    onSetStatus = {},
-                    onRecordPosition = { _, _ -> },
-                    onRestoreConsumed = {},
-                    onToggleRomanize = { toggled = true },
-                    onTogglePageMode = {},
-                )
-            }
-        }
-        compose.onNodeWithContentDescription("Show romanization").performClick()
-        assertTrue(toggled)
-    }
-
-    @Test
-    fun pageModeToggleInvokesCallback() {
-        var toggled = false
+    fun showsSettingsButton() {
         compose.setContent {
             CiaReaderTheme {
                 ReaderScreenContent(
@@ -130,12 +104,36 @@ class ReaderScreenTest {
                     onRecordPosition = { _, _ -> },
                     onRestoreConsumed = {},
                     onToggleRomanize = {},
-                    onTogglePageMode = { toggled = true },
+                    onTogglePageMode = {},
                 )
             }
         }
-        compose.onNodeWithText("Page").performClick()
-        assertTrue(toggled)
+        compose.onNodeWithContentDescription("Reader settings").assertIsDisplayed()
+    }
+
+    @Test
+    fun settingsSheetStepsFontAndToggles() {
+        var font: Int? = null
+        var pagedToggled = false
+        compose.setContent {
+            CiaReaderTheme {
+                ReaderSettingsSheet(
+                    fontSize = 18,
+                    lineSpacing = 1.5f,
+                    pageMode = false,
+                    romanize = false,
+                    onSetFontSize = { font = it },
+                    onSetLineSpacing = {},
+                    onTogglePageMode = { pagedToggled = true },
+                    onToggleRomanize = {},
+                )
+            }
+        }
+        compose.onNodeWithText("18pt").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Increase font size").performClick()
+        assertEquals(19, font)
+        compose.onNodeWithText("Page mode").performClick()
+        assertTrue(pagedToggled)
     }
 
     @Test
