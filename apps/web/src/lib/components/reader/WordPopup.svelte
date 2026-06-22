@@ -335,6 +335,8 @@
     adminRefLoading = false;
     adminRefSearch = '';
     adminRefSuggestions = [];
+    headwordEdited = false;
+    internalResults = [];
     bookFrequency = null;
     sentenceTranslation = null;
     translatedSentence = null;
@@ -441,6 +443,17 @@
   let adminRefSearch = $state('');
   let adminRefSuggestions = $state<string[]>([]);
   let adminRefSuggestTimer: ReturnType<typeof setTimeout> | null = null;
+
+  // Editable headword (the popup title). Typing searches the internal
+  // dictionary live (results listed below; click one to load it into the
+  // Translations section) and, after a longer pause, re-runs the admin
+  // reference lookup — a recovery path when the NLP parsed the wrong lemma.
+  type InternalHit = { id: string; headword: string; pos: string; glossDefault: string | null };
+  let headwordInput = $state('');
+  let headwordEdited = $state(false);
+  let internalResults = $state<InternalHit[]>([]);
+  let internalSearchTimer: ReturnType<typeof setTimeout> | null = null;
+  let headwordExternalTimer: ReturnType<typeof setTimeout> | null = null;
 
   // The ES | EN | EU tabs select which upstream source's entries show.
   // Persisted so the admin's preferred reference language sticks across
@@ -559,6 +572,78 @@
     const word = adminRefLookupWord;
     if (!word || adminRefWord === word) return;
     void loadAdminRef();
+  });
+
+  // ---- Editable headword search ------------------------------------
+  async function searchInternalDictionary(term: string): Promise<void> {
+    try {
+      const res = await fetch(
+        `/api/v1/dictionary/${language}/lemmas?q=${encodeURIComponent(term)}&limit=24`,
+      );
+      if (!res.ok) return;
+      const data = (await res.json()) as { lemmas: InternalHit[] };
+      // Drop stale responses if the field moved on.
+      if (headwordInput.trim() !== term) return;
+      // The NLP + import create several lemma rows per word; collapse them to
+      // one entry per headword (preferring one that carries a gloss) so the
+      // list isn't 20 identical "egon"s.
+      const byHeadword = new Map<string, InternalHit>();
+      for (const l of data.lemmas) {
+        const existing = byHeadword.get(l.headword);
+        if (!existing || (!existing.glossDefault && l.glossDefault)) {
+          byHeadword.set(l.headword, l);
+        }
+      }
+      internalResults = [...byHeadword.values()].slice(0, 8);
+    } catch {
+      /* internal search is a convenience — ignore failures */
+    }
+  }
+
+  function onHeadwordInput(value: string): void {
+    headwordInput = value;
+    headwordEdited = true;
+    const q = value.trim();
+
+    // Internal dictionary — search as you type (short debounce).
+    if (internalSearchTimer) clearTimeout(internalSearchTimer);
+    if (q.length < 2) {
+      internalResults = [];
+    } else {
+      internalSearchTimer = setTimeout(() => void searchInternalDictionary(q), 160);
+    }
+
+    // External reference dictionaries — admin only, after a longer pause.
+    if (showAdminRef && q) {
+      if (headwordExternalTimer) clearTimeout(headwordExternalTimer);
+      headwordExternalTimer = setTimeout(() => void loadAdminRef(q, { exact: true }), 600);
+    }
+  }
+
+  // Clicking an internal result loads that lemma's full translations into the
+  // normal Translations section.
+  async function selectInternalLemma(hit: InternalHit): Promise<void> {
+    headwordInput = hit.headword;
+    headwordEdited = true;
+    internalResults = [];
+    loadError = null;
+    try {
+      const res = await fetch(`/api/v1/lemmas/${hit.id}/translations`);
+      if (res.ok) payload = (await res.json()) as LemmaPayload;
+      else loadError = `Could not load translations (${res.status})`;
+    } catch (e) {
+      loadError = `Network error: ${(e as Error).message}`;
+    }
+  }
+
+  // Seed the editable headword from the resolved word, but never clobber an
+  // in-progress edit. Re-seeds when the popup rebinds to another token because
+  // the token-change effect clears `headwordEdited`.
+  $effect(() => {
+    const seed = payload?.lemma.headword ?? token?.surface ?? '';
+    untrack(() => {
+      if (!headwordEdited) headwordInput = seed;
+    });
   });
 
   function handleKeydown(e: KeyboardEvent) {
@@ -1505,22 +1590,24 @@
           </h2>
         {:else}
           <h2 class="sp-word">
-            {#if showAdminRef}
-              <!-- Admin: the lemma may be mis-parsed, so the title itself
-                   searches the reference dictionaries for the exact word. -->
-              <button
-                type="button"
-                class="sp-word-text sp-word-search"
-                data-testid="word-ref-search"
-                title="Search this word in the reference dictionaries"
-                onclick={() =>
-                  void loadAdminRef(payload?.lemma.headword ?? token.surface, { exact: true })}
-              >
-                {payload?.lemma.headword ?? token.surface}
-              </button>
-            {:else}
-              <span class="sp-word-text">{payload?.lemma.headword ?? token.surface}</span>
-            {/if}
+            <!-- Editable headword: type over it to search the internal
+                 dictionary as you go (results below; click one to load it into
+                 the Translations section). After a pause it also re-runs the
+                 admin reference lookup for the typed word. Lets you recover when
+                 the NLP parsed the wrong lemma. -->
+            <input
+              class="sp-word-input"
+              data-testid="headword-input"
+              type="text"
+              autocomplete="off"
+              spellcheck="false"
+              aria-label="Headword — edit to search the dictionary"
+              value={headwordInput}
+              oninput={(e) => onHeadwordInput((e.currentTarget as HTMLInputElement).value)}
+              onkeydown={(e) => {
+                if (e.key === 'Escape') internalResults = [];
+              }}
+            />
             {#if payload}
               <PosPill pos={payload.lemma.pos} class="sp-pos-pill" />
             {/if}
@@ -1536,6 +1623,26 @@
                 <!-- prettier-ignore -->
                 <span class="sp-freq-tip" role="tooltip">this word appears {bookFrequency}{bookFrequency === 1 ? ' time' : ' times'} in the book</span>
               </span>
+            {/if}
+            {#if internalResults.length > 0}
+              <ul class="sp-word-results" role="listbox" data-testid="headword-results">
+                {#each internalResults as r (r.id)}
+                  <li>
+                    <button
+                      type="button"
+                      class="sp-word-result"
+                      role="option"
+                      aria-selected="false"
+                      onclick={() => void selectInternalLemma(r)}
+                    >
+                      <span class="sp-word-result-hw">{r.headword}</span>
+                      {#if r.pos}<span class="sp-word-result-pos">{r.pos.toLowerCase()}</span>{/if}
+                      {#if r.glossDefault}<span class="sp-word-result-gloss">{r.glossDefault}</span
+                        >{/if}
+                    </button>
+                  </li>
+                {/each}
+              </ul>
             {/if}
           </h2>
         {/if}
@@ -2290,6 +2397,7 @@
     color: var(--ink, var(--color-fg));
   }
   .sp-word {
+    position: relative;
     margin: 0 0 0.25rem;
     /* Reserve room on the right so the freq badge clears the absolutely
        positioned close button. */
@@ -2302,9 +2410,76 @@
     line-height: 1.1;
     color: var(--ink, var(--color-fg));
   }
-  .sp-word-text {
+  .sp-word-input {
+    flex: 1;
     min-width: 0;
-    overflow-wrap: anywhere;
+    border: 0;
+    border-bottom: 1px dashed transparent;
+    background: transparent;
+    padding: 0 0 1px;
+    font: inherit;
+    color: inherit;
+  }
+  .sp-word-input:hover {
+    border-bottom-color: color-mix(in oklch, var(--ink, var(--color-fg)) 22%, transparent);
+  }
+  .sp-word-input:focus {
+    outline: none;
+    border-bottom-color: var(--accent, var(--color-accent));
+  }
+  .sp-word-results {
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    right: 1.9rem;
+    z-index: 9;
+    margin: 0;
+    padding: 0.2rem;
+    list-style: none;
+    max-height: 260px;
+    overflow-y: auto;
+    border: 1px solid var(--rule, var(--color-border));
+    border-radius: 8px;
+    background: var(--paper, var(--color-bg));
+    box-shadow: 0 8px 24px color-mix(in oklch, var(--ink, #000) 20%, transparent);
+  }
+  .sp-word-result {
+    display: flex;
+    align-items: baseline;
+    gap: 0.45rem;
+    width: 100%;
+    text-align: left;
+    padding: 0.35rem 0.45rem;
+    border: 0;
+    border-radius: 5px;
+    background: transparent;
+    color: var(--ink, var(--color-fg));
+    font-family: var(--font-sans, var(--font-serif));
+    cursor: pointer;
+  }
+  .sp-word-result:hover,
+  .sp-word-result:focus-visible {
+    background: color-mix(in oklch, var(--accent, var(--color-accent)) 14%, transparent);
+    outline: none;
+  }
+  .sp-word-result-hw {
+    font-weight: 600;
+    font-size: 0.95rem;
+  }
+  .sp-word-result-pos {
+    font-size: 0.66rem;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--ink-3, var(--color-fg-muted));
+    flex-shrink: 0;
+  }
+  .sp-word-result-gloss {
+    min-width: 0;
+    font-size: 0.8rem;
+    color: var(--ink-2, var(--color-fg-muted));
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .sp-freq-badge {
     position: relative;
@@ -2660,25 +2835,6 @@
   .ext-suggest-item:focus-visible {
     background: color-mix(in oklch, var(--accent, var(--color-accent)) 14%, transparent);
     outline: none;
-  }
-  /* The lemma title doubles as a reference-search trigger for admins. */
-  .sp-word-search {
-    appearance: none;
-    border: 0;
-    background: transparent;
-    padding: 0;
-    margin: 0;
-    font: inherit;
-    color: inherit;
-    cursor: pointer;
-    text-align: left;
-    text-decoration-line: underline;
-    text-decoration-style: dotted;
-    text-underline-offset: 4px;
-    text-decoration-color: color-mix(in oklch, var(--accent, var(--color-accent)) 45%, transparent);
-  }
-  .sp-word-search:hover {
-    text-decoration-style: solid;
   }
   .ext-tabs {
     display: flex;
