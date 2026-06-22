@@ -56,12 +56,12 @@ vi.mock('../db/index.js', () => ({
   },
 }));
 
-const ocrMock = vi.fn(async (..._args: unknown[]): Promise<unknown> => undefined);
+const ocrMock = vi.fn<(...args: unknown[]) => Promise<unknown>>();
 vi.mock('../nlp-client.js', () => ({
   nlpClient: { ocr: (...args: unknown[]) => ocrMock(...args) },
 }));
 
-const putMock = vi.fn(async (..._args: unknown[]) => {});
+const putMock = vi.fn<(...args: unknown[]) => Promise<void>>();
 vi.mock('../pdf/storage.js', async (orig) => {
   const actual = (await orig()) as object;
   return {
@@ -70,15 +70,15 @@ vi.mock('../pdf/storage.js', async (orig) => {
   };
 });
 
-const persistTokensMock = vi.fn(async (..._args: unknown[]): Promise<number> => 7);
+const persistTokensMock = vi.fn<(...args: unknown[]) => Promise<number>>();
 vi.mock('./in-process-dispatcher.js', () => ({
   loadLemmaIndex: vi.fn(async () => ({})),
   persistTokens: (...args: unknown[]) => persistTokensMock(...args),
 }));
 
-const markProcessing = vi.fn(async (..._args: unknown[]) => {});
-const markReady = vi.fn(async (..._args: unknown[]) => {});
-const markFailed = vi.fn(async (..._args: unknown[]) => {});
+const markProcessing = vi.fn<(...args: unknown[]) => Promise<void>>();
+const markReady = vi.fn<(...args: unknown[]) => Promise<void>>();
+const markFailed = vi.fn<(...args: unknown[]) => Promise<void>>();
 vi.mock('./jobs.js', () => ({
   markTextProcessing: (...a: unknown[]) => markProcessing(...a),
   markTextReady: (...a: unknown[]) => markReady(...a),
@@ -110,6 +110,7 @@ describe('processPdfPage', () => {
     ocrMock.mockReset();
     putMock.mockClear();
     persistTokensMock.mockClear();
+    persistTokensMock.mockResolvedValue(7);
     markProcessing.mockClear();
     markReady.mockClear();
     markFailed.mockClear();
