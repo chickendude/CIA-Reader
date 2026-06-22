@@ -50,6 +50,7 @@ class ReaderScreenTest {
                     onRecordPosition = { _, _ -> },
                     onRestoreConsumed = {},
                     onToggleRomanize = {},
+                    onTogglePageMode = {},
                 )
             }
         }
@@ -80,6 +81,7 @@ class ReaderScreenTest {
                     onRecordPosition = { _, _ -> },
                     onRestoreConsumed = {},
                     onToggleRomanize = {},
+                    onTogglePageMode = {},
                 )
             }
         }
@@ -103,10 +105,36 @@ class ReaderScreenTest {
                     onRecordPosition = { _, _ -> },
                     onRestoreConsumed = {},
                     onToggleRomanize = { toggled = true },
+                    onTogglePageMode = {},
                 )
             }
         }
         compose.onNodeWithContentDescription("Show romanization").performClick()
+        assertTrue(toggled)
+    }
+
+    @Test
+    fun pageModeToggleInvokesCallback() {
+        var toggled = false
+        compose.setContent {
+            CiaReaderTheme {
+                ReaderScreenContent(
+                    state = ReaderUiState(isLoading = false, title = "Book"),
+                    onBack = {},
+                    onWordTap = {},
+                    onDismissWord = {},
+                    onPrevChapter = {},
+                    onNextChapter = {},
+                    onRetry = {},
+                    onSetStatus = {},
+                    onRecordPosition = { _, _ -> },
+                    onRestoreConsumed = {},
+                    onToggleRomanize = {},
+                    onTogglePageMode = { toggled = true },
+                )
+            }
+        }
+        compose.onNodeWithText("Page").performClick()
         assertTrue(toggled)
     }
 
@@ -127,6 +155,7 @@ class ReaderScreenTest {
                     onRecordPosition = { _, _ -> },
                     onRestoreConsumed = {},
                     onToggleRomanize = {},
+                    onTogglePageMode = {},
                 )
             }
         }

@@ -5,6 +5,7 @@ package com.ciareader.reader.ui.reader
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Column
@@ -14,6 +15,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.ScrollState
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.BottomAppBar
 import androidx.compose.material3.Button
@@ -40,13 +43,17 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -73,6 +80,7 @@ fun ReaderScreen(onBack: () -> Unit, viewModel: ReaderViewModel = hiltViewModel(
         onRecordPosition = viewModel::recordPosition,
         onRestoreConsumed = viewModel::onRestoreConsumed,
         onToggleRomanize = viewModel::toggleRomanization,
+        onTogglePageMode = viewModel::togglePageMode,
     )
 }
 
@@ -89,6 +97,7 @@ internal fun ReaderScreenContent(
     onRecordPosition: (Int, Double) -> Unit,
     onRestoreConsumed: () -> Unit,
     onToggleRomanize: () -> Unit,
+    onTogglePageMode: () -> Unit,
 ) {
     Scaffold(
         topBar = {
@@ -102,6 +111,9 @@ internal fun ReaderScreenContent(
                 },
                 navigationIcon = { TextButton(onClick = onBack) { Text("Back") } },
                 actions = {
+                    TextButton(onClick = onTogglePageMode) {
+                        Text(if (state.pageMode) "Scroll" else "Page")
+                    }
                     IconToggleButton(
                         checked = state.romanize,
                         onCheckedChange = { onToggleRomanize() },
@@ -142,6 +154,15 @@ internal fun ReaderScreenContent(
 
                 state.errorMessage != null ->
                     ReaderError(message = state.errorMessage, onRetry = onRetry)
+
+                state.pageMode ->
+                    PagedChapter(
+                        tokens = state.tokens,
+                        romanize = state.romanize,
+                        rtl = state.isRtl,
+                        onWordTap = onWordTap,
+                        modifier = Modifier.fillMaxSize(),
+                    )
 
                 else ->
                     ChapterText(
@@ -251,6 +272,107 @@ private fun ChapterText(
                     val result = layout ?: return@detectTapGestures
                     val charOffset = result.getOffsetForPosition(pos)
                     val tokenIndex = ranges.indexOfFirst { charOffset in it }
+                    tokens.getOrNull(tokenIndex)?.let { if (it.isWord) onWordTap(it) }
+                }
+            },
+    )
+}
+
+@Composable
+private fun PagedChapter(
+    tokens: List<ReaderToken>,
+    romanize: Boolean,
+    rtl: Boolean,
+    onWordTap: (ReaderToken) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val scheme = MaterialTheme.colorScheme
+    val style = MaterialTheme.typography.bodyLarge.copy(
+        textDirection = if (rtl) TextDirection.Rtl else TextDirection.Content,
+        textAlign = if (rtl) TextAlign.Right else TextAlign.Start,
+    )
+    val annotated = remember(tokens, scheme, romanize) {
+        buildAnnotatedString {
+            tokens.forEach { token ->
+                withStyle(spanStyleFor(token, scheme)) { append(displayText(token, romanize)) }
+            }
+        }
+    }
+    val ranges = remember(tokens, romanize) {
+        var offset = 0
+        tokens.map { token ->
+            val text = displayText(token, romanize)
+            val start = offset
+            offset += text.length
+            start until offset
+        }
+    }
+    val measurer = rememberTextMeasurer()
+
+    BoxWithConstraints(modifier.fillMaxSize().padding(16.dp)) {
+        val widthPx = constraints.maxWidth
+        val heightPx = constraints.maxHeight
+        // One measure pass at the page width; group lines into page-sized ranges.
+        val pages = remember(annotated, widthPx, heightPx, style) {
+            if (widthPx <= 0 || heightPx <= 0 || annotated.isEmpty()) {
+                listOf(0 until annotated.length)
+            } else {
+                val layout = measurer.measure(
+                    text = annotated,
+                    style = style,
+                    constraints = Constraints(maxWidth = widthPx),
+                )
+                paginateLines(
+                    lineCount = layout.lineCount,
+                    lineTop = layout::getLineTop,
+                    lineBottom = layout::getLineBottom,
+                    lineStart = layout::getLineStart,
+                    lineEnd = { layout.getLineEnd(it, visibleEnd = true) },
+                    pageHeightPx = heightPx.toFloat(),
+                )
+            }
+        }
+        val pagerState = rememberPagerState(pageCount = { pages.size })
+        // Reset to the first page when the chapter (or rendering) changes.
+        LaunchedEffect(annotated) { pagerState.scrollToPage(0) }
+
+        HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
+            val range = pages.getOrElse(page) { 0 until annotated.length }
+            val start = range.first.coerceIn(0, annotated.length)
+            val end = (range.last + 1).coerceIn(start, annotated.length)
+            PageText(
+                text = annotated.subSequence(start, end),
+                baseOffset = start,
+                style = style,
+                ranges = ranges,
+                tokens = tokens,
+                onWordTap = onWordTap,
+            )
+        }
+    }
+}
+
+@Composable
+private fun PageText(
+    text: AnnotatedString,
+    baseOffset: Int,
+    style: TextStyle,
+    ranges: List<IntRange>,
+    tokens: List<ReaderToken>,
+    onWordTap: (ReaderToken) -> Unit,
+) {
+    var layout by remember(text) { mutableStateOf<TextLayoutResult?>(null) }
+    Text(
+        text = text,
+        style = style,
+        onTextLayout = { layout = it },
+        modifier = Modifier
+            .fillMaxSize()
+            .pointerInput(text) {
+                detectTapGestures { pos ->
+                    val result = layout ?: return@detectTapGestures
+                    val global = baseOffset + result.getOffsetForPosition(pos)
+                    val tokenIndex = ranges.indexOfFirst { global in it }
                     tokens.getOrNull(tokenIndex)?.let { if (it.isWord) onWordTap(it) }
                 }
             },
