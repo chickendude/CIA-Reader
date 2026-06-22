@@ -3,6 +3,7 @@ package com.ciareader.reader.ui.library
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.ciareader.reader.core.network.Outcome
+import com.ciareader.reader.core.settings.SettingsStore
 import com.ciareader.reader.data.collection.CollectionRepository
 import com.ciareader.reader.data.collection.CollectionSummary
 import com.ciareader.reader.data.language.Language
@@ -39,6 +40,7 @@ class LibraryViewModel @Inject constructor(
     private val languageRepository: LanguageRepository,
     private val libraryRepository: LibraryRepository,
     private val collectionRepository: CollectionRepository,
+    private val settingsStore: SettingsStore,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(LibraryUiState())
@@ -56,11 +58,16 @@ class LibraryViewModel @Inject constructor(
                     _state.update { it.copy(isLoading = false, errorMessage = langs.message) }
 
                 is Outcome.Success -> {
-                    val languages = langs.data
-                    val current = _state.value.currentLanguage
-                        ?: languages.firstOrNull { it.isDefault }?.code
-                        ?: languages.firstOrNull()?.code
-                    _state.update { it.copy(languages = languages, currentLanguage = current) }
+                    // The endpoint returns every supported language; isDefault=true
+                    // marks ones the user has NOT added (column defaults). Show only
+                    // the languages they actually added; fall back to the full list
+                    // for a fresh account that has added none.
+                    val available = langs.data.filter { !it.isDefault }.ifEmpty { langs.data }
+                    val codes = available.map { it.code }.toSet()
+                    val current = _state.value.currentLanguage?.takeIf { it in codes }
+                        ?: settingsStore.currentLanguage()?.takeIf { it in codes }
+                        ?: available.firstOrNull()?.code
+                    _state.update { it.copy(languages = available, currentLanguage = current) }
                     if (current != null) {
                         loadContent(current)
                     } else {
@@ -75,8 +82,10 @@ class LibraryViewModel @Inject constructor(
         if (code == _state.value.currentLanguage) return
         _state.update { it.copy(currentLanguage = code, isLoading = true, errorMessage = null) }
         viewModelScope.launch {
-            // Persist server-side. The explicit `language` arg drives the listing
+            // Remember the choice locally so the next launch reopens here, and
+            // persist server-side. The explicit `language` arg drives the listing
             // regardless, so a failed persist doesn't block the local switch.
+            settingsStore.setCurrentLanguage(code)
             languageRepository.setCurrent(code)
             loadContent(code)
         }

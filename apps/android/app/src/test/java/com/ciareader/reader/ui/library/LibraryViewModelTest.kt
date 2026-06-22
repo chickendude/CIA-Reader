@@ -1,6 +1,7 @@
 package com.ciareader.reader.ui.library
 
 import com.ciareader.reader.core.network.Outcome
+import com.ciareader.reader.core.settings.SettingsStore
 import com.ciareader.reader.data.collection.CollectionDetail
 import com.ciareader.reader.data.collection.CollectionRepository
 import com.ciareader.reader.data.collection.CollectionSummary
@@ -11,6 +12,8 @@ import com.ciareader.reader.data.library.LibraryScope
 import com.ciareader.reader.data.library.TextCard
 import com.ciareader.reader.util.MainDispatcherRule
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
@@ -25,32 +28,78 @@ class LibraryViewModelTest {
     @get:Rule
     val mainRule = MainDispatcherRule()
 
-    @Test
-    fun loadsTextsAndCollectionsForDefaultLanguage() = runTest(mainRule.dispatcher) {
-        val langRepo = FakeLanguageRepository(listOf(lang("hi", isDefault = true), lang("yi")))
-        val libRepo = FakeLibraryRepository(byLanguage = mapOf("hi" to listOf(card("t1"))))
-        val collRepo = FakeCollectionRepository(all = listOf(collection("c1", "hi"), collection("c2", "yi")))
+    private fun vm(
+        langRepo: LanguageRepository,
+        libRepo: LibraryRepository = FakeLibraryRepository(),
+        collRepo: CollectionRepository = FakeCollectionRepository(),
+        settings: SettingsStore = FakeSettingsStore(),
+    ) = LibraryViewModel(langRepo, libRepo, collRepo, settings)
 
-        val vm = LibraryViewModel(langRepo, libRepo, collRepo)
+    @Test
+    fun showsOnlyAddedLanguagesAndDefaultsToTheFirstAdded() = runTest(mainRule.dispatcher) {
+        // The endpoint returns every supported language; the not-added ones come
+        // back isDefault=true. The user added hi + eu. Before the fix the VM
+        // selected the first isDefault language (mr) — a language they don't have.
+        val langRepo = FakeLanguageRepository(
+            listOf(
+                lang("hi"),
+                lang("mr", isDefault = true),
+                lang("or", isDefault = true),
+                lang("yi", isDefault = true),
+                lang("eu"),
+            ),
+        )
+        val libRepo = FakeLibraryRepository(byLanguage = mapOf("hi" to listOf(card("t1"))))
+        val collRepo = FakeCollectionRepository(all = listOf(collection("c1", "hi")))
+
+        val vm = vm(langRepo, libRepo, collRepo)
         advanceUntilIdle()
 
         val s = vm.state.value
-        assertEquals(listOf("hi", "yi"), s.languages.map { it.code })
-        assertEquals("hi", s.currentLanguage)
+        assertEquals(listOf("hi", "eu"), s.languages.map { it.code }) // mr/or/yi filtered out
+        assertEquals("hi", s.currentLanguage) // first added, NOT mr
         assertEquals(listOf("t1"), s.texts.map { it.id })
-        // Collections filtered to the current language.
         assertEquals(listOf("c1"), s.collections.map { it.id })
         assertFalse(s.isLoading)
         assertNull(s.errorMessage)
     }
 
     @Test
+    fun restoresThePersistedLanguage() = runTest(mainRule.dispatcher) {
+        val langRepo = FakeLanguageRepository(listOf(lang("hi"), lang("eu")))
+        val libRepo = FakeLibraryRepository(byLanguage = mapOf("eu" to listOf(card("b1"))))
+
+        val vm = vm(langRepo, libRepo, settings = FakeSettingsStore("eu"))
+        advanceUntilIdle()
+
+        assertEquals("eu", vm.state.value.currentLanguage) // restored, not first-added "hi"
+        assertEquals(listOf("b1"), vm.state.value.texts.map { it.id })
+    }
+
+    @Test
+    fun ignoresAPersistedLanguageNoLongerAdded() = runTest(mainRule.dispatcher) {
+        val langRepo = FakeLanguageRepository(listOf(lang("hi"), lang("eu")))
+        // "or" was removed from the account since it was last selected.
+        val vm = vm(langRepo, settings = FakeSettingsStore("or"))
+        advanceUntilIdle()
+
+        assertEquals("hi", vm.state.value.currentLanguage)
+    }
+
+    @Test
+    fun fallsBackToAllWhenNoLanguagesAreAdded() = runTest(mainRule.dispatcher) {
+        // Fresh account: nothing added, so every language is isDefault=true.
+        val langRepo = FakeLanguageRepository(listOf(lang("hi", isDefault = true), lang("mr", isDefault = true)))
+        val vm = vm(langRepo)
+        advanceUntilIdle()
+
+        assertEquals(listOf("hi", "mr"), vm.state.value.languages.map { it.code })
+        assertEquals("hi", vm.state.value.currentLanguage)
+    }
+
+    @Test
     fun languageFailureSurfacesError() = runTest(mainRule.dispatcher) {
-        val vm = LibraryViewModel(
-            FakeLanguageRepository(error = "boom"),
-            FakeLibraryRepository(),
-            FakeCollectionRepository(),
-        )
+        val vm = vm(FakeLanguageRepository(error = "boom"))
         advanceUntilIdle()
 
         assertEquals("boom", vm.state.value.errorMessage)
@@ -59,8 +108,8 @@ class LibraryViewModelTest {
 
     @Test
     fun collectionsFailureIsNonFatal() = runTest(mainRule.dispatcher) {
-        val vm = LibraryViewModel(
-            FakeLanguageRepository(listOf(lang("hi", isDefault = true))),
+        val vm = vm(
+            FakeLanguageRepository(listOf(lang("hi"))),
             FakeLibraryRepository(byLanguage = mapOf("hi" to listOf(card("t1")))),
             FakeCollectionRepository(error = "collections down"),
         )
@@ -73,22 +122,24 @@ class LibraryViewModelTest {
     }
 
     @Test
-    fun selectLanguageLoadsThatLanguageAndPersists() = runTest(mainRule.dispatcher) {
-        val langRepo = FakeLanguageRepository(listOf(lang("hi", isDefault = true), lang("mr")))
+    fun selectLanguageLoadsThatLanguageAndPersistsLocallyAndServer() = runTest(mainRule.dispatcher) {
+        val langRepo = FakeLanguageRepository(listOf(lang("hi"), lang("eu")))
         val libRepo = FakeLibraryRepository(
-            byLanguage = mapOf("hi" to listOf(card("h1")), "mr" to listOf(card("m1"), card("m2"))),
+            byLanguage = mapOf("hi" to listOf(card("h1")), "eu" to listOf(card("e1"), card("e2"))),
         )
-        val collRepo = FakeCollectionRepository(all = listOf(collection("ch", "hi"), collection("cm", "mr")))
-        val vm = LibraryViewModel(langRepo, libRepo, collRepo)
+        val collRepo = FakeCollectionRepository(all = listOf(collection("ch", "hi"), collection("ce", "eu")))
+        val settings = FakeSettingsStore()
+        val vm = vm(langRepo, libRepo, collRepo, settings)
         advanceUntilIdle()
 
-        vm.selectLanguage("mr")
+        vm.selectLanguage("eu")
         advanceUntilIdle()
 
-        assertEquals("mr", vm.state.value.currentLanguage)
-        assertEquals(listOf("m1", "m2"), vm.state.value.texts.map { it.id })
-        assertEquals(listOf("cm"), vm.state.value.collections.map { it.id })
-        assertEquals("mr", langRepo.lastSetCode)
+        assertEquals("eu", vm.state.value.currentLanguage)
+        assertEquals(listOf("e1", "e2"), vm.state.value.texts.map { it.id })
+        assertEquals(listOf("ce"), vm.state.value.collections.map { it.id })
+        assertEquals("eu", langRepo.lastSetCode)
+        assertEquals("eu", settings.currentLanguage()) // remembered for next launch
     }
 
     private fun lang(code: String, isDefault: Boolean = false) =
@@ -131,4 +182,13 @@ private class FakeCollectionRepository(
 
     override suspend fun detail(collectionId: String): Outcome<CollectionDetail> =
         Outcome.Failure("not used in these tests")
+}
+
+private class FakeSettingsStore(initial: String? = null) : SettingsStore {
+    private val state = MutableStateFlow(initial)
+    override val currentLanguage: Flow<String?> = state
+    override suspend fun currentLanguage(): String? = state.value
+    override suspend fun setCurrentLanguage(code: String) {
+        state.value = code
+    }
 }
