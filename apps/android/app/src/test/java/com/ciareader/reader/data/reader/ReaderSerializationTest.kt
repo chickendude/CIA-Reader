@@ -69,4 +69,24 @@ class ReaderSerializationTest {
         assertEquals(2, dto.chapters.size)
         assertEquals(50, dto.chapters[1].tokenCount)
     }
+
+    @Test
+    fun decodesTextProgress() {
+        val withRow = """
+            {
+              "progress": {
+                "userId": "u1", "textId": "t1",
+                "lastChapterIdx": 3, "lastTokenIdx": 120, "pctRead": 42.5,
+                "updatedAt": "2026-06-21T00:00:00Z"
+              }
+            }
+        """.trimIndent()
+        val dto = json.decodeFromString<TextProgressEnvelopeDto>(withRow)
+        assertEquals(3, dto.progress?.lastChapterIdx)
+        assertEquals(120, dto.progress?.lastTokenIdx)
+        assertEquals(42.5, dto.progress?.pctRead)
+
+        val none = json.decodeFromString<TextProgressEnvelopeDto>("""{ "progress": null }""")
+        assertEquals(null, none.progress)
+    }
 }

@@ -46,6 +46,8 @@ class ReaderScreenTest {
                     onNextChapter = {},
                     onRetry = {},
                     onSetStatus = {},
+                    onRecordPosition = { _, _ -> },
+                    onRestoreConsumed = {},
                 )
             }
         }
@@ -67,6 +69,8 @@ class ReaderScreenTest {
                     onNextChapter = {},
                     onRetry = { retried = true },
                     onSetStatus = {},
+                    onRecordPosition = { _, _ -> },
+                    onRestoreConsumed = {},
                 )
             }
         }

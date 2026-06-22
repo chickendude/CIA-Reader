@@ -13,7 +13,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.BottomAppBar
 import androidx.compose.material3.Button
@@ -28,10 +28,12 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
@@ -49,6 +51,7 @@ import com.ciareader.reader.data.dictionary.LemmaTranslations
 import com.ciareader.reader.data.dictionary.WordTranslation
 import com.ciareader.reader.data.reader.KnownStatus
 import com.ciareader.reader.data.reader.ReaderToken
+import kotlin.math.roundToInt
 
 @Composable
 fun ReaderScreen(onBack: () -> Unit, viewModel: ReaderViewModel = hiltViewModel()) {
@@ -62,6 +65,8 @@ fun ReaderScreen(onBack: () -> Unit, viewModel: ReaderViewModel = hiltViewModel(
         onNextChapter = viewModel::nextChapter,
         onRetry = viewModel::retry,
         onSetStatus = viewModel::setStatus,
+        onRecordPosition = viewModel::recordPosition,
+        onRestoreConsumed = viewModel::onRestoreConsumed,
     )
 }
 
@@ -75,6 +80,8 @@ internal fun ReaderScreenContent(
     onNextChapter: () -> Unit,
     onRetry: () -> Unit,
     onSetStatus: (KnownStatus) -> Unit,
+    onRecordPosition: (Int, Double) -> Unit,
+    onRestoreConsumed: () -> Unit,
 ) {
     Scaffold(
         topBar = {
@@ -118,10 +125,10 @@ internal fun ReaderScreenContent(
                     ChapterText(
                         tokens = state.tokens,
                         onWordTap = onWordTap,
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .verticalScroll(rememberScrollState())
-                            .padding(16.dp),
+                        restoreTokenIdx = state.restoreTokenIdx,
+                        onRecordPosition = onRecordPosition,
+                        onRestoreConsumed = onRestoreConsumed,
+                        modifier = Modifier.fillMaxSize(),
                     )
             }
         }
@@ -144,6 +151,9 @@ internal fun ReaderScreenContent(
 private fun ChapterText(
     tokens: List<ReaderToken>,
     onWordTap: (ReaderToken) -> Unit,
+    restoreTokenIdx: Int?,
+    onRecordPosition: (Int, Double) -> Unit,
+    onRestoreConsumed: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val scheme = MaterialTheme.colorScheme
@@ -165,19 +175,51 @@ private fun ChapterText(
         }
     }
     var layout by remember { mutableStateOf<TextLayoutResult?>(null) }
+    // Fresh scroll position per chapter, so navigating starts at the top.
+    val scrollState = remember(tokens) { ScrollState(0) }
+
+    // Restore the saved reading anchor once the chapter has laid out.
+    LaunchedEffect(layout, restoreTokenIdx) {
+        val result = layout ?: return@LaunchedEffect
+        val target = restoreTokenIdx ?: return@LaunchedEffect
+        ranges.getOrNull(target)?.let { range ->
+            scrollState.scrollTo(result.getLineTop(result.getLineForOffset(range.first)).roundToInt())
+        }
+        onRestoreConsumed()
+    }
+
+    // Report the top-visible token + percentage as the user scrolls; the
+    // ViewModel debounces the actual write-back.
+    LaunchedEffect(layout, scrollState) {
+        val result = layout ?: return@LaunchedEffect
+        snapshotFlow { scrollState.value }.collect { y ->
+            val line = result.getLineForVerticalPosition(y.toFloat())
+            val charOffset = result.getLineStart(line)
+            val tokenIdx = ranges.indexOfFirst { charOffset in it }.coerceAtLeast(0)
+            val pct = if (scrollState.maxValue > 0) {
+                (y.toFloat() / scrollState.maxValue * 100).toDouble()
+            } else {
+                0.0
+            }
+            onRecordPosition(tokenIdx, pct)
+        }
+    }
 
     Text(
         text = annotated,
         onTextLayout = { layout = it },
         style = MaterialTheme.typography.bodyLarge,
-        modifier = modifier.pointerInput(tokens) {
-            detectTapGestures { pos ->
-                val result = layout ?: return@detectTapGestures
-                val charOffset = result.getOffsetForPosition(pos)
-                val tokenIndex = ranges.indexOfFirst { charOffset in it }
-                tokens.getOrNull(tokenIndex)?.let { if (it.isWord) onWordTap(it) }
-            }
-        },
+        modifier = modifier
+            .verticalScroll(scrollState)
+            .padding(16.dp)
+            .pointerInput(tokens) {
+                detectTapGestures { pos ->
+                    val result = layout ?: return@detectTapGestures
+                    val charOffset = result.getOffsetForPosition(pos)
+                    val tokenIndex = ranges.indexOfFirst { charOffset in it }
+                    tokens.getOrNull(tokenIndex)?.let { if (it.isWord) onWordTap(it) }
+                }
+            },
     )
 }
 

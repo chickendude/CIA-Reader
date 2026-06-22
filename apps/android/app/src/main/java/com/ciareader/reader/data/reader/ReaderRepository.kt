@@ -57,9 +57,23 @@ data class TextMeta(
     val chapters: List<ChapterRef>,
 )
 
+/** The reader's saved anchor: which chapter/token and how far through. */
+data class ReadingProgress(
+    val chapterIdx: Int,
+    val tokenIdx: Int,
+    val pctRead: Double,
+)
+
 interface ReaderRepository {
     suspend fun textMeta(textId: String): Outcome<TextMeta>
     suspend fun chapter(textId: String, chapterIdx: Int): Outcome<Chapter>
+    suspend fun progress(textId: String): Outcome<ReadingProgress?>
+    suspend fun saveProgress(
+        textId: String,
+        chapterIdx: Int,
+        tokenIdx: Int,
+        pctRead: Double,
+    ): Outcome<Unit>
 }
 
 @Singleton
@@ -72,6 +86,21 @@ class ReaderRepositoryImpl @Inject constructor(
 
     override suspend fun chapter(textId: String, chapterIdx: Int): Outcome<Chapter> =
         apiCall { api.chapterTokens(textId, chapterIdx).toDomain() }
+
+    override suspend fun progress(textId: String): Outcome<ReadingProgress?> =
+        apiCall {
+            api.progress(textId).progress?.let {
+                ReadingProgress(it.lastChapterIdx, it.lastTokenIdx, it.pctRead)
+            }
+        }
+
+    override suspend fun saveProgress(
+        textId: String,
+        chapterIdx: Int,
+        tokenIdx: Int,
+        pctRead: Double,
+    ): Outcome<Unit> =
+        apiCall { api.saveProgress(textId, SaveProgressRequest(chapterIdx, tokenIdx, pctRead)); Unit }
 }
 
 private fun TextMetaDto.toDomain() = TextMeta(

@@ -59,3 +59,22 @@ data class PhraseSpanDto(
     val glossDefault: String? = null,
     val status: String = "unknown",
 )
+
+// --- GET / PATCH /api/v1/me/text-progress/:textId ---
+
+@Serializable
+data class TextProgressEnvelopeDto(val progress: TextProgressDto? = null)
+
+@Serializable
+data class TextProgressDto(
+    val lastChapterIdx: Int = 0,
+    val lastTokenIdx: Int = 0,
+    val pctRead: Double = 0.0,
+)
+
+@Serializable
+data class SaveProgressRequest(
+    val chapterIdx: Int,
+    val tokenIdx: Int,
+    val pctRead: Double,
+)
