@@ -39,6 +39,12 @@
     if (token.isOov) classes.push('oov');
     if (token.isAmbiguous) classes.push('ambiguous');
     if (isAnchor) classes.push('anchor');
+    // #435: tag words whose lemma has no definition yet. The class is
+    // inert until an admin flips `data-flag-undefined` on <html> from
+    // the reader settings popover, so non-admins never see it. We only
+    // mark when the loader said `false` outright — absent (client
+    // fallback / synthetic tokens) means "unknown", so we don't flag.
+    if (token.hasDefinition === false) classes.push('no-definition');
     return classes.join(' ');
   });
 

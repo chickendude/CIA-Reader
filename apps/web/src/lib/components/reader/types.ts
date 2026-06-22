@@ -139,6 +139,14 @@ export type ServerToken = {
    *  lemma/translation block with the three written-out renderings. */
   numberForms: ServerNumberForms | null;
   status: 'known' | 'learning' | 'ignored' | 'unknown';
+  /** #435: true when the lemma has a canonical gloss (the dictionary
+   *  defines it), false when it has none yet (OOV words, or lemmas
+   *  awaiting a definition). Optional because client-tokenized
+   *  fallback tokens and synthetic phrase tokens can't know it — the
+   *  admin "flag undefined words" overlay only marks a token when this
+   *  is explicitly `false`, so an absent value is treated as "unknown,
+   *  don't flag." */
+  hasDefinition?: boolean;
 };
 
 /**
