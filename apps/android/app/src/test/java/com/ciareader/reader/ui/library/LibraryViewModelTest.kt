@@ -191,4 +191,10 @@ private class FakeSettingsStore(initial: String? = null) : SettingsStore {
     override suspend fun setCurrentLanguage(code: String) {
         state.value = code
     }
+
+    private var romanize = false
+    override suspend fun showRomanization(): Boolean = romanize
+    override suspend fun setShowRomanization(value: Boolean) {
+        romanize = value
+    }
 }
