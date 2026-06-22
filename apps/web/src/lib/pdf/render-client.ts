@@ -36,9 +36,16 @@ export interface RenderedPage {
 
 export interface LoadedPdf {
   numPages: number;
-  /** True when the document carries a usable embedded text layer. When
-   *  false the pages are scans and must be OCR'd. */
+  /** True when the document carries an embedded text layer (any
+   *  extractable text). NOTE: scanned books often ship a *poor* OCR
+   *  text layer, so this being true does NOT mean the text is good —
+   *  see `isScanned`. */
   hasTextLayer: boolean;
+  /** True when the sampled pages are dominated by a full-page image —
+   *  i.e. a scan. A scanned PDF should be OCR'd even if it carries an
+   *  embedded (usually bad) text layer, so this drives the default to
+   *  Vision OCR rather than "use built-in text". */
+  isScanned: boolean;
   doc: import('pdfjs-dist').PDFDocumentProxy;
 }
 
@@ -56,6 +63,11 @@ const IMAGE_QUALITY = 0.85;
 // A real text layer yields plenty of characters in the first few pages; a
 // scan yields ~none.
 const TEXT_LAYER_MIN_CHARS = 40;
+// Pages sampled to classify the document (text layer + scanned-ness).
+const CLASSIFY_SAMPLE_PAGES = 5;
+// A single painted image covering at least this fraction of the page marks
+// the page as a scan (image-dominated).
+const SCANNED_IMAGE_COVERAGE = 0.5;
 
 let pdfjsPromise: Promise<typeof import('pdfjs-dist')> | null = null;
 
@@ -74,33 +86,107 @@ async function loadPdfjs(): Promise<typeof import('pdfjs-dist')> {
   return pdfjsPromise;
 }
 
-/** Load a PDF and probe whether it has an embedded text layer. */
+/**
+ * Largest single image-paint coverage on a page, as a fraction of page
+ * area. Walks the operator list tracking the current transform matrix
+ * (CTM) — an image is painted into the unit square transformed by the
+ * CTM, so its on-page size is read straight off the matrix. A scanned
+ * page is essentially one image covering the whole page (~1.0); a
+ * born-digital text page has little or no image area.
+ *
+ * Pure + parameterized (OPS codes + matrix multiply passed in) so it can
+ * be unit-tested without pdf.js.
+ */
+export function maxImagePaintCoverage(
+  fnArray: number[],
+  argsArray: unknown[],
+  codes: { save: number; restore: number; transform: number; image: number[] },
+  multiply: (m1: number[], m2: number[]) => number[],
+  pageWidth: number,
+  pageHeight: number,
+): number {
+  const pageArea = pageWidth * pageHeight;
+  if (!(pageArea > 0)) return 0;
+  const imageOps = new Set(codes.image);
+  let ctm = [1, 0, 0, 1, 0, 0];
+  const stack: number[][] = [];
+  let maxArea = 0;
+  for (let i = 0; i < fnArray.length; i += 1) {
+    const fn = fnArray[i];
+    if (fn === undefined) continue;
+    if (fn === codes.save) {
+      stack.push(ctm.slice());
+    } else if (fn === codes.restore) {
+      const prev = stack.pop();
+      if (prev) ctm = prev;
+    } else if (fn === codes.transform) {
+      const a = argsArray[i];
+      if (Array.isArray(a) && a.length >= 6) ctm = multiply(ctm, a as number[]);
+    } else if (imageOps.has(fn)) {
+      const w = Math.hypot(ctm[0]!, ctm[1]!);
+      const h = Math.hypot(ctm[2]!, ctm[3]!);
+      maxArea = Math.max(maxArea, w * h);
+    }
+  }
+  return maxArea / pageArea;
+}
+
+/** Load a PDF and classify it: does it have an embedded text layer, and
+ *  is it a scan (image-dominated)? */
 export async function loadPdf(file: File): Promise<LoadedPdf> {
   const pdfjs = await loadPdfjs();
   const data = await file.arrayBuffer();
   const doc = await pdfjs.getDocument({ data }).promise;
-  return {
-    numPages: doc.numPages,
-    hasTextLayer: await detectTextLayer(doc),
-    doc,
-  };
+  const { hasTextLayer, isScanned } = await classifyPdf(pdfjs, doc);
+  return { numPages: doc.numPages, hasTextLayer, isScanned, doc };
 }
 
-async function detectTextLayer(
+async function classifyPdf(
+  pdfjs: typeof import('pdfjs-dist'),
   doc: import('pdfjs-dist').PDFDocumentProxy,
-): Promise<boolean> {
-  const sample = Math.min(doc.numPages, 3);
+): Promise<{ hasTextLayer: boolean; isScanned: boolean }> {
+  const ops = pdfjs.OPS as unknown as Record<string, number>;
+  // -1 is a safe sentinel (op codes are >= 0, so it never matches) for the
+  // rare case an OPS name is absent in some pdf.js build.
+  const codes = {
+    save: ops.save ?? -1,
+    restore: ops.restore ?? -1,
+    transform: ops.transform ?? -1,
+    image: [
+      ops.paintImageXObject,
+      ops.paintInlineImageXObject,
+      ops.paintImageMaskXObject,
+      ops.paintImageXObjectRepeat,
+    ].filter((c): c is number => typeof c === 'number'),
+  };
+  const sample = Math.min(doc.numPages, CLASSIFY_SAMPLE_PAGES);
   let chars = 0;
+  let scannedPages = 0;
   for (let i = 1; i <= sample; i += 1) {
     const page = await doc.getPage(i);
     const tc = await page.getTextContent();
     for (const it of tc.items) {
       if ('str' in it) chars += it.str.trim().length;
     }
+    const viewport = page.getViewport({ scale: 1 });
+    const opList = await page.getOperatorList();
+    const coverage = maxImagePaintCoverage(
+      opList.fnArray,
+      opList.argsArray,
+      codes,
+      pdfjs.Util.transform,
+      viewport.width,
+      viewport.height,
+    );
+    if (coverage >= SCANNED_IMAGE_COVERAGE) scannedPages += 1;
     page.cleanup();
-    if (chars >= TEXT_LAYER_MIN_CHARS) return true;
   }
-  return chars >= TEXT_LAYER_MIN_CHARS;
+  return {
+    hasTextLayer: chars >= TEXT_LAYER_MIN_CHARS,
+    // Most sampled pages dominated by an image → treat the doc as a scan
+    // (default to OCR), even if it ships a poor embedded text layer.
+    isScanned: sample > 0 && scannedPages / sample >= 0.5,
+  };
 }
 
 function clamp01(v: number): number {

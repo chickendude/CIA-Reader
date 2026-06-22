@@ -119,9 +119,10 @@
       try {
         const loaded = await loadPdf(file);
         pdfLoaded = loaded;
-        // Default to the embedded text layer when present (fast, free,
-        // exact); fall back to OCR for scans.
-        pdfUseTextLayer = loaded.hasTextLayer;
+        // Default to the embedded text layer ONLY for true born-digital
+        // PDFs. A scan with a (usually poor) built-in OCR layer also
+        // "has text", so gate on !isScanned and default scans to OCR.
+        pdfUseTextLayer = loaded.hasTextLayer && !loaded.isScanned;
       } catch (e) {
         pdfError = `Couldn't read the PDF: ${(e as Error).message}`;
       } finally {
@@ -423,8 +424,11 @@
           <p class="pdf-info">
             {pdfLoaded.numPages}
             {pdfLoaded.numPages === 1 ? 'page' : 'pages'}.
-            {#if pdfLoaded.hasTextLayer}
-              This PDF has a built-in text layer.
+            {#if pdfLoaded.isScanned}
+              Looks like a scanned PDF — defaulting to OCR.{#if pdfLoaded.hasTextLayer}
+                Its built-in text layer is usually poor on scans.{/if}
+            {:else if pdfLoaded.hasTextLayer}
+              This PDF has a real text layer — using it (fast, exact).
             {:else}
               No text layer detected — pages will be OCR'd.
             {/if}
