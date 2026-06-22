@@ -674,6 +674,75 @@ describe('WordPopup — admin Basque reference panel', () => {
     });
     expect(document.body.querySelector('[data-testid="admin-ref"]')).toBeNull();
   });
+
+  it('keeps a manual reference search and does not snap back to the parsed headword', async () => {
+    // Reference results vary by the `word=` query param, and carry an entry
+    // in every language tab so the assertion holds whichever tab is active.
+    const refFor = (word: string) => ({
+      word,
+      results: ['elhuyar_es', 'elhuyar_en', 'euskaltzaindia'].map((source) => ({
+        source,
+        label: source,
+        headword: word,
+        pos: 'iz.',
+        definition: `def-${word}`,
+        examples: [],
+        url: `https://hiztegiak.elhuyar.eus/eu/${word}`,
+      })),
+    });
+    const fetchMock = vi.fn(async (input: unknown) => {
+      const url = new URL(String(input), 'http://localhost');
+      if (url.pathname.includes('/admin/basque-dictionary/autocomplete')) {
+        return jres({ term: url.searchParams.get('term'), terms: [] });
+      }
+      if (url.pathname.includes('/admin/basque-dictionary')) {
+        return jres(refFor(url.searchParams.get('word') ?? ''));
+      }
+      return jres(TRANSLATIONS);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(WordPopup, {
+      token: makeToken({ surface: 'etxe', lemmaId: 'lem-eu' }),
+      language: 'eu',
+      isOwner: false,
+      isAdmin: true,
+      onClose: vi.fn(),
+    });
+
+    // Auto-load shows the parsed headword's entry first.
+    await waitFor(() => {
+      expect(document.body.querySelector('[data-testid="admin-ref"]')!.textContent).toContain(
+        'def-etxe',
+      );
+    });
+
+    // Admin searches a different word in the reference box.
+    const search = document.body.querySelector<HTMLInputElement>('[data-testid="ref-search"]')!;
+    search.value = 'pena';
+    search.dispatchEvent(new Event('input', { bubbles: true }));
+    search.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+
+    // The panel shows the searched word's entry…
+    await waitFor(() => {
+      expect(document.body.querySelector('[data-testid="admin-ref"]')!.textContent).toContain(
+        'def-pena',
+      );
+    });
+
+    // …and does not revert to the parsed headword (the bug). Give any pending
+    // auto-load effect a chance to fire, then confirm the search held.
+    await new Promise((r) => setTimeout(r, 50));
+    const panel = document.body.querySelector('[data-testid="admin-ref"]')!;
+    expect(panel.textContent).toContain('def-pena');
+    expect(panel.textContent).not.toContain('def-etxe');
+    // The parsed headword was fetched exactly once (on open) — no auto-reload
+    // stomped the manual search.
+    const etxeCalls = fetchMock.mock.calls.filter((c) =>
+      String(c[0]).includes('basque-dictionary?word=etxe'),
+    );
+    expect(etxeCalls.length).toBe(1);
+  });
 });
 
 describe('WordPopup — book frequency', () => {
@@ -1764,6 +1833,117 @@ describe('WordPopup — editable headword search', () => {
         ),
       ).toBe(true);
     });
+    expect(input.value).toBe('pena');
+  });
+
+  it('loads translations on an exact headword match as you type (no click)', async () => {
+    const fetchMock = vi.fn(async (input: unknown) => {
+      const url = String(input);
+      if (url.includes('/dictionary/eu/lemmas')) {
+        return jres({
+          lemmas: [{ id: 'lem-pena', headword: 'pena', pos: 'NOUN', glossDefault: 'sorrow' }],
+        });
+      }
+      if (url.includes('/api/v1/lemmas/lem-pena/translations')) {
+        return jres({
+          lemma: { id: 'lem-pena', headword: 'pena', pos: 'NOUN', glossDefault: 'sorrow' },
+          translations: { personal: [], official: [], community: [] },
+        });
+      }
+      return jres({
+        lemma: { id: 'lem-1', headword: 'Pena', pos: 'PROPN', glossDefault: null },
+        translations: { personal: [], official: [], community: [] },
+      });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(WordPopup, {
+      token: makeToken({ surface: 'Pena', lemmaId: 'lem-1' }),
+      language: 'eu',
+      isOwner: false,
+      onClose: vi.fn(),
+    });
+
+    const input = await waitFor(() => {
+      const el = document.body.querySelector<HTMLInputElement>('[data-testid="headword-input"]');
+      if (!el) throw new Error('no headword input');
+      return el;
+    });
+
+    input.value = 'pena';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+
+    // Typing the exact headword loads that lemma's translations — no click on
+    // the suggestion list required.
+    await waitFor(() => {
+      expect(
+        fetchMock.mock.calls.some((c) =>
+          String(c[0]).includes('/api/v1/lemmas/lem-pena/translations'),
+        ),
+      ).toBe(true);
+    });
+    // No suggestion was clicked.
+    expect(document.body.querySelector('.sp-word-result')).not.toBeNull();
+  });
+
+  it('loads the top suggestion when Enter is pressed (no exact match, no click)', async () => {
+    const fetchMock = vi.fn(async (input: unknown) => {
+      const url = String(input);
+      if (url.includes('/dictionary/eu/lemmas')) {
+        return jres({
+          lemmas: [{ id: 'lem-pena', headword: 'pena', pos: 'NOUN', glossDefault: 'sorrow' }],
+        });
+      }
+      if (url.includes('/api/v1/lemmas/lem-pena/translations')) {
+        return jres({
+          lemma: { id: 'lem-pena', headword: 'pena', pos: 'NOUN', glossDefault: 'sorrow' },
+          translations: { personal: [], official: [], community: [] },
+        });
+      }
+      return jres({
+        lemma: { id: 'lem-1', headword: 'Pena', pos: 'PROPN', glossDefault: null },
+        translations: { personal: [], official: [], community: [] },
+      });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(WordPopup, {
+      token: makeToken({ surface: 'Pena', lemmaId: 'lem-1' }),
+      language: 'eu',
+      isOwner: false,
+      onClose: vi.fn(),
+    });
+
+    const input = await waitFor(() => {
+      const el = document.body.querySelector<HTMLInputElement>('[data-testid="headword-input"]');
+      if (!el) throw new Error('no headword input');
+      return el;
+    });
+
+    // A prefix that does not exactly match the headword: nothing auto-loads.
+    input.value = 'pen';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    await waitFor(() => {
+      expect(
+        document.body.querySelector('[data-testid="headword-results"]')?.textContent,
+      ).toContain('pena');
+    });
+    expect(
+      fetchMock.mock.calls.some((c) =>
+        String(c[0]).includes('/api/v1/lemmas/lem-pena/translations'),
+      ),
+    ).toBe(false);
+
+    // Enter loads the top suggestion and closes the list.
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    await waitFor(() => {
+      expect(
+        fetchMock.mock.calls.some((c) =>
+          String(c[0]).includes('/api/v1/lemmas/lem-pena/translations'),
+        ),
+      ).toBe(true);
+    });
+    expect(document.body.querySelector('[data-testid="headword-results"]')).toBeNull();
     expect(input.value).toBe('pena');
   });
 });

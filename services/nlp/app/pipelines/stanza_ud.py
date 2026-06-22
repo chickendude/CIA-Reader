@@ -78,11 +78,7 @@ def _has_target_script(surface: str, script: str | None) -> bool:
     ranges = _SCRIPT_RANGES.get(script)
     if ranges is None:
         return True
-    return any(
-        start <= ord(ch) <= end
-        for ch in surface
-        for start, end in ranges
-    )
+    return any(start <= ord(ch) <= end for ch in surface for start, end in ranges)
 
 
 def _has_letter(surface: str) -> bool:
@@ -119,6 +115,28 @@ def should_treat_as_word(surface: str, upos: str, *, script: str | None) -> bool
     if _has_letter(surface) and not _has_target_script(surface, script):
         return False
     return True
+
+
+def _is_allcaps_word(surface: str) -> bool:
+    """Return True for a multi-letter, fully-uppercase surface.
+
+    Headings and emphasised words ("HITZAURREA") confuse Stanza's
+    lemmatizer: its dictionary cache is keyed on normal case, so an
+    all-caps form that misses the cache falls through to the character
+    seq2seq model, which can drop or duplicate letters
+    ("HITZAURREA" → "hitzaure" instead of "hitzaurre"). Title-case
+    ("Hitzaurrea") and lowercase forms hit the cache and lemmatize
+    correctly, so they return False here.
+
+    ``str.isupper()`` is only True when there is at least one cased
+    character and every cased character is uppercase, so non-cased
+    scripts (Devanagari, Odia, Hebrew) always return False — the
+    re-lemmatization path never fires for them. The ≥2-letter floor
+    skips single initials ("A") where a re-run buys nothing.
+    """
+    if not surface.isupper():
+        return False
+    return sum(1 for ch in surface if ch.isalpha()) >= 2
 
 
 def _trailing_split_mark(surface: str) -> str | None:
@@ -214,6 +232,9 @@ class StanzaUDPipeline(Pipeline):
         tokens: list[Token] = []
         idx = 0
         cursor = 0
+        # Memoizes the lowercased re-lemmatization of all-caps words so a
+        # heading repeated across a chapter only runs the extra pass once.
+        relemma_cache: dict[str, str | None] = {}
         for sentence in doc.sentences:
             for word in sentence.words:
                 start = getattr(word, "start_char", None)
@@ -247,6 +268,16 @@ class StanzaUDPipeline(Pipeline):
                     upos,
                     script=self._script,
                 )
+                # Repair the lemma of an all-caps lexical word by
+                # re-lemmatizing a lowercased copy (see
+                # ``_is_allcaps_word``). PROPN / NUM / SYM / X are skipped:
+                # a proper noun's capitalized lemma and the
+                # ``lemma == surface`` contract for the rest would only
+                # regress under lowercasing.
+                if is_word and upos not in NON_OOV_UPOS and _is_allcaps_word(surface):
+                    repaired = self._relemmatize_lower(surface, relemma_cache)
+                    if repaired:
+                        lemma = repaired
                 is_oov = is_word and lemma == surface and upos not in NON_OOV_UPOS
                 tokens.append(
                     Token(
@@ -304,6 +335,29 @@ class StanzaUDPipeline(Pipeline):
                 tokens.append(self._make_gap_token(idx, tail))
         return tokens
 
+    def _relemmatize_lower(self, surface: str, cache: dict[str, str | None]) -> str | None:
+        """Lemmatize a lowercased copy of ``surface`` and return its lemma.
+
+        Used to recover a usable lemma for an all-caps word whose
+        uppercased form tripped Stanza's seq2seq fallback. Returns
+        ``None`` (caller keeps the original lemma) when the lowercased
+        form re-tokenizes into anything other than a single lemmatized
+        word, so we never silently swap in a lemma derived from a
+        different segmentation. Results are memoized in ``cache``.
+        """
+        key = surface.lower()
+        if key in cache:
+            return cache[key]
+        result: str | None = None
+        redoc = self._nlp(key)
+        words = [w for s in redoc.sentences for w in s.words]
+        if len(words) == 1:
+            candidate = (words[0].lemma or "").strip()
+            if candidate:
+                result = candidate
+        cache[key] = result
+        return result
+
     @staticmethod
     def _doc_has_offsets(doc: Any) -> bool:
         for sentence in getattr(doc, "sentences", ()):
@@ -345,6 +399,7 @@ __all__ = [
     "NON_WORD_UPOS",
     "StanzaLike",
     "StanzaUDPipeline",
+    "_is_allcaps_word",
     "_trailing_split_mark",
     "parse_feats",
     "should_treat_as_word",

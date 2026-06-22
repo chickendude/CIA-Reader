@@ -331,6 +331,7 @@
     // tab is intentionally preserved across words.
     adminRefResults = null;
     adminRefWord = null;
+    adminRefAutoFor = null;
     adminRefError = null;
     adminRefLoading = false;
     adminRefSearch = '';
@@ -436,7 +437,14 @@
   let adminRefLoading = $state(false);
   let adminRefError = $state<string | null>(null);
   let adminRefResults = $state<BasqueRefResult[] | null>(null);
+  // The word whose results are currently shown (the last lookup, manual or
+  // auto). Distinct from `adminRefAutoFor` below.
   let adminRefWord = $state<string | null>(null);
+  // The parsed lemma the auto-load effect last fetched for. Tracked
+  // separately from `adminRefWord` so a manual search (which changes
+  // `adminRefWord`) doesn't make the effect think the token changed and
+  // re-load the parsed headword on top of the admin's search.
+  let adminRefAutoFor = $state<string | null>(null);
   // Reference search box (replaces the static header): seeded from the lemma,
   // editable, with Elhuyar autocomplete so the admin can pick the exact entry
   // ("Afrika", not "afrikaans") even when the parsed lemma is wrong/mis-cased.
@@ -567,10 +575,16 @@
   }
 
   // Auto-load on open — the panel is expanded by default (no toggle).
+  // Fires once per parsed lemma (tracked in `adminRefAutoFor`); a manual
+  // search updates `adminRefWord`, not `adminRefAutoFor`, so it won't be
+  // clobbered here. A new token resets `adminRefAutoFor` (token effect),
+  // and selecting an internal lemma changes `adminRefLookupWord`, both of
+  // which legitimately re-trigger the auto-load.
   $effect(() => {
     if (!showAdminRef) return;
     const word = adminRefLookupWord;
-    if (!word || adminRefWord === word) return;
+    if (!word || adminRefAutoFor === word) return;
+    adminRefAutoFor = word;
     void loadAdminRef();
   });
 
@@ -595,6 +609,17 @@
         }
       }
       internalResults = [...byHeadword.values()].slice(0, 8);
+      // If the typed text exactly matches a dictionary headword, load its
+      // translations straight away: editing the headword should update the
+      // Translations panel, not just the suggestion list. Guarded on the
+      // lemma id so we don't refetch the entry that's already shown.
+      const wanted = term.normalize('NFC').toLowerCase();
+      const exact = [...byHeadword.values()].find(
+        (r) => r.headword.normalize('NFC').toLowerCase() === wanted,
+      );
+      if (exact && exact.id !== payload?.lemma.id) {
+        void loadLemmaTranslations(exact);
+      }
     } catch {
       /* internal search is a convenience — ignore failures */
     }
@@ -620,12 +645,9 @@
     }
   }
 
-  // Clicking an internal result loads that lemma's full translations into the
-  // normal Translations section.
-  async function selectInternalLemma(hit: InternalHit): Promise<void> {
-    headwordInput = hit.headword;
-    headwordEdited = true;
-    internalResults = [];
+  // Load a dictionary lemma's full translations into the normal Translations
+  // section. Shared by the click handler and the type-an-exact-match path.
+  async function loadLemmaTranslations(hit: InternalHit): Promise<void> {
     loadError = null;
     try {
       const res = await fetch(`/api/v1/lemmas/${hit.id}/translations`);
@@ -634,6 +656,15 @@
     } catch (e) {
       loadError = `Network error: ${(e as Error).message}`;
     }
+  }
+
+  // Clicking an internal result (or pressing Enter on the top one) loads that
+  // lemma and closes the suggestion list.
+  async function selectInternalLemma(hit: InternalHit): Promise<void> {
+    headwordInput = hit.headword;
+    headwordEdited = true;
+    internalResults = [];
+    await loadLemmaTranslations(hit);
   }
 
   // Seed the editable headword from the resolved word, but never clobber an
@@ -1591,10 +1622,11 @@
         {:else}
           <h2 class="sp-word">
             <!-- Editable headword: type over it to search the internal
-                 dictionary as you go (results below; click one to load it into
-                 the Translations section). After a pause it also re-runs the
-                 admin reference lookup for the typed word. Lets you recover when
-                 the NLP parsed the wrong lemma. -->
+                 dictionary as you go (results below). An exact headword match
+                 — or Enter / clicking a result — loads that lemma into the
+                 Translations section. After a pause it also re-runs the admin
+                 reference lookup for the typed word. Lets you recover when the
+                 NLP parsed the wrong lemma. -->
             <input
               class="sp-word-input"
               data-testid="headword-input"
@@ -1605,7 +1637,13 @@
               value={headwordInput}
               oninput={(e) => onHeadwordInput((e.currentTarget as HTMLInputElement).value)}
               onkeydown={(e) => {
-                if (e.key === 'Escape') internalResults = [];
+                if (e.key === 'Escape') {
+                  internalResults = [];
+                } else if (e.key === 'Enter' && internalResults[0]) {
+                  // Load the top suggestion without forcing a click.
+                  e.preventDefault();
+                  void selectInternalLemma(internalResults[0]);
+                }
               }}
             />
             {#if payload}
@@ -2145,7 +2183,7 @@
         </div>
         {#if adminRefLoading}
           <p class="muted small" data-testid="admin-ref-loading">
-            Looking up “{adminRefLookupWord}”…
+            Looking up “{adminRefWord ?? adminRefLookupWord}”…
           </p>
         {:else if adminRefError}
           <p class="err small" data-testid="admin-ref-error">{adminRefError}</p>
