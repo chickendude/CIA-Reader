@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">CIA Reader</string>
+
+    <!--
+      Host for magic-link App Links. Placeholder until the production domain is
+      set. When it is: point this at the real host, publish
+      /.well-known/assetlinks.json, and flip the intent-filter's autoVerify to
+      "true" (see AndroidManifest.xml).
+    -->
+    <string name="magic_link_host" translatable="false">app.ciareader.example</string>
+</resources>

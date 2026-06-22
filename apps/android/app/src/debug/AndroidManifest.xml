@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!--
+      Debug-only: allow cleartext HTTP so the emulator can reach the local dev
+      backend at http://10.0.2.2:5173 (Android blocks cleartext by default on
+      API 28+). Release builds keep cleartext blocked — they talk to the
+      production https host.
+    -->
+    <application android:usesCleartextTraffic="true" />
+</manifest>

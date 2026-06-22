@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      Window theme used before Compose draws (splash/window background).
+      In-app colors come from MaterialTheme (Compose); this only needs to be
+      a no-action-bar framework theme so we don't pull in the AppCompat/
+      Material XML theme dependency.
+    -->
+    <style name="Theme.CiaReader" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">?android:colorBackground</item>
+    </style>
+</resources>

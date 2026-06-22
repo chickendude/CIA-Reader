@@ -1,0 +1,35 @@
+name: android
+
+# Path-filtered so Android builds never gate web/nlp PRs (and vice-versa).
+# The heavyweight Android SDK + Gradle toolchain only spins up when the
+# app actually changes.
+on:
+  pull_request:
+    paths:
+      - "apps/android/**"
+      - ".github/workflows/android.yml"
+  push:
+    branches: [main]
+    paths:
+      - "apps/android/**"
+      - ".github/workflows/android.yml"
+
+jobs:
+  build:
+    name: android (lint + assemble + unit tests)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/android
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: android-actions/setup-android@v3
+      - uses: gradle/actions/setup-gradle@v4
+      # Requires the committed Gradle wrapper (gradlew + gradle-wrapper.jar).
+      # Generate it once via Android Studio sync or `gradle wrapper` — see
+      # apps/android/README.md.
+      - run: ./gradlew --no-daemon lintDebug testDebugUnitTest assembleDebug
