@@ -66,15 +66,25 @@ import com.ciareader.reader.data.reader.ReaderToken
 import kotlin.math.roundToInt
 
 @Composable
-fun ReaderScreen(onBack: () -> Unit, viewModel: ReaderViewModel = hiltViewModel()) {
+fun ReaderScreen(
+    onBack: () -> Unit,
+    onOpenChapterText: (String) -> Unit,
+    viewModel: ReaderViewModel = hiltViewModel(),
+) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     ReaderScreenContent(
         state = state,
         onBack = onBack,
         onWordTap = viewModel::onWordTap,
         onDismissWord = viewModel::dismissWord,
-        onPrevChapter = viewModel::prevChapter,
-        onNextChapter = viewModel::nextChapter,
+        // Within a multi-chapter text, move between its chapters; otherwise (e.g.
+        // a book whose chapters are separate texts) jump to the sibling chapter.
+        onPrevChapter = {
+            if (state.hasPrev) viewModel.prevChapter() else state.prevTextId?.let(onOpenChapterText)
+        },
+        onNextChapter = {
+            if (state.hasNext) viewModel.nextChapter() else state.nextTextId?.let(onOpenChapterText)
+        },
         onRetry = viewModel::retry,
         onSetStatus = viewModel::setStatus,
         onRecordPosition = viewModel::recordPosition,
@@ -131,12 +141,12 @@ internal fun ReaderScreenContent(
             )
         },
         bottomBar = {
-            if (state.chapterCount > 1) {
+            if (state.canGoPrev || state.canGoNext) {
                 ChapterNavBar(
                     chapterIdx = state.chapterIdx,
                     chapterCount = state.chapterCount,
-                    hasPrev = state.hasPrev,
-                    hasNext = state.hasNext,
+                    hasPrev = state.canGoPrev,
+                    hasNext = state.canGoNext,
                     onPrev = onPrevChapter,
                     onNext = onNextChapter,
                 )
@@ -391,7 +401,9 @@ private fun ChapterNavBar(
     BottomAppBar {
         TextButton(onClick = onPrev, enabled = hasPrev) { Text("Previous") }
         Spacer(Modifier.weight(1f))
-        Text("Ch. ${chapterIdx + 1} / $chapterCount")
+        if (chapterCount > 1) {
+            Text("Ch. ${chapterIdx + 1} / $chapterCount")
+        }
         Spacer(Modifier.weight(1f))
         TextButton(onClick = onNext, enabled = hasNext) { Text("Next") }
     }

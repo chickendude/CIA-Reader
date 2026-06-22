@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.ciareader.reader.core.network.Outcome
 import com.ciareader.reader.core.settings.SettingsStore
+import com.ciareader.reader.data.collection.CollectionRepository
 import com.ciareader.reader.data.dictionary.DictionaryRepository
 import com.ciareader.reader.data.dictionary.LemmaTranslations
 import com.ciareader.reader.data.reader.KnownStatus
@@ -33,10 +34,17 @@ data class ReaderUiState(
     val romanize: Boolean = false,
     val isRtl: Boolean = false,
     val pageMode: Boolean = false,
+    val prevTextId: String? = null,
+    val nextTextId: String? = null,
     val errorMessage: String? = null,
 ) {
     val hasPrev: Boolean get() = chapterIdx > 0
     val hasNext: Boolean get() = chapterIdx < chapterCount - 1
+
+    /** Can move back/forward — within this text's chapters, or to a sibling
+     *  chapter-text when reading a book (collection). */
+    val canGoPrev: Boolean get() = hasPrev || prevTextId != null
+    val canGoNext: Boolean get() = hasNext || nextTextId != null
 }
 
 @HiltViewModel
@@ -44,11 +52,13 @@ class ReaderViewModel @Inject constructor(
     private val repository: ReaderRepository,
     private val dictionary: DictionaryRepository,
     private val settings: SettingsStore,
+    private val collections: CollectionRepository,
     savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
 
     private val textId: String =
         checkNotNull(savedStateHandle.get<String>("textId")) { "reader requires a textId arg" }
+    private val collectionId: String? = savedStateHandle.get<String>("collectionId")
 
     private val _state = MutableStateFlow(ReaderUiState())
     val state: StateFlow<ReaderUiState> = _state.asStateFlow()
@@ -77,6 +87,7 @@ class ReaderViewModel @Inject constructor(
                             isRtl = isRtlLanguage(meta.data.language),
                         )
                     }
+                    loadSiblings()
                     // Resume where the reader left off (chapter clamped to range);
                     // restore the token only within that saved chapter.
                     val saved = when (val p = repository.progress(textId)) {
@@ -186,6 +197,27 @@ class ReaderViewModel @Inject constructor(
         val next = !_state.value.pageMode
         _state.update { it.copy(pageMode = next) }
         viewModelScope.launch { settings.setPageMode(next) }
+    }
+
+    /** When reading a book, find the adjacent chapter-texts for Prev/Next. */
+    private suspend fun loadSiblings() {
+        val cid = collectionId ?: return
+        when (val detail = collections.detail(cid)) {
+            is Outcome.Success -> {
+                val chapters = detail.data.chapters
+                val idx = chapters.indexOfFirst { it.textId == textId }
+                if (idx >= 0) {
+                    _state.update {
+                        it.copy(
+                            prevTextId = chapters.getOrNull(idx - 1)?.textId,
+                            nextTextId = chapters.getOrNull(idx + 1)?.textId,
+                        )
+                    }
+                }
+            }
+
+            is Outcome.Failure -> Unit // non-fatal: just no cross-chapter nav
+        }
     }
 
     fun retry() {

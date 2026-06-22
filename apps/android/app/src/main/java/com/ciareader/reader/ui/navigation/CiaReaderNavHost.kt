@@ -12,9 +12,14 @@ import com.ciareader.reader.ui.reader.ReaderScreen
 
 object Routes {
     const val LIBRARY = "library"
-    const val READER = "reader/{textId}"
+    const val READER = "reader/{textId}?collectionId={collectionId}"
     const val COLLECTION = "collection/{collectionId}"
-    fun reader(textId: String) = "reader/$textId"
+
+    /** Reader for [textId]; [collectionId] (optional) gives the reader the
+     *  book context so Previous/Next move between the book's chapters. */
+    fun reader(textId: String, collectionId: String? = null) =
+        "reader/$textId" + (collectionId?.let { "?collectionId=$it" }.orEmpty())
+
     fun collection(collectionId: String) = "collection/$collectionId"
 }
 
@@ -33,18 +38,29 @@ fun CiaReaderNavHost(onLogout: () -> Unit) {
         composable(
             route = Routes.COLLECTION,
             arguments = listOf(navArgument("collectionId") { type = NavType.StringType }),
-        ) {
+        ) { entry ->
+            val collectionId = entry.arguments?.getString("collectionId")
             CollectionDetailScreen(
                 onBack = { navController.popBackStack() },
-                onOpenText = { textId -> navController.navigate(Routes.reader(textId)) },
+                // Carry the book id into the reader so it can page across chapters.
+                onOpenText = { textId -> navController.navigate(Routes.reader(textId, collectionId)) },
             )
         }
         composable(
             route = Routes.READER,
-            arguments = listOf(navArgument("textId") { type = NavType.StringType }),
-        ) {
+            arguments = listOf(
+                navArgument("textId") { type = NavType.StringType },
+                navArgument("collectionId") {
+                    type = NavType.StringType
+                    nullable = true
+                    defaultValue = null
+                },
+            ),
+        ) { entry ->
+            val collectionId = entry.arguments?.getString("collectionId")
             ReaderScreen(
                 onBack = { navController.popBackStack() },
+                onOpenChapterText = { textId -> navController.navigate(Routes.reader(textId, collectionId)) },
             )
         }
     }

@@ -3,6 +3,10 @@ package com.ciareader.reader.ui.reader
 import androidx.lifecycle.SavedStateHandle
 import com.ciareader.reader.core.network.Outcome
 import com.ciareader.reader.core.settings.SettingsStore
+import com.ciareader.reader.data.collection.CollectionChapter
+import com.ciareader.reader.data.collection.CollectionDetail
+import com.ciareader.reader.data.collection.CollectionRepository
+import com.ciareader.reader.data.collection.CollectionSummary
 import com.ciareader.reader.data.dictionary.DictionaryRepository
 import com.ciareader.reader.data.dictionary.LemmaTranslations
 import com.ciareader.reader.data.dictionary.WordTranslation
@@ -37,7 +41,15 @@ class ReaderViewModelTest {
         repo: ReaderRepository,
         dict: DictionaryRepository = FakeDictionaryRepository(),
         settings: SettingsStore = FakeSettingsStore(),
-    ) = ReaderViewModel(repo, dict, settings, SavedStateHandle(mapOf("textId" to "t1")))
+        collections: CollectionRepository = FakeCollectionRepository(),
+        collectionId: String? = null,
+    ) = ReaderViewModel(
+        repo,
+        dict,
+        settings,
+        collections,
+        SavedStateHandle(buildMap { put("textId", "t1"); collectionId?.let { put("collectionId", it) } }),
+    )
 
     @Test
     fun loadsTitleAndFirstChapter() = runTest(mainRule.dispatcher) {
@@ -239,6 +251,41 @@ class ReaderViewModelTest {
         assertFalse(v.state.value.isRtl)
     }
 
+    @Test
+    fun exposesSiblingChaptersWhenReadingABook() = runTest(mainRule.dispatcher) {
+        val repo = FakeReaderRepository(meta = meta(1), chapters = mapOf(0 to Chapter(0, emptyList())))
+        val collections = FakeCollectionRepository(
+            detail = CollectionDetail(
+                id = "c1",
+                title = "Book",
+                chapters = listOf(
+                    CollectionChapter("t0", "One", 0, "ready"),
+                    CollectionChapter("t1", "Two", 1, "ready"),
+                    CollectionChapter("t2", "Three", 2, "ready"),
+                ),
+            ),
+        )
+        val v = vm(repo, collections = collections, collectionId = "c1")
+        advanceUntilIdle()
+
+        assertEquals("t0", v.state.value.prevTextId)
+        assertEquals("t2", v.state.value.nextTextId)
+        assertTrue(v.state.value.canGoPrev)
+        assertTrue(v.state.value.canGoNext)
+    }
+
+    @Test
+    fun noSiblingNavWithoutCollection() = runTest(mainRule.dispatcher) {
+        val repo = FakeReaderRepository(meta = meta(1), chapters = mapOf(0 to Chapter(0, emptyList())))
+        val v = vm(repo)
+        advanceUntilIdle()
+
+        assertNull(v.state.value.prevTextId)
+        assertNull(v.state.value.nextTextId)
+        assertFalse(v.state.value.canGoPrev)
+        assertFalse(v.state.value.canGoNext)
+    }
+
     private fun word(surface: String) =
         ReaderToken(0, surface, true, KnownStatus.UNKNOWN, null, null, null, false, false, false)
 
@@ -309,4 +356,12 @@ private class FakeSettingsStore(
     override suspend fun setPageMode(value: Boolean) {
         lastSetPageMode = value
     }
+}
+
+private class FakeCollectionRepository(
+    private val detail: CollectionDetail? = null,
+) : CollectionRepository {
+    override suspend fun myCollections(): Outcome<List<CollectionSummary>> = Outcome.Success(emptyList())
+    override suspend fun detail(collectionId: String): Outcome<CollectionDetail> =
+        detail?.let { Outcome.Success(it) } ?: Outcome.Failure("no detail")
 }
