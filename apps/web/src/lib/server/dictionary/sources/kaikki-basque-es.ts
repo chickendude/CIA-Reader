@@ -22,6 +22,9 @@ export const kaikkiBasqueEsSource = makeKaikkiSource({
   attribution: 'Wiktionary Spanish (eswiktionary) via Kaikki.org',
   license: 'CC-BY-SA-3.0',
   glossLanguage: 'es',
+  // Root forms only — Basque inflection is handled by the Stanza pipeline, so
+  // skip the inflection table + "form-of" entries (see kaikki-basque.ts).
+  rootFormsOnly: true,
   envVar: 'KAIKKI_BASQUE_ES_FILE',
   defaultPath: 'data/dictionaries/kaikki-basque-es/raw.jsonl',
 });

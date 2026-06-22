@@ -333,6 +333,10 @@
     adminRefWord = null;
     adminRefError = null;
     adminRefLoading = false;
+    adminRefSearch = '';
+    adminRefSuggestions = [];
+    headwordEdited = false;
+    internalResults = [];
     bookFrequency = null;
     sentenceTranslation = null;
     translatedSentence = null;
@@ -433,6 +437,23 @@
   let adminRefError = $state<string | null>(null);
   let adminRefResults = $state<BasqueRefResult[] | null>(null);
   let adminRefWord = $state<string | null>(null);
+  // Reference search box (replaces the static header): seeded from the lemma,
+  // editable, with Elhuyar autocomplete so the admin can pick the exact entry
+  // ("Afrika", not "afrikaans") even when the parsed lemma is wrong/mis-cased.
+  let adminRefSearch = $state('');
+  let adminRefSuggestions = $state<string[]>([]);
+  let adminRefSuggestTimer: ReturnType<typeof setTimeout> | null = null;
+
+  // Editable headword (the popup title). Typing searches the internal
+  // dictionary live (results listed below; click one to load it into the
+  // Translations section) and, after a longer pause, re-runs the admin
+  // reference lookup — a recovery path when the NLP parsed the wrong lemma.
+  type InternalHit = { id: string; headword: string; pos: string; glossDefault: string | null };
+  let headwordInput = $state('');
+  let headwordEdited = $state(false);
+  let internalResults = $state<InternalHit[]>([]);
+  let internalSearchTimer: ReturnType<typeof setTimeout> | null = null;
+  let headwordExternalTimer: ReturnType<typeof setTimeout> | null = null;
 
   // The ES | EN | EU tabs select which upstream source's entries show.
   // Persisted so the admin's preferred reference language sticks across
@@ -494,17 +515,21 @@
     }
   }
 
-  async function loadAdminRef(): Promise<void> {
-    const word = adminRefLookupWord;
+  async function loadAdminRef(term?: string, opts: { exact?: boolean } = {}): Promise<void> {
+    const word = (term ?? adminRefLookupWord ?? '').trim();
     if (!word) return;
     adminRefWord = word; // mark requested up front so the effect won't refire
+    adminRefSearch = word; // keep the search box in sync
+    adminRefSuggestions = []; // close the autocomplete dropdown
     adminRefLoading = true;
     adminRefError = null;
     adminRefResults = null;
     try {
-      const res = await fetch(
-        `/api/v1/admin/basque-dictionary?word=${encodeURIComponent(word)}`,
-      );
+      const qs = new URLSearchParams({ word });
+      // An explicit admin search preserves case ("Afrika" ≠ "afrikaans"); the
+      // auto-lemma lookup keeps the lowercasing default.
+      if (opts.exact) qs.set('exact', '1');
+      const res = await fetch(`/api/v1/admin/basque-dictionary?${qs.toString()}`);
       if (!res.ok) throw new Error(`Lookup failed (${res.status})`);
       const data = (await res.json()) as { results: BasqueRefResult[] };
       adminRefResults = data.results;
@@ -516,12 +541,109 @@
     }
   }
 
+  // Debounced Elhuyar autocomplete for the reference search box.
+  async function fetchAdminRefSuggestions(term: string): Promise<void> {
+    try {
+      const res = await fetch(
+        `/api/v1/admin/basque-dictionary/autocomplete?term=${encodeURIComponent(term)}`,
+      );
+      if (!res.ok) return;
+      const data = (await res.json()) as { terms: string[] };
+      // Drop stale responses if the box moved on.
+      if (adminRefSearch.trim() === term) adminRefSuggestions = data.terms;
+    } catch {
+      /* autocomplete is a convenience — ignore failures */
+    }
+  }
+  function onAdminRefInput(value: string): void {
+    adminRefSearch = value;
+    if (adminRefSuggestTimer) clearTimeout(adminRefSuggestTimer);
+    const q = value.trim();
+    if (q.length < 2) {
+      adminRefSuggestions = [];
+      return;
+    }
+    adminRefSuggestTimer = setTimeout(() => void fetchAdminRefSuggestions(q), 180);
+  }
+
   // Auto-load on open — the panel is expanded by default (no toggle).
   $effect(() => {
     if (!showAdminRef) return;
     const word = adminRefLookupWord;
     if (!word || adminRefWord === word) return;
     void loadAdminRef();
+  });
+
+  // ---- Editable headword search ------------------------------------
+  async function searchInternalDictionary(term: string): Promise<void> {
+    try {
+      const res = await fetch(
+        `/api/v1/dictionary/${language}/lemmas?q=${encodeURIComponent(term)}&limit=24`,
+      );
+      if (!res.ok) return;
+      const data = (await res.json()) as { lemmas: InternalHit[] };
+      // Drop stale responses if the field moved on.
+      if (headwordInput.trim() !== term) return;
+      // The NLP + import create several lemma rows per word; collapse them to
+      // one entry per headword (preferring one that carries a gloss) so the
+      // list isn't 20 identical "egon"s.
+      const byHeadword = new Map<string, InternalHit>();
+      for (const l of data.lemmas) {
+        const existing = byHeadword.get(l.headword);
+        if (!existing || (!existing.glossDefault && l.glossDefault)) {
+          byHeadword.set(l.headword, l);
+        }
+      }
+      internalResults = [...byHeadword.values()].slice(0, 8);
+    } catch {
+      /* internal search is a convenience — ignore failures */
+    }
+  }
+
+  function onHeadwordInput(value: string): void {
+    headwordInput = value;
+    headwordEdited = true;
+    const q = value.trim();
+
+    // Internal dictionary — search as you type (short debounce).
+    if (internalSearchTimer) clearTimeout(internalSearchTimer);
+    if (q.length < 2) {
+      internalResults = [];
+    } else {
+      internalSearchTimer = setTimeout(() => void searchInternalDictionary(q), 160);
+    }
+
+    // External reference dictionaries — admin only, after a longer pause.
+    if (showAdminRef && q) {
+      if (headwordExternalTimer) clearTimeout(headwordExternalTimer);
+      headwordExternalTimer = setTimeout(() => void loadAdminRef(q, { exact: true }), 600);
+    }
+  }
+
+  // Clicking an internal result loads that lemma's full translations into the
+  // normal Translations section.
+  async function selectInternalLemma(hit: InternalHit): Promise<void> {
+    headwordInput = hit.headword;
+    headwordEdited = true;
+    internalResults = [];
+    loadError = null;
+    try {
+      const res = await fetch(`/api/v1/lemmas/${hit.id}/translations`);
+      if (res.ok) payload = (await res.json()) as LemmaPayload;
+      else loadError = `Could not load translations (${res.status})`;
+    } catch (e) {
+      loadError = `Network error: ${(e as Error).message}`;
+    }
+  }
+
+  // Seed the editable headword from the resolved word, but never clobber an
+  // in-progress edit. Re-seeds when the popup rebinds to another token because
+  // the token-change effect clears `headwordEdited`.
+  $effect(() => {
+    const seed = payload?.lemma.headword ?? token?.surface ?? '';
+    untrack(() => {
+      if (!headwordEdited) headwordInput = seed;
+    });
   });
 
   function handleKeydown(e: KeyboardEvent) {
@@ -1468,7 +1590,24 @@
           </h2>
         {:else}
           <h2 class="sp-word">
-            <span class="sp-word-text">{payload?.lemma.headword ?? token.surface}</span>
+            <!-- Editable headword: type over it to search the internal
+                 dictionary as you go (results below; click one to load it into
+                 the Translations section). After a pause it also re-runs the
+                 admin reference lookup for the typed word. Lets you recover when
+                 the NLP parsed the wrong lemma. -->
+            <input
+              class="sp-word-input"
+              data-testid="headword-input"
+              type="text"
+              autocomplete="off"
+              spellcheck="false"
+              aria-label="Headword — edit to search the dictionary"
+              value={headwordInput}
+              oninput={(e) => onHeadwordInput((e.currentTarget as HTMLInputElement).value)}
+              onkeydown={(e) => {
+                if (e.key === 'Escape') internalResults = [];
+              }}
+            />
             {#if payload}
               <PosPill pos={payload.lemma.pos} class="sp-pos-pill" />
             {/if}
@@ -1484,6 +1623,26 @@
                 <!-- prettier-ignore -->
                 <span class="sp-freq-tip" role="tooltip">this word appears {bookFrequency}{bookFrequency === 1 ? ' time' : ' times'} in the book</span>
               </span>
+            {/if}
+            {#if internalResults.length > 0}
+              <ul class="sp-word-results" role="listbox" data-testid="headword-results">
+                {#each internalResults as r (r.id)}
+                  <li>
+                    <button
+                      type="button"
+                      class="sp-word-result"
+                      role="option"
+                      aria-selected="false"
+                      onclick={() => void selectInternalLemma(r)}
+                    >
+                      <span class="sp-word-result-hw">{r.headword}</span>
+                      {#if r.pos}<span class="sp-word-result-pos">{r.pos.toLowerCase()}</span>{/if}
+                      {#if r.glossDefault}<span class="sp-word-result-gloss">{r.glossDefault}</span
+                        >{/if}
+                    </button>
+                  </li>
+                {/each}
+              </ul>
             {/if}
           </h2>
         {/if}
@@ -1930,10 +2089,44 @@
            expanded by default and tabbed by language. Reference-only —
            fetched live, never stored or shown to readers. -->
       <section class="ext-dict" data-testid="admin-ref">
-        <h3 class="sp-section-h">
-          External dictionaries
-          <span class="muted">admin</span>
-        </h3>
+        <div class="ext-search" role="search">
+          <input
+            type="search"
+            class="ext-search-input"
+            data-testid="ref-search"
+            placeholder="Search reference dictionaries…"
+            aria-label="Search reference dictionaries"
+            autocomplete="off"
+            value={adminRefSearch}
+            oninput={(e) => onAdminRefInput((e.currentTarget as HTMLInputElement).value)}
+            onkeydown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                void loadAdminRef(adminRefSearch, { exact: true });
+              } else if (e.key === 'Escape') {
+                adminRefSuggestions = [];
+              }
+            }}
+          />
+          <span class="ext-search-tag muted">admin</span>
+          {#if adminRefSuggestions.length > 0}
+            <ul class="ext-suggest" role="listbox" data-testid="ref-suggest">
+              {#each adminRefSuggestions as s (s)}
+                <li>
+                  <button
+                    type="button"
+                    class="ext-suggest-item"
+                    role="option"
+                    aria-selected="false"
+                    onclick={() => void loadAdminRef(s, { exact: true })}
+                  >
+                    {s}
+                  </button>
+                </li>
+              {/each}
+            </ul>
+          {/if}
+        </div>
         <div class="ext-tabs" role="tablist" aria-label="Reference language">
           {#each REFERENCE_LANGUAGE_TABS as lang (lang)}
             <button
@@ -2204,6 +2397,7 @@
     color: var(--ink, var(--color-fg));
   }
   .sp-word {
+    position: relative;
     margin: 0 0 0.25rem;
     /* Reserve room on the right so the freq badge clears the absolutely
        positioned close button. */
@@ -2216,9 +2410,76 @@
     line-height: 1.1;
     color: var(--ink, var(--color-fg));
   }
-  .sp-word-text {
+  .sp-word-input {
+    flex: 1;
     min-width: 0;
-    overflow-wrap: anywhere;
+    border: 0;
+    border-bottom: 1px dashed transparent;
+    background: transparent;
+    padding: 0 0 1px;
+    font: inherit;
+    color: inherit;
+  }
+  .sp-word-input:hover {
+    border-bottom-color: color-mix(in oklch, var(--ink, var(--color-fg)) 22%, transparent);
+  }
+  .sp-word-input:focus {
+    outline: none;
+    border-bottom-color: var(--accent, var(--color-accent));
+  }
+  .sp-word-results {
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    right: 1.9rem;
+    z-index: 9;
+    margin: 0;
+    padding: 0.2rem;
+    list-style: none;
+    max-height: 260px;
+    overflow-y: auto;
+    border: 1px solid var(--rule, var(--color-border));
+    border-radius: 8px;
+    background: var(--paper, var(--color-bg));
+    box-shadow: 0 8px 24px color-mix(in oklch, var(--ink, #000) 20%, transparent);
+  }
+  .sp-word-result {
+    display: flex;
+    align-items: baseline;
+    gap: 0.45rem;
+    width: 100%;
+    text-align: left;
+    padding: 0.35rem 0.45rem;
+    border: 0;
+    border-radius: 5px;
+    background: transparent;
+    color: var(--ink, var(--color-fg));
+    font-family: var(--font-sans, var(--font-serif));
+    cursor: pointer;
+  }
+  .sp-word-result:hover,
+  .sp-word-result:focus-visible {
+    background: color-mix(in oklch, var(--accent, var(--color-accent)) 14%, transparent);
+    outline: none;
+  }
+  .sp-word-result-hw {
+    font-weight: 600;
+    font-size: 0.95rem;
+  }
+  .sp-word-result-pos {
+    font-size: 0.66rem;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--ink-3, var(--color-fg-muted));
+    flex-shrink: 0;
+  }
+  .sp-word-result-gloss {
+    min-width: 0;
+    font-size: 0.8rem;
+    color: var(--ink-2, var(--color-fg-muted));
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .sp-freq-badge {
     position: relative;
@@ -2514,6 +2775,66 @@
     margin-top: 0.75rem;
     border-top: 1px solid var(--rule-2, var(--color-border));
     padding-top: 0.5rem;
+  }
+  .ext-search {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin: 0.25rem 0 0.4rem;
+  }
+  .ext-search-input {
+    flex: 1;
+    min-width: 0;
+    padding: 0.3rem 0.55rem;
+    border: 1px solid var(--rule, var(--color-border));
+    border-radius: 6px;
+    background: var(--paper, var(--color-bg));
+    color: var(--ink, var(--color-fg));
+    font-size: 0.85rem;
+  }
+  .ext-search-input:focus-visible {
+    outline: 2px solid var(--accent, var(--color-accent));
+    outline-offset: -1px;
+  }
+  .ext-search-tag {
+    font-size: 0.66rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    flex-shrink: 0;
+  }
+  .ext-suggest {
+    position: absolute;
+    top: calc(100% + 2px);
+    left: 0;
+    right: 0;
+    z-index: 8;
+    margin: 0;
+    padding: 0.2rem;
+    list-style: none;
+    max-height: 220px;
+    overflow-y: auto;
+    border: 1px solid var(--rule, var(--color-border));
+    border-radius: 6px;
+    background: var(--paper, var(--color-bg));
+    box-shadow: 0 6px 20px color-mix(in oklch, var(--ink, #000) 18%, transparent);
+  }
+  .ext-suggest-item {
+    display: block;
+    width: 100%;
+    text-align: left;
+    padding: 0.3rem 0.45rem;
+    border: 0;
+    border-radius: 4px;
+    background: transparent;
+    color: var(--ink, var(--color-fg));
+    font-size: 0.85rem;
+    cursor: pointer;
+  }
+  .ext-suggest-item:hover,
+  .ext-suggest-item:focus-visible {
+    background: color-mix(in oklch, var(--accent, var(--color-accent)) 14%, transparent);
+    outline: none;
   }
   .ext-tabs {
     display: flex;

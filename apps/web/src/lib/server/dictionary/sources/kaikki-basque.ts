@@ -22,6 +22,9 @@ export const kaikkiBasqueSource = makeKaikkiSource({
   license: 'CC-BY-SA-3.0',
   // English Wiktionary glosses Basque headwords in English.
   glossLanguage: 'en',
+  // Basque morphology is handled by the Stanza pipeline, so import only root
+  // forms — skip the inflection table + "form-of" entries (etxean → etxe).
+  rootFormsOnly: true,
   envVar: 'KAIKKI_BASQUE_FILE',
   defaultPath: 'data/dictionaries/kaikki-basque/raw.jsonl',
 });

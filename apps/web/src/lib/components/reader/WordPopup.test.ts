@@ -732,7 +732,10 @@ describe('WordPopup — book frequency', () => {
       onClose: vi.fn(),
     });
     await waitFor(() => {
-      expect(document.body.querySelector('.sp-word-text')?.textContent).toBe('pena');
+      const input = document.body.querySelector<HTMLInputElement>(
+        '[data-testid="headword-input"]',
+      );
+      expect(input?.value).toBe('pena');
     });
     // No "Lemma" label row anymore.
     expect(document.body.querySelector('.sp-head')?.textContent).not.toContain('Lemma');
@@ -1694,5 +1697,73 @@ describe('WordPopup — POS pill in header', () => {
       // The expanded name lives in the popover so it can show on hover/focus.
       expect(pill.querySelector('.pos-pop')?.textContent?.trim()).toBe('noun');
     });
+  });
+});
+
+describe('WordPopup — editable headword search', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  function jres(payload: unknown) {
+    return new Response(JSON.stringify(payload), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+  }
+
+  it('searches the internal dictionary as you type and loads a picked entry', async () => {
+    const fetchMock = vi.fn(async (input: unknown) => {
+      const url = String(input);
+      if (url.includes('/dictionary/eu/lemmas')) {
+        return jres({
+          lemmas: [{ id: 'lem-pena', headword: 'pena', pos: 'NOUN', glossDefault: 'sorrow' }],
+        });
+      }
+      if (url.includes('/api/v1/lemmas/lem-pena/translations')) {
+        return jres({
+          lemma: { id: 'lem-pena', headword: 'pena', pos: 'NOUN', glossDefault: 'sorrow' },
+          translations: { personal: [], official: [], community: [] },
+        });
+      }
+      // Initial token payload (mis-parsed PROPN) + anything else.
+      return jres({
+        lemma: { id: 'lem-1', headword: 'Pena', pos: 'PROPN', glossDefault: null },
+        translations: { personal: [], official: [], community: [] },
+      });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(WordPopup, {
+      token: makeToken({ surface: 'Pena', lemmaId: 'lem-1' }),
+      language: 'eu',
+      isOwner: false,
+      onClose: vi.fn(),
+    });
+
+    const input = await waitFor(() => {
+      const el = document.body.querySelector<HTMLInputElement>('[data-testid="headword-input"]');
+      if (!el) throw new Error('no headword input');
+      return el;
+    });
+
+    input.value = 'pena';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+
+    // Internal results appear as you type.
+    await waitFor(() => {
+      const list = document.body.querySelector('[data-testid="headword-results"]');
+      expect(list?.textContent).toContain('pena');
+      expect(list?.textContent).toContain('sorrow');
+    });
+
+    // Clicking a result loads that lemma's translations.
+    document.body.querySelector<HTMLButtonElement>('.sp-word-result')!.click();
+    await waitFor(() => {
+      expect(
+        fetchMock.mock.calls.some((c) =>
+          String(c[0]).includes('/api/v1/lemmas/lem-pena/translations'),
+        ),
+      ).toBe(true);
+    });
+    expect(input.value).toBe('pena');
   });
 });

@@ -23,6 +23,7 @@ vi.mock('$lib/server/db/index.js', () => {
       textChapters: { id: 'tc.id', textId: 'tc.text_id' },
       collectionItems: { textId: 'ci.text_id', collectionId: 'ci.collection_id' },
       textTokens: { chapterId: 'tt.chapter_id', lemmaId: 'tt.lemma_id' },
+      lemmas: { id: 'l.id', headword: 'l.headword', language: 'l.language' },
     },
   };
 });
@@ -59,26 +60,36 @@ describe('resolveBookChapterScope', () => {
 });
 
 describe('lemmaBookFrequency', () => {
-  it('returns book-wide and per-text counts', async () => {
+  it('counts by headword across book + text (rolls up duplicate lemma rows)', async () => {
     queue = [
+      [{ headword: 'afrika', language: 'eu' }], // resolve the clicked lemma's word
       [{ id: 'c1' }, { id: 'c2' }], // own chapters
       [{ collectionId: 'col-1' }], // collection item
       [{ textId: 't1' }, { textId: 't2' }], // siblings
       [{ id: 'c1' }, { id: 'c2' }, { id: 'c3' }], // book chapters
-      [{ n: 7 }], // count over book chapters
-      [{ n: 3 }], // count over text chapters
+      [{ n: 7 }], // headword count over book chapters
+      [{ n: 3 }], // headword count over text chapters
     ];
     const out = await lemmaBookFrequency('t1', 'lem-1');
     expect(out).toEqual({ book: 7, text: 3 });
   });
 
-  it('reports zero without querying when there are no chapters', async () => {
+  it('reports zero without counting when there are no chapters', async () => {
     queue = [
+      [{ headword: 'afrika', language: 'eu' }], // lemma resolves
       [], // own chapters (none)
       [], // no collection item
       // no count queries are issued because chapter lists are empty
     ];
     const out = await lemmaBookFrequency('t1', 'lem-1');
+    expect(out).toEqual({ book: 0, text: 0 });
+  });
+
+  it('reports zero when the lemma id is unknown', async () => {
+    queue = [
+      [], // lemma lookup finds nothing
+    ];
+    const out = await lemmaBookFrequency('t1', 'missing');
     expect(out).toEqual({ book: 0, text: 0 });
   });
 });

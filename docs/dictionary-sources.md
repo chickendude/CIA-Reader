@@ -113,6 +113,11 @@ Coverage: medium for core vocabulary. Basque is **Latin-script**, so there is
 no romanization layer (the reader renders headwords as written). Morphology is
 handled by the Stanza UD_Basque-BDT model rather than a custom analyzer or seed
 lemma table; the Kaikki import supplies the dictionary glosses on top of that.
+Because Stanza resolves inflections, the Basque importers run **root-forms-only**
+(`rootFormsOnly: true`): they import only citation/root headwords and skip both
+each entry's inflection table (`forms[]` → `lemma_forms`) and Wiktionary
+"form-of" entries (e.g. *etxean* = "inessive of etxe"), so the dictionary holds
+dictionary headwords, not declined/conjugated surfaces.
 Basque is agglutinative with a rich case system, so expect inflected surfaces to
 lemmatize back to a smaller set of citation forms — the curator editor (T-3.7)
 and community submissions (T-6.3) fill gloss gaps post-launch as for the others.

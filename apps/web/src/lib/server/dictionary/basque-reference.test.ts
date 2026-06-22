@@ -7,11 +7,21 @@ import {
   isBasqueReferenceSource,
   lookupBasqueReference,
   parseElhuyar,
+  parseElhuyarAutocomplete,
   parseEuskaltzaindia,
+  searchElhuyarAutocomplete,
   type FetchImpl,
   type ReferenceCache,
   type ReferenceCacheEntry,
 } from './basque-reference.js';
+
+const AUTOCOMPLETE_JSON = JSON.stringify([
+  { value: '/eu_es/Afrika', label: "<span class='sarrera'>Afrika</span>" },
+  { value: '/eu_es/Afrika Erdiko Errepublika', label: 'x' },
+  { value: '/eu_es/afrikaans', label: 'x' },
+  { value: '/eu_es/afrikaans', label: 'dup dropped' },
+  { label: 'no value — skipped' },
+]);
 
 /** In-memory ReferenceCache for exercising the cache path without a DB. */
 function memoryCache() {
@@ -112,6 +122,48 @@ describe('parseEuskaltzaindia', () => {
   });
 });
 
+describe('elhuyarUrl case handling', () => {
+  it('lowercases by default but preserves case when asked', () => {
+    expect(elhuyarUrl('Afrika')).toContain('/afrika');
+    expect(elhuyarUrl('Afrika', { preserveCase: true })).toContain('/Afrika');
+  });
+});
+
+describe('parseElhuyarAutocomplete', () => {
+  it('extracts terms from value, preserving case, deduped + skipping bad rows', () => {
+    expect(parseElhuyarAutocomplete(AUTOCOMPLETE_JSON)).toEqual([
+      'Afrika',
+      'Afrika Erdiko Errepublika',
+      'afrikaans',
+    ]);
+  });
+
+  it('returns [] for non-JSON or non-array payloads', () => {
+    expect(parseElhuyarAutocomplete('not json')).toEqual([]);
+    expect(parseElhuyarAutocomplete('{"value":"/eu_es/x"}')).toEqual([]);
+  });
+});
+
+describe('searchElhuyarAutocomplete', () => {
+  it('queries Elhuyar autocomplete and returns parsed terms', async () => {
+    const fetchImpl = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      text: async () => AUTOCOMPLETE_JSON,
+    })) as ReturnType<typeof vi.fn> & FetchImpl;
+    const terms = await searchElhuyarAutocomplete('afrika', { fetchImpl });
+    expect(terms).toEqual(['Afrika', 'Afrika Erdiko Errepublika', 'afrikaans']);
+    expect(String(fetchImpl.mock.calls[0]![0])).toContain('autocomplete');
+    expect(String(fetchImpl.mock.calls[0]![0])).toContain('hizkuntza=eu_es');
+  });
+
+  it('returns [] for an empty term without fetching', async () => {
+    const fetchImpl = vi.fn() as ReturnType<typeof vi.fn> & FetchImpl;
+    expect(await searchElhuyarAutocomplete('  ', { fetchImpl })).toEqual([]);
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+});
+
 describe('lookupBasqueReference', () => {
   afterEach(() => vi.restoreAllMocks());
 
@@ -128,6 +180,19 @@ describe('lookupBasqueReference', () => {
   }
 
   const DAY = 24 * 60 * 60 * 1000;
+
+  it('preserves case in the upstream URL only when preserveCase is set', async () => {
+    const lower = mockFetch();
+    await lookupBasqueReference('Afrika', ['elhuyar_es'], { fetchImpl: lower });
+    expect(String(lower.mock.calls[0]![0])).toContain('/afrika');
+
+    const exact = mockFetch();
+    await lookupBasqueReference('Afrika', ['elhuyar_es'], {
+      fetchImpl: exact,
+      preserveCase: true,
+    });
+    expect(String(exact.mock.calls[0]![0])).toContain('/Afrika');
+  });
 
   it('fetches + parses the requested sources and writes them to the cache', async () => {
     const fetchImpl = mockFetch();

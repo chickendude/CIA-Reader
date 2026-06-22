@@ -96,6 +96,22 @@ describe('GET /api/v1/admin/basque-dictionary', () => {
     );
   });
 
+  it('passes preserveCase=true only when exact=1', async () => {
+    await callGet('?word=Afrika&exact=1', { id: 'a', role: 'admin' });
+    expect(lookupBasqueReference).toHaveBeenCalledWith(
+      'Afrika',
+      expect.anything(),
+      expect.objectContaining({ preserveCase: true }),
+    );
+    lookupBasqueReference.mockClear();
+    await callGet('?word=Afrika', { id: 'a', role: 'admin' });
+    expect(lookupBasqueReference).toHaveBeenCalledWith(
+      'Afrika',
+      expect.anything(),
+      expect.objectContaining({ preserveCase: false }),
+    );
+  });
+
   it('400s when the sources param has no valid entries', async () => {
     const res = (await callGet('?word=etxe&sources=bogus', {
       id: 'a',

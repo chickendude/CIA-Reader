@@ -54,8 +54,13 @@ function clean(text: string | null | undefined): string {
 
 // ---- URLs -------------------------------------------------------------
 
-export function elhuyarUrl(word: string): string {
-  return `https://hiztegiak.elhuyar.eus/eu/${encodeURIComponent(word.toLowerCase())}`;
+export function elhuyarUrl(word: string, opts: { preserveCase?: boolean } = {}): string {
+  // Case matters upstream: "Afrika" (the continent) and "afrika"/"afrikaans" are
+  // different entries. The auto-lemma path lowercases (a sentence-initial PROPN
+  // often wants its common-noun reading); an explicit admin search preserves the
+  // exact term it picked from autocomplete.
+  const w = opts.preserveCase ? word : word.toLowerCase();
+  return `https://hiztegiak.elhuyar.eus/eu/${encodeURIComponent(w)}`;
 }
 
 export function euskaltzaindiaUrl(word: string): string {
@@ -248,11 +253,13 @@ async function lookupOne(
   fetchImpl: FetchImpl,
   now: number,
   cache: ReferenceCache,
+  preserveCase: boolean,
 ): Promise<BasqueReferenceResult[]> {
   const cached = await cache.get(word, source);
   if (cached && now - cached.fetchedAt < REFERENCE_CACHE_TTL_MS) return cached.results;
 
-  const url = source === 'euskaltzaindia' ? euskaltzaindiaUrl(word) : elhuyarUrl(word);
+  const url =
+    source === 'euskaltzaindia' ? euskaltzaindiaUrl(word) : elhuyarUrl(word, { preserveCase });
   const res = await fetchImpl(url);
   if (!res.ok) throw new Error(`Upstream ${res.status} for ${source}`);
   const htmlText = await res.text();
@@ -274,22 +281,77 @@ async function lookupOne(
 export async function lookupBasqueReference(
   word: string,
   sources: BasqueReferenceSource[],
-  opts: { fetchImpl?: FetchImpl; now?: number; cache?: ReferenceCache } = {},
+  opts: { fetchImpl?: FetchImpl; now?: number; cache?: ReferenceCache; preserveCase?: boolean } = {},
 ): Promise<BasqueReferenceResult[]> {
   const fetchImpl = opts.fetchImpl ?? defaultFetch;
   const now = opts.now ?? Date.now();
   const cache = opts.cache ?? nullReferenceCache;
-  const trimmed = clean(word).toLowerCase();
+  const preserveCase = opts.preserveCase ?? false;
+  const cleaned = clean(word);
+  const trimmed = preserveCase ? cleaned : cleaned.toLowerCase();
   if (!trimmed) return [];
 
   const out: BasqueReferenceResult[] = [];
   for (const source of sources) {
     try {
-      out.push(...(await lookupOne(source, trimmed, fetchImpl, now, cache)));
+      out.push(...(await lookupOne(source, trimmed, fetchImpl, now, cache, preserveCase)));
     } catch {
       // Reference aid — one source being unreachable shouldn't 500 the
       // whole panel. The admin still gets whatever else resolved.
     }
   }
   return out;
+}
+
+// ---- Autocomplete ----------------------------------------------------
+
+const ELHUYAR_AUTOCOMPLETE_URL = 'https://hiztegiak.elhuyar.eus/autocomplete/';
+
+/**
+ * Parse the Elhuyar autocomplete payload: an array of
+ * `{ value: "/eu_es/<term>", label: "…<span class='sarrera'>term</span>…" }`.
+ * We take the term out of `value` because it keeps the exact spelling/case the
+ * admin should search ("Afrika" vs "afrikaans"). Deduped, capped, fail-soft.
+ */
+export function parseElhuyarAutocomplete(jsonText: string): string[] {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(jsonText);
+  } catch {
+    return [];
+  }
+  if (!Array.isArray(raw)) return [];
+  const seen = new Set<string>();
+  const terms: string[] = [];
+  for (const item of raw) {
+    const value = (item as { value?: unknown }).value;
+    if (typeof value !== 'string') continue;
+    const term = clean(value.replace(/^\/[a-z_]+\//, ''));
+    if (!term || seen.has(term)) continue;
+    seen.add(term);
+    terms.push(term);
+    if (terms.length >= 20) break;
+  }
+  return terms;
+}
+
+/**
+ * Elhuyar autocomplete suggestions for a Basque search term. Reference-only and
+ * admin-gated at the route. Lets a curator pick the exact dictionary entry
+ * instead of trusting the (possibly mis-parsed, possibly mis-cased) lemma.
+ */
+export async function searchElhuyarAutocomplete(
+  term: string,
+  opts: { fetchImpl?: FetchImpl } = {},
+): Promise<string[]> {
+  const trimmed = clean(term);
+  if (!trimmed) return [];
+  const fetchImpl = opts.fetchImpl ?? defaultFetch;
+  const url = `${ELHUYAR_AUTOCOMPLETE_URL}?${new URLSearchParams({
+    term: trimmed,
+    hizkuntza: 'eu_es',
+  }).toString()}`;
+  const res = await fetchImpl(url);
+  if (!res.ok) throw new Error(`Autocomplete ${res.status}`);
+  return parseElhuyarAutocomplete(await res.text());
 }
