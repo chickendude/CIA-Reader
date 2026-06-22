@@ -1,8 +1,8 @@
 name: android
 
-# Path-filtered so Android builds never gate web/nlp PRs (and vice-versa).
-# The heavyweight Android SDK + Gradle toolchain only spins up when the
-# app actually changes.
+# Path-filtered: these checks only run when the Android app (or this
+# workflow) changes, so they never gate web/nlp PRs. Split into separate
+# jobs so lint / unit tests / assemble each surface as their own check.
 on:
   pull_request:
     paths:
@@ -14,13 +14,14 @@ on:
       - "apps/android/**"
       - ".github/workflows/android.yml"
 
+defaults:
+  run:
+    working-directory: apps/android
+
 jobs:
-  build:
-    name: android (lint + assemble + unit tests)
+  lint:
+    name: android (lint)
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: apps/android
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -29,7 +30,51 @@ jobs:
           java-version: "17"
       - uses: android-actions/setup-android@v3
       - uses: gradle/actions/setup-gradle@v4
-      # Requires the committed Gradle wrapper (gradlew + gradle-wrapper.jar).
-      # Generate it once via Android Studio sync or `gradle wrapper` — see
-      # apps/android/README.md.
-      - run: ./gradlew --no-daemon lintDebug testDebugUnitTest assembleDebug
+      - run: ./gradlew --no-daemon lintDebug
+      - name: Upload lint report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-lint-report
+          path: apps/android/app/build/reports/lint-results-debug.html
+          if-no-files-found: ignore
+
+  unit-tests:
+    name: android (unit tests)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: android-actions/setup-android@v3
+      - uses: gradle/actions/setup-gradle@v4
+      - run: ./gradlew --no-daemon testDebugUnitTest
+      - name: Upload unit test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-unit-test-results
+          path: apps/android/app/build/test-results/testDebugUnitTest
+          if-no-files-found: ignore
+
+  assemble:
+    name: android (assemble)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: android-actions/setup-android@v3
+      - uses: gradle/actions/setup-gradle@v4
+      - run: ./gradlew --no-daemon assembleDebug
+      - name: Upload debug APK
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-debug-apk
+          path: apps/android/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: ignore
