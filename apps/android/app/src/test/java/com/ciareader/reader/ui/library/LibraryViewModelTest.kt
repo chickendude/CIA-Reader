@@ -1,6 +1,9 @@
 package com.ciareader.reader.ui.library
 
 import com.ciareader.reader.core.network.Outcome
+import com.ciareader.reader.data.collection.CollectionDetail
+import com.ciareader.reader.data.collection.CollectionRepository
+import com.ciareader.reader.data.collection.CollectionSummary
 import com.ciareader.reader.data.language.Language
 import com.ciareader.reader.data.language.LanguageRepository
 import com.ciareader.reader.data.library.LibraryRepository
@@ -23,19 +26,20 @@ class LibraryViewModelTest {
     val mainRule = MainDispatcherRule()
 
     @Test
-    fun loadsLanguagesThenTextsForDefaultLanguage() = runTest(mainRule.dispatcher) {
-        val langRepo = FakeLanguageRepository(
-            languages = listOf(lang("hi", isDefault = true), lang("yi")),
-        )
+    fun loadsTextsAndCollectionsForDefaultLanguage() = runTest(mainRule.dispatcher) {
+        val langRepo = FakeLanguageRepository(listOf(lang("hi", isDefault = true), lang("yi")))
         val libRepo = FakeLibraryRepository(byLanguage = mapOf("hi" to listOf(card("t1"))))
+        val collRepo = FakeCollectionRepository(all = listOf(collection("c1", "hi"), collection("c2", "yi")))
 
-        val vm = LibraryViewModel(langRepo, libRepo)
+        val vm = LibraryViewModel(langRepo, libRepo, collRepo)
         advanceUntilIdle()
 
         val s = vm.state.value
         assertEquals(listOf("hi", "yi"), s.languages.map { it.code })
         assertEquals("hi", s.currentLanguage)
         assertEquals(listOf("t1"), s.texts.map { it.id })
+        // Collections filtered to the current language.
+        assertEquals(listOf("c1"), s.collections.map { it.id })
         assertFalse(s.isLoading)
         assertNull(s.errorMessage)
     }
@@ -45,6 +49,7 @@ class LibraryViewModelTest {
         val vm = LibraryViewModel(
             FakeLanguageRepository(error = "boom"),
             FakeLibraryRepository(),
+            FakeCollectionRepository(),
         )
         advanceUntilIdle()
 
@@ -53,14 +58,28 @@ class LibraryViewModelTest {
     }
 
     @Test
-    fun selectLanguageLoadsThatLanguageAndPersists() = runTest(mainRule.dispatcher) {
-        val langRepo = FakeLanguageRepository(
-            languages = listOf(lang("hi", isDefault = true), lang("mr")),
+    fun collectionsFailureIsNonFatal() = runTest(mainRule.dispatcher) {
+        val vm = LibraryViewModel(
+            FakeLanguageRepository(listOf(lang("hi", isDefault = true))),
+            FakeLibraryRepository(byLanguage = mapOf("hi" to listOf(card("t1")))),
+            FakeCollectionRepository(error = "collections down"),
         )
+        advanceUntilIdle()
+
+        val s = vm.state.value
+        assertEquals(listOf("t1"), s.texts.map { it.id })
+        assertEquals(emptyList<String>(), s.collections.map { it.id })
+        assertNull(s.errorMessage) // texts still load
+    }
+
+    @Test
+    fun selectLanguageLoadsThatLanguageAndPersists() = runTest(mainRule.dispatcher) {
+        val langRepo = FakeLanguageRepository(listOf(lang("hi", isDefault = true), lang("mr")))
         val libRepo = FakeLibraryRepository(
             byLanguage = mapOf("hi" to listOf(card("h1")), "mr" to listOf(card("m1"), card("m2"))),
         )
-        val vm = LibraryViewModel(langRepo, libRepo)
+        val collRepo = FakeCollectionRepository(all = listOf(collection("ch", "hi"), collection("cm", "mr")))
+        val vm = LibraryViewModel(langRepo, libRepo, collRepo)
         advanceUntilIdle()
 
         vm.selectLanguage("mr")
@@ -68,6 +87,7 @@ class LibraryViewModelTest {
 
         assertEquals("mr", vm.state.value.currentLanguage)
         assertEquals(listOf("m1", "m2"), vm.state.value.texts.map { it.id })
+        assertEquals(listOf("cm"), vm.state.value.collections.map { it.id })
         assertEquals("mr", langRepo.lastSetCode)
     }
 
@@ -75,6 +95,9 @@ class LibraryViewModelTest {
         Language(code = code, displayName = code.uppercase(), nativeName = code, script = "Deva", isDefault = isDefault)
 
     private fun card(id: String) = TextCard(id = id, title = "Title $id", language = "hi", status = "ready")
+
+    private fun collection(id: String, language: String) =
+        CollectionSummary(id = id, title = "Book $id", language = language, kind = "chapter_book", textCount = 1)
 }
 
 private class FakeLanguageRepository(
@@ -97,4 +120,15 @@ private class FakeLibraryRepository(
 ) : LibraryRepository {
     override suspend fun listTexts(scope: LibraryScope, language: String): Outcome<List<TextCard>> =
         error?.let { Outcome.Failure(it) } ?: Outcome.Success(byLanguage[language] ?: emptyList())
+}
+
+private class FakeCollectionRepository(
+    private val all: List<CollectionSummary> = emptyList(),
+    private val error: String? = null,
+) : CollectionRepository {
+    override suspend fun myCollections(): Outcome<List<CollectionSummary>> =
+        error?.let { Outcome.Failure(it) } ?: Outcome.Success(all)
+
+    override suspend fun detail(collectionId: String): Outcome<CollectionDetail> =
+        Outcome.Failure("not used in these tests")
 }

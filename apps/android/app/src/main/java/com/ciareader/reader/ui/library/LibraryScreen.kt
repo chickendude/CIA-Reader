@@ -31,12 +31,14 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.ciareader.reader.data.collection.CollectionSummary
 import com.ciareader.reader.data.language.Language
 import com.ciareader.reader.data.library.TextCard
 
 @Composable
 fun LibraryScreen(
     onOpenText: (String) -> Unit,
+    onOpenCollection: (String) -> Unit,
     onLogout: () -> Unit,
     viewModel: LibraryViewModel = hiltViewModel(),
 ) {
@@ -45,6 +47,7 @@ fun LibraryScreen(
         state = state,
         onSelectLanguage = viewModel::selectLanguage,
         onOpenText = onOpenText,
+        onOpenCollection = onOpenCollection,
         onRetry = viewModel::load,
         onLogout = onLogout,
     )
@@ -56,6 +59,7 @@ internal fun LibraryScreenContent(
     state: LibraryUiState,
     onSelectLanguage: (String) -> Unit,
     onOpenText: (String) -> Unit,
+    onOpenCollection: (String) -> Unit,
     onRetry: () -> Unit,
     onLogout: () -> Unit,
 ) {
@@ -86,14 +90,66 @@ internal fun LibraryScreenContent(
                 state.errorMessage != null ->
                     ErrorState(message = state.errorMessage, onRetry = onRetry)
 
-                state.texts.isEmpty() ->
+                state.isEmpty ->
                     EmptyState()
 
                 else ->
-                    TextList(texts = state.texts, onOpenText = onOpenText)
+                    ContentList(
+                        collections = state.collections,
+                        texts = state.texts,
+                        onOpenCollection = onOpenCollection,
+                        onOpenText = onOpenText,
+                    )
             }
         }
     }
+}
+
+@Composable
+private fun ContentList(
+    collections: List<CollectionSummary>,
+    texts: List<TextCard>,
+    onOpenCollection: (String) -> Unit,
+    onOpenText: (String) -> Unit,
+) {
+    LazyColumn(modifier = Modifier.fillMaxSize()) {
+        if (collections.isNotEmpty()) {
+            item { SectionHeader("Books") }
+            items(collections, key = { "c-${it.id}" }) { c ->
+                ListItem(
+                    headlineContent = { Text(c.title) },
+                    supportingContent = {
+                        Text("${c.textCount} chapters", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    },
+                    modifier = Modifier.clickable { onOpenCollection(c.id) },
+                )
+                HorizontalDivider()
+            }
+        }
+        if (texts.isNotEmpty()) {
+            item { SectionHeader("Texts") }
+            items(texts, key = { "t-${it.id}" }) { card ->
+                ListItem(
+                    headlineContent = { Text(card.title) },
+                    supportingContent = {
+                        if (!card.isReady) Text(card.status, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    },
+                    modifier = Modifier.clickable(enabled = card.isReady) { onOpenText(card.id) },
+                )
+                HorizontalDivider()
+            }
+        }
+    }
+}
+
+@Composable
+private fun SectionHeader(text: String) {
+    Text(
+        text,
+        style = MaterialTheme.typography.titleSmall,
+        color = MaterialTheme.colorScheme.primary,
+        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+    )
 }
 
 @Composable
@@ -120,22 +176,6 @@ private fun LanguageSwitcher(
 }
 
 @Composable
-private fun TextList(texts: List<TextCard>, onOpenText: (String) -> Unit) {
-    LazyColumn(modifier = Modifier.fillMaxSize()) {
-        items(texts, key = { it.id }) { card ->
-            ListItem(
-                headlineContent = { Text(card.title) },
-                supportingContent = {
-                    if (!card.isReady) Text(card.status, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                },
-                modifier = Modifier.clickable(enabled = card.isReady) { onOpenText(card.id) },
-            )
-            HorizontalDivider()
-        }
-    }
-}
-
-@Composable
 private fun EmptyState() {
     Column(
         modifier = Modifier
@@ -144,9 +184,9 @@ private fun EmptyState() {
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Text("No texts yet", style = MaterialTheme.typography.titleMedium)
+        Text("Nothing here yet", style = MaterialTheme.typography.titleMedium)
         Text(
-            "Add a text from the web app to start reading.",
+            "Add a text or book from the web app to start reading.",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center,
@@ -163,13 +203,7 @@ private fun ErrorState(message: String, onRetry: () -> Unit) {
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Text(
-            message,
-            color = MaterialTheme.colorScheme.error,
-            textAlign = TextAlign.Center,
-        )
-        Button(onClick = onRetry, modifier = Modifier.padding(top = 16.dp)) {
-            Text("Retry")
-        }
+        Text(message, color = MaterialTheme.colorScheme.error, textAlign = TextAlign.Center)
+        Button(onClick = onRetry, modifier = Modifier.padding(top = 16.dp)) { Text("Retry") }
     }
 }
