@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  bookProgressPct,
   buildPageWordIndex,
   columnIndexForElement,
   computePctRead,
@@ -426,6 +427,88 @@ describe('reader progress helpers', () => {
       });
       expect(index.entries).toHaveLength(0);
       expect(firstWordInColumnFromIndex(index, 0)).toBeNull();
+    });
+  });
+
+  describe('bookProgressPct', () => {
+    it('matches the loaded-text math when no book totals are given (in-text)', () => {
+      // chapter 1 of a 2-chapter text: 100 words before, 200 in this
+      // chapter rendered into 4 columns (50 words each), page 1 of 4.
+      const { startPct, endPct } = bookProgressPct({
+        wordsBeforeChapter: 100,
+        currentChapterWords: 200,
+        domBeforePage: 50, // words in columns before the current page
+        domThroughPage: 100, // words through the current page
+        domTotal: 200,
+        bookWordsBefore: 0,
+        bookWordsTotal: 0, // → falls back to chaptersTotal
+        chaptersTotal: 300,
+      });
+      // start = (100 + 50) / 300; end = (100 + 100) / 300
+      expect(startPct).toBeCloseTo(50, 5);
+      expect(endPct).toBeCloseTo(66.6667, 3);
+    });
+
+    it('reaches 100% only on the final page of the loaded text (in-text)', () => {
+      const { endPct } = bookProgressPct({
+        wordsBeforeChapter: 100,
+        currentChapterWords: 200,
+        domBeforePage: 150,
+        domThroughPage: 200, // through the last column → whole chapter
+        domTotal: 200,
+        bookWordsBefore: 0,
+        bookWordsTotal: 0,
+        chaptersTotal: 300,
+      });
+      expect(endPct).toBeCloseTo(100, 5);
+    });
+
+    it('spans the whole book for a chapter-book chapter (does NOT snap to 100 mid-book)', () => {
+      // Whole book = 1000 words; this is the 2nd chapter (300 words
+      // before it), itself 200 words, and we are on its LAST page.
+      const { startPct, endPct } = bookProgressPct({
+        wordsBeforeChapter: 0, // the loaded text has only this 1 chapter
+        currentChapterWords: 200,
+        domBeforePage: 100,
+        domThroughPage: 200, // last page of this chapter
+        domTotal: 200,
+        bookWordsBefore: 300,
+        bookWordsTotal: 1000,
+        chaptersTotal: 200,
+      });
+      // start = (300 + 100) / 1000; end = (300 + 200) / 1000 = 50%,
+      // NOT 100% even though this chapter's own last page is "done".
+      expect(startPct).toBeCloseTo(40, 5);
+      expect(endPct).toBeCloseTo(50, 5);
+    });
+
+    it('hits 100% on the final chapter of a chapter-book', () => {
+      const { endPct } = bookProgressPct({
+        wordsBeforeChapter: 0,
+        currentChapterWords: 200,
+        domBeforePage: 150,
+        domThroughPage: 200,
+        domTotal: 200,
+        bookWordsBefore: 800, // last chapter starts at 800/1000
+        bookWordsTotal: 1000,
+        chaptersTotal: 200,
+      });
+      expect(endPct).toBeCloseTo(100, 5);
+    });
+
+    it('returns 0/0 when every total is empty', () => {
+      expect(
+        bookProgressPct({
+          wordsBeforeChapter: 0,
+          currentChapterWords: 0,
+          domBeforePage: 0,
+          domThroughPage: 0,
+          domTotal: 0,
+          bookWordsBefore: 0,
+          bookWordsTotal: 0,
+          chaptersTotal: 0,
+        }),
+      ).toEqual({ startPct: 0, endPct: 0 });
     });
   });
 });

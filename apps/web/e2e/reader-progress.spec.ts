@@ -1,21 +1,24 @@
 /**
  * Reader page-counter, progress-percentage, and progress-bar tests.
  *
- * Covered behaviors:
- *   - The "Page X of Y" counter increments on next-page click and
- *     resets to 1 on a fresh chapter load.
- *   - The displayed start/end percentage range stays in sync with
- *     the inline `width: %` on the `.read` / `.current` progress
- *     bar segments.
- *   - Word-based math: pages with many words advance the bar more
- *     than pages with few words (the per-page range varies with
- *     actual word density, not with a uniform pages/N split).
- *   - Walking from page 1 to the last page covers ~100% of the bar.
+ * Progress is now WHOLE-BOOK for chapter-books (each chapter is its own
+ * one-chapter text inside a collection): the footer percentage spans
+ * the entire book, reaching 0% at the start of the first chapter and
+ * 100% at the end of the last — not 0→100 within each chapter. The
+ * footer is three columns (`.pager-pages` · `.pager-pct` · `.pager-chapter`)
+ * and the bar is a single `.read` fill (0 → endPct) plus a `.dot`
+ * marker at endPct.
  *
- * Reads a multi-page owned chapter from the dev DB (`crush@test.local`)
- * so we don't hardcode UUIDs and so edge-cases naturally surface in
- * real publisher content (chapter intros / outros are often sparse,
- * mid-chapter prose is dense).
+ * Covered behaviors:
+ *   - "Page X of Y" increments on next-page click and resets per chapter.
+ *   - Whole-book progress is ~0% on the first chapter and ~100% at the
+ *     end of the last chapter.
+ *   - Per-page range varies with word density (pages with many words
+ *     advance the bar more), and progress increases monotonically.
+ *   - The `.read` bar width and the `.dot` position both track endPct.
+ *
+ * Reads an owned chapter-book from the dev DB (`crush@test.local`) so
+ * we don't hardcode UUIDs.
  */
 import { test, expect, type Page } from '@playwright/test';
 import postgres from 'postgres';
@@ -26,38 +29,70 @@ const DATABASE_URL =
 const TEST_EMAIL = 'crush@test.local';
 
 // Tight viewport so a multi-thousand-word chapter reliably renders
-// across multiple display pages. The default Desktop Chrome viewport
-// (1280×720) can fit a 5k-word chapter into a single column on a
-// wide screen — fine in practice but it makes the page-counter
-// assertions meaningless.
+// across multiple display pages.
 test.use({ viewport: { width: 800, height: 600 } });
 
-/** Smallest chapter token count we accept — enough to span at least
- *  several display pages at the default viewport. */
+/** Smallest chapter token count we accept for the multi-page chapter. */
 const MIN_CHAPTER_TOKENS = 800;
 
-async function findMultiPageChapter(): Promise<{ id: string; title: string }> {
+type Chapter = { id: string; title: string; position: number; words: number };
+
+/** Find one owned chapter-book (the one containing the single biggest
+ *  ready chapter) and return all of its chapters in order. The specs
+ *  derive the first chapter (book start = 0%), the last chapter (book
+ *  end = 100%), and the biggest chapter (multi-page) from this list. */
+async function findBookChapters(): Promise<{
+  first: Chapter;
+  last: Chapter;
+  biggest: Chapter;
+}> {
   const sql = postgres(DATABASE_URL);
   try {
-    const rows = await sql<Array<{ id: string; title: string }>>`
-      SELECT t.id, t.title
-      FROM texts t
-      JOIN text_chapters tc ON tc.text_id = t.id
-      JOIN collection_items ci ON ci.text_id = t.id
-      JOIN collections c ON c.id = ci.collection_id
-      JOIN users u ON u.id = c.owner_id
-      WHERE u.email = ${TEST_EMAIL}
-        AND c.kind = 'chapter_book'
-        AND t.status = 'ready'
-        AND tc.token_count >= ${MIN_CHAPTER_TOKENS}
-      ORDER BY tc.token_count DESC
-      LIMIT 1
+    const rows = await sql<Array<Chapter>>`
+      WITH owned AS (
+        SELECT c.id
+        FROM collections c
+        JOIN users u ON u.id = c.owner_id
+        WHERE u.email = ${TEST_EMAIL} AND c.kind = 'chapter_book'
+      ),
+      members AS (
+        SELECT
+          ci.collection_id,
+          ci.position,
+          t.id AS text_id,
+          t.title,
+          COALESCE(SUM(tc.token_count), 0)::int AS words
+        FROM collection_items ci
+        JOIN texts t ON t.id = ci.text_id
+        LEFT JOIN text_chapters tc ON tc.text_id = t.id
+        WHERE ci.collection_id IN (SELECT id FROM owned)
+          AND t.status = 'ready'
+        GROUP BY ci.collection_id, ci.position, t.id, t.title
+      ),
+      target_book AS (
+        SELECT collection_id
+        FROM members
+        WHERE words >= ${MIN_CHAPTER_TOKENS}
+        ORDER BY words DESC
+        LIMIT 1
+      )
+      SELECT t.id, t.title, m.position, m.words
+      FROM members m
+      JOIN texts t ON t.id = m.text_id
+      WHERE m.collection_id = (SELECT collection_id FROM target_book)
+      ORDER BY m.position
     `;
     expect(
-      rows[0],
-      `need a ready chapter-book chapter with >= ${MIN_CHAPTER_TOKENS} words for ${TEST_EMAIL}`,
-    ).toBeDefined();
-    return rows[0]!;
+      rows.length,
+      `need an owned chapter_book with a >= ${MIN_CHAPTER_TOKENS}-word chapter for ${TEST_EMAIL}`,
+    ).toBeGreaterThan(0);
+    const chapters = rows.map((r) => ({ ...r, words: Number(r.words) }));
+    const biggest = chapters.reduce((a, b) => (b.words > a.words ? b : a));
+    return {
+      first: chapters[0]!,
+      last: chapters[chapters.length - 1]!,
+      biggest,
+    };
   } finally {
     await sql.end();
   }
@@ -70,8 +105,8 @@ function parsePageCounter(text: string): { current: number; total: number } {
 }
 
 /** Parse the formatted `startPct–endPct%` range (or single `endPct%`
- *  when start equals end at the formatted precision). Note: the
- *  separator is an en-dash (U+2013), not a hyphen. */
+ *  when start equals end at the formatted precision). Separator is an
+ *  en-dash (U+2013). */
 function parsePctRange(text: string): { start: number; end: number } {
   const range = /([\d.]+)[–-]([\d.]+)\s*%/.exec(text);
   if (range)
@@ -92,47 +127,38 @@ async function readPageCounter(page: Page): Promise<{ current: number; total: nu
 /** Wait for the column-flow measurement to settle so `pageCount`
  *  reflects the real chapter (initially 1 until measure() runs). */
 async function waitForMeasureSettled(page: Page): Promise<{ current: number; total: number }> {
-  await expect.poll(
-    async () => (await readPageCounter(page)).total,
-    {
+  await expect
+    .poll(async () => (await readPageCounter(page)).total, {
       message: 'pageCount should rise above 1 once measure() has run',
       timeout: 10_000,
-    },
-  ).toBeGreaterThan(1);
+    })
+    .toBeGreaterThan(1);
   return readPageCounter(page);
 }
 
+/** The whole-book range lives in `.pager-pct` (center footer column). */
 async function readPctRange(page: Page): Promise<{ start: number; end: number }> {
-  return parsePctRange(
-    await page.locator('.reader-foot-meta > .muted').last().innerText(),
-  );
+  return parsePctRange(await page.locator('.pager-pct').first().innerText());
 }
 
-/** Inline `width: N%` on the .read element of the progress bar. */
+/** Inline `width: N%` on the `.read` fill — tracks endPct (read-through). */
 async function readBarReadWidth(page: Page): Promise<number> {
   return await page
     .locator('.reader-foot-bar > .read')
     .evaluate((el) => Number.parseFloat((el as HTMLElement).style.width) || 0);
 }
 
-/** Inline `width: N%` on the .current element of the progress bar. */
-async function readBarCurrentWidth(page: Page): Promise<number> {
+/** Inline `left: N%` on the `.dot` position marker — tracks endPct. */
+async function readBarDotLeft(page: Page): Promise<number> {
   return await page
-    .locator('.reader-foot-bar > .current')
-    .evaluate((el) => Number.parseFloat((el as HTMLElement).style.width) || 0);
+    .locator('.reader-foot-bar > .dot')
+    .evaluate((el) => Number.parseFloat((el as HTMLElement).style.left) || 0);
 }
 
-/** Click the within-chapter next-page arrow. Either label fires
- *  the same handler — the label flips to "Next chapter" when the
- *  next click will leave the current chapter. */
 async function clickNext(page: Page) {
-  await page
-    .getByRole('button', { name: /^Next (page|chapter)$/ })
-    .click();
+  await page.getByRole('button', { name: /^Next (page|chapter)$/ }).click();
 }
 
-/** Wait until the page counter reports the expected page number.
- *  Allows the click + measure + layout flush to settle. */
 async function expectOnPage(page: Page, expected: number) {
   await expect
     .poll(async () => (await readPageCounter(page)).current, {
@@ -142,14 +168,14 @@ async function expectOnPage(page: Page, expected: number) {
     .toBe(expected);
 }
 
-test.describe('Reader page counter + progress', () => {
-  let chapterId: string;
+test.describe('Reader page counter + whole-book progress', () => {
+  let book: { first: Chapter; last: Chapter; biggest: Chapter };
   test.beforeAll(async () => {
-    chapterId = (await findMultiPageChapter()).id;
+    book = await findBookChapters();
   });
 
   test('page counter increments on next-page click and shows total', async ({ page }) => {
-    await page.goto(`/reader/${chapterId}?mode=page&chapter=0&token=0`);
+    await page.goto(`/reader/${book.biggest.id}?mode=page&chapter=0&token=0`);
     const initial = await waitForMeasureSettled(page);
     expect(initial.current).toBe(1);
 
@@ -162,43 +188,65 @@ test.describe('Reader page counter + progress', () => {
     await expectOnPage(page, 3);
   });
 
-  test('start percentage on page 1 is 0%', async ({ page }) => {
-    await page.goto(`/reader/${chapterId}?mode=page&chapter=0&token=0`);
-    await waitForMeasureSettled(page);
-    await expect.poll(async () => (await readPctRange(page)).start, {
-      timeout: 5_000,
-    }).toBe(0);
-    // Bar's "read" segment should also be 0%.
-    expect(await readBarReadWidth(page)).toBe(0);
+  test('whole-book progress is ~0% at the start of the first chapter', async ({ page }) => {
+    await page.goto(`/reader/${book.first.id}?mode=page&chapter=0&token=0`);
+    await expect(page.locator('.pager-pct').first()).toBeVisible({ timeout: 10_000 });
+    await page.waitForLoadState('networkidle');
+    // First chapter → no words before it in the book → the range START
+    // is 0%. (The .read fill tracks endPct — how far you've read THROUGH
+    // the page — so it's non-zero even on page 1; that's covered by the
+    // bar-tracking test below, not here.)
+    await expect
+      .poll(async () => (await readPctRange(page)).start, { timeout: 5_000 })
+      .toBeLessThanOrEqual(0.5);
   });
 
-  test('progress bar widths track the displayed startPct and (endPct - startPct)', async ({
-    page,
-  }) => {
-    await page.goto(`/reader/${chapterId}?mode=page&chapter=0&token=0`);
+  test('whole-book progress reaches ~100% at the end of the last chapter', async ({ page }) => {
+    await page.goto(`/reader/${book.last.id}?mode=page&endOfChapter=1`);
+    await expect(page.locator('.pager-pct').first()).toBeVisible({ timeout: 10_000 });
+    await page.waitForLoadState('networkidle');
+    // Land on the actual last page, then read the end percentage.
+    await expect
+      .poll(
+        async () => {
+          const s = await readPageCounter(page);
+          return s.current === s.total;
+        },
+        { timeout: 10_000, message: 'should settle on the last page of the last chapter' },
+      )
+      .toBe(true);
+    const last = await readPctRange(page);
+    expect(last.end, `last page endPct was ${last.end}; expected >= 95`).toBeGreaterThanOrEqual(
+      95,
+    );
+    expect(await readBarReadWidth(page)).toBeGreaterThanOrEqual(95);
+  });
+
+  test('progress increases monotonically and the bar + dot track endPct', async ({ page }) => {
+    await page.goto(`/reader/${book.biggest.id}?mode=page&chapter=0&token=0`);
     const total = (await waitForMeasureSettled(page)).total;
     const pagesToCheck = Math.min(total, 5);
 
+    let prevEnd = -1;
     for (let i = 0; i < pagesToCheck; i += 1) {
-      // Wait for the current page state to settle (poll until the
-      // bar width is stable for one iteration).
       await page.waitForTimeout(150);
-      const { start, end } = await readPctRange(page);
+      const { end } = await readPctRange(page);
       const barRead = await readBarReadWidth(page);
-      const barCurrent = await readBarCurrentWidth(page);
-      // Displayed values are rounded to integer percent precision
-      // for short chapters, so we allow a 1.5%-point tolerance to
-      // cover the parse-then-compare round-trip. The .read bar
-      // tracks startPct verbatim; the .current bar tracks the
-      // (end - start) range.
+      const dotLeft = await readBarDotLeft(page);
+      // Both the fill and the dot track the displayed end percentage.
+      // Displayed values round to the book's precision, so allow a
+      // 1.5-point tolerance for the parse-then-compare round-trip.
       expect(
-        Math.abs(barRead - start),
-        `page ${i + 1}: bar read width (${barRead}) should match startPct (${start})`,
+        Math.abs(barRead - end),
+        `page ${i + 1}: bar read width (${barRead}) should match endPct (${end})`,
       ).toBeLessThanOrEqual(1.5);
       expect(
-        Math.abs(barCurrent - (end - start)),
-        `page ${i + 1}: bar current width (${barCurrent}) should match endPct - startPct (${end - start})`,
+        Math.abs(dotLeft - end),
+        `page ${i + 1}: dot position (${dotLeft}) should match endPct (${end})`,
       ).toBeLessThanOrEqual(1.5);
+      // Progress never goes backwards as we page forward.
+      expect(end, `page ${i + 1}: endPct should not decrease`).toBeGreaterThanOrEqual(prevEnd);
+      prevEnd = end;
 
       if (i < pagesToCheck - 1) {
         await clickNext(page);
@@ -210,11 +258,7 @@ test.describe('Reader page counter + progress', () => {
   test('pages with many words advance the bar more than pages with few words', async ({
     page,
   }) => {
-    // Word-based math: each page contributes (wordsOnPage / totalWords)
-    // to the bar. Real publisher content is uneven — chapter intros
-    // / outros pack fewer words per page than mid-chapter prose. If
-    // the per-page range were uniform, this test would fail.
-    await page.goto(`/reader/${chapterId}?mode=page&chapter=0&token=0`);
+    await page.goto(`/reader/${book.biggest.id}?mode=page&chapter=0&token=0`);
     const total = (await waitForMeasureSettled(page)).total;
     test.skip(total < 4, 'need at least 4 pages to see meaningful variance');
 
@@ -231,46 +275,13 @@ test.describe('Reader page counter + progress', () => {
 
     const minRange = Math.min(...ranges);
     const maxRange = Math.max(...ranges);
+    expect(minRange, `minimum per-page range was ${minRange}; expected > 0`).toBeGreaterThan(0);
+    // Denser pages contribute meaningfully more than sparser ones.
+    // 1.3× is comfortably above the "uniform pages/N split" bug
+    // pattern (~1.0×) while tolerant of CSS column-packing smoothing.
     expect(
-      minRange,
-      `minimum per-page range was ${minRange}; expected > 0`,
-    ).toBeGreaterThan(0);
-    // The denser page should contribute meaningfully more than the
-    // sparser one. Real publisher content shows 2-3× variance; the
-    // CI seed (lorem-ipsum with mixed paragraph sizes) typically
-    // settles around 1.3-1.6× because CSS column packing smooths
-    // variance. 1.3× is comfortably above the "uniform pages/N
-    // split" bug pattern (which would produce ~1.0×) and still
-    // strict enough that a regression to "all pages equal" fails.
-    expect(
-      maxRange / Math.max(0.1, minRange),
+      maxRange / Math.max(0.01, minRange),
       `max/min range ratio ${maxRange}/${minRange}; expected > 1.3×`,
     ).toBeGreaterThan(1.3);
-  });
-
-  test('walking from page 1 to the last page covers ~100% of the chapter', async ({
-    page,
-  }) => {
-    await page.goto(`/reader/${chapterId}?mode=page&chapter=0&token=0`);
-    const total = (await waitForMeasureSettled(page)).total;
-
-    // First page should start at 0%.
-    await expect.poll(async () => (await readPctRange(page)).start).toBe(0);
-
-    // Jump straight to the last page via the cross-text "endOfChapter"
-    // handoff URL — the same flag the reader uses internally when
-    // arriving via prev-text nav. Verifies endPct hits ~100% there.
-    await page.goto(`/reader/${chapterId}?mode=page&endOfChapter=1`);
-    await waitForMeasureSettled(page);
-    await expect
-      .poll(async () => (await readPageCounter(page)).current, {
-        timeout: 10_000,
-      })
-      .toBe(total);
-    const last = await readPctRange(page);
-    expect(
-      last.end,
-      `last page endPct was ${last.end}; expected ≥ 95`,
-    ).toBeGreaterThanOrEqual(95);
   });
 });

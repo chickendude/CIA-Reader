@@ -67,7 +67,8 @@ vi.mock('./db/index.js', () => ({
       collectionId: 'cs.collection_id',
       sharedWithUserId: 'cs.shared_with_user_id',
     },
-    texts: { id: 't.id', language: 't.language' },
+    texts: { id: 't.id', language: 't.language', title: 't.title' },
+    textChapters: { textId: 'tc.text_id', tokenCount: 'tc.token_count' },
     users: { id: 'u.id' },
   },
 }));
@@ -727,9 +728,9 @@ describe('readerCollectionContext', () => {
   it('reports prev/next around a middle text', async () => {
     queue.push([{ collection: baseCollection, position: 1 }]); // hit
     queue.push([
-      { textId: 'a', position: 0 },
-      { textId: 'b', position: 1 },
-      { textId: 'c', position: 2 },
+      { textId: 'a', position: 0, title: 'One', tokenCount: 100 },
+      { textId: 'b', position: 1, title: 'Two', tokenCount: 200 },
+      { textId: 'c', position: 2, title: 'Three', tokenCount: 300 },
     ]); // siblings
     const out = await readerCollectionContext('b');
     expect(out?.prevTextId).toBe('a');
@@ -741,8 +742,8 @@ describe('readerCollectionContext', () => {
   it('null prev for the first text + null next for the last', async () => {
     queue.push([{ collection: baseCollection, position: 0 }]); // first
     queue.push([
-      { textId: 'a', position: 0 },
-      { textId: 'b', position: 1 },
+      { textId: 'a', position: 0, title: 'One', tokenCount: 100 },
+      { textId: 'b', position: 1, title: 'Two', tokenCount: 200 },
     ]);
     const first = await readerCollectionContext('a');
     expect(first?.prevTextId).toBeNull();
@@ -750,12 +751,28 @@ describe('readerCollectionContext', () => {
 
     queue.push([{ collection: baseCollection, position: 1 }]); // last
     queue.push([
-      { textId: 'a', position: 0 },
-      { textId: 'b', position: 1 },
+      { textId: 'a', position: 0, title: 'One', tokenCount: 100 },
+      { textId: 'b', position: 1, title: 'Two', tokenCount: 200 },
     ]);
     const last = await readerCollectionContext('b');
     expect(last?.prevTextId).toBe('a');
     expect(last?.nextTextId).toBeNull();
+  });
+
+  it('surfaces the sibling chapter list with titles + token sums for the TOC', async () => {
+    queue.push([{ collection: baseCollection, position: 0 }]); // hit
+    queue.push([
+      { textId: 'a', position: 0, title: 'Prologue', tokenCount: 120 },
+      { textId: 'b', position: 1, title: '  ', tokenCount: 0 },
+      { textId: 'c', position: 2, title: 'Finale', tokenCount: 340 },
+    ]); // siblings
+    const out = await readerCollectionContext('a');
+    expect(out?.chapters).toEqual([
+      { textId: 'a', position: 0, title: 'Prologue', tokenCount: 120 },
+      // Blank title falls back to 'Untitled'.
+      { textId: 'b', position: 1, title: 'Untitled', tokenCount: 0 },
+      { textId: 'c', position: 2, title: 'Finale', tokenCount: 340 },
+    ]);
   });
 });
 
