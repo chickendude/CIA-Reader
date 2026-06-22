@@ -17,6 +17,8 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.ScrollState
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.verticalScroll
@@ -98,6 +100,10 @@ fun ReaderScreen(
         onTogglePageMode = viewModel::togglePageMode,
         onSetFontSize = viewModel::setFontSize,
         onSetLineSpacing = viewModel::setLineSpacing,
+        onSelectChapter = { ref ->
+            val tid = ref.textId
+            if (tid != null) onOpenChapterText(tid) else ref.chapterIdx?.let { viewModel.loadChapter(it) }
+        },
     )
 }
 
@@ -117,8 +123,10 @@ internal fun ReaderScreenContent(
     onTogglePageMode: () -> Unit,
     onSetFontSize: (Int) -> Unit = {},
     onSetLineSpacing: (Float) -> Unit = {},
+    onSelectChapter: (ReaderChapterRef) -> Unit = {},
 ) {
     var showSettings by remember { mutableStateOf(false) }
+    var showChapters by remember { mutableStateOf(false) }
     Scaffold(
         topBar = {
             TopAppBar(
@@ -132,7 +140,9 @@ internal fun ReaderScreenContent(
                         }
                         Text(
                             state.title.ifEmpty { "Reader" },
-                            modifier = Modifier.weight(1f),
+                            modifier = Modifier
+                                .weight(1f)
+                                .clickable(enabled = state.chapters.isNotEmpty()) { showChapters = true },
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                             textAlign = TextAlign.Center,
@@ -226,6 +236,18 @@ internal fun ReaderScreenContent(
                 onSetLineSpacing = onSetLineSpacing,
                 onTogglePageMode = onTogglePageMode,
                 onToggleRomanize = onToggleRomanize,
+            )
+        }
+    }
+
+    if (showChapters) {
+        ModalBottomSheet(onDismissRequest = { showChapters = false }) {
+            ChapterListSheet(
+                chapters = state.chapters,
+                onSelect = {
+                    showChapters = false
+                    onSelectChapter(it)
+                },
             )
         }
     }
@@ -477,6 +499,50 @@ private fun PageText(
                 }
             },
     )
+}
+
+@Composable
+internal fun ChapterListSheet(
+    chapters: List<ReaderChapterRef>,
+    onSelect: (ReaderChapterRef) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    LazyColumn(modifier.fillMaxWidth()) {
+        item {
+            Text(
+                "Chapters",
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp),
+            )
+        }
+        items(chapters) { ch ->
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onSelect(ch) }
+                    .padding(horizontal = 24.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    ch.title,
+                    modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = if (ch.isCurrent) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.onSurface
+                    },
+                )
+                if (ch.isCurrent) {
+                    Text(
+                        "Current",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
+            }
+        }
+    }
 }
 
 @Composable

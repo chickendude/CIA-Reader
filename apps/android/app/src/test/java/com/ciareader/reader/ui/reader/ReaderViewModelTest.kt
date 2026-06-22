@@ -272,6 +272,9 @@ class ReaderViewModelTest {
         assertEquals("t2", v.state.value.nextTextId)
         assertTrue(v.state.value.canGoPrev)
         assertTrue(v.state.value.canGoNext)
+        // Full chapter list for the TOC, with the current chapter flagged.
+        assertEquals(listOf("t0", "t1", "t2"), v.state.value.chapters.map { it.textId })
+        assertTrue(v.state.value.chapters[1].isCurrent)
     }
 
     @Test

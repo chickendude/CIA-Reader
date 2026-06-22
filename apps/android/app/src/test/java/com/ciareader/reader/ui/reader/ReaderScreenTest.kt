@@ -114,6 +114,26 @@ class ReaderScreenTest {
     }
 
     @Test
+    fun chapterListSelectsAChapter() {
+        var picked: String? = null
+        compose.setContent {
+            CiaReaderTheme {
+                ChapterListSheet(
+                    chapters = listOf(
+                        ReaderChapterRef("Intro", textId = "t0", chapterIdx = null, isCurrent = false),
+                        ReaderChapterRef("Two", textId = "t1", chapterIdx = null, isCurrent = true),
+                    ),
+                    onSelect = { picked = it.textId },
+                )
+            }
+        }
+        compose.onNodeWithText("Intro").assertIsDisplayed()
+        compose.onNodeWithText("Current").assertIsDisplayed()
+        compose.onNodeWithText("Intro").performClick()
+        assertEquals("t0", picked)
+    }
+
+    @Test
     fun showsSettingsButton() {
         compose.setContent {
             CiaReaderTheme {

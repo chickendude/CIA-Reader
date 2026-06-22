@@ -21,6 +21,14 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
+/** A chapter entry for the table-of-contents sheet. */
+data class ReaderChapterRef(
+    val title: String,
+    val textId: String?,   // a separate chapter-text within a book (collection)
+    val chapterIdx: Int?,  // a chapter within this text
+    val isCurrent: Boolean,
+)
+
 data class ReaderUiState(
     val isLoading: Boolean = true,
     val title: String = "",
@@ -38,6 +46,7 @@ data class ReaderUiState(
     val nextTextId: String? = null,
     val prevTitle: String? = null,
     val nextTitle: String? = null,
+    val chapters: List<ReaderChapterRef> = emptyList(),
     val fontSize: Int = SettingsStore.DEFAULT_FONT_SIZE_SP,
     val lineSpacing: Float = SettingsStore.DEFAULT_LINE_SPACING,
     val errorMessage: String? = null,
@@ -102,6 +111,16 @@ class ReaderViewModel @Inject constructor(
                     }
                     val startChapter = (saved?.chapterIdx ?: 0).coerceIn(0, chapterCount - 1)
                     val restoreToken = saved?.takeIf { it.chapterIdx == startChapter }?.tokenIdx
+                    // For a multi-chapter single text, the TOC lists its own chapters.
+                    if (collectionId == null && chapterCount > 1) {
+                        _state.update { s ->
+                            s.copy(
+                                chapters = meta.data.chapters.map { c ->
+                                    ReaderChapterRef(c.title, textId = null, chapterIdx = c.idx, isCurrent = c.idx == startChapter)
+                                },
+                            )
+                        }
+                    }
                     loadChapter(startChapter, restoreToken)
                 }
             }
@@ -119,6 +138,9 @@ class ReaderViewModel @Inject constructor(
                             chapterIdx = chapterIdx,
                             tokens = chapter.data.tokens,
                             restoreTokenIdx = restoreTokenIdx,
+                            chapters = it.chapters.map { ref ->
+                                if (ref.chapterIdx != null) ref.copy(isCurrent = ref.chapterIdx == chapterIdx) else ref
+                            },
                         )
                     }
 
@@ -226,17 +248,19 @@ class ReaderViewModel @Inject constructor(
             is Outcome.Success -> {
                 val chapters = detail.data.chapters
                 val idx = chapters.indexOfFirst { it.textId == textId }
-                if (idx >= 0) {
-                    val prev = chapters.getOrNull(idx - 1)
-                    val next = chapters.getOrNull(idx + 1)
-                    _state.update {
-                        it.copy(
-                            prevTextId = prev?.textId,
-                            nextTextId = next?.textId,
-                            prevTitle = prev?.title,
-                            nextTitle = next?.title,
-                        )
-                    }
+                val refs = chapters.map {
+                    ReaderChapterRef(it.title, textId = it.textId, chapterIdx = null, isCurrent = it.textId == textId)
+                }
+                val prev = if (idx >= 0) chapters.getOrNull(idx - 1) else null
+                val next = if (idx >= 0) chapters.getOrNull(idx + 1) else null
+                _state.update {
+                    it.copy(
+                        chapters = refs,
+                        prevTextId = prev?.textId,
+                        nextTextId = next?.textId,
+                        prevTitle = prev?.title,
+                        nextTitle = next?.title,
+                    )
                 }
             }
 
