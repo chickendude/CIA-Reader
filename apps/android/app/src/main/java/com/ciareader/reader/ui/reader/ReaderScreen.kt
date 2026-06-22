@@ -257,10 +257,10 @@ private fun TranslationGroup(title: String, items: List<WordTranslation>) {
     if (items.isEmpty()) return
     Text(title, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
     items.forEach { item ->
+        // Source attribution is intentionally not shown here — the web reader
+        // doesn't surface it either (it only appears in the admin dictionary
+        // editor). WordTranslation.attribution is kept for potential future use.
         Text(item.body, style = MaterialTheme.typography.bodyLarge)
-        item.attribution?.let {
-            Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
     }
     Spacer(Modifier.height(8.dp))
 }

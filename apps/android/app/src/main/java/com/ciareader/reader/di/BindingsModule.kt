@@ -2,6 +2,8 @@ package com.ciareader.reader.di
 
 import com.ciareader.reader.core.auth.DataStoreTokenStore
 import com.ciareader.reader.core.auth.TokenStore
+import com.ciareader.reader.core.settings.DataStoreSettingsStore
+import com.ciareader.reader.core.settings.SettingsStore
 import com.ciareader.reader.data.auth.AuthRepository
 import com.ciareader.reader.data.auth.AuthRepositoryImpl
 import com.ciareader.reader.data.language.LanguageRepository
@@ -27,6 +29,10 @@ abstract class BindingsModule {
     @Binds
     @Singleton
     abstract fun bindTokenStore(impl: DataStoreTokenStore): TokenStore
+
+    @Binds
+    @Singleton
+    abstract fun bindSettingsStore(impl: DataStoreSettingsStore): SettingsStore
 
     @Binds
     @Singleton
