@@ -49,3 +49,6 @@ apps/web/e2e/.auth/
 apps/web/playwright-report/
 apps/web/test-results/
 apps/web/playwright/.cache/
+
+# GCP service-account key for Vision OCR (never commit)
+infra/secrets/
