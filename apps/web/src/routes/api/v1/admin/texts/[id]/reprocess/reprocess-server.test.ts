@@ -2,6 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const processTextNow = vi.fn();
+const reprocessPdfText = vi.fn();
 const requireUser = vi.fn();
 
 // Stage rows for the ownership-check db lookup in the non-admin path.
@@ -40,6 +41,10 @@ vi.mock('$lib/server/texts/in-process-dispatcher.js', async () => {
   };
 });
 
+vi.mock('$lib/server/texts/pdf-page.js', () => ({
+  reprocessPdfText: (...a: unknown[]) => reprocessPdfText(...a),
+}));
+
 vi.mock('$lib/server/auth/require-user.js', () => ({
   requireUser: (...a: unknown[]) => requireUser(...a),
 }));
@@ -69,6 +74,7 @@ async function callPost(id = VALID_ID, user: typeof ADMIN | typeof USER | null =
 
 beforeEach(() => {
   processTextNow.mockReset();
+  reprocessPdfText.mockReset();
   requireUser.mockReset();
   staged.length = 0;
 });
@@ -79,19 +85,32 @@ afterEach(() => {
 
 describe('POST /api/v1/admin/texts/:id/reprocess', () => {
   it('runs the dispatcher and returns the token count for an admin', async () => {
+    stage([{ id: VALID_ID, ownerId: ADMIN.id, sourceType: 'txt' }]);
     processTextNow.mockResolvedValueOnce(1234);
     const res = (await callPost()) as Response;
     expect(res.status).toBe(200);
     const json = await res.json();
     expect(json.tokensWritten).toBe(1234);
     expect(processTextNow).toHaveBeenCalledWith(VALID_ID);
+    expect(reprocessPdfText).not.toHaveBeenCalled();
+  });
+
+  it('re-tokenizes a PDF from its stored layout (no Vision)', async () => {
+    stage([{ id: VALID_ID, ownerId: ADMIN.id, sourceType: 'pdf' }]);
+    reprocessPdfText.mockResolvedValueOnce(42);
+    const res = (await callPost()) as Response;
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.tokensWritten).toBe(42);
+    expect(reprocessPdfText).toHaveBeenCalledWith(VALID_ID);
+    expect(processTextNow).not.toHaveBeenCalled();
   });
 
   // T-11.3: owners can retry their own failed text. Non-owners
   // (even authenticated readers) get a flat 404, matching the rest
   // of the texts API — we don't leak text existence.
   it('lets the text owner trigger a reprocess (T-11.3)', async () => {
-    stage([{ id: VALID_ID, ownerId: USER.id }]);
+    stage([{ id: VALID_ID, ownerId: USER.id, sourceType: 'txt' }]);
     processTextNow.mockResolvedValueOnce(99);
     const res = (await callPost(VALID_ID, USER)) as Response;
     expect(res.status).toBe(200);
