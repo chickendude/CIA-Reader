@@ -5,9 +5,12 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import com.ciareader.reader.data.dictionary.LemmaTranslations
+import com.ciareader.reader.data.dictionary.WordTranslation
 import com.ciareader.reader.data.reader.KnownStatus
 import com.ciareader.reader.data.reader.ReaderToken
 import com.ciareader.reader.ui.theme.CiaReaderTheme
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -42,6 +45,7 @@ class ReaderScreenTest {
                     onPrevChapter = {},
                     onNextChapter = {},
                     onRetry = {},
+                    onSetStatus = {},
                 )
             }
         }
@@ -62,6 +66,7 @@ class ReaderScreenTest {
                     onPrevChapter = {},
                     onNextChapter = {},
                     onRetry = { retried = true },
+                    onSetStatus = {},
                 )
             }
         }
@@ -71,11 +76,12 @@ class ReaderScreenTest {
     }
 
     @Test
-    fun wordDetailsShowsSurfaceRomanizationGloss() {
+    fun wordDetailsShowsTranslationsAndStatusButtons() {
+        var chosen: KnownStatus? = null
         compose.setContent {
             CiaReaderTheme {
                 WordDetails(
-                    ReaderToken(
+                    token = ReaderToken(
                         idx = 0,
                         surface = "नमस्ते",
                         isWord = true,
@@ -87,13 +93,40 @@ class ReaderScreenTest {
                         isAmbiguous = false,
                         hasDefinition = true,
                     ),
+                    translations = LemmaTranslations(
+                        headword = "नमस्ते",
+                        pos = "INTJ",
+                        gloss = "hello",
+                        personal = emptyList(),
+                        official = listOf(WordTranslation("greeting", "Platts")),
+                        community = emptyList(),
+                    ),
+                    isLoading = false,
+                    onSetStatus = { chosen = it },
                 )
             }
         }
         compose.onNodeWithText("नमस्ते").assertIsDisplayed()
+        compose.onNodeWithText("greeting").assertIsDisplayed()
+        compose.onNodeWithText("Known").assertIsDisplayed()
+        compose.onNodeWithText("Known").performClick()
+        assertEquals(KnownStatus.KNOWN, chosen)
+    }
+
+    @Test
+    fun wordDetailsFallsBackToInlineGloss() {
+        compose.setContent {
+            CiaReaderTheme {
+                WordDetails(
+                    token = ReaderToken(0, "नमस्ते", true, KnownStatus.UNKNOWN, "l1", "namaste", "hello", false, false, true),
+                    translations = null,
+                    isLoading = false,
+                    onSetStatus = {},
+                )
+            }
+        }
         compose.onNodeWithText("namaste").assertIsDisplayed()
         compose.onNodeWithText("hello").assertIsDisplayed()
-        compose.onNodeWithText("Status: Learning").assertIsDisplayed()
     }
 
     private fun token(surface: String, isWord: Boolean, status: KnownStatus = KnownStatus.UNKNOWN) =
