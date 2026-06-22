@@ -2,6 +2,7 @@ package com.ciareader.reader.ui.reader
 
 import androidx.lifecycle.SavedStateHandle
 import com.ciareader.reader.core.network.Outcome
+import com.ciareader.reader.core.settings.SettingsStore
 import com.ciareader.reader.data.dictionary.DictionaryRepository
 import com.ciareader.reader.data.dictionary.LemmaTranslations
 import com.ciareader.reader.data.dictionary.WordTranslation
@@ -14,12 +15,15 @@ import com.ciareader.reader.data.reader.ReadingProgress
 import com.ciareader.reader.data.reader.TextMeta
 import com.ciareader.reader.util.MainDispatcherRule
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 
@@ -29,8 +33,11 @@ class ReaderViewModelTest {
     @get:Rule
     val mainRule = MainDispatcherRule()
 
-    private fun vm(repo: ReaderRepository, dict: DictionaryRepository = FakeDictionaryRepository()) =
-        ReaderViewModel(repo, dict, SavedStateHandle(mapOf("textId" to "t1")))
+    private fun vm(
+        repo: ReaderRepository,
+        dict: DictionaryRepository = FakeDictionaryRepository(),
+        settings: SettingsStore = FakeSettingsStore(),
+    ) = ReaderViewModel(repo, dict, settings, SavedStateHandle(mapOf("textId" to "t1")))
 
     @Test
     fun loadsTitleAndFirstChapter() = runTest(mainRule.dispatcher) {
@@ -166,13 +173,55 @@ class ReaderViewModelTest {
         assertEquals(ReadingProgress(0, 12, 30.0), repo.lastSaved)
     }
 
+    @Test
+    fun togglesRomanizationAndPersists() = runTest(mainRule.dispatcher) {
+        val repo = FakeReaderRepository(meta = meta(1), chapters = mapOf(0 to Chapter(0, listOf(word("a")))))
+        val settings = FakeSettingsStore(romanization = false)
+        val v = vm(repo, settings = settings)
+        advanceUntilIdle()
+
+        assertFalse(v.state.value.romanize)
+        v.toggleRomanization()
+        advanceUntilIdle()
+
+        assertTrue(v.state.value.romanize)
+        assertEquals(true, settings.lastSetRomanization)
+    }
+
+    @Test
+    fun restoresRomanizationPreference() = runTest(mainRule.dispatcher) {
+        val repo = FakeReaderRepository(meta = meta(1), chapters = mapOf(0 to Chapter(0, listOf(word("a")))))
+        val v = vm(repo, settings = FakeSettingsStore(romanization = true))
+        advanceUntilIdle()
+
+        assertTrue(v.state.value.romanize)
+    }
+
+    @Test
+    fun marksRtlForHebrewScriptLanguage() = runTest(mainRule.dispatcher) {
+        val repo = FakeReaderRepository(meta = meta(1, language = "yi"), chapters = mapOf(0 to Chapter(0, emptyList())))
+        val v = vm(repo)
+        advanceUntilIdle()
+
+        assertTrue(v.state.value.isRtl)
+    }
+
+    @Test
+    fun leftToRightForOtherLanguages() = runTest(mainRule.dispatcher) {
+        val repo = FakeReaderRepository(meta = meta(1, language = "hi"), chapters = mapOf(0 to Chapter(0, emptyList())))
+        val v = vm(repo)
+        advanceUntilIdle()
+
+        assertFalse(v.state.value.isRtl)
+    }
+
     private fun word(surface: String) =
         ReaderToken(0, surface, true, KnownStatus.UNKNOWN, null, null, null, false, false, false)
 
-    private fun meta(chapterCount: Int) = TextMeta(
+    private fun meta(chapterCount: Int, language: String = "hi") = TextMeta(
         id = "t1",
         title = "Book",
-        language = "hi",
+        language = language,
         status = "ready",
         chapterCount = chapterCount,
         chapters = (0 until chapterCount).map { ChapterRef(it, "c$it", 1) },
@@ -217,4 +266,17 @@ private class FakeDictionaryRepository(
 
     override suspend fun setStatus(lemmaId: String, status: KnownStatus): Outcome<KnownStatus> =
         Outcome.Success(status)
+}
+
+private class FakeSettingsStore(
+    private val romanization: Boolean = false,
+) : SettingsStore {
+    var lastSetRomanization: Boolean? = null
+    override val currentLanguage: Flow<String?> = MutableStateFlow(null)
+    override suspend fun currentLanguage(): String? = null
+    override suspend fun setCurrentLanguage(code: String) {}
+    override suspend fun showRomanization(): Boolean = romanization
+    override suspend fun setShowRomanization(value: Boolean) {
+        lastSetRomanization = value
+    }
 }

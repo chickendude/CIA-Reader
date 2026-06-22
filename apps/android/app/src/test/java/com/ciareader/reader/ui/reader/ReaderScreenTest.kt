@@ -48,11 +48,41 @@ class ReaderScreenTest {
                     onSetStatus = {},
                     onRecordPosition = { _, _ -> },
                     onRestoreConsumed = {},
+                    onToggleRomanize = {},
                 )
             }
         }
         compose.onNodeWithText("My Book").assertIsDisplayed()
         compose.onNodeWithText("Hello world").assertIsDisplayed()
+    }
+
+    @Test
+    fun rendersRomanizationWhenEnabled() {
+        compose.setContent {
+            CiaReaderTheme {
+                ReaderScreenContent(
+                    state = ReaderUiState(
+                        isLoading = false,
+                        title = "Book",
+                        romanize = true,
+                        tokens = listOf(
+                            ReaderToken(0, "नमस्ते", true, KnownStatus.UNKNOWN, "l1", "namaste", null, false, false, true),
+                        ),
+                    ),
+                    onBack = {},
+                    onWordTap = {},
+                    onDismissWord = {},
+                    onPrevChapter = {},
+                    onNextChapter = {},
+                    onRetry = {},
+                    onSetStatus = {},
+                    onRecordPosition = { _, _ -> },
+                    onRestoreConsumed = {},
+                    onToggleRomanize = {},
+                )
+            }
+        }
+        compose.onNodeWithText("namaste").assertIsDisplayed()
     }
 
     @Test
@@ -71,6 +101,7 @@ class ReaderScreenTest {
                     onSetStatus = {},
                     onRecordPosition = { _, _ -> },
                     onRestoreConsumed = {},
+                    onToggleRomanize = {},
                 )
             }
         }

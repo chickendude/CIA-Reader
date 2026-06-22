@@ -4,6 +4,7 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.ciareader.reader.core.network.Outcome
+import com.ciareader.reader.core.settings.SettingsStore
 import com.ciareader.reader.data.dictionary.DictionaryRepository
 import com.ciareader.reader.data.dictionary.LemmaTranslations
 import com.ciareader.reader.data.reader.KnownStatus
@@ -29,6 +30,8 @@ data class ReaderUiState(
     val wordTranslations: LemmaTranslations? = null,
     val isWordLoading: Boolean = false,
     val restoreTokenIdx: Int? = null,
+    val romanize: Boolean = false,
+    val isRtl: Boolean = false,
     val errorMessage: String? = null,
 ) {
     val hasPrev: Boolean get() = chapterIdx > 0
@@ -39,6 +42,7 @@ data class ReaderUiState(
 class ReaderViewModel @Inject constructor(
     private val repository: ReaderRepository,
     private val dictionary: DictionaryRepository,
+    private val settings: SettingsStore,
     savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
 
@@ -63,7 +67,14 @@ class ReaderViewModel @Inject constructor(
 
                 is Outcome.Success -> {
                     val chapterCount = meta.data.chapterCount.coerceAtLeast(1)
-                    _state.update { it.copy(title = meta.data.title, chapterCount = chapterCount) }
+                    _state.update {
+                        it.copy(
+                            title = meta.data.title,
+                            chapterCount = chapterCount,
+                            romanize = settings.showRomanization(),
+                            isRtl = isRtlLanguage(meta.data.language),
+                        )
+                    }
                     // Resume where the reader left off (chapter clamped to range);
                     // restore the token only within that saved chapter.
                     val saved = when (val p = repository.progress(textId)) {
@@ -161,11 +172,20 @@ class ReaderViewModel @Inject constructor(
     /** The UI has scrolled to the restored anchor; don't scroll there again. */
     fun onRestoreConsumed() = _state.update { it.copy(restoreTokenIdx = null) }
 
+    /** Toggle native ⇄ romanized rendering and remember the choice. */
+    fun toggleRomanization() {
+        val next = !_state.value.romanize
+        _state.update { it.copy(romanize = next) }
+        viewModelScope.launch { settings.setShowRomanization(next) }
+    }
+
     fun retry() {
         if (_state.value.title.isEmpty()) loadInitial() else loadChapter(_state.value.chapterIdx)
     }
 
     private companion object {
         const val PROGRESS_DEBOUNCE_MS = 800L
+        private val RTL_LANGUAGES = setOf("yi", "ur", "fa", "ar", "he", "sd")
+        fun isRtlLanguage(code: String) = code.lowercase() in RTL_LANGUAGES
     }
 }

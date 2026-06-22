@@ -41,6 +41,7 @@ import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
@@ -67,6 +68,7 @@ fun ReaderScreen(onBack: () -> Unit, viewModel: ReaderViewModel = hiltViewModel(
         onSetStatus = viewModel::setStatus,
         onRecordPosition = viewModel::recordPosition,
         onRestoreConsumed = viewModel::onRestoreConsumed,
+        onToggleRomanize = viewModel::toggleRomanization,
     )
 }
 
@@ -82,6 +84,7 @@ internal fun ReaderScreenContent(
     onSetStatus: (KnownStatus) -> Unit,
     onRecordPosition: (Int, Double) -> Unit,
     onRestoreConsumed: () -> Unit,
+    onToggleRomanize: () -> Unit,
 ) {
     Scaffold(
         topBar = {
@@ -94,6 +97,11 @@ internal fun ReaderScreenContent(
                     )
                 },
                 navigationIcon = { TextButton(onClick = onBack) { Text("Back") } },
+                actions = {
+                    TextButton(onClick = onToggleRomanize) {
+                        Text(if (state.romanize) "Native" else "Romanize")
+                    }
+                },
             )
         },
         bottomBar = {
@@ -124,6 +132,8 @@ internal fun ReaderScreenContent(
                 else ->
                     ChapterText(
                         tokens = state.tokens,
+                        romanize = state.romanize,
+                        rtl = state.isRtl,
                         onWordTap = onWordTap,
                         restoreTokenIdx = state.restoreTokenIdx,
                         onRecordPosition = onRecordPosition,
@@ -147,9 +157,15 @@ internal fun ReaderScreenContent(
     }
 }
 
+/** The text to render for a token — romanization for words when enabled. */
+private fun displayText(token: ReaderToken, romanize: Boolean): String =
+    if (romanize && token.isWord) token.romanization ?: token.surface else token.surface
+
 @Composable
 private fun ChapterText(
     tokens: List<ReaderToken>,
+    romanize: Boolean,
+    rtl: Boolean,
     onWordTap: (ReaderToken) -> Unit,
     restoreTokenIdx: Int?,
     onRecordPosition: (Int, Double) -> Unit,
@@ -159,18 +175,19 @@ private fun ChapterText(
     val scheme = MaterialTheme.colorScheme
     // One AnnotatedString for proper text flow, plus per-token char ranges so a
     // tap maps back to the token under the finger.
-    val annotated = remember(tokens, scheme) {
+    val annotated = remember(tokens, scheme, romanize) {
         buildAnnotatedString {
             tokens.forEach { token ->
-                withStyle(spanStyleFor(token, scheme)) { append(token.surface) }
+                withStyle(spanStyleFor(token, scheme)) { append(displayText(token, romanize)) }
             }
         }
     }
-    val ranges = remember(tokens) {
+    val ranges = remember(tokens, romanize) {
         var offset = 0
         tokens.map { token ->
+            val text = displayText(token, romanize)
             val start = offset
-            offset += token.surface.length
+            offset += text.length
             start until offset
         }
     }
@@ -208,7 +225,10 @@ private fun ChapterText(
     Text(
         text = annotated,
         onTextLayout = { layout = it },
-        style = MaterialTheme.typography.bodyLarge,
+        style = MaterialTheme.typography.bodyLarge.copy(
+            textDirection = if (rtl) TextDirection.Rtl else TextDirection.Content,
+            textAlign = if (rtl) TextAlign.Right else TextAlign.Start,
+        ),
         modifier = modifier
             .verticalScroll(scrollState)
             .padding(16.dp)

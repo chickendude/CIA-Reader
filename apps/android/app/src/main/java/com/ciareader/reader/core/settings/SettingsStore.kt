@@ -1,6 +1,7 @@
 package com.ciareader.reader.core.settings
 
 import android.content.Context
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
@@ -22,6 +23,10 @@ interface SettingsStore {
     val currentLanguage: Flow<String?>
     suspend fun currentLanguage(): String?
     suspend fun setCurrentLanguage(code: String)
+
+    /** Whether the reader shows romanization in place of the native script. */
+    suspend fun showRomanization(): Boolean
+    suspend fun setShowRomanization(value: Boolean)
 }
 
 private val Context.settingsDataStore by preferencesDataStore(name = "settings")
@@ -40,7 +45,15 @@ class DataStoreSettingsStore @Inject constructor(
         context.settingsDataStore.edit { it[CURRENT_LANGUAGE] = code }
     }
 
+    override suspend fun showRomanization(): Boolean =
+        context.settingsDataStore.data.map { it[SHOW_ROMANIZATION] ?: false }.first()
+
+    override suspend fun setShowRomanization(value: Boolean) {
+        context.settingsDataStore.edit { it[SHOW_ROMANIZATION] = value }
+    }
+
     private companion object {
         val CURRENT_LANGUAGE = stringPreferencesKey("current_language")
+        val SHOW_ROMANIZATION = booleanPreferencesKey("show_romanization")
     }
 }
