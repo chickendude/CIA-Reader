@@ -147,6 +147,11 @@ export type ServerToken = {
    *  is explicitly `false`, so an absent value is treated as "unknown,
    *  don't flag." */
   hasDefinition?: boolean;
+  /** PDF source only: the word's bounding box on the page image,
+   *  normalized to 0..1 of the page width/height. Drives the clickable
+   *  word hotspots in the image reader. Null/absent for text tokens and
+   *  for whitespace/punctuation. */
+  bbox?: { x: number; y: number; w: number; h: number } | null;
 };
 
 /**
@@ -181,6 +186,12 @@ export type ChapterView = {
    *  null when the chapter hasn't been processed yet (sibling to
    *  `tokens` null state). */
   phraseSpans: ChapterPhraseSpan[] | null;
+  /** PDF source only: the page image to render in the image reader, and
+   *  its natural pixel size (for the container aspect ratio). Null for
+   *  non-PDF chapters / pages not yet processed. */
+  pageImageUrl?: string | null;
+  pageWidth?: number | null;
+  pageHeight?: number | null;
 };
 
 export type ReaderLayoutMode = 'page' | 'paged_scroll' | 'continuous';

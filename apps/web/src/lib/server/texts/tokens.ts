@@ -109,6 +109,10 @@ export type RenderedToken = {
    *  form + romanization. Null on every other token. */
   numberForms: RenderedNumberForms | null;
   status: 'known' | 'learning' | 'ignored' | 'unknown';
+  /** PDF source only: the word's normalized (0..1) bounding box on the
+   *  page image; drives the image reader's clickable word hotspots.
+   *  Null for text tokens and whitespace/punctuation. */
+  bbox: { x: number; y: number; w: number; h: number } | null;
   /** #435: true when this word's lemma (or a same-headword sibling)
    *  carries a canonical short gloss — i.e. the dictionary has a
    *  definition for it. False for OOV words and for lemmas with no
@@ -461,6 +465,7 @@ export async function loadChapterTokens(
       features: t.features,
       numberForms: renderedNumberForms,
       status,
+      bbox: t.bbox ?? null,
       hasDefinition: effectiveGloss != null,
     };
   });

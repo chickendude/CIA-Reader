@@ -15,7 +15,7 @@ COPY services/nlp/pyproject.toml /srv/nlp/pyproject.toml
 RUN apt-get update \
  && apt-get install -y --no-install-recommends gcc libc6-dev \
  && pip install -U pip \
- && pip install -e '.[dev,models]' \
+ && pip install -e '.[dev,models,ocr]' \
  && apt-get purge -y --auto-remove gcc libc6-dev \
  && rm -rf /var/lib/apt/lists/*
 

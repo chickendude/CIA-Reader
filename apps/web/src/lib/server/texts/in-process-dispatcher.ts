@@ -38,7 +38,7 @@ import { and, eq, isNull } from 'drizzle-orm';
 import { LANGUAGES, stripNukta, type LanguageCode } from '@ciareader/shared-types';
 
 import { db, schema } from '../db/index.js';
-import { nlpClient, type NlpToken } from '../nlp-client.js';
+import { nlpClient, type NlpToken, type ProposedPhrase } from '../nlp-client.js';
 import { looksLikeNumberToken } from '$lib/components/reader/types.js';
 import type {
   Lemma,
@@ -55,7 +55,7 @@ import {
 import { rebuildChapterSpans } from './phrase-spans.js';
 import { upsertPhraseProposals } from './phrase-proposals.js';
 
-type LemmaIndex = {
+export type LemmaIndex = {
   /** `${headword} ${pos}` → id. Strict-POS lookup. */
   byHeadwordPos: Map<string, string>;
   /** `headword` → id (first row wins). Loose fallback. */
@@ -104,7 +104,7 @@ type LemmaIndex = {
  * round-trips. For an MVP-sized lemma table (~50k Hindi entries)
  * this is a few MB of strings — well within process memory.
  */
-async function loadLemmaIndex(
+export async function loadLemmaIndex(
   language: LanguageCode,
 ): Promise<LemmaIndex> {
   const rows = (await db
@@ -361,25 +361,39 @@ async function pickLemmaId(
   return ensureLemma(language, top, index);
 }
 
-async function processChapter(
-  chapter: Pick<TextChapter, 'id' | 'body'>,
-  language: LanguageCode,
-  index: LemmaIndex,
-): Promise<number> {
-  const result = await nlpClient.process(language, chapter.body);
+/**
+ * Resolve lemmas for a chapter's tokens and persist them, then rebuild
+ * phrase spans + proposals. Shared by the text pipeline (tokens from
+ * `nlpClient.process`) and the PDF pipeline (tokens from `nlpClient.ocr`,
+ * each carrying a `bbox`). Idempotent: replaces any existing tokens for
+ * the chapter so a re-process / re-OCR overwrites rather than duplicates.
+ *
+ * `tokens` is the NLP token shape with an optional `bbox` — null/absent
+ * for text chapters, a normalized box for PDF page words.
+ */
+export async function persistTokens(args: {
+  chapterId: string;
+  language: LanguageCode;
+  index: LemmaIndex;
+  tokens: Array<
+    NlpToken & { bbox?: { x: number; y: number; w: number; h: number } | null }
+  >;
+  proposedPhrases?: ProposedPhrase[];
+}): Promise<number> {
+  const { chapterId, language, index, tokens } = args;
   // Resolve / auto-create lemmas first so each token's lemma_id is
   // ready for the bulk insert. We can't `Promise.all` because
   // ensureLemma writes into the shared index — sequential keeps
   // duplicate inserts from racing each other across tokens of the
   // same lemma.
   const resolvedLemmaIds: Array<string | null> = [];
-  for (const t of result.tokens) {
+  for (const t of tokens) {
     resolvedLemmaIds.push(await pickLemmaId(t, language, index));
   }
-  const rows = result.tokens.map((t, i) => {
+  const rows = tokens.map((t, i) => {
     const lemmaId = resolvedLemmaIds[i] ?? null;
     return {
-      chapterId: chapter.id,
+      chapterId,
       idx: t.idx,
       surface: t.surface,
       lemmaId,
@@ -402,16 +416,20 @@ async function processChapter(
       // rule-based romanization (see LemmaIndex.romanizationBySurface).
       romanization: index.romanizationBySurface.get(t.surface) ?? t.romanization,
       numberForms: t.number_forms ?? null,
+      // PDF source only — normalized word box on the page image. Null
+      // for text chapters and for whitespace/punctuation.
+      bbox: t.bbox ?? null,
     };
   }) satisfies Array<Omit<TextToken, 'id'>>;
-  if (rows.length === 0) return 0;
-  // Replace any previous tokens for idempotency (re-processing a
-  // text via T-6.8 admin endpoint should overwrite, not duplicate).
+  // Replace any previous tokens for idempotency (re-processing a text
+  // via T-6.8 admin endpoint, or re-OCR of a PDF page, should overwrite
+  // not duplicate). Always delete first — even when the new token list
+  // is empty (a blank PDF page) — so stale rows don't survive.
   await db
     .delete(schema.textTokens)
-    .where(eq(schema.textTokens.chapterId, chapter.id));
+    .where(eq(schema.textTokens.chapterId, chapterId));
   // Postgres caps a single statement at 65534 bound parameters.
-  // text_tokens has ~10 columns, so a 7000-token chapter alone
+  // text_tokens has ~11 columns, so a 7000-token chapter alone
   // would blow past the cap as one INSERT. Batch.
   const BATCH = 1000;
   for (let off = 0; off < rows.length; off += BATCH) {
@@ -421,10 +439,7 @@ async function processChapter(
   // text_tokens are in place. Failures bubble up so a span-resolver
   // crash flips the text to 'failed' rather than leaving it
   // half-indexed.
-  await rebuildChapterSpans({
-    chapterId: chapter.id,
-    language,
-  });
+  await rebuildChapterSpans({ chapterId, language });
   // T-14.5a: persist any rule-based phrase proposals the NLP
   // service emitted. Older NLP service builds may omit
   // `proposed_phrases` — we default to an empty list so a stale
@@ -432,15 +447,26 @@ async function processChapter(
   // The upsert is idempotent on `(chapter_id, surface_normalised,
   // pattern_id)` so a re-process of the same chapter doesn't
   // duplicate.
-  const proposals = result.proposed_phrases ?? [];
+  const proposals = args.proposedPhrases ?? [];
   if (proposals.length > 0) {
-    await upsertPhraseProposals({
-      chapterId: chapter.id,
-      language,
-      proposals,
-    });
+    await upsertPhraseProposals({ chapterId, language, proposals });
   }
   return rows.length;
+}
+
+async function processChapter(
+  chapter: Pick<TextChapter, 'id' | 'body'>,
+  language: LanguageCode,
+  index: LemmaIndex,
+): Promise<number> {
+  const result = await nlpClient.process(language, chapter.body);
+  return persistTokens({
+    chapterId: chapter.id,
+    language,
+    index,
+    tokens: result.tokens,
+    proposedPhrases: result.proposed_phrases,
+  });
 }
 
 /**

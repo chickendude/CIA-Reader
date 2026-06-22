@@ -9,16 +9,23 @@ modules so each language can evolve independently.
 
 from __future__ import annotations
 
+import json
 import unicodedata
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 
 from app.languages import LANGUAGES, SUPPORTED_LANGUAGE_CODES, is_supported_language
+from app.ocr.align import OcrPage, assign_token_boxes
+from app.ocr.borndigital import build_born_digital_page
+from app.ocr.vision import run_vision_ocr
 from app.phrases import get_detector
 from app.pipelines import get_pipeline
 from app.romanize import UnsupportedScriptError, to_roman
 from app.schemas import (
+    BBox,
     HealthResponse,
+    OcrResponse,
+    OcrToken,
     ProcessRequest,
     ProcessResponse,
     RomanizeRequest,
@@ -78,6 +85,98 @@ async def process(req: ProcessRequest) -> ProcessResponse:
         language=req.language,
         pipeline_id=canonical_pipeline_id,
         tokens=result.tokens,
+        proposed_phrases=proposed_phrases,
+    )
+
+
+def _page_from_layout(payload: dict) -> OcrPage:
+    """Rebuild an OcrPage from a stored layout (page text + one box per
+    character). Lets the web side re-tokenize a previously-OCR'd page with
+    the current model WITHOUT paying for Vision again — the box geometry is
+    replayed from what the first OCR already captured."""
+    text = payload.get("text", "")
+    raw = payload.get("char_boxes") or []
+    boxes: list[BBox | None] = []
+    for b in raw:
+        if b is None:
+            boxes.append(None)
+        else:
+            boxes.append(BBox(x=b[0], y=b[1], w=b[2], h=b[3]))
+    # Keep char_boxes the same length as text (defensive against drift).
+    if len(boxes) < len(text):
+        boxes.extend([None] * (len(text) - len(boxes)))
+    return OcrPage(text=text, char_boxes=boxes[: len(text)])
+
+
+@app.post("/ocr", response_model=OcrResponse)
+async def ocr(
+    language: str = Form(...),
+    width: int = Form(...),
+    height: int = Form(...),
+    image: UploadFile = File(...),
+    engine: str = Form("vision"),
+    born_digital: str | None = Form(None),
+    layout: str | None = Form(None),
+) -> OcrResponse:
+    """OCR one PDF page image into tokens + per-token bounding boxes.
+
+    The browser rasterized the page and (for born-digital PDFs) extracted
+    the embedded text layer; ``width``/``height`` are the rendered image's
+    pixel dimensions. The response mirrors ``/process`` so the web side
+    reuses its lemma-resolution + persist path, with a ``bbox`` per token
+    and the reconstructed page ``body``.
+    """
+    if not is_supported_language(language):
+        supported = list(SUPPORTED_LANGUAGE_CODES)
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported language '{language}'. Supported: {supported}",
+        )
+
+    # Read the image so a future engine can use it; the bytes feed Vision
+    # on the scanned path and are ignored on the born-digital / layout
+    # paths (which carry their own geometry).
+    image_bytes = await image.read()
+
+    if layout:
+        # Free re-tokenize: replay a stored OCR layout, no Vision call.
+        try:
+            page = _page_from_layout(json.loads(layout))
+        except (json.JSONDecodeError, KeyError, IndexError, TypeError) as exc:
+            raise HTTPException(
+                status_code=400, detail=f"Invalid layout JSON: {exc}"
+            ) from exc
+    elif born_digital:
+        try:
+            payload = json.loads(born_digital)
+        except json.JSONDecodeError as exc:
+            raise HTTPException(
+                status_code=400, detail=f"Invalid born_digital JSON: {exc}"
+            ) from exc
+        page = build_born_digital_page(payload.get("items", []))
+    else:
+        # engine 'vision_llm' (the on-demand AI proofread) lands in a
+        # follow-up; for now every scanned page goes through Vision.
+        page = run_vision_ocr(image_bytes)
+
+    pipeline = get_pipeline(language)
+    result = pipeline.process(page.text)
+    detector = get_detector(language)
+    proposed_phrases = detector.detect(result.tokens)
+
+    boxes = assign_token_boxes(result.tokens, page)
+    tokens = [
+        OcrToken(**t.model_dump(), bbox=b)
+        for t, b in zip(result.tokens, boxes, strict=True)
+    ]
+
+    return OcrResponse(
+        language=language,
+        pipeline_id=LANGUAGES[language].pipeline_id,
+        width=width,
+        height=height,
+        body=page.text,
+        tokens=tokens,
         proposed_phrases=proposed_phrases,
     )
 

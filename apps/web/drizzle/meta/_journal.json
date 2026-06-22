@@ -344,6 +344,13 @@
       "when": 1782002730387,
       "tag": "0048_overconfident_stark_industries",
       "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1782103478214,
+      "tag": "0049_superb_champions",
+      "breakpoints": true
     }
   ]
 }

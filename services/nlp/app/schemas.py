@@ -127,3 +127,40 @@ class ProcessResponse(BaseModel):
         default_factory=list,
         description="T-14.5: rule-based phrase proposals over the token list.",
     )
+
+
+class BBox(BaseModel):
+    """A word's bounding box on a PDF page image, normalized to 0..1 of
+    the page width/height. Resolution-independent so the reader overlay
+    scales to whatever size the image renders at."""
+
+    x: float
+    y: float
+    w: float
+    h: float
+
+
+class OcrToken(Token):
+    """A :class:`Token` plus the page-image bounding box the word
+    occupies. ``bbox`` is ``None`` for whitespace/punctuation tokens and
+    for any word the aligner couldn't locate on the page."""
+
+    bbox: BBox | None = None
+
+
+class OcrResponse(BaseModel):
+    """Result of OCR-ing one PDF page image.
+
+    Mirrors :class:`ProcessResponse` (same tokens + phrase proposals so
+    the web side reuses its lemma-resolution/persist path unchanged) and
+    adds the reconstructed page ``body`` text, the page image pixel
+    dimensions, and a per-token ``bbox``.
+    """
+
+    language: str
+    pipeline_id: str
+    width: int
+    height: int
+    body: str
+    tokens: list[OcrToken]
+    proposed_phrases: list[ProposedPhrase] = Field(default_factory=list)
