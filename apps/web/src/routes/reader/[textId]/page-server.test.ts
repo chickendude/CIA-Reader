@@ -63,10 +63,11 @@ vi.mock('$lib/server/texts/progress.js', async () => {
 // `userLanguagesRow`.
 let userLanguagesRow: Record<string, unknown> | null = null;
 // T-8.3: the loader now calls readerCollectionContext. Mock to
-// "no collection" so existing tests stay focused on the reader
-// surface; tests that care can override.
+// "no collection" by default so existing tests stay focused on the
+// reader surface; tests that care stage a return value.
+const readerCollectionContext = vi.fn();
 vi.mock('$lib/server/collections.js', () => ({
-  readerCollectionContext: async () => null,
+  readerCollectionContext: (...a: unknown[]) => readerCollectionContext(...a),
 }));
 
 // T-9.1: the loader pulls audio for the active text + chapter.
@@ -160,6 +161,9 @@ beforeEach(() => {
   getTextProgress.mockResolvedValue(null);
   // No persisted reader settings unless a test stages a row.
   userLanguagesRow = null;
+  // Default to "text belongs to no collection".
+  readerCollectionContext.mockReset();
+  readerCollectionContext.mockResolvedValue(null);
 });
 
 afterEach(() => {
@@ -505,6 +509,36 @@ describe('/reader/[textId] loader', () => {
     // Loader is called once with the active chapter id + viewer id.
     expect(loadChapterPhraseSpans).toHaveBeenCalledTimes(1);
     expect(loadChapterPhraseSpans).toHaveBeenCalledWith('c0', USER.id);
+  });
+
+  it('surfaces the collection chapter list for the chapter-selector TOC', async () => {
+    getReadableText.mockResolvedValueOnce(ownedTextWithChapters(1));
+    readerCollectionContext.mockResolvedValueOnce({
+      collection: { id: 'col-1', title: 'Big Book', kind: 'chapter_book' },
+      position: 1,
+      totalCount: 3,
+      prevTextId: 'prev-text',
+      nextTextId: 'next-text',
+      chapters: [
+        { textId: 'prev-text', position: 0, title: 'One', tokenCount: 100 },
+        { textId: VALID_ID, position: 1, title: 'Two', tokenCount: 200 },
+        { textId: 'next-text', position: 2, title: 'Three', tokenCount: 300 },
+      ],
+    });
+    const data = (await callLoad(`http://x/reader/${VALID_ID}`)) as {
+      collectionContext: {
+        chapters: Array<{ textId: string; title: string; tokenCount: number }>;
+      } | null;
+    };
+    expect(data.collectionContext?.chapters).toHaveLength(3);
+    expect(data.collectionContext?.chapters[1]).toEqual({
+      textId: VALID_ID,
+      position: 1,
+      title: 'Two',
+      tokenCount: 200,
+    });
+    // The TOC list must not blow the mobile SSR payload budget.
+    expect(jsonPayloadBytes(data)).toBeLessThan(MOBILE_RESPONSE_BUDGET_BYTES);
   });
 
   it('skips phraseSpans loading when the chapter has no tokens (T-14.3)', async () => {

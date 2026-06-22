@@ -782,12 +782,27 @@ export async function viewerHasCollectionShareForText(
  * a text that's a member of multiple collections still gives a
  * predictable nav strip.
  */
+/** One chapter (member text) of a collection, shaped for the reader's
+ *  chapter-selector TOC + whole-book progress. Each member of a
+ *  chapter-book is a single-chapter `texts` row, so `tokenCount` is the
+ *  sum of that text's chapter token counts (one chapter in practice). */
+export type ReaderCollectionChapter = {
+  textId: string;
+  position: number;
+  title: string;
+  tokenCount: number;
+};
+
 export type ReaderCollectionContext = {
   collection: Collection;
   position: number;
   prevTextId: string | null;
   nextTextId: string | null;
   totalCount: number;
+  /** Every sibling in display order — drives the reader's chapter TOC
+   *  dropdown and the whole-book progress math. Cheap to ship inline:
+   *  one small row per chapter (id + title + count). */
+  chapters: ReaderCollectionChapter[];
 };
 
 export async function readerCollectionContext(
@@ -808,17 +823,46 @@ export async function readerCollectionContext(
     .limit(1)) as Array<{ collection: Collection; position: number }>;
   if (!hit) return null;
 
+  // Pull every sibling with its title + summed token count in one
+  // grouped query — same COUNT/groupBy idiom as listCollectionsForUser.
+  // leftJoin on text_chapters so a member whose chapter rows haven't
+  // landed yet still appears (tokenCount 0) rather than dropping out.
   const siblings = (await db
     .select({
       textId: schema.collectionItems.textId,
       position: schema.collectionItems.position,
+      title: schema.texts.title,
+      tokenCount: sql<number>`COALESCE(SUM(${schema.textChapters.tokenCount}), 0)::int`,
     })
     .from(schema.collectionItems)
+    .innerJoin(
+      schema.texts,
+      eq(schema.texts.id, schema.collectionItems.textId),
+    )
+    .leftJoin(
+      schema.textChapters,
+      eq(schema.textChapters.textId, schema.collectionItems.textId),
+    )
     .where(eq(schema.collectionItems.collectionId, hit.collection.id))
+    .groupBy(
+      schema.collectionItems.textId,
+      schema.collectionItems.position,
+      schema.texts.title,
+    )
     .orderBy(asc(schema.collectionItems.position))) as Array<{
     textId: string;
     position: number;
+    title: string | null;
+    tokenCount: number;
   }>;
+  const chapters: ReaderCollectionChapter[] = siblings.map((s) => ({
+    textId: s.textId,
+    position: s.position,
+    // Empty / whitespace titles fall back to 'Untitled', matching the
+    // chapter-book creation default.
+    title: s.title?.trim() || 'Untitled',
+    tokenCount: Math.max(0, s.tokenCount ?? 0),
+  }));
   const totalCount = siblings.length;
   const idx = siblings.findIndex((s) => s.position === hit.position);
   return {
@@ -830,5 +874,6 @@ export async function readerCollectionContext(
         ? (siblings[idx + 1]?.textId ?? null)
         : null,
     totalCount,
+    chapters,
   };
 }

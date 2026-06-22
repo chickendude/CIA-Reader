@@ -4,6 +4,7 @@
 
   import AlignmentHighlighter from '$lib/components/reader/AlignmentHighlighter.svelte';
   import AudioPlayer from '$lib/components/reader/AudioPlayer.svelte';
+  import ChapterNav from '$lib/components/reader/ChapterNav.svelte';
   import ReaderContinuous from '$lib/components/reader/ReaderContinuous.svelte';
   import ReaderPage from '$lib/components/reader/ReaderPage.svelte';
   import ReaderScroll from '$lib/components/reader/ReaderScroll.svelte';
@@ -11,6 +12,7 @@
   import { ProgressWriter, type ProgressAnchor } from '$lib/components/reader/progress-client.js';
   import { computePctRead } from '$lib/components/reader/reader-progress.js';
   import { buildReaderAnchorUrl } from '$lib/components/reader/url-anchor.js';
+  import { buildReaderToc } from '$lib/components/reader/reader-toc.js';
   import {
     isImmersiveAttributeSet,
     setImmersiveAttribute,
@@ -160,6 +162,29 @@
     setFlagUndefinedAttribute(data.isAdmin && flagUndefined);
     return () => setFlagUndefinedAttribute(false);
   });
+
+  // Chapter table-of-contents model — drives the shared chapter
+  // selector dropdown + the page footer's whole-book progress. Handles
+  // both layouts uniformly: multi-chapter texts (jump via ?chapter=N)
+  // and chapter-books (each chapter is its own text, jump via textId).
+  const toc = $derived(
+    buildReaderToc({
+      textId: data.text.id,
+      mode: data.mode,
+      chapters: data.chapters.map((c) => ({
+        idx: c.idx,
+        title: c.title,
+        tokenCount: c.tokenCount,
+      })),
+      currentChapterIdx: data.anchor.chapterIdx,
+      collection: data.collectionContext
+        ? {
+            chapters: data.collectionContext.chapters,
+            position: data.collectionContext.position,
+          }
+        : null,
+    }),
+  );
 
   function shouldPoll(s: typeof data.text.status): boolean {
     return s === 'pending' || s === 'processing';
@@ -377,59 +402,53 @@
 
 <div class="reader" data-mode={data.mode} style={readerStyle}>
   <header class="reader-top" bind:this={readerTopEl}>
-    <a class="reader-close" href="/library" aria-label="Close reader" title="Close reader">
-      <svg
-        viewBox="0 0 24 24"
-        width="14"
-        height="14"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="1.8"
-        stroke-linecap="round"
-        aria-hidden="true"
-      >
-        <path d="M6 6l12 12" />
-        <path d="M18 6L6 18" />
-      </svg>
-    </a>
-    <div class="reader-meta">
+    <div class="reader-top-left">
+      <a class="reader-close" href="/library" aria-label="Close reader" title="Close reader">
+        <svg
+          viewBox="0 0 24 24"
+          width="14"
+          height="14"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.8"
+          stroke-linecap="round"
+          aria-hidden="true"
+        >
+          <path d="M6 6l12 12" />
+          <path d="M18 6L6 18" />
+        </svg>
+      </a>
       {#if data.collectionContext}
-        <p class="reader-coll-strip">
-          <span class="reader-coll-nav">
-            {#if data.collectionContext.prevTextId}
-              <a
-                href={`/reader/${data.collectionContext.prevTextId}`}
-                class="reader-coll-arrow"
-                title="Previous text"
-                aria-label="Previous text in collection">‹ prev</a
-              >
-            {/if}
-            {#if data.collectionContext.nextTextId}
-              {#if data.collectionContext.nextLocked}
-                <a
-                  href={`/reader/${data.collectionContext.nextTextId}?skipLock=1`}
-                  class="reader-coll-arrow reader-coll-locked"
-                  title="Course gate — finish this text or click to skip"
-                  aria-label="Next text (locked — finish to advance, or click to skip)">next 🔒</a
-                >
-              {:else}
-                <a
-                  href={`/reader/${data.collectionContext.nextTextId}`}
-                  class="reader-coll-arrow"
-                  title="Next text"
-                  aria-label="Next text in collection">next ›</a
-                >
-              {/if}
-            {/if}
-          </span>
-        </p>
+        <a
+          class="reader-book"
+          href={`/collections/${data.collectionContext.collectionId}`}
+          title={data.collectionContext.collectionTitle}
+        >
+          {data.collectionContext.collectionTitle}
+        </a>
+      {:else}
+        <span class="reader-book reader-book-static" title={data.text.title}>
+          {data.text.title}
+        </span>
       {/if}
-      <h1 class="t">{data.text.title}</h1>
-      <p class="a">
-        <span class="badge">{data.text.language}</span>
-        <span class="badge status-{liveStatus}">{statusLabel}</span>
-        <span class="badge">{data.text.visibility}</span>
-      </p>
+    </div>
+
+    <div class="reader-top-center">
+      {#if toc.entries.length > 1}
+        <ChapterNav
+          entries={toc.entries}
+          currentIndex={toc.currentIndex}
+          nextLocked={data.collectionContext?.nextLocked ?? false}
+        />
+      {/if}
+      {#if liveStatus !== 'ready'}
+        <span
+          class="reader-status reader-status-{liveStatus}"
+          role={liveStatus === 'failed' ? 'alert' : 'status'}
+        >
+          {statusLabel}
+        </span>
+      {/if}
     </div>
 
     <div class="reader-tools">
@@ -535,6 +554,8 @@
       nextTextId={data.collectionContext?.nextTextId ?? null}
       collectionPosition={data.collectionContext?.position ?? null}
       collectionTotal={data.collectionContext?.totalCount ?? null}
+      bookWordsBefore={toc.bookWordsBefore}
+      bookWordsTotal={toc.bookWordsTotal}
       startAtEndOfChapter={data.anchor.endOfChapter ?? false}
     />
   {:else if data.mode === 'paged_scroll'}
@@ -658,79 +679,52 @@
     background: color-mix(in oklch, var(--ink, var(--color-fg)) 6%, transparent);
     border-color: var(--rule, var(--color-border));
   }
-  .reader-meta {
+  .reader-top-left {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
     min-width: 0;
   }
-  .reader-coll-strip {
-    margin: 0 0 0.25rem;
-    display: flex;
-    align-items: baseline;
-    gap: 0.55rem;
-    font-size: 0.7rem;
-    color: var(--ink-3, var(--color-fg-muted));
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    flex-wrap: wrap;
-  }
-  .reader-coll-nav {
-    display: flex;
-    gap: 0.5rem;
-    margin-left: auto;
-  }
-  .reader-coll-arrow {
-    color: var(--accent, var(--color-accent));
-    text-decoration: none;
-    font-weight: 500;
-  }
-  .reader-coll-arrow:hover {
-    text-decoration: underline;
-  }
-  .reader-coll-locked {
-    color: var(--ink-3, var(--color-fg-muted));
-    opacity: 0.7;
-  }
-  .reader-meta .t {
-    margin: 0;
+  /* Book / collection title on the left — links to the collection page
+     when this text is a chapter of one, otherwise a plain label. */
+  .reader-book {
     font-family: var(--font-serif-dev, var(--font-serif));
-    font-size: 1.125rem;
+    font-size: 0.95rem;
     font-weight: 500;
-    color: var(--ink, var(--color-fg));
+    color: var(--ink-2, var(--color-fg));
+    text-decoration: none;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    max-width: min(40vw, 18rem);
   }
-  .reader-meta .a {
-    margin: 0.15rem 0 0;
+  a.reader-book:hover {
+    color: var(--ink, var(--color-fg));
+    text-decoration: underline;
+  }
+  .reader-book-static {
+    color: var(--ink, var(--color-fg));
+  }
+  .reader-top-center {
     display: flex;
-    flex-wrap: wrap;
-    gap: 0.3rem;
+    align-items: center;
+    justify-content: center;
+    gap: 0.6rem;
+    min-width: 0;
+  }
+  /* Processing / failed shown as plain inline text (no pill). */
+  .reader-status {
     font-family: var(--font-sans, var(--font-ui));
-    font-size: 0.78rem;
+    font-size: 0.72rem;
+    white-space: nowrap;
     color: var(--ink-3, var(--color-fg-muted));
   }
-  .badge {
-    display: inline-flex;
-    align-items: center;
-    height: 22px;
-    padding: 0 0.6rem;
-    border-radius: 999px;
-    background: color-mix(in oklch, var(--ink, var(--color-fg)) 6%, transparent);
-    color: var(--ink-2, var(--color-fg-muted));
-    font-size: 0.7rem;
-    letter-spacing: 0.01em;
-  }
-  .status-ready {
-    background: var(--green-soft, color-mix(in srgb, #197a2f 12%, transparent));
-    color: var(--green, #197a2f);
-  }
-  .status-failed {
-    background: var(--rose-soft, color-mix(in srgb, #b03131 12%, transparent));
-    color: var(--rose, #b03131);
-  }
-  .status-processing,
-  .status-pending {
-    background: var(--accent-soft, color-mix(in srgb, #b07a31 12%, transparent));
+  .reader-status-processing,
+  .reader-status-pending {
     color: var(--accent-ink, #b07a31);
+  }
+  .reader-status-failed {
+    color: var(--rose, #b03131);
   }
   .reader-tools {
     display: flex;

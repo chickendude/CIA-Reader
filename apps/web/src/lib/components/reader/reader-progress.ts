@@ -241,6 +241,56 @@ export function computePctRead(
   return Math.max(0, Math.min(100, ((before + inChapter) / total) * 100));
 }
 
+/**
+ * Whole-book progress fractions for the page reader's footer
+ * (DISPLAY ONLY — the value persisted to the server stays per-loaded-
+ * text; see `ReaderPage.reportProgress`).
+ *
+ * The page reader knows, from its per-measure DOM column index, how
+ * many word spans sit before / through the current page within *this*
+ * chapter. To turn that into a fraction of the whole book we:
+ *   - scale the DOM word counts to the chapter's canonical tokenCount
+ *     (`ratio = currentChapterWords / domTotal`) so a chapter that
+ *     happens to render into many columns still contributes exactly
+ *     its tokenCount;
+ *   - add `wordsBeforeChapter` (earlier chapters of the *loaded text*)
+ *     and `bookWordsBefore` (earlier chapters of the *book* that live
+ *     in sibling texts — the chapter-book case, where each chapter is
+ *     its own one-chapter `texts` row);
+ *   - divide by the whole-book total, falling back to the loaded
+ *     text's own total when no book totals are supplied (the in-text
+ *     multi-chapter case → identical to the previous behavior).
+ *
+ * Crucially this does NOT take a `completed` flag: a chapter-book's
+ * single loaded chapter reports "completed" at its last page, so
+ * honoring that here would snap the bar to 100% at the end of every
+ * chapter. Letting the cumulative math run reaches 100% only on the
+ * final chapter's final page.
+ */
+export function bookProgressPct(args: {
+  wordsBeforeChapter: number;
+  currentChapterWords: number;
+  domBeforePage: number;
+  domThroughPage: number;
+  domTotal: number;
+  /** Words in the whole book before the loaded text's first chapter.
+   *  0 for an ordinary in-text multi-chapter text. */
+  bookWordsBefore: number;
+  /** Whole-book word total. <= 0 falls back to `chaptersTotal`. */
+  bookWordsTotal: number;
+  /** Sum of tokenCounts across the loaded text's own chapters. */
+  chaptersTotal: number;
+}): { startPct: number; endPct: number } {
+  const denom = args.bookWordsTotal > 0 ? args.bookWordsTotal : args.chaptersTotal;
+  if (denom <= 0) return { startPct: 0, endPct: 0 };
+  const ratio = args.domTotal > 0 ? args.currentChapterWords / args.domTotal : 0;
+  const base = Math.max(0, args.bookWordsBefore) + Math.max(0, args.wordsBeforeChapter);
+  const startWords = base + Math.max(0, args.domBeforePage) * ratio;
+  const endWords = base + Math.max(0, args.domThroughPage) * ratio;
+  const clamp = (w: number) => Math.max(0, Math.min(100, (w / denom) * 100));
+  return { startPct: clamp(startWords), endPct: clamp(endWords) };
+}
+
 // Choose decimal precision for the progress display so flipping one
 // page advances the number by ~1 unit. With ~200 words/page typical:
 // short texts (< 5k tokens) get clean integers, mid-length (5k–50k)

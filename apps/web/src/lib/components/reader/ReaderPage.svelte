@@ -23,6 +23,7 @@
   import type { ProgressAnchor } from './progress-client.js';
   import {
     WORD_SELECTOR,
+    bookProgressPct,
     buildPageWordIndex,
     columnIndexForElement,
     computePctRead,
@@ -54,6 +55,8 @@
     nextTextId = null,
     collectionPosition = null,
     collectionTotal = null,
+    bookWordsBefore = 0,
+    bookWordsTotal = 0,
     startAtEndOfChapter = false,
   }: {
     chapters: ChapterView[];
@@ -88,6 +91,16 @@
      *  uninformative "Ch. 1 / 1" you'd see on a one-chapter text. */
     collectionPosition?: number | null;
     collectionTotal?: number | null;
+    /** Whole-book word totals for the footer's book-level percentage.
+     *  `bookWordsBefore` = words in the book before this loaded text's
+     *  first chapter; `bookWordsTotal` = the whole book. Both default
+     *  to 0, which makes the footer fall back to summing this text's
+     *  own chapters — i.e. unchanged for ordinary multi-chapter texts.
+     *  Non-zero only for chapter-books (each chapter is its own text),
+     *  where they make the bar span the whole book instead of one
+     *  chapter. Display-only: persisted progress stays per-text. */
+    bookWordsBefore?: number;
+    bookWordsTotal?: number;
   } = $props();
 
   const current = $derived(chapters[Math.max(0, Math.min(chapterIdx, chapters.length - 1))]);
@@ -193,7 +206,11 @@
   let endPct = $state(0);
 
   const totalTokens = $derived(chapters.reduce((sum, c) => sum + Math.max(0, c.tokenCount), 0));
-  const pctPrecision = $derived(pctPrecisionFor(totalTokens));
+  // Precision tracks the BOOK total so a small loaded chapter inside a
+  // long book doesn't snap the percentage to 0-decimal "stuck" steps.
+  const pctPrecision = $derived(
+    pctPrecisionFor(bookWordsTotal > 0 ? bookWordsTotal : totalTokens),
+  );
 
   // Per-measure cache of word→column mapping. `findFirstWordInColumn`
   // forces a layout flush per token; building once per measure and
@@ -473,26 +490,44 @@
       if (entry.columnIndex < pageInChapter) domBeforePage += 1;
       if (entry.columnIndex <= pageInChapter) domThroughPage += 1;
     }
+    // DISPLAY value — whole-book fractions. For an ordinary
+    // multi-chapter text bookWords* are 0, so this collapses to the
+    // loaded text's own total (unchanged). For a chapter-book it spans
+    // every sibling chapter, so the bar climbs across the whole book
+    // and reaches 100% only on the final chapter — which is why the
+    // display can't honor `boundary.completed` (a chapter-book's single
+    // loaded chapter reports "completed" at the end of *every* chapter).
+    const display = bookProgressPct({
+      wordsBeforeChapter,
+      currentChapterWords,
+      domBeforePage,
+      domThroughPage,
+      domTotal,
+      bookWordsBefore,
+      bookWordsTotal,
+      chaptersTotal: totalWordsInText,
+    });
+    startPct = display.startPct;
+    endPct = display.endPct;
+    if (!onProgress) return;
+    // PERSIST value — per-loaded-text pctRead, keeping the
+    // `completed → 100` guarantee that T-8.6 course gating + the
+    // library cards depend on. Deliberately NOT the whole-book display
+    // value above: persistence stays per-text so each chapter of a
+    // chapter-book still reaches 100% on its own.
     const ratio = domTotal > 0 ? currentChapterWords / domTotal : 0;
-    const startWords = wordsBeforeChapter + domBeforePage * ratio;
-    const endWords = wordsBeforeChapter + domThroughPage * ratio;
-
-    const startPctNext =
-      totalWordsInText > 0 ? (startWords / totalWordsInText) * 100 : 0;
-    const endPctNext = boundary.completed
+    const endWordsInText = wordsBeforeChapter + domThroughPage * ratio;
+    const endPctPersist = boundary.completed
       ? 100
       : totalWordsInText > 0
-        ? (endWords / totalWordsInText) * 100
+        ? (endWordsInText / totalWordsInText) * 100
         : 0;
-    startPct = startPctNext;
-    endPct = endPctNext;
-    if (!onProgress) return;
     // Resume position is the first word on this page; pctRead reports
     // how far the user has READ — i.e. the end-of-page boundary —
     // so the library card matches the reader footer.
     const next: ProgressAnchor = {
       ...anchor,
-      pctRead: endPctNext,
+      pctRead: endPctPersist,
     };
     const key = `${next.chapterIdx}:${next.tokenIdx}:${next.pctRead}`;
     if (key === lastReportedKey) return;
@@ -641,22 +676,17 @@
   </button>
 </div>
 
-<footer class="reader-foot" aria-label="Chapter progress">
+<footer class="reader-foot" aria-label="Reading progress">
   <div class="reader-foot-meta">
-    <span class="pager-pages">
-      Page {pageInChapter + 1} of {pageCount}
-      <span class="muted">
-        · Ch. {counterCurrent} / {counterTotal} · {(current?.tokenCount ?? 0).toLocaleString()} words
-      </span>
+    <span class="pager-pages">Page {pageInChapter + 1} of {pageCount}</span>
+    <span class="pager-pct" aria-label="Progress through the book">
+      {formatPctRange(startPct, endPct, pctPrecision)}
     </span>
-    <span class="muted">{formatPctRange(startPct, endPct, pctPrecision)}</span>
+    <span class="pager-chapter">Ch. {counterCurrent} / {counterTotal}</span>
   </div>
   <div class="reader-foot-bar">
-    <i class="read" style="width: {startPct}%"></i>
-    <i
-      class="current"
-      style="left: {startPct}%; width: {Math.max(0, endPct - startPct)}%"
-    ></i>
+    <i class="read" style="width: {endPct}%"></i>
+    <i class="dot" style="left: {endPct}%"></i>
   </div>
 </footer>
 
@@ -860,49 +890,68 @@
       padding: 0.75rem 1.75rem 0.9rem;
     }
   }
+  /* Three columns: page (left) · whole-book progress (center) ·
+     chapter counter (right). Grid (not space-between) so the center
+     stays optically centered regardless of the side labels' widths. */
   .reader-foot-meta {
-    display: flex;
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
     align-items: baseline;
-    justify-content: space-between;
     font-size: 0.72rem;
     color: var(--ink-3, var(--color-fg-muted));
-    margin-bottom: 0.4rem;
+    margin-bottom: 0.5rem;
   }
   .pager-pages {
+    justify-self: start;
     font-family: var(--font-mono-display, var(--font-mono));
     font-feature-settings: 'tnum';
     letter-spacing: 0.04em;
     color: var(--ink-2, var(--color-fg));
   }
-  .muted {
+  /* Current page's whole-book progress range (e.g. 0.0–0.3%). */
+  .pager-pct {
+    justify-self: center;
+    font-family: var(--font-mono-display, var(--font-mono));
+    font-feature-settings: 'tnum';
+    letter-spacing: 0.04em;
+    color: var(--ink-2, var(--color-fg));
+  }
+  .pager-chapter {
+    justify-self: end;
+    font-family: var(--font-mono-display, var(--font-mono));
+    font-feature-settings: 'tnum';
+    letter-spacing: 0.04em;
     color: var(--ink-3, var(--color-fg-muted));
   }
+  /* Thin full-width track: a muted-accent fill up to the read position
+     and a solid accent dot marking "you are here". */
   .reader-foot-bar {
-    height: 3px;
+    height: 4px;
     background: color-mix(in oklch, var(--ink, var(--color-fg)) 8%, transparent);
     border-radius: 2px;
     position: relative;
-    overflow: hidden;
   }
-  .reader-foot-bar > i {
+  .reader-foot-bar > i.read {
     position: absolute;
+    left: 0;
     top: 0;
     bottom: 0;
     border-radius: 2px;
-    transition:
-      width 250ms ease,
-      left 250ms ease;
+    background: color-mix(in oklch, var(--accent, var(--color-accent)) 40%, transparent);
+    transition: width 250ms ease;
   }
-  /* Words read before the current page — muted accent so the eye
-     reads it as "behind me" rather than "active". */
-  .reader-foot-bar > i.read {
-    left: 0;
-    background: color-mix(in oklch, var(--accent, var(--color-accent)) 45%, transparent);
-  }
-  /* Words on the current page — full-strength accent so the active
-     range stands out as the "you are here" segment. */
-  .reader-foot-bar > i.current {
+  .reader-foot-bar > i.dot {
+    position: absolute;
+    top: 50%;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
     background: var(--accent, var(--color-accent));
+    transform: translate(-50%, -50%);
+    /* Paper-colored halo so the dot reads against both the filled and
+       empty parts of the track. */
+    box-shadow: 0 0 0 2px var(--paper, var(--color-bg));
+    transition: left 250ms ease;
   }
 
   /* Respect reduced-motion: skip the page-flip slide. */

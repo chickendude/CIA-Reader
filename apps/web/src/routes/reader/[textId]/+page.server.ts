@@ -257,6 +257,10 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
           totalCount: collectionContext.totalCount,
           prevTextId: collectionContext.prevTextId,
           nextTextId: collectionContext.nextTextId,
+          // Full sibling list for the reader's chapter-selector TOC +
+          // whole-book progress (T-5.x reader chrome). One small row
+          // per chapter — cheap to ship inline.
+          chapters: collectionContext.chapters,
           // T-8.6: course-kind gate. UI flips the next link to a
           // disabled state with a tooltip; ?skipLock=1 overrides.
           nextLocked,
