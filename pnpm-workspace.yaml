@@ -1,3 +1,5 @@
 packages:
   - "apps/*"
   - "packages/*"
+  # apps/android is a Gradle (Kotlin) project, not a pnpm/node package.
+  - "!apps/android"
