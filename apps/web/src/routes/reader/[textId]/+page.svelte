@@ -27,7 +27,7 @@
     READING_WIDTH_REM,
     type ReaderSettings as ReaderSettingsT,
   } from '$lib/components/reader/reader-settings.js';
-  import type { LanguageCode } from '@ciareader/shared-types';
+  import { LANGUAGES, type LanguageCode } from '@ciareader/shared-types';
   import type { PageData } from './$types';
 
   let { data }: { data: PageData } = $props();
@@ -55,6 +55,13 @@
   $effect(() => {
     showRomanization = data.showRomanization;
   });
+  // Romanization only applies to non-Latin scripts. Basque (Latin) has
+  // no romanization layer, so the registry lists no schemes — hide the
+  // toggle entirely there, mirroring how ReaderSettings hides the
+  // scheme picker.
+  const canRomanize = $derived(
+    (LANGUAGES[data.text.language as LanguageCode]?.supportedRomanizations.length ?? 0) > 0,
+  );
 
   // T-5.1b: live reader settings. Seeded from the server-loaded
   // user_languages row; the popover updates this state on every
@@ -452,16 +459,18 @@
     </div>
 
     <div class="reader-tools">
-      <button
-        type="button"
-        class="roman-toggle"
-        data-active={showRomanization ? '1' : '0'}
-        onclick={toggleRomanization}
-        aria-pressed={showRomanization}
-        title="Toggle romanization"
-      >
-        Aa
-      </button>
+      {#if canRomanize}
+        <button
+          type="button"
+          class="roman-toggle"
+          data-active={showRomanization ? '1' : '0'}
+          onclick={toggleRomanization}
+          aria-pressed={showRomanization}
+          title="Toggle romanization"
+        >
+          Aa
+        </button>
+      {/if}
 
       {#if data.isAdmin || (data.isOwner && liveStatus === 'failed')}
         <!-- T-11.3: owners get a Retry button when their own text
@@ -644,7 +653,11 @@
   .reader-top {
     position: sticky;
     top: 0;
-    z-index: 5;
+    /* Above the body's page-flip arrows (z-index 8) so the chapter TOC
+       dropdown — which lives in this sticky header's stacking context —
+       overlays them. Stays below the overlay sheets (z-index 40) so a
+       mobile word/settings sheet still covers the header. */
+    z-index: 10;
     display: grid;
     grid-template-columns: 1fr;
     gap: 0.5rem 1rem;
@@ -657,6 +670,21 @@
       grid-template-columns: auto 1fr auto;
       align-items: center;
       padding: 1rem 1.75rem;
+    }
+  }
+  /* The side panel anchors BELOW the header (top: --reader-top-h), so
+     the header spans the full width. Cancel the reader's side-panel
+     padding here so the right-aligned tools reach the true right edge
+     instead of stopping at the panel's left boundary. */
+  @media (min-width: 960px) {
+    .reader-top {
+      margin-right: -380px;
+      /* Desktop shows the word panel as a static column (z-index 40).
+         Lift the header above it so the chapter TOC dropdown clears the
+         panel on narrower desktop widths where it would otherwise be
+         occluded. The panel is non-dimmed here, so the header sitting
+         above it is fine. */
+      z-index: 41;
     }
   }
   /* T-5.27: small × close button replacing the "← Library" crumb. */
@@ -729,8 +757,26 @@
   .reader-tools {
     display: flex;
     align-items: center;
+    justify-content: flex-end;
     gap: 0.5rem;
     flex-wrap: wrap;
+  }
+  /* Settings gear is a plain icon button — no border, no fill, just the
+     same muted ink as the other tools, with a subtle hover. */
+  .settings-toggle {
+    width: 32px;
+    height: 32px;
+    display: grid;
+    place-items: center;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--ink-2, var(--color-fg-muted));
+    cursor: pointer;
+  }
+  .settings-toggle:hover {
+    background: color-mix(in oklch, var(--ink, var(--color-fg)) 6%, transparent);
+    color: var(--ink, var(--color-fg));
   }
   .roman-toggle {
     width: 32px;
