@@ -101,10 +101,14 @@ COPY --from=builder /srv/build/apps/web/svelte.config.js apps/web/svelte.config.
 # package present on the resolution path.
 COPY --from=builder /srv/build/packages/shared-types packages/shared-types
 
-# Run as non-root.
+# Run as non-root. Pre-create the storage mount points (audio + PDF page
+# images) owned by `app` so their named volumes inherit that ownership on
+# first creation — otherwise Docker makes the volume root-owned and the
+# non-root app can't write (EACCES on first upload).
 RUN groupadd --system --gid 10001 app && \
     useradd  --system --uid 10001 --gid app --home-dir /srv/app --shell /sbin/nologin app && \
-    chown -R app:app /srv/app
+    mkdir -p /srv/audio /srv/pdf && \
+    chown -R app:app /srv/app /srv/audio /srv/pdf
 USER app
 
 EXPOSE 5173
