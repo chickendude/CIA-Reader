@@ -36,6 +36,8 @@ data class ReaderUiState(
     val pageMode: Boolean = false,
     val prevTextId: String? = null,
     val nextTextId: String? = null,
+    val prevTitle: String? = null,
+    val nextTitle: String? = null,
     val fontSize: Int = SettingsStore.DEFAULT_FONT_SIZE_SP,
     val lineSpacing: Float = SettingsStore.DEFAULT_LINE_SPACING,
     val errorMessage: String? = null,
@@ -225,10 +227,14 @@ class ReaderViewModel @Inject constructor(
                 val chapters = detail.data.chapters
                 val idx = chapters.indexOfFirst { it.textId == textId }
                 if (idx >= 0) {
+                    val prev = chapters.getOrNull(idx - 1)
+                    val next = chapters.getOrNull(idx + 1)
                     _state.update {
                         it.copy(
-                            prevTextId = chapters.getOrNull(idx - 1)?.textId,
-                            nextTextId = chapters.getOrNull(idx + 1)?.textId,
+                            prevTextId = prev?.textId,
+                            nextTextId = next?.textId,
+                            prevTitle = prev?.title,
+                            nextTitle = next?.title,
                         )
                     }
                 }

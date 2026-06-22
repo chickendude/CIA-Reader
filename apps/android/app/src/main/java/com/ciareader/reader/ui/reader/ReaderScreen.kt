@@ -176,6 +176,12 @@ internal fun ReaderScreenContent(
                         rtl = state.isRtl,
                         fontSize = state.fontSize,
                         lineSpacing = state.lineSpacing,
+                        canGoPrev = state.canGoPrev,
+                        canGoNext = state.canGoNext,
+                        prevTitle = state.prevTitle,
+                        nextTitle = state.nextTitle,
+                        onPrev = onPrevChapter,
+                        onNext = onNextChapter,
                         onWordTap = onWordTap,
                         modifier = Modifier.fillMaxSize(),
                     )
@@ -322,6 +328,12 @@ private fun PagedChapter(
     rtl: Boolean,
     fontSize: Int,
     lineSpacing: Float,
+    canGoPrev: Boolean,
+    canGoNext: Boolean,
+    prevTitle: String?,
+    nextTitle: String?,
+    onPrev: () -> Unit,
+    onNext: () -> Unit,
     onWordTap: (ReaderToken) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -377,23 +389,66 @@ private fun PagedChapter(
                 )
             }
         }
-        val pagerState = rememberPagerState(pageCount = { pages.size })
-        // Reset to the first page when the chapter (or rendering) changes.
-        LaunchedEffect(annotated) { pagerState.scrollToPage(0) }
+        // Sentinel "splash" pages at each edge so swiping past the chapter's
+        // first/last page flips to the adjacent chapter.
+        val leading = if (canGoPrev) 1 else 0
+        val trailing = if (canGoNext) 1 else 0
+        val total = leading + pages.size + trailing
+        val pagerState = rememberPagerState(initialPage = leading, pageCount = { total })
+        // Reset to the first real page when the rendering changes (font/romanize).
+        LaunchedEffect(annotated) { pagerState.scrollToPage(leading) }
+        // Settling on an edge splash flips to that chapter.
+        LaunchedEffect(pagerState, total) {
+            snapshotFlow { pagerState.settledPage }.collect { settled ->
+                when {
+                    leading == 1 && settled == 0 -> onPrev()
+                    trailing == 1 && settled == total - 1 -> onNext()
+                }
+            }
+        }
 
         HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
-            val range = pages.getOrElse(page) { 0 until annotated.length }
-            val start = range.first.coerceIn(0, annotated.length)
-            val end = (range.last + 1).coerceIn(start, annotated.length)
-            PageText(
-                text = annotated.subSequence(start, end),
-                baseOffset = start,
-                style = style,
-                ranges = ranges,
-                tokens = tokens,
-                onWordTap = onWordTap,
-            )
+            when {
+                leading == 1 && page == 0 -> ChapterSplash("Previous chapter", prevTitle)
+                trailing == 1 && page == total - 1 -> ChapterSplash("Next chapter", nextTitle)
+                else -> {
+                    val range = pages.getOrElse(page - leading) { 0 until annotated.length }
+                    val start = range.first.coerceIn(0, annotated.length)
+                    val end = (range.last + 1).coerceIn(start, annotated.length)
+                    PageText(
+                        text = annotated.subSequence(start, end),
+                        baseOffset = start,
+                        style = style,
+                        ranges = ranges,
+                        tokens = tokens,
+                        onWordTap = onWordTap,
+                    )
+                }
+            }
         }
+    }
+}
+
+@Composable
+private fun ChapterSplash(label: String, title: String?) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(24.dp),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text(
+            label,
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        if (!title.isNullOrBlank()) {
+            Spacer(Modifier.height(8.dp))
+            Text(title, style = MaterialTheme.typography.headlineSmall, textAlign = TextAlign.Center)
+        }
+        Spacer(Modifier.height(20.dp))
+        CircularProgressIndicator()
     }
 }
 
