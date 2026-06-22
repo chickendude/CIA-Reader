@@ -40,6 +40,7 @@
     isOwner = false,
     isAdmin = false,
     textId,
+    pageImage = null,
   }: {
     chapter: ChapterView;
     /** T-6.2: drives the CorrectionModal's dictionary-search
@@ -50,6 +51,12 @@
     isAdmin?: boolean;
     /** Owning text id — drives the popup's book-wide frequency lookup. */
     textId: string;
+    /** PDF image reader: when set, render the page image with clickable
+     *  word hotspots (positioned by each token's bbox) instead of
+     *  reflowed text. All the popup / known-words machinery below is
+     *  reused — the hotspots carry `data-token-id` so `onChapterClick`
+     *  and the hover tooltip work unchanged. */
+    pageImage?: { url: string; width: number | null; height: number | null } | null;
   } = $props();
 
   // Text direction comes from the shared registry (rtl for Yiddish's
@@ -175,6 +182,18 @@
     if (!tokensWithOverrides) return new Map<string, ServerToken>();
     return new Map(tokensWithOverrides.map((t) => [t.id, t]));
   });
+
+  // PDF image reader: word tokens that carry a bounding box, rendered as
+  // absolutely-positioned hotspots over the page image.
+  const overlayTokens = $derived.by(() => {
+    if (!pageImage || !tokensWithOverrides) return [];
+    return tokensWithOverrides.filter((t) => t.isWord && t.bbox);
+  });
+  const pageAspect = $derived(
+    pageImage && pageImage.width && pageImage.height
+      ? `${pageImage.width} / ${pageImage.height}`
+      : null,
+  );
 
   // Click → side panel (locked until closed). Hover → tooltip
   // (transient). Click and hover are independent so the side panel
@@ -598,7 +617,31 @@
   ontouchend={onTouchEnd}
   ontouchcancel={onTouchEnd}
 >
-  {#if displayParagraphs}
+  {#if pageImage}
+    <!-- PDF image reader: the original page with transparent, clickable
+         word hotspots positioned by each token's normalized bbox. The
+         real page is always visible so OCR mistakes can be verified. -->
+    <div
+      class="page-overlay"
+      data-testid="page-overlay"
+      style={pageAspect ? `aspect-ratio: ${pageAspect}` : undefined}
+    >
+      <img class="page-img" src={pageImage.url} alt={`Page ${chapter.idx + 1}`} />
+      {#each overlayTokens as t (t.id)}
+        <span
+          class="ovl-hotspot"
+          class:anchor={activeToken?.id === t.id}
+          class:no-definition={t.hasDefinition === false}
+          data-token-id={t.id}
+          data-token-idx={t.idx}
+          data-lemma-id={t.lemmaId ?? undefined}
+          data-s={statusToCode(t.status)}
+          title={t.surface}
+          style={`left:${(t.bbox!.x * 100).toFixed(3)}%;top:${(t.bbox!.y * 100).toFixed(3)}%;width:${(t.bbox!.w * 100).toFixed(3)}%;height:${(t.bbox!.h * 100).toFixed(3)}%`}
+        ></span>
+      {/each}
+    </div>
+  {:else if displayParagraphs}
     {#each displayParagraphs as paragraph, pIdx (pIdx)}
       <p class="body">
         {#each paragraph as group, gIdx (gIdx)}{#if group.kind === 'plain'}{@render renderSegment(group.segment)}{:else}<phrase
@@ -636,6 +679,7 @@
   {isOwner}
   {isAdmin}
   {textId}
+  {pageImage}
   onClose={closePopup}
   onPhraseCreated={(phraseId: string) => {
     void onPhraseCreated(phraseId);
@@ -666,6 +710,58 @@
   }
   .word:hover {
     background: color-mix(in srgb, var(--color-accent) 12%, transparent);
+  }
+  /* PDF image reader (overlay). The page image fills a centered column;
+     transparent hotspots sit over each word so clicks open the same
+     WordPopup the text reader uses. */
+  .page-overlay {
+    position: relative;
+    width: 100%;
+    max-width: 100%;
+    margin: 0 auto;
+    line-height: 0;
+  }
+  .page-img {
+    display: block;
+    width: 100%;
+    height: auto;
+    user-select: none;
+  }
+  .ovl-hotspot {
+    position: absolute;
+    cursor: pointer;
+    border-radius: 2px;
+    /* A faint fill marks every recognized word as clickable without
+       drowning the page; status tints below layer on top. */
+    background: color-mix(in oklch, var(--accent, var(--color-accent)) 8%, transparent);
+    transition: background 80ms ease, box-shadow 80ms ease;
+  }
+  .ovl-hotspot:hover {
+    background: color-mix(in oklch, var(--accent, var(--color-accent)) 24%, transparent);
+  }
+  /* Known + ignored words drop the fill — the learner already has them. */
+  .ovl-hotspot[data-s='4'],
+  .ovl-hotspot[data-s='5'] {
+    background: transparent;
+  }
+  .ovl-hotspot[data-s='4']:hover,
+  .ovl-hotspot[data-s='5']:hover {
+    background: color-mix(in oklch, var(--accent, var(--color-accent)) 14%, transparent);
+  }
+  /* Learning words get the saffron study tint, mirroring tokens.css. */
+  .ovl-hotspot[data-s='2'] {
+    background: color-mix(in oklch, var(--w-l2-bg, #f4c95d) 45%, transparent);
+  }
+  /* Selected word: a clear accent ring (meets the 3:1 non-text UI
+     contrast guidance over the page image). */
+  .ovl-hotspot.anchor {
+    box-shadow: 0 0 0 2px var(--accent, var(--color-accent));
+    background: color-mix(in oklch, var(--accent, var(--color-accent)) 18%, transparent);
+  }
+  /* Admin "flag undefined words" overlay — dashed magenta box, matching
+     the text reader's no-definition affordance. */
+  :global(html[data-flag-undefined]) .ovl-hotspot.no-definition {
+    box-shadow: 0 0 0 1px var(--magenta, #c026d3);
   }
   /* T-14.3 / T-14.3b: phrase wrappers are an unknown element so we
      have to opt them into inline display explicitly. The visible

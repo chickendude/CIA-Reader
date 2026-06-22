@@ -1092,6 +1092,12 @@ export const textSourceType = pgEnum('text_source_type', [
   'txt',
   'epub',
   'zip',
+  // PDF upload (image reader). The browser rasterizes each page to an
+  // image client-side; the server stores only the page images and OCRs
+  // them. One `text_chapters` row per page carries the page image, and
+  // each `text_tokens` row carries a `bbox` so clicks on the image map
+  // to words. The source PDF is never uploaded.
+  'pdf',
 ]);
 
 export const textStatus = pgEnum('text_status', [
@@ -1268,6 +1274,14 @@ export const textChapters = pgTable(
     // Cheap precompute on insert. The reader's library cards and
     // progress bars need it; computing it on read is wasteful.
     tokenCount: integer('token_count').notNull().default(0),
+    // PDF source only: when a chapter represents a PDF page, these hold
+    // the stored page image (rasterized client-side, OCR'd server-side)
+    // so the reader can show the original page with clickable word
+    // overlays. Null for paste / txt / epub / zip chapters.
+    pageImageKey: text('page_image_key'),
+    pageImageMime: text('page_image_mime'),
+    pageWidth: integer('page_width'),
+    pageHeight: integer('page_height'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({
@@ -1399,6 +1413,18 @@ export const textTokens = pgTable(
       // form is the reading. Optional so chapters processed before
       // Basque number support keep type-checking.
       eu?: { spelled: string; romanized: string };
+    } | null>(),
+    /** PDF source only: the word's bounding box on the page image,
+     *  normalized to 0..1 of the page width/height (resolution-
+     *  independent so the reader overlay scales to whatever size the
+     *  image renders at). Drives the clickable word hotspots in the
+     *  image reader. Null for non-PDF tokens and for
+     *  whitespace/punctuation tokens that have no clickable box. */
+    bbox: jsonb('bbox').$type<{
+      x: number;
+      y: number;
+      w: number;
+      h: number;
     } | null>(),
   },
   (t) => ({

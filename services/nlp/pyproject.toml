@@ -22,6 +22,10 @@ dependencies = [
   # worker process imports RedisSettings at module load; keep it in
   # base deps so tests that import app.worker don't need [models].
   "arq>=0.26.0",
+  # Multipart form parsing for the /ocr endpoint (page-image upload).
+  # Pure-Python, tiny; FastAPI requires it for Form/File params and the
+  # tests post multipart bodies, so it stays in base deps.
+  "python-multipart>=0.0.9",
 ]
 
 [project.optional-dependencies]
@@ -45,6 +49,13 @@ models = [
   # underpin the Odia tokenizer (T-2.3a). Small, pure-Python dep.
   "indic-nlp-library>=0.92",
 ]
+# OCR for the PDF image reader. Vision is imported lazily in
+# app.ocr.vision, so the default test/CI lane (which exercises the
+# born-digital path + a fake Vision annotation) doesn't need it; the
+# Docker image installs [ocr] for the real scanned-page path.
+ocr = [
+  "google-cloud-vision>=3.7.0",
+]
 
 [build-system]
 requires = ["setuptools>=68"]
@@ -59,6 +70,12 @@ target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "N", "W"]
+
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI's dependency-injection markers are designed to be called in
+# argument defaults (Form/File/Depends). Whitelist them so B008 doesn't
+# fire on the /ocr multipart handler.
+extend-immutable-calls = ["fastapi.Form", "fastapi.File", "fastapi.Depends"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

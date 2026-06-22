@@ -142,6 +142,8 @@ const {
   MAX_EPUB_BYTES,
   MAX_ZIP_BYTES,
   MAX_TITLE_LEN,
+  createPdfText,
+  MAX_PDF_PAGES,
 } = await import('./upload.js');
 
 const JSZip = (await import('jszip')).default;
@@ -376,6 +378,73 @@ describe('createPastedText', () => {
         title: 'X',
         body: oversized,
       }),
+    ).rejects.toBeInstanceOf(TextValidationError);
+  });
+});
+
+// -----------------------------------------------------------------------
+// createPdfText (PDF image reader)
+// -----------------------------------------------------------------------
+
+describe('createPdfText', () => {
+  it('inserts a pdf text + N empty page chapters + nlp_jobs, no enqueue', async () => {
+    stage([textRow({ sourceType: 'pdf' })]);
+    stage([
+      chapterRow({ id: 'chap-0', idx: 0, body: '', tokenCount: 0 }),
+      chapterRow({ id: 'chap-1', idx: 1, body: '', tokenCount: 0 }),
+    ]);
+
+    const result = await createPdfText(OWNER, {
+      language: 'eu',
+      title: '  Scanned book  ',
+      pageCount: 2,
+    });
+    expect(result.text.id).toBe('text-1');
+    expect(result.chapters).toHaveLength(2);
+
+    const insertCalls = calls.filter(
+      (c): c is Extract<Call, { kind: 'insert' }> => c.kind === 'insert',
+    );
+    // texts + chapters + nlp_jobs (NOT enqueued via the dispatcher).
+    expect(insertCalls).toHaveLength(3);
+    expect(insertCalls[0]!.values).toMatchObject({
+      ownerId: OWNER.id,
+      language: 'eu',
+      title: 'Scanned book',
+      sourceType: 'pdf',
+      status: 'pending',
+      visibility: 'private',
+    });
+    const chapterValues = insertCalls[1]!.values as Array<Record<string, unknown>>;
+    expect(chapterValues).toHaveLength(2);
+    expect(chapterValues[0]).toMatchObject({ textId: 'text-1', idx: 0, body: '', tokenCount: 0 });
+    expect(chapterValues[1]).toMatchObject({ idx: 1, body: '' });
+    expect(insertCalls[2]!.values).toMatchObject({ textId: 'text-1', status: 'pending' });
+  });
+
+  it('rejects a non-positive page count', async () => {
+    await expect(
+      createPdfText(OWNER, { language: 'eu', title: 'X', pageCount: 0 }),
+    ).rejects.toBeInstanceOf(TextValidationError);
+    expect(calls).toHaveLength(0);
+  });
+
+  it('rejects a page count over the cap', async () => {
+    await expect(
+      createPdfText(OWNER, { language: 'eu', title: 'X', pageCount: MAX_PDF_PAGES + 1 }),
+    ).rejects.toBeInstanceOf(TextValidationError);
+  });
+
+  it('rejects an unsupported language', async () => {
+    await expect(
+      createPdfText(OWNER, { language: 'xx', title: 'X', pageCount: 1 }),
+    ).rejects.toBeInstanceOf(TextValidationError);
+    expect(calls).toHaveLength(0);
+  });
+
+  it('rejects an empty title', async () => {
+    await expect(
+      createPdfText(OWNER, { language: 'eu', title: '   ', pageCount: 1 }),
     ).rejects.toBeInstanceOf(TextValidationError);
   });
 });

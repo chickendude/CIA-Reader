@@ -94,6 +94,74 @@ export interface ProcessResponse {
   proposed_phrases?: ProposedPhrase[];
 }
 
+/** A word's bounding box on a PDF page image, normalized to 0..1 of the
+ *  page width/height (mirrors the Python `BBox`). Drives the clickable
+ *  word hotspots in the image reader. */
+export interface OcrBBox {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+/** A `NlpToken` plus its page-image bounding box. `bbox` is null for
+ *  whitespace/punctuation and for words the aligner couldn't place. */
+export interface OcrToken extends NlpToken {
+  bbox: OcrBBox | null;
+}
+
+export interface OcrResponse {
+  language: string;
+  pipeline_id: string;
+  /** Page image pixel dimensions (echoed from the upload). */
+  width: number;
+  height: number;
+  /** Reconstructed page text — stored as the chapter body. */
+  body: string;
+  tokens: OcrToken[];
+  proposed_phrases?: ProposedPhrase[];
+}
+
+/** One run from a PDF's embedded text layer, extracted client-side via
+ *  pdf.js. Coords are normalized 0..1, top-left origin. `eol` marks the
+ *  end of a visual line. */
+export interface BornDigitalItem {
+  str: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  eol?: boolean;
+}
+
+export interface BornDigitalPayload {
+  items: BornDigitalItem[];
+}
+
+/** A previously-captured OCR layout: the page text plus one box per
+ *  character (parallel to `text`; null for whitespace). Replaying it lets
+ *  the server re-tokenize a page with the current model WITHOUT calling
+ *  Vision again (free reprocess). */
+export interface OcrLayout {
+  text: string;
+  charBoxes: Array<[number, number, number, number] | null>;
+}
+
+export interface OcrOptions {
+  /** Rendered page-image pixel dimensions (the client knows these). */
+  width: number;
+  height: number;
+  /** Image mime; the served file's Content-Type is derived from it. */
+  mime?: string;
+  /** 'vision' (default) or 'vision_llm' (on-demand AI proofread). */
+  engine?: 'vision' | 'vision_llm';
+  /** When the page came from a PDF text layer, the extracted runs —
+   *  Python uses them instead of calling Vision. */
+  bornDigital?: BornDigitalPayload | null;
+  /** Stored OCR layout to replay for a free re-tokenize (no Vision). */
+  layout?: OcrLayout | null;
+}
+
 export interface HealthResponse {
   status: string;
   languages: string[];
@@ -144,5 +212,50 @@ export const nlpClient = {
       method: 'POST',
       body: JSON.stringify({ language, surfaces }),
     });
+  },
+  /**
+   * OCR one PDF page image into tokens + per-token bounding boxes. Posts
+   * a multipart body (image blob + fields) — we can't reuse `request`,
+   * which forces a JSON content-type; here fetch must set the multipart
+   * boundary itself.
+   */
+  async ocr(
+    language: string,
+    imageBytes: Uint8Array,
+    opts: OcrOptions,
+  ): Promise<OcrResponse> {
+    const form = new FormData();
+    form.set('language', language);
+    form.set('width', String(opts.width));
+    form.set('height', String(opts.height));
+    form.set('engine', opts.engine ?? 'vision');
+    if (opts.bornDigital) {
+      form.set('born_digital', JSON.stringify(opts.bornDigital));
+    }
+    if (opts.layout) {
+      form.set(
+        'layout',
+        JSON.stringify({ text: opts.layout.text, char_boxes: opts.layout.charBoxes }),
+      );
+    }
+    form.set(
+      'image',
+      // Cast: TS's DOM lib types BlobPart as ArrayBuffer-backed, but a
+      // Uint8Array<ArrayBufferLike> is a valid blob part at runtime.
+      new Blob([imageBytes as BlobPart], { type: opts.mime ?? 'image/webp' }),
+      'page',
+    );
+    const res = await fetch(new URL('/ocr', NLP_SERVICE_URL), {
+      method: 'POST',
+      body: form,
+      // @ts-expect-error — Node's fetch reads undici's `dispatcher`;
+      // RequestInit doesn't type it. Keeps the long timeout for Vision.
+      dispatcher: nlpDispatcher,
+    });
+    if (!res.ok) {
+      const body = await res.text().catch(() => '');
+      throw new Error(`NLP service ${res.status}: ${body || res.statusText}`);
+    }
+    return (await res.json()) as OcrResponse;
   },
 };

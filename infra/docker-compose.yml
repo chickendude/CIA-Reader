@@ -48,10 +48,20 @@ services:
       - ../services/nlp/app:/srv/nlp/app
       - ../services/nlp/tests:/srv/nlp/tests
       - ../packages/shared-types/python:/opt/shared-types
+      # Uncomment to mount a GCP service-account key for Vision OCR
+      # (scanned-page path) and point GOOGLE_APPLICATION_CREDENTIALS at it:
+      # - ./secrets:/secrets:ro
     ports:
       - "${NLP_HOST_PORT:-8000}:8000"
     environment:
       PYTHONPATH: /opt/shared-types:/srv/nlp
+      # Google Cloud Vision creds for the PDF OCR scanned-page path. Empty
+      # by default — the born-digital path needs no creds, so dev works
+      # without GCP. To OCR scans, drop a service-account JSON under
+      # infra/secrets/ and set GOOGLE_APPLICATION_CREDENTIALS to e.g.
+      # /secrets/gcp-vision.json (matching the volume mount above).
+      GOOGLE_APPLICATION_CREDENTIALS: ${GOOGLE_APPLICATION_CREDENTIALS:-}
+      GOOGLE_CLOUD_PROJECT: ${GOOGLE_CLOUD_PROJECT:-}
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health').read()\""]
       interval: 5s

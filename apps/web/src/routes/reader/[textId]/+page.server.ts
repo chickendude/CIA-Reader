@@ -22,6 +22,7 @@ import { error } from '@sveltejs/kit';
 import { and, eq } from 'drizzle-orm';
 
 import { getReadableText } from '$lib/server/texts/upload.js';
+import { getPdfStorage } from '$lib/server/pdf/storage.js';
 import { loadChapterTokens } from '$lib/server/texts/tokens.js';
 import { loadChapterPhraseSpans } from '$lib/server/texts/phrase-spans.js';
 import { getTextProgress } from '$lib/server/texts/progress.js';
@@ -188,6 +189,11 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
   const audioForText = allAudio.find((a) => a.chapterId === null) ?? null;
   const activeAudio = audioForChapter ?? audioForText;
 
+  // PDF page images: cheap to resolve a URL per chapter (just a key →
+  // path), so include it for every page so the image reader can show a
+  // page indicator + navigate. Tokens/body still ship active-only.
+  const pdfStorage = getPdfStorage();
+
   // T-8.6: course-kind collections gate "next" until the active
   // text is finished (pctRead >= 100). The reader UI grays out the
   // next link unless ?skipLock=1 is set on the URL — a deliberate
@@ -228,6 +234,11 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
       // active-only / lazy-fill posture. Sibling chapters get null
       // until the lazy fetch lands.
       phraseSpans: c.idx === chapterIdx ? activeChapterSpans : null,
+      // PDF page image (all pages — cheap URL). Null for non-PDF / pages
+      // not yet processed.
+      pageImageUrl: c.pageImageKey ? pdfStorage.urlFor(c.pageImageKey) : null,
+      pageWidth: c.pageWidth,
+      pageHeight: c.pageHeight,
     })),
     anchor: {
       chapterIdx,

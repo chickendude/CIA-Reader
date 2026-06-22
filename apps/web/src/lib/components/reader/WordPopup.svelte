@@ -99,6 +99,7 @@
     isOwner,
     isAdmin = false,
     textId = '',
+    pageImage = null,
     onClose,
     onStatusChange,
     onCorrectionApplied,
@@ -106,6 +107,10 @@
     onPersonalTranslationChange,
   }: {
     token: ServerToken | null;
+    /** PDF image reader: the active page image, so the popup can show a
+     *  crop of the clicked word (using the token's bbox) for verifying
+     *  OCR against the real glyphs. Null in the text reader. */
+    pageImage?: { url: string; width: number | null; height: number | null } | null;
     /** T-14.3: surface the longest phrase containing the click
      *  target. When non-null, the popup renders a phrase banner
      *  (status flips + gloss + headword) above the existing token
@@ -157,6 +162,30 @@
       gloss: string | null,
     ) => void;
   } = $props();
+
+  // PDF image reader: a CSS-cropped view of the clicked word straight
+  // off the page image, so the reader can compare what OCR read against
+  // the real glyphs and fix it via the headword search below. Pure
+  // background-position sprite crop — no new asset, no fetch.
+  const wordCropStyle = $derived.by<string | null>(() => {
+    const b = token?.bbox;
+    if (!pageImage || !b || !(b.w > 0) || !(b.h > 0)) return null;
+    const bgSizeX = b.w < 1 ? 100 / b.w : 100;
+    const bgSizeY = b.h < 1 ? 100 / b.h : 100;
+    const posX = b.w < 1 ? (b.x / (1 - b.w)) * 100 : 0;
+    const posY = b.h < 1 ? (b.y / (1 - b.h)) * 100 : 0;
+    const imgW = pageImage.width || 1;
+    const imgH = pageImage.height || 1;
+    // Keep the crop box's aspect equal to the word region's pixel aspect
+    // so the glyphs aren't stretched.
+    const aspect = (b.w * imgW) / (b.h * imgH || 1);
+    return (
+      `background-image:url('${pageImage.url}');` +
+      `background-size:${bgSizeX.toFixed(2)}% ${bgSizeY.toFixed(2)}%;` +
+      `background-position:${posX.toFixed(2)}% ${posY.toFixed(2)}%;` +
+      `aspect-ratio:${aspect.toFixed(4)}`
+    );
+  });
 
   // T-14.3: optimistic phrase status, mirroring the lemma path.
   // Re-syncs from the prop whenever the user clicks into a
@@ -1610,6 +1639,18 @@
         >
           ×
         </button>
+        {#if wordCropStyle}
+          <!-- PDF reader: crop of the word from the page image, so a
+               misread OCR surface can be checked against the real glyphs
+               and corrected via the headword search. -->
+          <div
+            class="sp-word-crop"
+            data-testid="word-crop"
+            style={wordCropStyle}
+            role="img"
+            aria-label="Word as it appears on the page"
+          ></div>
+        {/if}
         {#if token.numberForms && numberDisplay()}
           <h2 class="sp-word num-title">
             <span>{token.numberForms.digitsLatin}</span>
@@ -2413,6 +2454,18 @@
   .sp-head {
     position: relative;
     margin-bottom: 0.85rem;
+  }
+  /* PDF reader: cropped word image. Fixed height; width follows the
+     word's pixel aspect via the inline aspect-ratio. A light frame +
+     surface tint separates it from the page background. */
+  .sp-word-crop {
+    height: 2.4rem;
+    max-width: 100%;
+    margin: 0 1.9rem 0.5rem 0;
+    background-repeat: no-repeat;
+    background-color: var(--paper, var(--color-bg));
+    border: 1px solid var(--rule, var(--color-border));
+    border-radius: 4px;
   }
   .sp-close {
     position: absolute;

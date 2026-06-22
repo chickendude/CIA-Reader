@@ -6,6 +6,7 @@
   import AudioPlayer from '$lib/components/reader/AudioPlayer.svelte';
   import ChapterNav from '$lib/components/reader/ChapterNav.svelte';
   import ReaderContinuous from '$lib/components/reader/ReaderContinuous.svelte';
+  import ReaderImage from '$lib/components/reader/ReaderImage.svelte';
   import ReaderPage from '$lib/components/reader/ReaderPage.svelte';
   import ReaderScroll from '$lib/components/reader/ReaderScroll.svelte';
   import ReaderSettings from '$lib/components/reader/ReaderSettings.svelte';
@@ -31,6 +32,10 @@
   import type { PageData } from './$types';
 
   let { data }: { data: PageData } = $props();
+
+  // PDF texts render as a page-image reader (clickable word overlays)
+  // regardless of the saved layout mode.
+  const isPdf = $derived(data.text.sourceType === 'pdf');
 
   // T-5.16: Immersive mode hides the AppShell rail / bottom-nav so
   // the reader takes the full viewport. T-5.26 moved the actual
@@ -407,7 +412,7 @@
   <title>{data.text.title} — CIA Reader</title>
 </svelte:head>
 
-<div class="reader" data-mode={data.mode} style={readerStyle}>
+<div class="reader" data-mode={isPdf ? 'pdf' : data.mode} style={readerStyle}>
   <header class="reader-top" bind:this={readerTopEl}>
     <div class="reader-top-left">
       <a class="reader-close" href="/library" aria-label="Close reader" title="Close reader">
@@ -544,7 +549,18 @@
     </p>
   {/if}
 
-  {#if data.mode === 'page'}
+  {#if isPdf}
+    <ReaderImage
+      chapters={data.chapters}
+      chapterIdx={data.anchor.chapterIdx}
+      textId={data.text.id}
+      language={data.text.language as LanguageCode}
+      {showRomanization}
+      isOwner={data.isOwner}
+      isAdmin={data.isAdmin}
+      onProgress={onReaderProgress}
+    />
+  {:else if data.mode === 'page'}
     <ReaderPage
       chapters={data.chapters}
       chapterIdx={data.anchor.chapterIdx}

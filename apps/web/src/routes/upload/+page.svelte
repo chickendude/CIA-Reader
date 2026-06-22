@@ -1,6 +1,12 @@
 <script lang="ts">
   import { enhance } from '$app/forms';
+  import { goto } from '$app/navigation';
   import { untrack } from 'svelte';
+  import {
+    importLoadedPdf,
+    loadPdf,
+    type LoadedPdf,
+  } from '$lib/pdf/render-client';
   import type { ActionData, PageData } from './$types';
 
   let {
@@ -21,9 +27,20 @@
   // 'paste' + 'txt' both submit to ?/paste — the difference is the
   // byte cap (10MB vs 1MB) and the hidden sourceType marker.
   // 'epub' submits to ?/epub. 'zip' submits to ?/zip.
-  let mode = $state<'paste' | 'txt' | 'epub' | 'zip'>(
+  let mode = $state<'paste' | 'txt' | 'epub' | 'zip' | 'pdf'>(
     untrack(() => (form?.values?.sourceType === 'txt' ? 'txt' : 'paste')),
   );
+
+  // PDF flow (client-side render + streaming upload — does NOT use a form
+  // action). Picking a .pdf loads it with pdf.js to read the page count +
+  // detect a text layer; "Import PDF" renders each page to an image and
+  // streams them to the per-page ingest endpoint.
+  let pdfLoaded = $state<LoadedPdf | null>(null);
+  let pdfLoading = $state(false);
+  let pdfUseTextLayer = $state(true);
+  let pdfProgress = $state<{ done: number; total: number } | null>(null);
+  let pdfBusy = $state(false);
+  let pdfError = $state<string | null>(null);
   let pickedFileName = $state<string | null>(null);
   let pickedFileSize = $state(0);
   let dropMessage = $state<string | null>(null);
@@ -86,6 +103,31 @@
       pickedFileSize = file.size;
       if (!title) title = file.name.replace(/\.zip$/i, '');
       dropMessage = null;
+      return;
+    }
+    if (lower.endsWith('.pdf')) {
+      mode = 'pdf';
+      pickedFile = file;
+      pickedFileName = file.name;
+      pickedFileSize = file.size;
+      if (!title) title = file.name.replace(/\.pdf$/i, '');
+      dropMessage = null;
+      pdfError = null;
+      pdfLoaded = null;
+      pdfProgress = null;
+      pdfLoading = true;
+      try {
+        const loaded = await loadPdf(file);
+        pdfLoaded = loaded;
+        // Default to the embedded text layer ONLY for true born-digital
+        // PDFs. A scan with a (usually poor) built-in OCR layer also
+        // "has text", so gate on !isScanned and default scans to OCR.
+        pdfUseTextLayer = loaded.hasTextLayer && !loaded.isScanned;
+      } catch (e) {
+        pdfError = `Couldn't read the PDF: ${(e as Error).message}`;
+      } finally {
+        pdfLoading = false;
+      }
       return;
     }
     if (lower.endsWith('.txt')) {
@@ -179,8 +221,39 @@
     pickedFileName = null;
     pickedFileSize = 0;
     dropMessage = null;
+    pdfLoaded = null;
+    pdfProgress = null;
+    pdfError = null;
     // Remount the file input to drop any FileList it was carrying.
     filePickerKey += 1;
+  }
+
+  async function runPdfImport() {
+    if (!pdfLoaded || pdfBusy) return;
+    if (!title.trim()) {
+      pdfError = 'Title is required.';
+      return;
+    }
+    pdfBusy = true;
+    pdfError = null;
+    pdfProgress = { done: 0, total: pdfLoaded.numPages };
+    try {
+      const { id } = await importLoadedPdf(pdfLoaded, {
+        title: title.trim(),
+        language: data.selectedLanguage,
+        useTextLayer: pdfUseTextLayer,
+        onProgress: (p) => {
+          pdfProgress = p;
+        },
+      });
+      // Navigate to the reader; the page processes/streams as it goes, so
+      // it may still be finishing the last page when we land — the reader's
+      // status badge polls to "ready".
+      await goto(`/reader/${id}`);
+    } catch (e) {
+      pdfError = `Import failed: ${(e as Error).message}`;
+      pdfBusy = false;
+    }
   }
 
   const errorMessage = $derived(form && !form.ok ? form.message : null);
@@ -208,10 +281,11 @@
   <header>
     <h1>Upload a text</h1>
     <p class="sub">
-      Paste a passage, drop a <code>.txt</code> file, or upload an
+      Paste a passage, drop a <code>.txt</code> file, upload an
       <code>.epub</code> or a <code>.zip</code> of
-      <code>.txt</code> files to import as a chapter-book collection.
-      Texts are private to your account by default.
+      <code>.txt</code> files to import as a chapter-book collection, or
+      upload a <code>.pdf</code> to read as page images with clickable
+      words. Texts are private to your account by default.
     </p>
   </header>
 
@@ -271,14 +345,14 @@
       aria-label="File drop zone"
     >
       <p>
-        Drag &amp; drop a <code>.txt</code>, <code>.epub</code>, or
-        <code>.zip</code> file, or
+        Drag &amp; drop a <code>.txt</code>, <code>.epub</code>,
+        <code>.zip</code>, or <code>.pdf</code> file, or
         <label class="file-pick">
           {#key filePickerKey}
             <input
               type="file"
               name="file"
-              accept=".txt,.epub,.zip"
+              accept=".txt,.epub,.zip,.pdf"
               onchange={onFilePick}
             />
           {/key}
@@ -294,6 +368,16 @@
           Selected: <code>{pickedFileName}</code>
           ({(pickedFileSize / 1000).toFixed(1)} KB) — will be imported
           as {mode === 'epub' ? 'an EPUB chapter book' : 'a ZIP chapter book'}.
+          <button type="button" class="reset" onclick={resetToPaste}>
+            Switch to paste
+          </button>
+        </p>
+      {/if}
+      {#if mode === 'pdf' && pickedFileName}
+        <p class="muted">
+          Selected: <code>{pickedFileName}</code>
+          ({(pickedFileSize / 1000).toFixed(1)} KB) — will be imported as a PDF
+          page reader.
           <button type="button" class="reset" onclick={resetToPaste}>
             Switch to paste
           </button>
@@ -332,11 +416,74 @@
       </label>
     {/if}
 
-    <button
-      type="submit"
-      disabled={submitDisabled}
-      aria-busy={uploading}
-    >{submitLabel}</button>
+    {#if mode === 'pdf'}
+      <div class="pdf-panel">
+        {#if pdfLoading}
+          <p class="muted">Reading PDF…</p>
+        {:else if pdfLoaded}
+          <p class="pdf-info">
+            {pdfLoaded.numPages}
+            {pdfLoaded.numPages === 1 ? 'page' : 'pages'}.
+            {#if pdfLoaded.isScanned}
+              Looks like a scanned PDF — defaulting to OCR.{#if pdfLoaded.hasTextLayer}
+                Its built-in text layer is usually poor on scans.{/if}
+            {:else if pdfLoaded.hasTextLayer}
+              This PDF has a real text layer — using it (fast, exact).
+            {:else}
+              No text layer detected — pages will be OCR'd.
+            {/if}
+          </p>
+          {#if pdfLoaded.hasTextLayer}
+            <fieldset class="pdf-source">
+              <legend>Text source</legend>
+              <label class="radio">
+                <input
+                  type="radio"
+                  name="pdfSource"
+                  checked={pdfUseTextLayer}
+                  disabled={pdfBusy}
+                  onchange={() => (pdfUseTextLayer = true)}
+                />
+                Use the PDF's built-in text (fast, exact)
+              </label>
+              <label class="radio">
+                <input
+                  type="radio"
+                  name="pdfSource"
+                  checked={!pdfUseTextLayer}
+                  disabled={pdfBusy}
+                  onchange={() => (pdfUseTextLayer = false)}
+                />
+                OCR the page images (best for scans / poor built-in text)
+              </label>
+            </fieldset>
+          {/if}
+          {#if pdfProgress}
+            <p class="pdf-progress" aria-live="polite">
+              Uploading page {pdfProgress.done} of {pdfProgress.total}…
+            </p>
+            <progress max={pdfProgress.total} value={pdfProgress.done}></progress>
+          {/if}
+          <button
+            type="button"
+            disabled={pdfBusy || !title.trim()}
+            aria-busy={pdfBusy}
+            onclick={runPdfImport}
+          >
+            {pdfBusy ? 'Importing PDF…' : `Import PDF (${pdfLoaded.numPages} ${pdfLoaded.numPages === 1 ? 'page' : 'pages'})`}
+          </button>
+        {/if}
+        {#if pdfError}
+          <p class="err" role="alert">{pdfError}</p>
+        {/if}
+      </div>
+    {:else}
+      <button
+        type="submit"
+        disabled={submitDisabled}
+        aria-busy={uploading}
+      >{submitLabel}</button>
+    {/if}
   </form>
 </div>
 
@@ -520,5 +667,51 @@
     color: var(--color-fg-muted);
     font-weight: normal;
     font-size: 0.85em;
+  }
+  .pdf-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+  }
+  .pdf-info {
+    margin: 0;
+    font-size: 0.9rem;
+    color: var(--color-fg);
+  }
+  .pdf-source {
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+    padding: 0.6rem 0.75rem;
+    margin: 0;
+  }
+  .pdf-source legend {
+    font-size: 0.62rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--color-fg-muted);
+    padding: 0 0.25rem;
+  }
+  .pdf-source .radio {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin: 0.25rem 0;
+    font-size: 0.9rem;
+    color: var(--color-fg);
+  }
+  .pdf-source .radio input {
+    display: inline;
+    width: auto;
+    min-height: 0;
+    margin: 0;
+  }
+  .pdf-progress {
+    margin: 0;
+    font-size: 0.85rem;
+    color: var(--color-fg-muted);
+  }
+  .pdf-panel progress {
+    width: 100%;
+    height: 0.5rem;
   }
 </style>

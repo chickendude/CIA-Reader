@@ -291,6 +291,100 @@ export async function createTxtText(
   });
 }
 
+/** Hard cap on the number of pages in one PDF upload. A page is one
+ *  `text_chapters` row + one image; 2000 covers any realistic book while
+ *  bounding the up-front row insert and the per-page upload loop. */
+export const MAX_PDF_PAGES = 2000;
+
+export type CreatePdfTextInput = {
+  language: string;
+  title: string;
+  /** Number of pages — the browser reads this from the PDF (pdf.js) and
+   *  uploads page images one by one afterward. */
+  pageCount: number;
+};
+
+/**
+ * Create the shell of a PDF text: a `texts` row (sourceType 'pdf') plus
+ * one empty `text_chapters` row per page. Unlike the paste/txt/epub
+ * paths this does NOT enqueue an NLP job — PDF pages are rasterized in
+ * the browser and processed one at a time by the per-page ingest
+ * endpoint (`processPdfPage`), which fills each chapter's body + image
+ * and flips the text to `ready` when the last page lands. We still
+ * insert an `nlp_jobs` row (status pending) so the status helpers have a
+ * job to update and the admin/monitoring views see the run.
+ */
+export async function createPdfText(
+  owner: Pick<User, 'id'>,
+  input: CreatePdfTextInput,
+  now: Date = new Date(),
+): Promise<CreatedText> {
+  if (!isSupportedLanguage(input.language)) {
+    throw new TextValidationError(
+      `Unsupported language '${input.language}' (expected one of: ${SUPPORTED_LANGUAGE_CODES.join(', ')})`,
+    );
+  }
+  const language = input.language as LanguageCode;
+  const title = normalizeTitle(input.title ?? '');
+  if (title.length < MIN_TITLE_LEN) {
+    throw new TextValidationError('title is required');
+  }
+  if (title.length > MAX_TITLE_LEN) {
+    throw new TextValidationError(`title exceeds ${MAX_TITLE_LEN} characters`);
+  }
+  const pageCount = input.pageCount;
+  if (!Number.isInteger(pageCount) || pageCount < 1) {
+    throw new TextValidationError('pageCount must be a positive integer');
+  }
+  if (pageCount > MAX_PDF_PAGES) {
+    throw new TextValidationError(`PDF exceeds ${MAX_PDF_PAGES} pages`);
+  }
+
+  const [text] = await db
+    .insert(schema.texts)
+    .values({
+      ownerId: owner.id,
+      language,
+      title,
+      sourceType: 'pdf',
+      status: 'pending',
+      visibility: 'private',
+      createdAt: now,
+      updatedAt: now,
+    })
+    .returning();
+  if (!text) throw new Error('Failed to insert text row');
+
+  const chapterRows = (await db
+    .insert(schema.textChapters)
+    .values(
+      Array.from({ length: pageCount }, (_unused, i) => ({
+        textId: (text as Text).id,
+        idx: i,
+        title: null,
+        // Body + image fill in as each page is OCR'd; placeholder for now.
+        body: '',
+        tokenCount: 0,
+        createdAt: now,
+      })),
+    )
+    .returning()) as TextChapter[];
+  if (chapterRows.length === 0) throw new Error('Failed to insert chapter rows');
+  chapterRows.sort((a, b) => a.idx - b.idx);
+
+  // Audit-trail job row, inserted directly (NOT via enqueueNlpJob, which
+  // would dispatch the in-process text worker against empty page bodies).
+  await db
+    .insert(schema.nlpJobs)
+    .values({ textId: (text as Text).id, status: 'pending', createdAt: now });
+
+  return {
+    text: text as Text,
+    chapter: chapterRows[0]!,
+    chapters: chapterRows,
+  };
+}
+
 export type CreateChapterBookFromEpubInput = {
   language: string;
   title: string;
