@@ -2,8 +2,22 @@ name: ci
 
 on:
   pull_request:
+    paths:
+      - "apps/web/**"
+      - "services/nlp/**"
+      - "packages/**"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - ".github/workflows/ci.yml"
   push:
     branches: [main]
+    paths:
+      - "apps/web/**"
+      - "services/nlp/**"
+      - "packages/**"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - ".github/workflows/ci.yml"
 
 jobs:
   web:
