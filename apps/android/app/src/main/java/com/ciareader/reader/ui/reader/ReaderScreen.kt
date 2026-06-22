@@ -1,10 +1,12 @@
-@file:OptIn(ExperimentalMaterial3Api::class)
+@file:OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 
 package com.ciareader.reader.ui.reader
 
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -18,6 +20,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
@@ -42,6 +45,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.ciareader.reader.data.dictionary.LemmaTranslations
+import com.ciareader.reader.data.dictionary.WordTranslation
 import com.ciareader.reader.data.reader.KnownStatus
 import com.ciareader.reader.data.reader.ReaderToken
 
@@ -56,6 +61,7 @@ fun ReaderScreen(onBack: () -> Unit, viewModel: ReaderViewModel = hiltViewModel(
         onPrevChapter = viewModel::prevChapter,
         onNextChapter = viewModel::nextChapter,
         onRetry = viewModel::retry,
+        onSetStatus = viewModel::setStatus,
     )
 }
 
@@ -68,6 +74,7 @@ internal fun ReaderScreenContent(
     onPrevChapter: () -> Unit,
     onNextChapter: () -> Unit,
     onRetry: () -> Unit,
+    onSetStatus: (KnownStatus) -> Unit,
 ) {
     Scaffold(
         topBar = {
@@ -123,7 +130,12 @@ internal fun ReaderScreenContent(
     val selected = state.selectedWord
     if (selected != null) {
         ModalBottomSheet(onDismissRequest = onDismissWord) {
-            WordDetails(selected)
+            WordDetails(
+                token = selected,
+                translations = state.wordTranslations,
+                isLoading = state.isWordLoading,
+                onSetStatus = onSetStatus,
+            )
         }
     }
 }
@@ -188,28 +200,69 @@ private fun ChapterNavBar(
 }
 
 @Composable
-internal fun WordDetails(token: ReaderToken, modifier: Modifier = Modifier) {
+internal fun WordDetails(
+    token: ReaderToken,
+    translations: LemmaTranslations?,
+    isLoading: Boolean,
+    onSetStatus: (KnownStatus) -> Unit,
+    modifier: Modifier = Modifier,
+) {
     Column(
         modifier = modifier
             .fillMaxWidth()
             .padding(24.dp),
     ) {
-        Text(token.surface, style = MaterialTheme.typography.headlineSmall)
-        token.romanization?.let {
-            Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(translations?.headword ?: token.surface, style = MaterialTheme.typography.headlineSmall)
+        val subtitle = listOfNotNull(token.romanization, translations?.pos).joinToString("  ·  ")
+        if (subtitle.isNotEmpty()) {
+            Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Spacer(Modifier.height(12.dp))
-        Text(
-            token.glossDefault ?: "No definition yet.",
-            style = MaterialTheme.typography.bodyLarge,
-        )
-        Spacer(Modifier.height(12.dp))
-        Text(
-            "Status: ${statusLabel(token.status)}",
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.primary,
-        )
+
+        when {
+            isLoading ->
+                Text("Loading…", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+
+            translations != null && !translations.isEmpty ->
+                TranslationGroups(translations)
+
+            else ->
+                Text(token.glossDefault ?: "No definition yet.", style = MaterialTheme.typography.bodyLarge)
+        }
+
+        Spacer(Modifier.height(16.dp))
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            StatusChip("New", token.status == KnownStatus.UNKNOWN) { onSetStatus(KnownStatus.UNKNOWN) }
+            StatusChip("Learning", token.status == KnownStatus.LEARNING) { onSetStatus(KnownStatus.LEARNING) }
+            StatusChip("Known", token.status == KnownStatus.KNOWN) { onSetStatus(KnownStatus.KNOWN) }
+            StatusChip("Ignored", token.status == KnownStatus.IGNORED) { onSetStatus(KnownStatus.IGNORED) }
+        }
     }
+}
+
+@Composable
+private fun StatusChip(label: String, selected: Boolean, onClick: () -> Unit) {
+    FilterChip(selected = selected, onClick = onClick, label = { Text(label) })
+}
+
+@Composable
+private fun TranslationGroups(translations: LemmaTranslations) {
+    TranslationGroup("Your notes", translations.personal)
+    TranslationGroup("Dictionary", translations.official)
+    TranslationGroup("Community", translations.community)
+}
+
+@Composable
+private fun TranslationGroup(title: String, items: List<WordTranslation>) {
+    if (items.isEmpty()) return
+    Text(title, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+    items.forEach { item ->
+        Text(item.body, style = MaterialTheme.typography.bodyLarge)
+        item.attribution?.let {
+            Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+    Spacer(Modifier.height(8.dp))
 }
 
 @Composable

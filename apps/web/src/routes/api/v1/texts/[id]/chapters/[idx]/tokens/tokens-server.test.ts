@@ -9,6 +9,7 @@ import { jsonContract } from '$lib/test/json-contract.js';
 const getReadableText = vi.fn();
 const loadChapterTokens = vi.fn();
 const loadChapterPhraseSpans = vi.fn();
+const resolveUser = vi.fn();
 
 vi.mock('$lib/server/texts/upload.js', async () => {
   const actual = await vi.importActual<typeof import('$lib/server/texts/upload.js')>(
@@ -20,6 +21,11 @@ vi.mock('$lib/server/texts/upload.js', async () => {
     getOwnedText: (...a: unknown[]) => getReadableText(...a),
   };
 });
+
+vi.mock('$lib/server/auth/require-user.js', () => ({
+  resolveUser: (...a: unknown[]) => resolveUser(...a),
+  requireUser: (...a: unknown[]) => resolveUser(...a),
+}));
 
 vi.mock('$lib/server/texts/tokens.js', async () => {
   const actual = await vi.importActual<typeof import('$lib/server/texts/tokens.js')>(
@@ -55,9 +61,9 @@ async function callGet(
   user: { id: string } | null = { id: 'user-1' },
 ) {
   const { GET } = await import('./+server.js');
+  resolveUser.mockResolvedValue(user);
   const event = {
     params: { id: textId, idx },
-    locals: { user },
   } as unknown as Parameters<Get>[0];
   try {
     return (await GET(event)) as Response;
@@ -81,6 +87,7 @@ function fixtureWithChapters(n: number) {
 
 beforeEach(() => {
   getReadableText.mockReset();
+  resolveUser.mockReset();
   loadChapterTokens.mockReset();
   loadChapterTokens.mockResolvedValue(null);
   loadChapterPhraseSpans.mockReset();
@@ -182,5 +189,19 @@ describe('GET /api/v1/texts/:id/chapters/:idx/tokens', () => {
     await callGet(VALID_ID, '0', null);
     expect(getReadableText).toHaveBeenCalledWith(null, VALID_ID);
     expect(loadChapterTokens).toHaveBeenCalledWith('c0', null);
+  });
+
+  // Regression: the endpoint must authenticate via resolveUser (Bearer-aware),
+  // not locals.user (cookie-only). Without it the Android reader — which sends
+  // a Bearer token and no cookie — reads as anonymous and 404s on its own
+  // private texts.
+  it('authenticates the viewer via resolveUser so Bearer clients read private texts', async () => {
+    getReadableText.mockResolvedValueOnce(fixtureWithChapters(1));
+    loadChapterTokens.mockResolvedValueOnce([]);
+    const res = (await callGet(VALID_ID, '0', { id: 'user-1' })) as Response;
+    expect(res.status).toBe(200);
+    expect(resolveUser).toHaveBeenCalled();
+    expect(getReadableText).toHaveBeenCalledWith({ id: 'user-1' }, VALID_ID);
+    expect(loadChapterTokens).toHaveBeenCalledWith('c0', 'user-1');
   });
 });

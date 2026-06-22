@@ -10,6 +10,8 @@ import com.ciareader.reader.data.library.LibraryRepository
 import com.ciareader.reader.data.library.LibraryRepositoryImpl
 import com.ciareader.reader.data.collection.CollectionRepository
 import com.ciareader.reader.data.collection.CollectionRepositoryImpl
+import com.ciareader.reader.data.dictionary.DictionaryRepository
+import com.ciareader.reader.data.dictionary.DictionaryRepositoryImpl
 import com.ciareader.reader.data.reader.ReaderRepository
 import com.ciareader.reader.data.reader.ReaderRepositoryImpl
 import dagger.Binds
@@ -45,4 +47,8 @@ abstract class BindingsModule {
     @Binds
     @Singleton
     abstract fun bindCollectionRepository(impl: CollectionRepositoryImpl): CollectionRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindDictionaryRepository(impl: DictionaryRepositoryImpl): DictionaryRepository
 }

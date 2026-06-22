@@ -2,6 +2,9 @@ package com.ciareader.reader.ui.reader
 
 import androidx.lifecycle.SavedStateHandle
 import com.ciareader.reader.core.network.Outcome
+import com.ciareader.reader.data.dictionary.DictionaryRepository
+import com.ciareader.reader.data.dictionary.LemmaTranslations
+import com.ciareader.reader.data.dictionary.WordTranslation
 import com.ciareader.reader.data.reader.Chapter
 import com.ciareader.reader.data.reader.ChapterRef
 import com.ciareader.reader.data.reader.KnownStatus
@@ -14,6 +17,7 @@ import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Rule
 import org.junit.Test
@@ -24,8 +28,8 @@ class ReaderViewModelTest {
     @get:Rule
     val mainRule = MainDispatcherRule()
 
-    private fun vm(repo: ReaderRepository) =
-        ReaderViewModel(repo, SavedStateHandle(mapOf("textId" to "t1")))
+    private fun vm(repo: ReaderRepository, dict: DictionaryRepository = FakeDictionaryRepository()) =
+        ReaderViewModel(repo, dict, SavedStateHandle(mapOf("textId" to "t1")))
 
     @Test
     fun loadsTitleAndFirstChapter() = runTest(mainRule.dispatcher) {
@@ -76,6 +80,47 @@ class ReaderViewModelTest {
     }
 
     @Test
+    fun wordTapFetchesTranslations() = runTest(mainRule.dispatcher) {
+        val w = ReaderToken(0, "नमस्ते", true, KnownStatus.UNKNOWN, "l1", null, null, false, false, true)
+        val repo = FakeReaderRepository(meta = meta(1), chapters = mapOf(0 to Chapter(0, listOf(w))))
+        val dict = FakeDictionaryRepository(
+            translations = LemmaTranslations(
+                headword = "नमस्ते",
+                pos = "INTJ",
+                gloss = "hello",
+                personal = emptyList(),
+                official = listOf(WordTranslation("greeting", null)),
+                community = emptyList(),
+            ),
+        )
+        val v = vm(repo, dict)
+        advanceUntilIdle()
+
+        v.onWordTap(w)
+        advanceUntilIdle()
+
+        assertNotNull(v.state.value.wordTranslations)
+        assertEquals("नमस्ते", v.state.value.wordTranslations?.headword)
+        assertFalse(v.state.value.isWordLoading)
+    }
+
+    @Test
+    fun setStatusRecolorsTokensAndSelectedWord() = runTest(mainRule.dispatcher) {
+        val w = ReaderToken(0, "नमस्ते", true, KnownStatus.UNKNOWN, "l1", null, null, false, false, true)
+        val repo = FakeReaderRepository(meta = meta(1), chapters = mapOf(0 to Chapter(0, listOf(w))))
+        val v = vm(repo)
+        advanceUntilIdle()
+
+        v.onWordTap(w)
+        advanceUntilIdle()
+        v.setStatus(KnownStatus.KNOWN)
+        advanceUntilIdle()
+
+        assertEquals(KnownStatus.KNOWN, v.state.value.tokens[0].status)
+        assertEquals(KnownStatus.KNOWN, v.state.value.selectedWord?.status)
+    }
+
+    @Test
     fun nextChapterLoadsThatChapter() = runTest(mainRule.dispatcher) {
         val repo = FakeReaderRepository(
             meta = meta(2),
@@ -119,4 +164,14 @@ private class FakeReaderRepository(
     override suspend fun chapter(textId: String, chapterIdx: Int): Outcome<Chapter> =
         chapterError?.let { Outcome.Failure(it) }
             ?: Outcome.Success(chapters[chapterIdx] ?: Chapter(chapterIdx, emptyList()))
+}
+
+private class FakeDictionaryRepository(
+    private val translations: LemmaTranslations? = null,
+) : DictionaryRepository {
+    override suspend fun translations(lemmaId: String): Outcome<LemmaTranslations> =
+        translations?.let { Outcome.Success(it) } ?: Outcome.Failure("no translations")
+
+    override suspend fun setStatus(lemmaId: String, status: KnownStatus): Outcome<KnownStatus> =
+        Outcome.Success(status)
 }

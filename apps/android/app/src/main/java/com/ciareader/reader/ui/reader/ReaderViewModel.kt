@@ -4,6 +4,9 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.ciareader.reader.core.network.Outcome
+import com.ciareader.reader.data.dictionary.DictionaryRepository
+import com.ciareader.reader.data.dictionary.LemmaTranslations
+import com.ciareader.reader.data.reader.KnownStatus
 import com.ciareader.reader.data.reader.ReaderRepository
 import com.ciareader.reader.data.reader.ReaderToken
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -21,6 +24,8 @@ data class ReaderUiState(
     val chapterIdx: Int = 0,
     val tokens: List<ReaderToken> = emptyList(),
     val selectedWord: ReaderToken? = null,
+    val wordTranslations: LemmaTranslations? = null,
+    val isWordLoading: Boolean = false,
     val errorMessage: String? = null,
 ) {
     val hasPrev: Boolean get() = chapterIdx > 0
@@ -30,6 +35,7 @@ data class ReaderUiState(
 @HiltViewModel
 class ReaderViewModel @Inject constructor(
     private val repository: ReaderRepository,
+    private val dictionary: DictionaryRepository,
     savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
 
@@ -64,7 +70,7 @@ class ReaderViewModel @Inject constructor(
     }
 
     fun loadChapter(chapterIdx: Int) {
-        _state.update { it.copy(isLoading = true, errorMessage = null, selectedWord = null) }
+        _state.update { it.copy(isLoading = true, errorMessage = null, selectedWord = null, wordTranslations = null) }
         viewModelScope.launch {
             when (val chapter = repository.chapter(textId, chapterIdx)) {
                 is Outcome.Success ->
@@ -79,10 +85,47 @@ class ReaderViewModel @Inject constructor(
     }
 
     fun onWordTap(token: ReaderToken) {
-        if (token.isWord) _state.update { it.copy(selectedWord = token) }
+        if (!token.isWord) return
+        val lemmaId = token.lemmaId
+        _state.update {
+            it.copy(selectedWord = token, wordTranslations = null, isWordLoading = lemmaId != null)
+        }
+        if (lemmaId == null) return
+        viewModelScope.launch {
+            val outcome = dictionary.translations(lemmaId)
+            _state.update { s ->
+                // Ignore if the user has since tapped a different word.
+                if (s.selectedWord?.lemmaId != lemmaId) return@update s
+                when (outcome) {
+                    is Outcome.Success -> s.copy(isWordLoading = false, wordTranslations = outcome.data)
+                    is Outcome.Failure -> s.copy(isWordLoading = false)
+                }
+            }
+        }
     }
 
-    fun dismissWord() = _state.update { it.copy(selectedWord = null) }
+    /** Persist a status for the selected word's lemma and recolor every
+     *  occurrence of that lemma in the current chapter. */
+    fun setStatus(status: KnownStatus) {
+        val lemmaId = _state.value.selectedWord?.lemmaId ?: return
+        viewModelScope.launch {
+            when (val res = dictionary.setStatus(lemmaId, status)) {
+                is Outcome.Success -> _state.update { s ->
+                    val confirmed = res.data
+                    s.copy(
+                        tokens = s.tokens.map {
+                            if (it.lemmaId == lemmaId) it.copy(status = confirmed) else it
+                        },
+                        selectedWord = s.selectedWord?.copy(status = confirmed),
+                    )
+                }
+
+                is Outcome.Failure -> Unit // leave status unchanged; user can retry
+            }
+        }
+    }
+
+    fun dismissWord() = _state.update { it.copy(selectedWord = null, wordTranslations = null, isWordLoading = false) }
 
     fun nextChapter() {
         if (_state.value.hasNext) loadChapter(_state.value.chapterIdx + 1)
