@@ -17,7 +17,7 @@
 import { error, json } from '@sveltejs/kit';
 import { z } from 'zod';
 
-import { requireVerifiedUser } from '$lib/server/auth/require-user.js';
+import { requireUser, requireVerifiedUser } from '$lib/server/auth/require-user.js';
 import {
   consumeRateLimit,
   rateLimitHeaders,
@@ -31,6 +31,11 @@ import {
   MAX_TXT_BYTES,
   MAX_TITLE_LEN,
 } from '$lib/server/texts/upload.js';
+import {
+  listOfficialTexts,
+  listOwnedTexts,
+  listSharedTexts,
+} from '$lib/server/texts/library.js';
 import type { RequestHandler } from './$types';
 import { parseJson } from '../auth/_helpers.js';
 import { SUPPORTED_LANGUAGE_CODES, type LanguageCode } from '@ciareader/shared-types';
@@ -121,4 +126,49 @@ export const POST: RequestHandler = async (event) => {
     if (err instanceof TextValidationError) throw error(err.status, err.message);
     throw err;
   }
+};
+
+// GET /api/v1/texts — list library texts for a Bearer/API client.
+//
+// The web library reads the active language from the layout's
+// current-language cookie; a mobile client sends no cookie, so language
+// is an explicit query param here. `scope` selects the library tab:
+//   - owned    — the caller's own imports (auth required)
+//   - shared   — texts shared with the caller (auth required)
+//   - official — the public official library (no auth required)
+// Pagination magnitude is clamped by the service (clampPage).
+const listQuerySchema = z.object({
+  scope: z.enum(['owned', 'shared', 'official']).default('owned'),
+  language: z
+    .enum(SUPPORTED_LANGUAGE_CODES as readonly [LanguageCode, ...LanguageCode[]])
+    .optional(),
+  limit: z.coerce.number().int().positive().optional(),
+  offset: z.coerce.number().int().nonnegative().optional(),
+});
+
+export const GET: RequestHandler = async (event) => {
+  const parsed = listQuerySchema.safeParse({
+    scope: event.url.searchParams.get('scope') ?? undefined,
+    language: event.url.searchParams.get('language') ?? undefined,
+    limit: event.url.searchParams.get('limit') ?? undefined,
+    offset: event.url.searchParams.get('offset') ?? undefined,
+  });
+  if (!parsed.success) {
+    throw error(
+      400,
+      parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; '),
+    );
+  }
+  const { scope, language, limit, offset } = parsed.data;
+  const opts = { limit, offset, language };
+
+  if (scope === 'official') {
+    return json(await listOfficialTexts(opts));
+  }
+  const user = await requireUser(event);
+  const page =
+    scope === 'owned'
+      ? await listOwnedTexts({ id: user.id }, opts)
+      : await listSharedTexts({ id: user.id }, opts);
+  return json(page);
 };
