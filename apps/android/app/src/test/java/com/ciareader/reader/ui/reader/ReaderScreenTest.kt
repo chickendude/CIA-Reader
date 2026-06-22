@@ -3,6 +3,7 @@ package com.ciareader.reader.ui.reader
 import android.app.Application
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import com.ciareader.reader.data.dictionary.LemmaTranslations
@@ -83,6 +84,30 @@ class ReaderScreenTest {
             }
         }
         compose.onNodeWithText("namaste").assertIsDisplayed()
+    }
+
+    @Test
+    fun romanizeToggleInvokesCallback() {
+        var toggled = false
+        compose.setContent {
+            CiaReaderTheme {
+                ReaderScreenContent(
+                    state = ReaderUiState(isLoading = false, title = "Book"),
+                    onBack = {},
+                    onWordTap = {},
+                    onDismissWord = {},
+                    onPrevChapter = {},
+                    onNextChapter = {},
+                    onRetry = {},
+                    onSetStatus = {},
+                    onRecordPosition = { _, _ -> },
+                    onRestoreConsumed = {},
+                    onToggleRomanize = { toggled = true },
+                )
+            }
+        }
+        compose.onNodeWithContentDescription("Show romanization").performClick()
+        assertTrue(toggled)
     }
 
     @Test
