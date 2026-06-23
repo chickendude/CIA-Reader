@@ -11,6 +11,7 @@ data class MyCollectionsDto(val collections: List<CollectionListItemDto> = empty
 data class CollectionListItemDto(
     val collection: CollectionDto,
     val textCount: Int = 0,
+    val openTextId: String? = null,
 )
 
 @Serializable
