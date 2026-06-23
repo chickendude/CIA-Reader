@@ -142,13 +142,41 @@ class LibraryViewModelTest {
         assertEquals("eu", settings.currentLanguage()) // remembered for next launch
     }
 
+    @Test
+    fun refreshCurrentLanguageReloadsCollectionOpenTextId() = runTest(mainRule.dispatcher) {
+        val langRepo = FakeLanguageRepository(listOf(lang("hi")))
+        val collRepo = FakeCollectionRepository(
+            all = listOf(collection("book", "hi", openTextId = "chapter-5")),
+        )
+        val vm = vm(
+            langRepo,
+            FakeLibraryRepository(byLanguage = mapOf("hi" to emptyList())),
+            collRepo,
+        )
+        advanceUntilIdle()
+        assertEquals("chapter-5", vm.state.value.collections.single().openTextId)
+
+        collRepo.all = listOf(collection("book", "hi", openTextId = "chapter-4"))
+        vm.refreshCurrentLanguage()
+        advanceUntilIdle()
+
+        assertEquals("chapter-4", vm.state.value.collections.single().openTextId)
+    }
+
     private fun lang(code: String, isDefault: Boolean = false) =
         Language(code = code, displayName = code.uppercase(), nativeName = code, script = "Deva", isDefault = isDefault)
 
     private fun card(id: String) = TextCard(id = id, title = "Title $id", language = "hi", status = "ready")
 
-    private fun collection(id: String, language: String) =
-        CollectionSummary(id = id, title = "Book $id", language = language, kind = "chapter_book", textCount = 1)
+    private fun collection(id: String, language: String, openTextId: String? = null) =
+        CollectionSummary(
+            id = id,
+            title = "Book $id",
+            language = language,
+            kind = "chapter_book",
+            textCount = 1,
+            openTextId = openTextId,
+        )
 }
 
 private class FakeLanguageRepository(
@@ -174,7 +202,7 @@ private class FakeLibraryRepository(
 }
 
 private class FakeCollectionRepository(
-    private val all: List<CollectionSummary> = emptyList(),
+    var all: List<CollectionSummary> = emptyList(),
     private val error: String? = null,
 ) : CollectionRepository {
     override suspend fun myCollections(): Outcome<List<CollectionSummary>> =

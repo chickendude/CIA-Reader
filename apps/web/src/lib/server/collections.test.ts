@@ -69,6 +69,11 @@ vi.mock('./db/index.js', () => ({
     },
     texts: { id: 't.id', language: 't.language', title: 't.title' },
     textChapters: { textId: 'tc.text_id', tokenCount: 'tc.token_count' },
+    userTextProgress: {
+      userId: 'utp.user_id',
+      textId: 'utp.text_id',
+      updatedAt: 'utp.updated_at',
+    },
     users: { id: 'u.id' },
   },
 }));
@@ -681,6 +686,25 @@ describe('listCollectionsForUser', () => {
     const out = await listCollectionsForUser(OWNER.id);
     expect(out).toHaveLength(2);
     expect(out[0]?.textCount).toBe(3);
+  });
+
+  it('openTextId resumes the most-recently-read chapter', async () => {
+    queue.push([{ collection: baseCollection, textCount: 2 }]); // collections + count
+    queue.push([
+      { collectionId: baseCollection.id, textId: 'text-b', updatedAt: new Date('2026-05-02') },
+      { collectionId: baseCollection.id, textId: 'text-a', updatedAt: new Date('2026-05-01') },
+    ]); // progress
+    queue.push([{ collectionId: baseCollection.id, textId: 'text-a' }]); // first chapter
+    const out = await listCollectionsForUser(OWNER.id);
+    expect(out[0]?.openTextId).toBe('text-b');
+  });
+
+  it('openTextId falls back to the first chapter when not started', async () => {
+    queue.push([{ collection: baseCollection, textCount: 2 }]);
+    queue.push([]); // no progress
+    queue.push([{ collectionId: baseCollection.id, textId: 'text-a' }]); // first chapter
+    const out = await listCollectionsForUser(OWNER.id);
+    expect(out[0]?.openTextId).toBe('text-a');
   });
 });
 

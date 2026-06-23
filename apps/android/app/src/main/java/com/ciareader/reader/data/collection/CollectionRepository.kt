@@ -12,6 +12,8 @@ data class CollectionSummary(
     val language: String,
     val kind: String,
     val textCount: Int,
+    /** Chapter-text to open when tapped: last-read, else the first chapter. */
+    val openTextId: String? = null,
 )
 
 data class CollectionChapter(
@@ -49,6 +51,7 @@ class CollectionRepositoryImpl @Inject constructor(
                     language = it.collection.language,
                     kind = it.collection.kind,
                     textCount = it.textCount,
+                    openTextId = it.openTextId,
                 )
             }
         }

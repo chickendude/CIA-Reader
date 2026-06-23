@@ -264,6 +264,47 @@ class ReaderScreenTest {
         compose.onNodeWithText("hello").assertIsDisplayed()
     }
 
+    /**
+     * Saving the spot, at the UI layer: rendering the reader in page mode must
+     * report the current reading position (the top token of the visible page)
+     * so it can be persisted. This is the wiring that was missing — page mode
+     * never called onRecordPosition, so reopening a book never resumed.
+     */
+    @Test
+    fun pageModeSavesReadingPosition() {
+        var recordedToken: Int? = null
+        compose.setContent {
+            CiaReaderTheme {
+                ReaderScreenContent(
+                    state = ReaderUiState(
+                        isLoading = false,
+                        title = "Book",
+                        pageMode = true,
+                        tokens = listOf(
+                            token("alpha", isWord = true),
+                            token(" ", isWord = false),
+                            token("beta", isWord = true),
+                        ),
+                    ),
+                    onBack = {},
+                    onWordTap = {},
+                    onDismissWord = {},
+                    onPrevChapter = {},
+                    onNextChapter = {},
+                    onRetry = {},
+                    onSetStatus = {},
+                    onRecordPosition = { tokenIdx, _ -> recordedToken = tokenIdx },
+                    onRestoreConsumed = {},
+                    onToggleRomanize = {},
+                    onTogglePageMode = {},
+                )
+            }
+        }
+        compose.waitForIdle()
+        // The first page starts at the first token, so that's the saved spot.
+        assertEquals(0, recordedToken)
+    }
+
     private fun token(surface: String, isWord: Boolean, status: KnownStatus = KnownStatus.UNKNOWN) =
         ReaderToken(0, surface, isWord, status, null, null, null, false, false, false)
 }

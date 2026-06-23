@@ -26,7 +26,7 @@ class LibraryScreenTest {
     private fun setContent(
         state: LibraryUiState,
         onOpenText: (String) -> Unit = {},
-        onOpenCollection: (String) -> Unit = {},
+        onOpenCollection: (CollectionSummary) -> Unit = {},
         onSelectLanguage: (String) -> Unit = {},
         onRetry: () -> Unit = {},
         onLogout: () -> Unit = {},
@@ -74,7 +74,7 @@ class LibraryScreenTest {
                     CollectionSummary("c1", "Afrika express", "eu", "chapter_book", 12),
                 ),
             ),
-            onOpenCollection = { opened = it },
+            onOpenCollection = { opened = it.id },
         )
         compose.onNodeWithText("Afrika express").assertIsDisplayed()
         compose.onNodeWithText("Afrika express").performClick()

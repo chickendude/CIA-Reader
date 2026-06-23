@@ -21,6 +21,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -30,7 +31,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.ciareader.reader.data.collection.CollectionSummary
 import com.ciareader.reader.data.language.Language
 import com.ciareader.reader.data.library.TextCard
@@ -38,11 +42,19 @@ import com.ciareader.reader.data.library.TextCard
 @Composable
 fun LibraryScreen(
     onOpenText: (String) -> Unit,
-    onOpenCollection: (String) -> Unit,
+    onOpenCollection: (CollectionSummary) -> Unit,
     onLogout: () -> Unit,
     viewModel: LibraryViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner, viewModel) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) viewModel.refreshCurrentLanguage()
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
     LibraryScreenContent(
         state = state,
         onSelectLanguage = viewModel::selectLanguage,
@@ -59,7 +71,7 @@ internal fun LibraryScreenContent(
     state: LibraryUiState,
     onSelectLanguage: (String) -> Unit,
     onOpenText: (String) -> Unit,
-    onOpenCollection: (String) -> Unit,
+    onOpenCollection: (CollectionSummary) -> Unit,
     onRetry: () -> Unit,
     onLogout: () -> Unit,
 ) {
@@ -109,7 +121,7 @@ internal fun LibraryScreenContent(
 private fun ContentList(
     collections: List<CollectionSummary>,
     texts: List<TextCard>,
-    onOpenCollection: (String) -> Unit,
+    onOpenCollection: (CollectionSummary) -> Unit,
     onOpenText: (String) -> Unit,
 ) {
     LazyColumn(modifier = Modifier.fillMaxSize()) {
@@ -121,7 +133,7 @@ private fun ContentList(
                     supportingContent = {
                         Text("${c.textCount} chapters", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     },
-                    modifier = Modifier.clickable { onOpenCollection(c.id) },
+                    modifier = Modifier.clickable { onOpenCollection(c) },
                 )
                 HorizontalDivider()
             }

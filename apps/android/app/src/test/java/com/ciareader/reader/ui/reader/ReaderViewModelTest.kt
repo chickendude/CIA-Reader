@@ -43,12 +43,21 @@ class ReaderViewModelTest {
         settings: SettingsStore = FakeSettingsStore(),
         collections: CollectionRepository = FakeCollectionRepository(),
         collectionId: String? = null,
+        atEnd: Boolean = false,
+        resume: Boolean = true,
     ) = ReaderViewModel(
         repo,
         dict,
         settings,
         collections,
-        SavedStateHandle(buildMap { put("textId", "t1"); collectionId?.let { put("collectionId", it) } }),
+        SavedStateHandle(
+            buildMap {
+                put("textId", "t1")
+                collectionId?.let { put("collectionId", it) }
+                if (atEnd) put("atEnd", true)
+                if (!resume) put("resume", false)
+            },
+        ),
     )
 
     @Test
@@ -171,6 +180,21 @@ class ReaderViewModelTest {
 
         assertEquals(1, v.state.value.chapterIdx)
         assertEquals(7, v.state.value.restoreTokenIdx)
+    }
+
+    @Test
+    fun chapterNavigationOpenIgnoresOldSavedTokenAndSavesFreshStart() = runTest(mainRule.dispatcher) {
+        val repo = FakeReaderRepository(
+            meta = meta(1),
+            chapters = mapOf(0 to Chapter(0, listOf(word("a"), word("b")))),
+            savedProgress = ReadingProgress(chapterIdx = 0, tokenIdx = 7, pctRead = 42.0),
+        )
+        val v = vm(repo, resume = false)
+        advanceUntilIdle()
+
+        assertEquals(0, v.state.value.chapterIdx)
+        assertNull(v.state.value.restoreTokenIdx)
+        assertEquals(ReadingProgress(0, 0, 0.0), repo.lastSaved)
     }
 
     @Test
@@ -356,6 +380,59 @@ class ReaderViewModelTest {
         assertEquals(0.625f, s.bookProgress, 0.0001f) // (100 + 0.5*300) / 400
     }
 
+    @Test
+    fun goingBackOpensChapterAtItsLastToken() = runTest(mainRule.dispatcher) {
+        val repo = FakeReaderRepository(
+            meta = meta(1),
+            chapters = mapOf(0 to Chapter(0, listOf(word("a"), word("b"), word("c")))),
+            savedProgress = ReadingProgress(chapterIdx = 0, tokenIdx = 1, pctRead = 50.0),
+        )
+        val v = vm(repo, atEnd = true, resume = false)
+        advanceUntilIdle()
+
+        assertEquals(2, v.state.value.restoreTokenIdx) // last of 3 tokens
+        assertEquals(ReadingProgress(0, 2, 100.0), repo.lastSaved)
+    }
+
+    @Test
+    fun nextChapterSavesFreshStartAsCurrentPosition() = runTest(mainRule.dispatcher) {
+        val repo = FakeReaderRepository(
+            meta = meta(2),
+            chapters = mapOf(
+                0 to Chapter(0, listOf(word("a"))),
+                1 to Chapter(1, listOf(word("b"), word("c"))),
+            ),
+        )
+        val v = vm(repo)
+        advanceUntilIdle()
+
+        v.nextChapter()
+        advanceUntilIdle()
+
+        assertEquals(1, v.state.value.chapterIdx)
+        assertEquals(ReadingProgress(1, 0, 0.0), repo.lastSaved)
+    }
+
+    @Test
+    fun savesAndRestoresReadingSpot() = runTest(mainRule.dispatcher) {
+        // A repo that actually persists progress, like the server round-trip.
+        val repo = SavingReaderRepository(
+            meta = meta(1),
+            chapterTokens = listOf(word("a"), word("b"), word("c")),
+        )
+
+        // Read to token 2 and let the debounced save fire.
+        val first = vm(repo)
+        advanceUntilIdle()
+        first.recordPosition(tokenIdx = 2, pctRead = 66.0)
+        advanceUntilIdle()
+
+        // Reopen the same text → it resumes at the saved token.
+        val reopened = vm(repo)
+        advanceUntilIdle()
+        assertEquals(2, reopened.state.value.restoreTokenIdx)
+    }
+
     private fun word(surface: String) =
         ReaderToken(0, surface, true, KnownStatus.UNKNOWN, null, null, null, false, false, false)
 
@@ -367,6 +444,27 @@ class ReaderViewModelTest {
         chapterCount = chapterCount,
         chapters = (0 until chapterCount).map { ChapterRef(it, "c$it", 1) },
     )
+}
+
+/** Persists progress in-memory so a reopened reader resumes — a round-trip. */
+private class SavingReaderRepository(
+    private val meta: TextMeta,
+    private val chapterTokens: List<ReaderToken>,
+) : ReaderRepository {
+    private var saved: ReadingProgress? = null
+    override suspend fun textMeta(textId: String): Outcome<TextMeta> = Outcome.Success(meta)
+    override suspend fun chapter(textId: String, chapterIdx: Int): Outcome<Chapter> =
+        Outcome.Success(Chapter(chapterIdx, chapterTokens))
+    override suspend fun progress(textId: String): Outcome<ReadingProgress?> = Outcome.Success(saved)
+    override suspend fun saveProgress(
+        textId: String,
+        chapterIdx: Int,
+        tokenIdx: Int,
+        pctRead: Double,
+    ): Outcome<Unit> {
+        saved = ReadingProgress(chapterIdx, tokenIdx, pctRead)
+        return Outcome.Success(Unit)
+    }
 }
 
 private class FakeReaderRepository(

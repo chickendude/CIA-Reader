@@ -92,6 +92,8 @@ class ReaderViewModel @Inject constructor(
     private val textId: String =
         checkNotNull(savedStateHandle.get<String>("textId")) { "reader requires a textId arg" }
     private val collectionId: String? = savedStateHandle.get<String>("collectionId")
+    private val openAtEnd: Boolean = savedStateHandle.get<Boolean>("atEnd") ?: false
+    private val resumeSavedPosition: Boolean = savedStateHandle.get<Boolean>("resume") ?: true
 
     private val _state = MutableStateFlow(ReaderUiState())
     val state: StateFlow<ReaderUiState> = _state.asStateFlow()
@@ -126,12 +128,18 @@ class ReaderViewModel @Inject constructor(
                     loadSiblings()
                     // Resume where the reader left off (chapter clamped to range);
                     // restore the token only within that saved chapter.
-                    val saved = when (val p = repository.progress(textId)) {
-                        is Outcome.Success -> p.data
-                        is Outcome.Failure -> null
+                    val saved = if (resumeSavedPosition) {
+                        when (val p = repository.progress(textId)) {
+                            is Outcome.Success -> p.data
+                            is Outcome.Failure -> null
+                        }
+                    } else {
+                        null
                     }
                     val startChapter = (saved?.chapterIdx ?: 0).coerceIn(0, chapterCount - 1)
-                    val restoreToken = saved?.takeIf { it.chapterIdx == startChapter }?.tokenIdx
+                    // Going back to a chapter opens it at the end; otherwise resume.
+                    val restoreToken =
+                        if (openAtEnd) null else saved?.takeIf { it.chapterIdx == startChapter }?.tokenIdx
                     // For a multi-chapter single text, the TOC lists its own chapters.
                     if (collectionId == null && chapterCount > 1) {
                         _state.update { s ->
@@ -148,28 +156,47 @@ class ReaderViewModel @Inject constructor(
                             )
                         }
                     }
-                    loadChapter(startChapter, restoreToken)
+                    loadChapter(
+                        startChapter,
+                        restoreToken,
+                        atEnd = openAtEnd,
+                        saveOnLoad = !resumeSavedPosition || openAtEnd,
+                    )
                 }
             }
         }
     }
 
-    fun loadChapter(chapterIdx: Int, restoreTokenIdx: Int? = null) {
+    fun loadChapter(
+        chapterIdx: Int,
+        restoreTokenIdx: Int? = null,
+        atEnd: Boolean = false,
+        saveOnLoad: Boolean = false,
+    ) {
+        progressJob?.cancel()
         _state.update { it.copy(isLoading = true, errorMessage = null, selectedWord = null, wordTranslations = null) }
         viewModelScope.launch {
             when (val chapter = repository.chapter(textId, chapterIdx)) {
-                is Outcome.Success ->
+                is Outcome.Success -> {
+                    val anchor =
+                        if (atEnd) chapter.data.tokens.lastIndex.coerceAtLeast(0) else restoreTokenIdx
                     _state.update {
                         it.copy(
                             isLoading = false,
                             chapterIdx = chapterIdx,
                             tokens = chapter.data.tokens,
-                            restoreTokenIdx = restoreTokenIdx,
+                            restoreTokenIdx = anchor,
                             chapters = it.chapters.map { ref ->
                                 if (ref.chapterIdx != null) ref.copy(isCurrent = ref.chapterIdx == chapterIdx) else ref
                             },
                         )
                     }
+                    if (saveOnLoad) {
+                        val tokenIdx = anchor ?: 0
+                        val pctRead = if (atEnd) 100.0 else 0.0
+                        repository.saveProgress(textId, chapterIdx, tokenIdx, pctRead)
+                    }
+                }
 
                 is Outcome.Failure ->
                     _state.update { it.copy(isLoading = false, errorMessage = chapter.message) }
@@ -221,20 +248,21 @@ class ReaderViewModel @Inject constructor(
     fun dismissWord() = _state.update { it.copy(selectedWord = null, wordTranslations = null, isWordLoading = false) }
 
     fun nextChapter() {
-        if (_state.value.hasNext) loadChapter(_state.value.chapterIdx + 1)
+        if (_state.value.hasNext) loadChapter(_state.value.chapterIdx + 1, saveOnLoad = true)
     }
 
     fun prevChapter() {
-        if (_state.value.hasPrev) loadChapter(_state.value.chapterIdx - 1)
+        if (_state.value.hasPrev) loadChapter(_state.value.chapterIdx - 1, saveOnLoad = true)
     }
 
     /** Debounced reading-progress write-back as the user scrolls. */
     fun recordPosition(tokenIdx: Int, pctRead: Double) {
+        val chapterIdx = _state.value.chapterIdx
         currentTopToken = tokenIdx
         progressJob?.cancel()
         progressJob = viewModelScope.launch {
             delay(PROGRESS_DEBOUNCE_MS)
-            repository.saveProgress(textId, _state.value.chapterIdx, tokenIdx, pctRead)
+            repository.saveProgress(textId, chapterIdx, tokenIdx, pctRead)
         }
     }
 

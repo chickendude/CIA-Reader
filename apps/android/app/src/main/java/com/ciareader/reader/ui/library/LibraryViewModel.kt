@@ -91,6 +91,12 @@ class LibraryViewModel @Inject constructor(
         }
     }
 
+    fun refreshCurrentLanguage() {
+        val language = _state.value.currentLanguage ?: return
+        if (_state.value.isLoading) return
+        viewModelScope.launch { loadContent(language) }
+    }
+
     private suspend fun loadContent(language: String) {
         when (val textsRes = libraryRepository.listTexts(LibraryScope.OWNED, language)) {
             is Outcome.Failure ->
