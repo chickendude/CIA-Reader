@@ -5,6 +5,7 @@ import com.ciareader.reader.data.local.CachedChapterEntity
 import com.ciareader.reader.data.local.CachedChapterRefEntity
 import com.ciareader.reader.data.local.CachedTextEntity
 import com.ciareader.reader.data.local.CachedTextSize
+import com.ciareader.reader.data.local.PendingProgressEntity
 import com.ciareader.reader.data.local.ReaderCacheDao
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
@@ -159,6 +160,48 @@ class ReaderRepositoryTest {
         assertTrue(r.chapter("t1", 0) is Outcome.Failure)
     }
 
+    // --- offline reading-progress write-back (queue + flush) ---
+
+    @Test
+    fun offlineProgressIsQueuedAndReadBackWhileOffline() = runTest {
+        val api = FakeReaderApi().apply { online = false }
+        val r = repo(api)
+
+        // Offline save is queued (the network PATCH fails)...
+        assertTrue(r.saveProgress("t1", chapterIdx = 1, tokenIdx = 9, pctRead = 33.0) is Outcome.Failure)
+        // ...and a still-offline reopen resumes from that queued position.
+        val resumed = r.progress("t1")
+        assertTrue(resumed is Outcome.Success)
+        val p = (resumed as Outcome.Success).data
+        assertEquals(1, p?.chapterIdx)
+        assertEquals(9, p?.tokenIdx)
+    }
+
+    @Test
+    fun queuedProgressFlushesToServerWhenBackOnline() = runTest {
+        val api = FakeReaderApi().apply { online = false }
+        val r = repo(api)
+        r.saveProgress("t1", chapterIdx = 2, tokenIdx = 40, pctRead = 50.0) // queued offline
+
+        // Back online: opening the text flushes the queue to the server.
+        api.online = true
+        r.progress("t1")
+
+        assertEquals(SaveProgressRequest(2, 40, 50.0), api.lastSaved) // pushed
+    }
+
+    @Test
+    fun onlineSaveDropsAStaleQueuedWrite() = runTest {
+        val api = FakeReaderApi()
+        val r = repo(api)
+        // A later successful online save supersedes any queued offline position,
+        // so progress() then reflects the server, not the stale queue.
+        r.saveProgress("t1", chapterIdx = 3, tokenIdx = 7, pctRead = 20.0)
+        val p = r.progress("t1")
+        assertTrue(p is Outcome.Success)
+        assertEquals(null, (p as Outcome.Success).data) // fake server returns no progress
+    }
+
     private fun http(code: Int) =
         HttpException(Response.error<Any>(code, "e".toResponseBody("text/plain".toMediaType())))
 }
@@ -191,6 +234,7 @@ private class FakeReaderApi(
     }
 
     override suspend fun saveProgress(textId: String, body: SaveProgressRequest): TextProgressEnvelopeDto {
+        guard() // offline → throws, so the repository queues the write
         lastSaved = body
         return TextProgressEnvelopeDto(progress = TextProgressDto(body.chapterIdx, body.tokenIdx, body.pctRead))
     }
@@ -227,6 +271,17 @@ private class FakeReaderCacheDao : ReaderCacheDao {
 
     override suspend fun chapter(textId: String, chapterIdx: Int): CachedChapterEntity? =
         chapters[textId to chapterIdx]
+
+    private val pendingMap = mutableMapOf<String, PendingProgressEntity>()
+    override suspend fun upsertPending(pending: PendingProgressEntity) {
+        pendingMap[pending.textId] = pending
+    }
+
+    override suspend fun pending(textId: String): PendingProgressEntity? = pendingMap[textId]
+    override suspend fun allPending(): List<PendingProgressEntity> = pendingMap.values.toList()
+    override suspend fun deletePending(textId: String) {
+        pendingMap.remove(textId)
+    }
 
     override suspend fun deleteText(textId: String) {
         texts.remove(textId)

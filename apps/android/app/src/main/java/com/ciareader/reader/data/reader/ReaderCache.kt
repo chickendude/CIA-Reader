@@ -3,6 +3,7 @@ package com.ciareader.reader.data.reader
 import com.ciareader.reader.data.local.CachedChapterEntity
 import com.ciareader.reader.data.local.CachedChapterRefEntity
 import com.ciareader.reader.data.local.CachedTextEntity
+import com.ciareader.reader.data.local.PendingProgressEntity
 import com.ciareader.reader.data.local.ReaderCacheDao
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
@@ -66,4 +67,29 @@ class ReaderCache @Inject constructor(
             ),
         )
     }
+
+    // --- Offline reading-progress queue ---
+
+    /** Save (replace) a reading position made offline, pending upload. */
+    suspend fun queueProgress(textId: String, chapterIdx: Int, tokenIdx: Int, pctRead: Double, now: Long) {
+        dao.upsertPending(PendingProgressEntity(textId, chapterIdx, tokenIdx, pctRead, now))
+    }
+
+    /** The queued (unsynced) position for a text, if any. */
+    suspend fun pendingProgress(textId: String): ReadingProgress? =
+        dao.pending(textId)?.let { ReadingProgress(it.chapterIdx, it.tokenIdx, it.pctRead) }
+
+    suspend fun clearPending(textId: String) = dao.deletePending(textId)
+
+    /** All queued positions, for flushing to the server when back online. */
+    suspend fun pendingWrites(): List<PendingWrite> =
+        dao.allPending().map { PendingWrite(it.textId, it.chapterIdx, it.tokenIdx, it.pctRead) }
 }
+
+/** A queued offline reading position bound to its text. */
+data class PendingWrite(
+    val textId: String,
+    val chapterIdx: Int,
+    val tokenIdx: Int,
+    val pctRead: Double,
+)

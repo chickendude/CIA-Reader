@@ -40,3 +40,18 @@ data class CachedChapterEntity(
     val tokensJson: String,
     val cachedAt: Long,
 )
+
+/**
+ * A reading position saved while offline, awaiting upload to the server. One
+ * row per text (latest position); cleared once flushed. Unlike the content
+ * tables this is genuine user state, not a server mirror — but it lives in the
+ * same disposable DB, so an unsynced position can be lost on a schema rebuild.
+ */
+@Entity(tableName = "pending_progress")
+data class PendingProgressEntity(
+    @PrimaryKey val textId: String,
+    val chapterIdx: Int,
+    val tokenIdx: Int,
+    val pctRead: Double,
+    val updatedAt: Long,
+)
