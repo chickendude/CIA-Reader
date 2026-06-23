@@ -102,7 +102,10 @@ fun SettingsScreenContent(
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 16.dp),
         ) {
-            SectionHeader("Reading")
+            // Reading prefs are per-language; show which one they apply to.
+            SectionHeader(
+                if (state.languageLabel.isNotEmpty()) "Reading · ${state.languageLabel}" else "Reading",
+            )
             SwitchRow(
                 label = "Romanization",
                 description = "Show romanized text instead of the native script",

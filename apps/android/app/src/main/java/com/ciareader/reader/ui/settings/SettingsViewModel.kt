@@ -3,6 +3,7 @@ package com.ciareader.reader.ui.settings
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.ciareader.reader.core.settings.SettingsStore
+import com.ciareader.reader.data.language.LanguageRepository
 import com.ciareader.reader.data.local.OfflineCache
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -13,6 +14,8 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 data class SettingsUiState(
+    /** Language these reading settings apply to (display name, for the header). */
+    val languageLabel: String = "",
     val romanization: Boolean = false,
     val pageMode: Boolean = false,
     val fontSize: Int = SettingsStore.DEFAULT_FONT_SIZE_SP,
@@ -29,20 +32,28 @@ data class SettingsUiState(
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
     private val settings: SettingsStore,
+    private val languages: LanguageRepository,
     private val offlineCache: OfflineCache,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(SettingsUiState())
     val state: StateFlow<SettingsUiState> = _state.asStateFlow()
 
+    // The current language — reading prefs are scoped to it.
+    private var language: String = ""
+
     init {
         viewModelScope.launch {
+            val lang = settings.currentLanguage().orEmpty()
+            language = lang
+            val label = languages.cachedLanguages().firstOrNull { it.code == lang }?.displayName ?: lang
             _state.update {
                 it.copy(
-                    romanization = settings.showRomanization(),
-                    pageMode = settings.pageMode(),
-                    fontSize = settings.fontSizeSp(),
-                    lineSpacing = settings.lineSpacing(),
+                    languageLabel = label,
+                    romanization = settings.showRomanization(lang),
+                    pageMode = settings.pageMode(lang),
+                    fontSize = settings.fontSizeSp(lang),
+                    lineSpacing = settings.lineSpacing(lang),
                 )
             }
         }
@@ -50,25 +61,25 @@ class SettingsViewModel @Inject constructor(
 
     fun setRomanization(value: Boolean) {
         _state.update { it.copy(romanization = value) }
-        viewModelScope.launch { settings.setShowRomanization(value) }
+        viewModelScope.launch { settings.setShowRomanization(language, value) }
     }
 
     fun setPageMode(value: Boolean) {
         _state.update { it.copy(pageMode = value) }
-        viewModelScope.launch { settings.setPageMode(value) }
+        viewModelScope.launch { settings.setPageMode(language, value) }
     }
 
     fun setFontSize(sp: Int) {
         val v = sp.coerceIn(FONT_SIZE_MIN, FONT_SIZE_MAX)
         _state.update { it.copy(fontSize = v) }
-        viewModelScope.launch { settings.setFontSizeSp(v) }
+        viewModelScope.launch { settings.setFontSizeSp(language, v) }
     }
 
     fun setLineSpacing(value: Float) {
         // Round to one decimal so repeated steps don't drift (1.5 → 1.5999…).
         val v = (Math.round(value * 10f) / 10f).coerceIn(LINE_SPACING_MIN, LINE_SPACING_MAX)
         _state.update { it.copy(lineSpacing = v) }
-        viewModelScope.launch { settings.setLineSpacing(v) }
+        viewModelScope.launch { settings.setLineSpacing(language, v) }
     }
 
     fun clearOfflineCache() {

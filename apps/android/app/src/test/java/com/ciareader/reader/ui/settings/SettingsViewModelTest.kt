@@ -1,6 +1,9 @@
 package com.ciareader.reader.ui.settings
 
+import com.ciareader.reader.core.network.Outcome
 import com.ciareader.reader.core.settings.SettingsStore
+import com.ciareader.reader.data.language.Language
+import com.ciareader.reader.data.language.LanguageRepository
 import com.ciareader.reader.data.local.OfflineCache
 import com.ciareader.reader.util.MainDispatcherRule
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -22,18 +25,23 @@ class SettingsViewModelTest {
 
     private fun vm(
         settings: FakeSettingsStore = FakeSettingsStore(),
+        languages: FakeLanguageRepository = FakeLanguageRepository(listOf(language("hi", "Hindi"))),
         cache: FakeOfflineCache = FakeOfflineCache(),
-    ) = SettingsViewModel(settings, cache)
+    ) = SettingsViewModel(settings, languages, cache)
 
     @Test
-    fun loadsCurrentPreferences() = runTest(mainRule.dispatcher) {
-        val store = FakeSettingsStore().apply {
-            romanization = true; page = true; font = 22; spacing = 1.8f
+    fun loadsCurrentLanguagePreferencesAndLabel() = runTest(mainRule.dispatcher) {
+        val store = FakeSettingsStore(lang = "hi").apply {
+            romanization["hi"] = true
+            page["hi"] = true
+            font["hi"] = 22
+            spacing["hi"] = 1.8f
         }
         val v = vm(store)
         advanceUntilIdle()
 
         val s = v.state.value
+        assertEquals("Hindi", s.languageLabel)
         assertTrue(s.romanization)
         assertTrue(s.pageMode)
         assertEquals(22, s.fontSize)
@@ -41,8 +49,8 @@ class SettingsViewModelTest {
     }
 
     @Test
-    fun togglesPersistToStore() = runTest(mainRule.dispatcher) {
-        val store = FakeSettingsStore()
+    fun togglesPersistUnderTheCurrentLanguage() = runTest(mainRule.dispatcher) {
+        val store = FakeSettingsStore(lang = "hi")
         val v = vm(store)
         advanceUntilIdle()
 
@@ -50,10 +58,23 @@ class SettingsViewModelTest {
         v.setPageMode(true)
         advanceUntilIdle()
 
-        assertTrue(store.romanization)
-        assertTrue(store.page)
+        assertEquals(true, store.romanization["hi"])
+        assertEquals(true, store.page["hi"])
         assertTrue(v.state.value.romanization)
-        assertTrue(v.state.value.pageMode)
+    }
+
+    @Test
+    fun readsTheCurrentLanguageNotAGlobalValue() = runTest(mainRule.dispatcher) {
+        // hi has romanization on; eu does not. With eu current, it reads off.
+        val store = FakeSettingsStore(lang = "eu").apply {
+            romanization["hi"] = true
+            romanization["eu"] = false
+        }
+        val v = vm(store, FakeLanguageRepository(listOf(language("eu", "Basque"))))
+        advanceUntilIdle()
+
+        assertFalse(v.state.value.romanization)
+        assertEquals("Basque", v.state.value.languageLabel)
     }
 
     @Test
@@ -95,44 +116,53 @@ class SettingsViewModelTest {
         assertEquals(1, cache.cleared)
         assertTrue(v.state.value.cacheCleared)
 
-        // One-shot: the confirmation flag resets once shown.
         v.onCacheClearedShown()
         assertFalse(v.state.value.cacheCleared)
     }
+
+    private fun language(code: String, displayName: String) =
+        Language(code = code, displayName = displayName, nativeName = displayName, script = "Deva", isDefault = false)
 }
 
-private class FakeSettingsStore : SettingsStore {
-    var lang: String? = null
-    var romanization = false
-    var page = false
-    var font = SettingsStore.DEFAULT_FONT_SIZE_SP
-    var spacing = SettingsStore.DEFAULT_LINE_SPACING
+private class FakeSettingsStore(var lang: String? = "hi") : SettingsStore {
+    val romanization = mutableMapOf<String, Boolean>()
+    val page = mutableMapOf<String, Boolean>()
+    val font = mutableMapOf<String, Int>()
+    val spacing = mutableMapOf<String, Float>()
 
-    override val currentLanguage: Flow<String?> = MutableStateFlow(null)
+    override val currentLanguage: Flow<String?> = MutableStateFlow(lang)
     override suspend fun currentLanguage(): String? = lang
     override suspend fun setCurrentLanguage(code: String) {
         lang = code
     }
 
-    override suspend fun showRomanization(): Boolean = romanization
-    override suspend fun setShowRomanization(value: Boolean) {
-        romanization = value
+    override suspend fun showRomanization(language: String): Boolean = romanization[language] ?: false
+    override suspend fun setShowRomanization(language: String, value: Boolean) {
+        romanization[language] = value
     }
 
-    override suspend fun pageMode(): Boolean = page
-    override suspend fun setPageMode(value: Boolean) {
-        page = value
+    override suspend fun pageMode(language: String): Boolean = page[language] ?: false
+    override suspend fun setPageMode(language: String, value: Boolean) {
+        page[language] = value
     }
 
-    override suspend fun fontSizeSp(): Int = font
-    override suspend fun setFontSizeSp(value: Int) {
-        font = value
+    override suspend fun fontSizeSp(language: String): Int = font[language] ?: SettingsStore.DEFAULT_FONT_SIZE_SP
+    override suspend fun setFontSizeSp(language: String, value: Int) {
+        font[language] = value
     }
 
-    override suspend fun lineSpacing(): Float = spacing
-    override suspend fun setLineSpacing(value: Float) {
-        spacing = value
+    override suspend fun lineSpacing(language: String): Float =
+        spacing[language] ?: SettingsStore.DEFAULT_LINE_SPACING
+
+    override suspend fun setLineSpacing(language: String, value: Float) {
+        spacing[language] = value
     }
+}
+
+private class FakeLanguageRepository(private val langs: List<Language> = emptyList()) : LanguageRepository {
+    override suspend fun myLanguages(): Outcome<List<Language>> = Outcome.Success(langs)
+    override suspend fun setCurrent(code: String): Outcome<String> = Outcome.Success(code)
+    override suspend fun cachedLanguages(): List<Language> = langs
 }
 
 private class FakeOfflineCache : OfflineCache {
