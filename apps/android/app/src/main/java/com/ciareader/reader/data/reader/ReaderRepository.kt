@@ -107,12 +107,24 @@ class ReaderRepositoryImpl @Inject constructor(
             is Outcome.Failure -> cache.chapter(textId, chapterIdx)?.let { Outcome.Success(it) } ?: net
         }
 
-    override suspend fun progress(textId: String): Outcome<ReadingProgress?> =
-        apiCall {
+    override suspend fun progress(textId: String): Outcome<ReadingProgress?> {
+        val net = apiCall {
             api.progress(textId).progress?.let {
                 ReadingProgress(it.lastChapterIdx, it.lastTokenIdx, it.pctRead)
             }
         }
+        val pending = cache.pendingProgress(textId)
+        return when (net) {
+            // Online: an unsynced local position is newer than the server's, so
+            // prefer it — and push the whole queue while we have a connection.
+            is Outcome.Success -> {
+                if (pending != null) flushPending()
+                Outcome.Success(pending ?: net.data)
+            }
+            // Offline: resume from the queued local position if we have one.
+            is Outcome.Failure -> Outcome.Success(pending)
+        }
+    }
 
     override suspend fun saveProgress(
         textId: String,
@@ -120,7 +132,30 @@ class ReaderRepositoryImpl @Inject constructor(
         tokenIdx: Int,
         pctRead: Double,
     ): Outcome<Unit> =
-        apiCall { api.saveProgress(textId, SaveProgressRequest(chapterIdx, tokenIdx, pctRead)); Unit }
+        when (val net = apiCall { api.saveProgress(textId, SaveProgressRequest(chapterIdx, tokenIdx, pctRead)); Unit }) {
+            // Saved server-side: this is now the newest, so drop any stale queued
+            // write for this text and opportunistically flush the rest.
+            is Outcome.Success -> {
+                cache.clearPending(textId)
+                flushPending()
+                net
+            }
+            // Offline: queue the position so it survives and syncs on reconnect.
+            is Outcome.Failure -> {
+                cache.queueProgress(textId, chapterIdx, tokenIdx, pctRead, System.currentTimeMillis())
+                net
+            }
+        }
+
+    /** Upload queued offline positions; drop each as it succeeds. */
+    private suspend fun flushPending() {
+        for (w in cache.pendingWrites()) {
+            val res = apiCall {
+                api.saveProgress(w.textId, SaveProgressRequest(w.chapterIdx, w.tokenIdx, w.pctRead)); Unit
+            }
+            if (res is Outcome.Success) cache.clearPending(w.textId)
+        }
+    }
 }
 
 private fun TextMetaDto.toDomain() = TextMeta(

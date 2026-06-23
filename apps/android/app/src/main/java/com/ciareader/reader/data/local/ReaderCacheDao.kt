@@ -48,6 +48,19 @@ interface ReaderCacheDao {
     @Query("SELECT * FROM cached_chapter WHERE textId = :textId AND chapterIdx = :chapterIdx")
     suspend fun chapter(textId: String, chapterIdx: Int): CachedChapterEntity?
 
+    // Reading positions saved offline, awaiting upload.
+    @Upsert
+    suspend fun upsertPending(pending: PendingProgressEntity)
+
+    @Query("SELECT * FROM pending_progress WHERE textId = :textId")
+    suspend fun pending(textId: String): PendingProgressEntity?
+
+    @Query("SELECT * FROM pending_progress")
+    suspend fun allPending(): List<PendingProgressEntity>
+
+    @Query("DELETE FROM pending_progress WHERE textId = :textId")
+    suspend fun deletePending(textId: String)
+
     /** Drop everything cached for a text (the three tables share textId). */
     @Query("DELETE FROM cached_text WHERE textId = :textId")
     suspend fun deleteText(textId: String)
