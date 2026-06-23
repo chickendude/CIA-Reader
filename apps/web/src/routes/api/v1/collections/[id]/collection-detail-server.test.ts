@@ -49,6 +49,7 @@ function detail(collectionOverrides: Record<string, unknown> = {}) {
       {
         position: 0,
         sectionTitle: null,
+        wordCount: 1234,
         text: {
           id: 'text-1',
           ownerId: OWNER.id,
@@ -111,7 +112,7 @@ describe('GET /api/v1/collections/:id', () => {
     expect(json.collection.id).toBe(ID);
     expect(json.items).toHaveLength(1);
     expect(json.items[0]).toMatchObject({ position: 0, sectionTitle: null });
-    expect(json.items[0].text).toMatchObject({ id: 'text-1', title: 'Ch 1' });
+    expect(json.items[0].text).toMatchObject({ id: 'text-1', title: 'Ch 1', wordCount: 1234 });
   });
 
   it('404s a private collection for a non-owner without a share', async () => {

@@ -19,6 +19,7 @@ data class CollectionChapter(
     val title: String,
     val position: Int,
     val status: String,
+    val wordCount: Int = 0,
 ) {
     val isReady: Boolean get() = status == "ready"
 }
@@ -64,6 +65,7 @@ class CollectionRepositoryImpl @Inject constructor(
                         title = it.text.title,
                         position = it.position,
                         status = it.text.status,
+                        wordCount = it.text.wordCount,
                     )
                 },
             )

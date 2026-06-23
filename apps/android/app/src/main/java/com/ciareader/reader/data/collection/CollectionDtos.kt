@@ -41,4 +41,5 @@ data class CollectionItemTextDto(
     val id: String,
     val title: String,
     val status: String,
+    val wordCount: Int = 0,
 )

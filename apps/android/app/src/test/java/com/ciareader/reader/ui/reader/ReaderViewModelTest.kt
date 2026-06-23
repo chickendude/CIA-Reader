@@ -259,9 +259,9 @@ class ReaderViewModelTest {
                 id = "c1",
                 title = "Book",
                 chapters = listOf(
-                    CollectionChapter("t0", "One", 0, "ready"),
-                    CollectionChapter("t1", "Two", 1, "ready"),
-                    CollectionChapter("t2", "Three", 2, "ready"),
+                    CollectionChapter("t0", "One", 0, "ready", wordCount = 100),
+                    CollectionChapter("t1", "Two", 1, "ready", wordCount = 200),
+                    CollectionChapter("t2", "Three", 2, "ready", wordCount = 300),
                 ),
             ),
         )
@@ -275,6 +275,7 @@ class ReaderViewModelTest {
         // Full chapter list for the TOC, with the current chapter flagged.
         assertEquals(listOf("t0", "t1", "t2"), v.state.value.chapters.map { it.textId })
         assertTrue(v.state.value.chapters[1].isCurrent)
+        assertEquals(200, v.state.value.chapters[1].wordCount)
     }
 
     @Test
