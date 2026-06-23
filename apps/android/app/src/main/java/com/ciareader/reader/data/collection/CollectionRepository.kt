@@ -40,37 +40,58 @@ interface CollectionRepository {
 @Singleton
 class CollectionRepositoryImpl @Inject constructor(
     private val api: CollectionsApi,
+    private val cache: CollectionCache,
 ) : CollectionRepository {
 
+    // Network-first with offline fallback, so the library still lists the
+    // user's books and a book's chapter list stays available without a
+    // connection (the in-reader chapter nav relies on detail()).
     override suspend fun myCollections(): Outcome<List<CollectionSummary>> =
-        apiCall {
-            api.myCollections().collections.map {
-                CollectionSummary(
-                    id = it.collection.id,
-                    title = it.collection.title,
-                    language = it.collection.language,
-                    kind = it.collection.kind,
-                    textCount = it.textCount,
-                    openTextId = it.openTextId,
-                )
+        when (
+            val net = apiCall {
+                api.myCollections().collections.map {
+                    CollectionSummary(
+                        id = it.collection.id,
+                        title = it.collection.title,
+                        language = it.collection.language,
+                        kind = it.collection.kind,
+                        textCount = it.textCount,
+                        openTextId = it.openTextId,
+                    )
+                }
             }
+        ) {
+            is Outcome.Success -> {
+                cache.putCollections(net.data)
+                net
+            }
+            is Outcome.Failure -> cache.collections().takeIf { it.isNotEmpty() }
+                ?.let { Outcome.Success(it) } ?: net
         }
 
     override suspend fun detail(collectionId: String): Outcome<CollectionDetail> =
-        apiCall {
-            val dto = api.detail(collectionId)
-            CollectionDetail(
-                id = dto.collection.id,
-                title = dto.collection.title,
-                chapters = dto.items.map {
-                    CollectionChapter(
-                        textId = it.text.id,
-                        title = it.text.title,
-                        position = it.position,
-                        status = it.text.status,
-                        wordCount = it.text.wordCount,
-                    )
-                },
-            )
+        when (
+            val net = apiCall {
+                val dto = api.detail(collectionId)
+                CollectionDetail(
+                    id = dto.collection.id,
+                    title = dto.collection.title,
+                    chapters = dto.items.map {
+                        CollectionChapter(
+                            textId = it.text.id,
+                            title = it.text.title,
+                            position = it.position,
+                            status = it.text.status,
+                            wordCount = it.text.wordCount,
+                        )
+                    },
+                )
+            }
+        ) {
+            is Outcome.Success -> {
+                cache.putDetail(net.data)
+                net
+            }
+            is Outcome.Failure -> cache.detail(collectionId)?.let { Outcome.Success(it) } ?: net
         }
 }
