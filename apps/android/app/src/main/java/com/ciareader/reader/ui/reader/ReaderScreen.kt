@@ -87,14 +87,20 @@ fun ReaderScreen(
         onBack = onBack,
         onWordTap = viewModel::onWordTap,
         onDismissWord = viewModel::dismissWord,
-        // Within a multi-chapter text, move between its chapters; otherwise (e.g.
-        // a book whose chapters are separate texts) jump to the sibling chapter —
-        // going back opens that chapter at its last page.
+        // Top arrows jump to the START of the adjacent chapter.
         onPrevChapter = {
-            if (state.hasPrev) viewModel.prevChapter() else state.prevTextId?.let { onOpenChapterText(it, true) }
+            if (state.hasPrev) viewModel.prevChapter() else state.prevTextId?.let { onOpenChapterText(it, false) }
         },
         onNextChapter = {
             if (state.hasNext) viewModel.nextChapter() else state.nextTextId?.let { onOpenChapterText(it, false) }
+        },
+        // Edge-swiping back opens the previous chapter at its LAST page.
+        onSwipeToPrevChapter = {
+            if (state.hasPrev) {
+                viewModel.loadChapter(state.chapterIdx - 1, atEnd = true)
+            } else {
+                state.prevTextId?.let { onOpenChapterText(it, true) }
+            }
         },
         onRetry = viewModel::retry,
         onSetStatus = viewModel::setStatus,
@@ -120,6 +126,7 @@ internal fun ReaderScreenContent(
     onDismissWord: () -> Unit,
     onPrevChapter: () -> Unit,
     onNextChapter: () -> Unit,
+    onSwipeToPrevChapter: () -> Unit = onPrevChapter,
     onRetry: () -> Unit,
     onSetStatus: (KnownStatus) -> Unit,
     onRecordPosition: (Int, Double) -> Unit,
@@ -145,7 +152,7 @@ internal fun ReaderScreenContent(
                             )
                         }
                         Text(
-                            state.title.ifEmpty { "Reader" },
+                            state.title,
                             modifier = Modifier
                                 .weight(1f)
                                 .clickable(enabled = state.chapters.isNotEmpty()) { showChapters = true },
@@ -200,10 +207,11 @@ internal fun ReaderScreenContent(
                         canGoNext = state.canGoNext,
                         prevTitle = state.prevTitle,
                         nextTitle = state.nextTitle,
-                        onPrev = onPrevChapter,
+                        onPrev = onSwipeToPrevChapter,
                         onNext = onNextChapter,
                         onWordTap = onWordTap,
                         onProgress = onProgress,
+                        onRecordPosition = onRecordPosition,
                         restoreTokenIdx = state.restoreTokenIdx,
                         onRestoreConsumed = onRestoreConsumed,
                         modifier = Modifier.fillMaxSize(),
@@ -394,6 +402,7 @@ private fun PagedChapter(
     onNext: () -> Unit,
     onWordTap: (ReaderToken) -> Unit,
     onProgress: (Float) -> Unit,
+    onRecordPosition: (Int, Double) -> Unit,
     restoreTokenIdx: Int?,
     onRestoreConsumed: () -> Unit,
     modifier: Modifier = Modifier,
@@ -471,9 +480,15 @@ private fun PagedChapter(
                 }
             }
         }
-        LaunchedEffect(pagerState, total) {
+        LaunchedEffect(pagerState, total, pages) {
             snapshotFlow { pagerState.currentPage }.collect { p ->
-                onProgress(if (total > 1) p.toFloat() / (total - 1) else 0f)
+                val fraction = if (total > 1) p.toFloat() / (total - 1) else 0f
+                onProgress(fraction)
+                // Save the spot: the first token of the current (real) page.
+                val realPage = (p - leading).coerceIn(0, (pages.size - 1).coerceAtLeast(0))
+                val charOffset = pages.getOrNull(realPage)?.first ?: 0
+                val tokenIdx = ranges.indexOfFirst { charOffset in it }.coerceAtLeast(0)
+                onRecordPosition(tokenIdx, (fraction * 100).toDouble())
             }
         }
 

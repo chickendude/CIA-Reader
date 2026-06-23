@@ -375,6 +375,26 @@ class ReaderViewModelTest {
         assertEquals(2, v.state.value.restoreTokenIdx) // last of 3 tokens
     }
 
+    @Test
+    fun savesAndRestoresReadingSpot() = runTest(mainRule.dispatcher) {
+        // A repo that actually persists progress, like the server round-trip.
+        val repo = SavingReaderRepository(
+            meta = meta(1),
+            chapterTokens = listOf(word("a"), word("b"), word("c")),
+        )
+
+        // Read to token 2 and let the debounced save fire.
+        val first = vm(repo)
+        advanceUntilIdle()
+        first.recordPosition(tokenIdx = 2, pctRead = 66.0)
+        advanceUntilIdle()
+
+        // Reopen the same text → it resumes at the saved token.
+        val reopened = vm(repo)
+        advanceUntilIdle()
+        assertEquals(2, reopened.state.value.restoreTokenIdx)
+    }
+
     private fun word(surface: String) =
         ReaderToken(0, surface, true, KnownStatus.UNKNOWN, null, null, null, false, false, false)
 
@@ -386,6 +406,27 @@ class ReaderViewModelTest {
         chapterCount = chapterCount,
         chapters = (0 until chapterCount).map { ChapterRef(it, "c$it", 1) },
     )
+}
+
+/** Persists progress in-memory so a reopened reader resumes — a round-trip. */
+private class SavingReaderRepository(
+    private val meta: TextMeta,
+    private val chapterTokens: List<ReaderToken>,
+) : ReaderRepository {
+    private var saved: ReadingProgress? = null
+    override suspend fun textMeta(textId: String): Outcome<TextMeta> = Outcome.Success(meta)
+    override suspend fun chapter(textId: String, chapterIdx: Int): Outcome<Chapter> =
+        Outcome.Success(Chapter(chapterIdx, chapterTokens))
+    override suspend fun progress(textId: String): Outcome<ReadingProgress?> = Outcome.Success(saved)
+    override suspend fun saveProgress(
+        textId: String,
+        chapterIdx: Int,
+        tokenIdx: Int,
+        pctRead: Double,
+    ): Outcome<Unit> {
+        saved = ReadingProgress(chapterIdx, tokenIdx, pctRead)
+        return Outcome.Success(Unit)
+    }
 }
 
 private class FakeReaderRepository(
