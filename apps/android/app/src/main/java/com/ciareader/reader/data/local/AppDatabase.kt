@@ -13,10 +13,15 @@ import androidx.room.RoomDatabase
         CachedTextEntity::class,
         CachedChapterRefEntity::class,
         CachedChapterEntity::class,
+        CachedLibraryCardEntity::class,
+        CachedCollectionEntity::class,
+        CachedCollectionDetailEntity::class,
+        CachedCollectionChapterEntity::class,
     ],
-    version = 1,
+    version = 2,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun readerCacheDao(): ReaderCacheDao
+    abstract fun libraryCacheDao(): LibraryCacheDao
 }

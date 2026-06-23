@@ -29,10 +29,21 @@ interface LibraryRepository {
 @Singleton
 class LibraryRepositoryImpl @Inject constructor(
     private val api: LibraryApi,
+    private val cache: LibraryCache,
 ) : LibraryRepository {
+    // Network-first with offline fallback to the last-cached listing.
     override suspend fun listTexts(scope: LibraryScope, language: String): Outcome<List<TextCard>> =
-        apiCall {
-            api.listTexts(scope = scope.wire, language = language).cards.map { it.toDomain() }
+        when (
+            val net = apiCall {
+                api.listTexts(scope = scope.wire, language = language).cards.map { it.toDomain() }
+            }
+        ) {
+            is Outcome.Success -> {
+                cache.putCards(scope, language, net.data)
+                net
+            }
+            is Outcome.Failure -> cache.cards(scope, language).takeIf { it.isNotEmpty() }
+                ?.let { Outcome.Success(it) } ?: net
         }
 }
 
