@@ -14,6 +14,8 @@ import com.ciareader.reader.data.collection.CollectionRepository
 import com.ciareader.reader.data.collection.CollectionRepositoryImpl
 import com.ciareader.reader.data.dictionary.DictionaryRepository
 import com.ciareader.reader.data.dictionary.DictionaryRepositoryImpl
+import com.ciareader.reader.data.local.OfflineCache
+import com.ciareader.reader.data.local.RoomOfflineCache
 import com.ciareader.reader.data.reader.ReaderRepository
 import com.ciareader.reader.data.reader.ReaderRepositoryImpl
 import dagger.Binds
@@ -57,4 +59,8 @@ abstract class BindingsModule {
     @Binds
     @Singleton
     abstract fun bindDictionaryRepository(impl: DictionaryRepositoryImpl): DictionaryRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindOfflineCache(impl: RoomOfflineCache): OfflineCache
 }

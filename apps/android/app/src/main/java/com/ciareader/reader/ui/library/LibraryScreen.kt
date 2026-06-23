@@ -14,12 +14,16 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.ui.res.painterResource
+import com.ciareader.reader.R
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
@@ -43,7 +47,7 @@ import com.ciareader.reader.data.library.TextCard
 fun LibraryScreen(
     onOpenText: (String) -> Unit,
     onOpenCollection: (CollectionSummary) -> Unit,
-    onLogout: () -> Unit,
+    onOpenSettings: () -> Unit,
     viewModel: LibraryViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -61,7 +65,7 @@ fun LibraryScreen(
         onOpenText = onOpenText,
         onOpenCollection = onOpenCollection,
         onRetry = viewModel::load,
-        onLogout = onLogout,
+        onOpenSettings = onOpenSettings,
     )
 }
 
@@ -73,7 +77,7 @@ internal fun LibraryScreenContent(
     onOpenText: (String) -> Unit,
     onOpenCollection: (CollectionSummary) -> Unit,
     onRetry: () -> Unit,
-    onLogout: () -> Unit,
+    onOpenSettings: () -> Unit,
 ) {
     Scaffold(
         topBar = {
@@ -85,7 +89,12 @@ internal fun LibraryScreenContent(
                         currentLabel = state.currentLanguageLabel,
                         onSelect = onSelectLanguage,
                     )
-                    TextButton(onClick = onLogout) { Text("Log out") }
+                    IconButton(onClick = onOpenSettings) {
+                        Icon(
+                            painterResource(R.drawable.ic_settings),
+                            contentDescription = "Settings",
+                        )
+                    }
                 },
             )
         },
