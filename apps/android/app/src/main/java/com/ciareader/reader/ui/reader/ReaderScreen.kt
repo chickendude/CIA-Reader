@@ -2,30 +2,37 @@
 
 package com.ciareader.reader.ui.reader
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.ScrollState
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.BottomAppBar
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconToggleButton
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -39,14 +46,21 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -59,20 +73,37 @@ import com.ciareader.reader.data.reader.ReaderToken
 import kotlin.math.roundToInt
 
 @Composable
-fun ReaderScreen(onBack: () -> Unit, viewModel: ReaderViewModel = hiltViewModel()) {
+fun ReaderScreen(
+    onBack: () -> Unit,
+    onOpenChapterText: (String) -> Unit,
+    viewModel: ReaderViewModel = hiltViewModel(),
+) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     ReaderScreenContent(
         state = state,
         onBack = onBack,
         onWordTap = viewModel::onWordTap,
         onDismissWord = viewModel::dismissWord,
-        onPrevChapter = viewModel::prevChapter,
-        onNextChapter = viewModel::nextChapter,
+        // Within a multi-chapter text, move between its chapters; otherwise (e.g.
+        // a book whose chapters are separate texts) jump to the sibling chapter.
+        onPrevChapter = {
+            if (state.hasPrev) viewModel.prevChapter() else state.prevTextId?.let(onOpenChapterText)
+        },
+        onNextChapter = {
+            if (state.hasNext) viewModel.nextChapter() else state.nextTextId?.let(onOpenChapterText)
+        },
         onRetry = viewModel::retry,
         onSetStatus = viewModel::setStatus,
         onRecordPosition = viewModel::recordPosition,
         onRestoreConsumed = viewModel::onRestoreConsumed,
         onToggleRomanize = viewModel::toggleRomanization,
+        onTogglePageMode = viewModel::togglePageMode,
+        onSetFontSize = viewModel::setFontSize,
+        onSetLineSpacing = viewModel::setLineSpacing,
+        onSelectChapter = { ref ->
+            val tid = ref.textId
+            if (tid != null) onOpenChapterText(tid) else ref.chapterIdx?.let { viewModel.loadChapter(it) }
+        },
     )
 }
 
@@ -89,46 +120,51 @@ internal fun ReaderScreenContent(
     onRecordPosition: (Int, Double) -> Unit,
     onRestoreConsumed: () -> Unit,
     onToggleRomanize: () -> Unit,
+    onTogglePageMode: () -> Unit,
+    onSetFontSize: (Int) -> Unit = {},
+    onSetLineSpacing: (Float) -> Unit = {},
+    onSelectChapter: (ReaderChapterRef) -> Unit = {},
 ) {
+    var showSettings by remember { mutableStateOf(false) }
+    var showChapters by remember { mutableStateOf(false) }
     Scaffold(
         topBar = {
             TopAppBar(
                 title = {
-                    Text(
-                        state.title.ifEmpty { "Reader" },
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        IconButton(onClick = onPrevChapter, enabled = state.canGoPrev) {
+                            Icon(
+                                painter = painterResource(R.drawable.ic_chevron_left),
+                                contentDescription = "Previous chapter",
+                            )
+                        }
+                        Text(
+                            state.title.ifEmpty { "Reader" },
+                            modifier = Modifier
+                                .weight(1f)
+                                .clickable(enabled = state.chapters.isNotEmpty()) { showChapters = true },
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            textAlign = TextAlign.Center,
+                        )
+                        IconButton(onClick = onNextChapter, enabled = state.canGoNext) {
+                            Icon(
+                                painter = painterResource(R.drawable.ic_chevron_right),
+                                contentDescription = "Next chapter",
+                            )
+                        }
+                    }
                 },
                 navigationIcon = { TextButton(onClick = onBack) { Text("Back") } },
                 actions = {
-                    IconToggleButton(
-                        checked = state.romanize,
-                        onCheckedChange = { onToggleRomanize() },
-                    ) {
+                    IconButton(onClick = { showSettings = true }) {
                         Icon(
-                            painter = painterResource(R.drawable.ic_translate),
-                            contentDescription = if (state.romanize) {
-                                "Show native script"
-                            } else {
-                                "Show romanization"
-                            },
+                            painter = painterResource(R.drawable.ic_settings),
+                            contentDescription = "Reader settings",
                         )
                     }
                 },
             )
-        },
-        bottomBar = {
-            if (state.chapterCount > 1) {
-                ChapterNavBar(
-                    chapterIdx = state.chapterIdx,
-                    chapterCount = state.chapterCount,
-                    hasPrev = state.hasPrev,
-                    hasNext = state.hasNext,
-                    onPrev = onPrevChapter,
-                    onNext = onNextChapter,
-                )
-            }
         },
     ) { padding ->
         Box(
@@ -143,11 +179,30 @@ internal fun ReaderScreenContent(
                 state.errorMessage != null ->
                     ReaderError(message = state.errorMessage, onRetry = onRetry)
 
+                state.pageMode ->
+                    PagedChapter(
+                        tokens = state.tokens,
+                        romanize = state.romanize,
+                        rtl = state.isRtl,
+                        fontSize = state.fontSize,
+                        lineSpacing = state.lineSpacing,
+                        canGoPrev = state.canGoPrev,
+                        canGoNext = state.canGoNext,
+                        prevTitle = state.prevTitle,
+                        nextTitle = state.nextTitle,
+                        onPrev = onPrevChapter,
+                        onNext = onNextChapter,
+                        onWordTap = onWordTap,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+
                 else ->
                     ChapterText(
                         tokens = state.tokens,
                         romanize = state.romanize,
                         rtl = state.isRtl,
+                        fontSize = state.fontSize,
+                        lineSpacing = state.lineSpacing,
                         onWordTap = onWordTap,
                         restoreTokenIdx = state.restoreTokenIdx,
                         onRecordPosition = onRecordPosition,
@@ -169,6 +224,33 @@ internal fun ReaderScreenContent(
             )
         }
     }
+
+    if (showSettings) {
+        ModalBottomSheet(onDismissRequest = { showSettings = false }) {
+            ReaderSettingsSheet(
+                fontSize = state.fontSize,
+                lineSpacing = state.lineSpacing,
+                pageMode = state.pageMode,
+                romanize = state.romanize,
+                onSetFontSize = onSetFontSize,
+                onSetLineSpacing = onSetLineSpacing,
+                onTogglePageMode = onTogglePageMode,
+                onToggleRomanize = onToggleRomanize,
+            )
+        }
+    }
+
+    if (showChapters) {
+        ModalBottomSheet(onDismissRequest = { showChapters = false }) {
+            ChapterListSheet(
+                chapters = state.chapters,
+                onSelect = {
+                    showChapters = false
+                    onSelectChapter(it)
+                },
+            )
+        }
+    }
 }
 
 /** The text to render for a token — romanization for words when enabled. */
@@ -180,6 +262,8 @@ private fun ChapterText(
     tokens: List<ReaderToken>,
     romanize: Boolean,
     rtl: Boolean,
+    fontSize: Int,
+    lineSpacing: Float,
     onWordTap: (ReaderToken) -> Unit,
     restoreTokenIdx: Int?,
     onRecordPosition: (Int, Double) -> Unit,
@@ -240,6 +324,8 @@ private fun ChapterText(
         text = annotated,
         onTextLayout = { layout = it },
         style = MaterialTheme.typography.bodyLarge.copy(
+            fontSize = fontSize.sp,
+            lineHeight = (fontSize * lineSpacing).sp,
             textDirection = if (rtl) TextDirection.Rtl else TextDirection.Content,
             textAlign = if (rtl) TextAlign.Right else TextAlign.Start,
         ),
@@ -258,20 +344,284 @@ private fun ChapterText(
 }
 
 @Composable
-private fun ChapterNavBar(
-    chapterIdx: Int,
-    chapterCount: Int,
-    hasPrev: Boolean,
-    hasNext: Boolean,
+private fun PagedChapter(
+    tokens: List<ReaderToken>,
+    romanize: Boolean,
+    rtl: Boolean,
+    fontSize: Int,
+    lineSpacing: Float,
+    canGoPrev: Boolean,
+    canGoNext: Boolean,
+    prevTitle: String?,
+    nextTitle: String?,
     onPrev: () -> Unit,
     onNext: () -> Unit,
+    onWordTap: (ReaderToken) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
-    BottomAppBar {
-        TextButton(onClick = onPrev, enabled = hasPrev) { Text("Previous") }
-        Spacer(Modifier.weight(1f))
-        Text("Ch. ${chapterIdx + 1} / $chapterCount")
-        Spacer(Modifier.weight(1f))
-        TextButton(onClick = onNext, enabled = hasNext) { Text("Next") }
+    val scheme = MaterialTheme.colorScheme
+    val style = MaterialTheme.typography.bodyLarge.copy(
+        fontSize = fontSize.sp,
+        lineHeight = (fontSize * lineSpacing).sp,
+        textDirection = if (rtl) TextDirection.Rtl else TextDirection.Content,
+        textAlign = if (rtl) TextAlign.Right else TextAlign.Start,
+    )
+    val annotated = remember(tokens, scheme, romanize) {
+        buildAnnotatedString {
+            tokens.forEach { token ->
+                withStyle(spanStyleFor(token, scheme)) { append(displayText(token, romanize)) }
+            }
+        }
+    }
+    val ranges = remember(tokens, romanize) {
+        var offset = 0
+        tokens.map { token ->
+            val text = displayText(token, romanize)
+            val start = offset
+            offset += text.length
+            start until offset
+        }
+    }
+    val measurer = rememberTextMeasurer()
+
+    BoxWithConstraints(modifier.fillMaxSize().padding(16.dp)) {
+        // maxWidth/maxHeight (the BoxWithConstraints scope) → px for the measure pass.
+        val availableWidth = maxWidth
+        val availableHeight = maxHeight
+        val density = LocalDensity.current
+        val widthPx = with(density) { availableWidth.roundToPx() }
+        val heightPx = with(density) { availableHeight.roundToPx() }
+        // One measure pass at the page width; group lines into page-sized ranges.
+        val pages = remember(annotated, widthPx, heightPx, style) {
+            if (widthPx <= 0 || heightPx <= 0 || annotated.isEmpty()) {
+                listOf(0 until annotated.length)
+            } else {
+                val layout = measurer.measure(
+                    text = annotated,
+                    style = style,
+                    constraints = Constraints(maxWidth = widthPx),
+                )
+                paginateLines(
+                    lineCount = layout.lineCount,
+                    lineTop = layout::getLineTop,
+                    lineBottom = layout::getLineBottom,
+                    lineStart = layout::getLineStart,
+                    lineEnd = { layout.getLineEnd(it, visibleEnd = true) },
+                    pageHeightPx = heightPx.toFloat(),
+                )
+            }
+        }
+        // Sentinel "splash" pages at each edge so swiping past the chapter's
+        // first/last page flips to the adjacent chapter.
+        val leading = if (canGoPrev) 1 else 0
+        val trailing = if (canGoNext) 1 else 0
+        val total = leading + pages.size + trailing
+        val pagerState = rememberPagerState(initialPage = leading, pageCount = { total })
+        // Reset to the first real page when the rendering changes (font/romanize).
+        LaunchedEffect(annotated) { pagerState.scrollToPage(leading) }
+        // Settling on an edge splash flips to that chapter.
+        LaunchedEffect(pagerState, total) {
+            snapshotFlow { pagerState.settledPage }.collect { settled ->
+                when {
+                    leading == 1 && settled == 0 -> onPrev()
+                    trailing == 1 && settled == total - 1 -> onNext()
+                }
+            }
+        }
+
+        HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
+            when {
+                leading == 1 && page == 0 -> ChapterSplash("Previous chapter", prevTitle)
+                trailing == 1 && page == total - 1 -> ChapterSplash("Next chapter", nextTitle)
+                else -> {
+                    val range = pages.getOrElse(page - leading) { 0 until annotated.length }
+                    val start = range.first.coerceIn(0, annotated.length)
+                    val end = (range.last + 1).coerceIn(start, annotated.length)
+                    PageText(
+                        text = annotated.subSequence(start, end),
+                        baseOffset = start,
+                        style = style,
+                        ranges = ranges,
+                        tokens = tokens,
+                        onWordTap = onWordTap,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ChapterSplash(label: String, title: String?) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(24.dp),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text(
+            label,
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        if (!title.isNullOrBlank()) {
+            Spacer(Modifier.height(8.dp))
+            Text(title, style = MaterialTheme.typography.headlineSmall, textAlign = TextAlign.Center)
+        }
+        Spacer(Modifier.height(20.dp))
+        CircularProgressIndicator()
+    }
+}
+
+@Composable
+private fun PageText(
+    text: AnnotatedString,
+    baseOffset: Int,
+    style: TextStyle,
+    ranges: List<IntRange>,
+    tokens: List<ReaderToken>,
+    onWordTap: (ReaderToken) -> Unit,
+) {
+    var layout by remember(text) { mutableStateOf<TextLayoutResult?>(null) }
+    Text(
+        text = text,
+        style = style,
+        onTextLayout = { layout = it },
+        modifier = Modifier
+            .fillMaxSize()
+            .pointerInput(text) {
+                detectTapGestures { pos ->
+                    val result = layout ?: return@detectTapGestures
+                    val global = baseOffset + result.getOffsetForPosition(pos)
+                    val tokenIndex = ranges.indexOfFirst { global in it }
+                    tokens.getOrNull(tokenIndex)?.let { if (it.isWord) onWordTap(it) }
+                }
+            },
+    )
+}
+
+@Composable
+internal fun ChapterListSheet(
+    chapters: List<ReaderChapterRef>,
+    onSelect: (ReaderChapterRef) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    LazyColumn(modifier.fillMaxWidth()) {
+        item {
+            Text(
+                "Chapters",
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp),
+            )
+        }
+        items(chapters) { ch ->
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onSelect(ch) }
+                    .padding(horizontal = 24.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    ch.title,
+                    modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = if (ch.isCurrent) {
+                        MaterialTheme.colorScheme.primary
+                    } else {
+                        MaterialTheme.colorScheme.onSurface
+                    },
+                )
+                if (ch.isCurrent) {
+                    Text(
+                        "Current",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+internal fun ReaderSettingsSheet(
+    fontSize: Int,
+    lineSpacing: Float,
+    pageMode: Boolean,
+    romanize: Boolean,
+    onSetFontSize: (Int) -> Unit,
+    onSetLineSpacing: (Float) -> Unit,
+    onTogglePageMode: () -> Unit,
+    onToggleRomanize: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(24.dp),
+    ) {
+        Text("Reader settings", style = MaterialTheme.typography.titleMedium)
+        Spacer(Modifier.height(12.dp))
+        StepperRow(
+            label = "Font size",
+            value = "${fontSize}pt",
+            decreaseDesc = "Decrease font size",
+            increaseDesc = "Increase font size",
+            onDecrease = { onSetFontSize(fontSize - 1) },
+            onIncrease = { onSetFontSize(fontSize + 1) },
+        )
+        StepperRow(
+            label = "Line spacing",
+            value = "%.1f".format(lineSpacing),
+            decreaseDesc = "Decrease line spacing",
+            increaseDesc = "Increase line spacing",
+            onDecrease = { onSetLineSpacing(lineSpacing - 0.1f) },
+            onIncrease = { onSetLineSpacing(lineSpacing + 0.1f) },
+        )
+        SwitchRow(label = "Page mode", checked = pageMode, onToggle = onTogglePageMode)
+        SwitchRow(label = "Romanization", checked = romanize, onToggle = onToggleRomanize)
+    }
+}
+
+@Composable
+private fun StepperRow(
+    label: String,
+    value: String,
+    decreaseDesc: String,
+    increaseDesc: String,
+    onDecrease: () -> Unit,
+    onIncrease: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(label, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
+        IconButton(onClick = onDecrease, modifier = Modifier.semantics { contentDescription = decreaseDesc }) {
+            Text("−", style = MaterialTheme.typography.titleLarge)
+        }
+        Text(value, style = MaterialTheme.typography.bodyMedium)
+        IconButton(onClick = onIncrease, modifier = Modifier.semantics { contentDescription = increaseDesc }) {
+            Text("+", style = MaterialTheme.typography.titleLarge)
+        }
+    }
+}
+
+@Composable
+private fun SwitchRow(label: String, checked: Boolean, onToggle: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onToggle() }
+            .padding(vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(label, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
+        Switch(checked = checked, onCheckedChange = { onToggle() })
     }
 }
 

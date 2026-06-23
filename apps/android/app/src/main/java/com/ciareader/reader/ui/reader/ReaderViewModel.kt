@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.ciareader.reader.core.network.Outcome
 import com.ciareader.reader.core.settings.SettingsStore
+import com.ciareader.reader.data.collection.CollectionRepository
 import com.ciareader.reader.data.dictionary.DictionaryRepository
 import com.ciareader.reader.data.dictionary.LemmaTranslations
 import com.ciareader.reader.data.reader.KnownStatus
@@ -20,6 +21,14 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
+/** A chapter entry for the table-of-contents sheet. */
+data class ReaderChapterRef(
+    val title: String,
+    val textId: String?,   // a separate chapter-text within a book (collection)
+    val chapterIdx: Int?,  // a chapter within this text
+    val isCurrent: Boolean,
+)
+
 data class ReaderUiState(
     val isLoading: Boolean = true,
     val title: String = "",
@@ -32,10 +41,23 @@ data class ReaderUiState(
     val restoreTokenIdx: Int? = null,
     val romanize: Boolean = false,
     val isRtl: Boolean = false,
+    val pageMode: Boolean = false,
+    val prevTextId: String? = null,
+    val nextTextId: String? = null,
+    val prevTitle: String? = null,
+    val nextTitle: String? = null,
+    val chapters: List<ReaderChapterRef> = emptyList(),
+    val fontSize: Int = SettingsStore.DEFAULT_FONT_SIZE_SP,
+    val lineSpacing: Float = SettingsStore.DEFAULT_LINE_SPACING,
     val errorMessage: String? = null,
 ) {
     val hasPrev: Boolean get() = chapterIdx > 0
     val hasNext: Boolean get() = chapterIdx < chapterCount - 1
+
+    /** Can move back/forward — within this text's chapters, or to a sibling
+     *  chapter-text when reading a book (collection). */
+    val canGoPrev: Boolean get() = hasPrev || prevTextId != null
+    val canGoNext: Boolean get() = hasNext || nextTextId != null
 }
 
 @HiltViewModel
@@ -43,11 +65,13 @@ class ReaderViewModel @Inject constructor(
     private val repository: ReaderRepository,
     private val dictionary: DictionaryRepository,
     private val settings: SettingsStore,
+    private val collections: CollectionRepository,
     savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
 
     private val textId: String =
         checkNotNull(savedStateHandle.get<String>("textId")) { "reader requires a textId arg" }
+    private val collectionId: String? = savedStateHandle.get<String>("collectionId")
 
     private val _state = MutableStateFlow(ReaderUiState())
     val state: StateFlow<ReaderUiState> = _state.asStateFlow()
@@ -72,9 +96,13 @@ class ReaderViewModel @Inject constructor(
                             title = meta.data.title,
                             chapterCount = chapterCount,
                             romanize = settings.showRomanization(),
+                            pageMode = settings.pageMode(),
+                            fontSize = settings.fontSizeSp(),
+                            lineSpacing = settings.lineSpacing(),
                             isRtl = isRtlLanguage(meta.data.language),
                         )
                     }
+                    loadSiblings()
                     // Resume where the reader left off (chapter clamped to range);
                     // restore the token only within that saved chapter.
                     val saved = when (val p = repository.progress(textId)) {
@@ -83,6 +111,16 @@ class ReaderViewModel @Inject constructor(
                     }
                     val startChapter = (saved?.chapterIdx ?: 0).coerceIn(0, chapterCount - 1)
                     val restoreToken = saved?.takeIf { it.chapterIdx == startChapter }?.tokenIdx
+                    // For a multi-chapter single text, the TOC lists its own chapters.
+                    if (collectionId == null && chapterCount > 1) {
+                        _state.update { s ->
+                            s.copy(
+                                chapters = meta.data.chapters.map { c ->
+                                    ReaderChapterRef(c.title, textId = null, chapterIdx = c.idx, isCurrent = c.idx == startChapter)
+                                },
+                            )
+                        }
+                    }
                     loadChapter(startChapter, restoreToken)
                 }
             }
@@ -100,6 +138,9 @@ class ReaderViewModel @Inject constructor(
                             chapterIdx = chapterIdx,
                             tokens = chapter.data.tokens,
                             restoreTokenIdx = restoreTokenIdx,
+                            chapters = it.chapters.map { ref ->
+                                if (ref.chapterIdx != null) ref.copy(isCurrent = ref.chapterIdx == chapterIdx) else ref
+                            },
                         )
                     }
 
@@ -179,12 +220,64 @@ class ReaderViewModel @Inject constructor(
         viewModelScope.launch { settings.setShowRomanization(next) }
     }
 
+    /** Toggle continuous-scroll ⇄ page mode and remember the choice. */
+    fun togglePageMode() {
+        val next = !_state.value.pageMode
+        _state.update { it.copy(pageMode = next) }
+        viewModelScope.launch { settings.setPageMode(next) }
+    }
+
+    /** Reader body font size in sp, clamped + remembered. */
+    fun setFontSize(sp: Int) {
+        val v = sp.coerceIn(FONT_SIZE_MIN, FONT_SIZE_MAX)
+        _state.update { it.copy(fontSize = v) }
+        viewModelScope.launch { settings.setFontSizeSp(v) }
+    }
+
+    /** Reader line-height multiple, clamped + remembered. */
+    fun setLineSpacing(value: Float) {
+        val v = value.coerceIn(LINE_SPACING_MIN, LINE_SPACING_MAX)
+        _state.update { it.copy(lineSpacing = v) }
+        viewModelScope.launch { settings.setLineSpacing(v) }
+    }
+
+    /** When reading a book, find the adjacent chapter-texts for Prev/Next. */
+    private suspend fun loadSiblings() {
+        val cid = collectionId ?: return
+        when (val detail = collections.detail(cid)) {
+            is Outcome.Success -> {
+                val chapters = detail.data.chapters
+                val idx = chapters.indexOfFirst { it.textId == textId }
+                val refs = chapters.map {
+                    ReaderChapterRef(it.title, textId = it.textId, chapterIdx = null, isCurrent = it.textId == textId)
+                }
+                val prev = if (idx >= 0) chapters.getOrNull(idx - 1) else null
+                val next = if (idx >= 0) chapters.getOrNull(idx + 1) else null
+                _state.update {
+                    it.copy(
+                        chapters = refs,
+                        prevTextId = prev?.textId,
+                        nextTextId = next?.textId,
+                        prevTitle = prev?.title,
+                        nextTitle = next?.title,
+                    )
+                }
+            }
+
+            is Outcome.Failure -> Unit // non-fatal: just no cross-chapter nav
+        }
+    }
+
     fun retry() {
         if (_state.value.title.isEmpty()) loadInitial() else loadChapter(_state.value.chapterIdx)
     }
 
     private companion object {
         const val PROGRESS_DEBOUNCE_MS = 800L
+        const val FONT_SIZE_MIN = 14
+        const val FONT_SIZE_MAX = 28
+        const val LINE_SPACING_MIN = 1.2f
+        const val LINE_SPACING_MAX = 2.2f
         private val RTL_LANGUAGES = setOf("yi", "ur", "fa", "ar", "he", "sd")
         fun isRtlLanguage(code: String) = code.lowercase() in RTL_LANGUAGES
     }

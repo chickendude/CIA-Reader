@@ -3,6 +3,10 @@ package com.ciareader.reader.ui.reader
 import androidx.lifecycle.SavedStateHandle
 import com.ciareader.reader.core.network.Outcome
 import com.ciareader.reader.core.settings.SettingsStore
+import com.ciareader.reader.data.collection.CollectionChapter
+import com.ciareader.reader.data.collection.CollectionDetail
+import com.ciareader.reader.data.collection.CollectionRepository
+import com.ciareader.reader.data.collection.CollectionSummary
 import com.ciareader.reader.data.dictionary.DictionaryRepository
 import com.ciareader.reader.data.dictionary.LemmaTranslations
 import com.ciareader.reader.data.dictionary.WordTranslation
@@ -37,7 +41,15 @@ class ReaderViewModelTest {
         repo: ReaderRepository,
         dict: DictionaryRepository = FakeDictionaryRepository(),
         settings: SettingsStore = FakeSettingsStore(),
-    ) = ReaderViewModel(repo, dict, settings, SavedStateHandle(mapOf("textId" to "t1")))
+        collections: CollectionRepository = FakeCollectionRepository(),
+        collectionId: String? = null,
+    ) = ReaderViewModel(
+        repo,
+        dict,
+        settings,
+        collections,
+        SavedStateHandle(buildMap { put("textId", "t1"); collectionId?.let { put("collectionId", it) } }),
+    )
 
     @Test
     fun loadsTitleAndFirstChapter() = runTest(mainRule.dispatcher) {
@@ -198,6 +210,30 @@ class ReaderViewModelTest {
     }
 
     @Test
+    fun togglesPageModeAndPersists() = runTest(mainRule.dispatcher) {
+        val repo = FakeReaderRepository(meta = meta(1), chapters = mapOf(0 to Chapter(0, listOf(word("a")))))
+        val settings = FakeSettingsStore(paged = false)
+        val v = vm(repo, settings = settings)
+        advanceUntilIdle()
+
+        assertFalse(v.state.value.pageMode)
+        v.togglePageMode()
+        advanceUntilIdle()
+
+        assertTrue(v.state.value.pageMode)
+        assertEquals(true, settings.lastSetPageMode)
+    }
+
+    @Test
+    fun restoresPageModePreference() = runTest(mainRule.dispatcher) {
+        val repo = FakeReaderRepository(meta = meta(1), chapters = mapOf(0 to Chapter(0, listOf(word("a")))))
+        val v = vm(repo, settings = FakeSettingsStore(paged = true))
+        advanceUntilIdle()
+
+        assertTrue(v.state.value.pageMode)
+    }
+
+    @Test
     fun marksRtlForHebrewScriptLanguage() = runTest(mainRule.dispatcher) {
         val repo = FakeReaderRepository(meta = meta(1, language = "yi"), chapters = mapOf(0 to Chapter(0, emptyList())))
         val v = vm(repo)
@@ -213,6 +249,71 @@ class ReaderViewModelTest {
         advanceUntilIdle()
 
         assertFalse(v.state.value.isRtl)
+    }
+
+    @Test
+    fun exposesSiblingChaptersWhenReadingABook() = runTest(mainRule.dispatcher) {
+        val repo = FakeReaderRepository(meta = meta(1), chapters = mapOf(0 to Chapter(0, emptyList())))
+        val collections = FakeCollectionRepository(
+            detail = CollectionDetail(
+                id = "c1",
+                title = "Book",
+                chapters = listOf(
+                    CollectionChapter("t0", "One", 0, "ready"),
+                    CollectionChapter("t1", "Two", 1, "ready"),
+                    CollectionChapter("t2", "Three", 2, "ready"),
+                ),
+            ),
+        )
+        val v = vm(repo, collections = collections, collectionId = "c1")
+        advanceUntilIdle()
+
+        assertEquals("t0", v.state.value.prevTextId)
+        assertEquals("t2", v.state.value.nextTextId)
+        assertTrue(v.state.value.canGoPrev)
+        assertTrue(v.state.value.canGoNext)
+        // Full chapter list for the TOC, with the current chapter flagged.
+        assertEquals(listOf("t0", "t1", "t2"), v.state.value.chapters.map { it.textId })
+        assertTrue(v.state.value.chapters[1].isCurrent)
+    }
+
+    @Test
+    fun noSiblingNavWithoutCollection() = runTest(mainRule.dispatcher) {
+        val repo = FakeReaderRepository(meta = meta(1), chapters = mapOf(0 to Chapter(0, emptyList())))
+        val v = vm(repo)
+        advanceUntilIdle()
+
+        assertNull(v.state.value.prevTextId)
+        assertNull(v.state.value.nextTextId)
+        assertFalse(v.state.value.canGoPrev)
+        assertFalse(v.state.value.canGoNext)
+    }
+
+    @Test
+    fun setFontSizeClampsAndPersists() = runTest(mainRule.dispatcher) {
+        val repo = FakeReaderRepository(meta = meta(1), chapters = mapOf(0 to Chapter(0, listOf(word("a")))))
+        val settings = FakeSettingsStore()
+        val v = vm(repo, settings = settings)
+        advanceUntilIdle()
+
+        v.setFontSize(22)
+        advanceUntilIdle()
+        assertEquals(22, v.state.value.fontSize)
+        assertEquals(22, settings.lastSetFontSize)
+
+        v.setFontSize(999)
+        advanceUntilIdle()
+        assertEquals(28, v.state.value.fontSize) // clamped to max
+    }
+
+    @Test
+    fun restoresFontSettings() = runTest(mainRule.dispatcher) {
+        val repo = FakeReaderRepository(meta = meta(1), chapters = mapOf(0 to Chapter(0, listOf(word("a")))))
+        val v = vm(repo, settings = FakeSettingsStore(fontSize = 24, lineSpacingValue = 2.0f))
+        advanceUntilIdle()
+
+        assertEquals(24, v.state.value.fontSize)
+        assertEquals(2.0f, v.state.value.lineSpacing, 0.0001f)
     }
 
     private fun word(surface: String) =
@@ -270,8 +371,12 @@ private class FakeDictionaryRepository(
 
 private class FakeSettingsStore(
     private val romanization: Boolean = false,
+    private val paged: Boolean = false,
+    private val fontSize: Int = 18,
+    private val lineSpacingValue: Float = 1.5f,
 ) : SettingsStore {
     var lastSetRomanization: Boolean? = null
+    var lastSetPageMode: Boolean? = null
     override val currentLanguage: Flow<String?> = MutableStateFlow(null)
     override suspend fun currentLanguage(): String? = null
     override suspend fun setCurrentLanguage(code: String) {}
@@ -279,4 +384,27 @@ private class FakeSettingsStore(
     override suspend fun setShowRomanization(value: Boolean) {
         lastSetRomanization = value
     }
+    override suspend fun pageMode(): Boolean = paged
+    override suspend fun setPageMode(value: Boolean) {
+        lastSetPageMode = value
+    }
+
+    var lastSetFontSize: Int? = null
+    var lastSetLineSpacing: Float? = null
+    override suspend fun fontSizeSp(): Int = fontSize
+    override suspend fun setFontSizeSp(value: Int) {
+        lastSetFontSize = value
+    }
+    override suspend fun lineSpacing(): Float = lineSpacingValue
+    override suspend fun setLineSpacing(value: Float) {
+        lastSetLineSpacing = value
+    }
+}
+
+private class FakeCollectionRepository(
+    private val detail: CollectionDetail? = null,
+) : CollectionRepository {
+    override suspend fun myCollections(): Outcome<List<CollectionSummary>> = Outcome.Success(emptyList())
+    override suspend fun detail(collectionId: String): Outcome<CollectionDetail> =
+        detail?.let { Outcome.Success(it) } ?: Outcome.Failure("no detail")
 }

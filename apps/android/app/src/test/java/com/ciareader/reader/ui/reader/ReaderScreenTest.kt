@@ -50,6 +50,7 @@ class ReaderScreenTest {
                     onRecordPosition = { _, _ -> },
                     onRestoreConsumed = {},
                     onToggleRomanize = {},
+                    onTogglePageMode = {},
                 )
             }
         }
@@ -80,6 +81,7 @@ class ReaderScreenTest {
                     onRecordPosition = { _, _ -> },
                     onRestoreConsumed = {},
                     onToggleRomanize = {},
+                    onTogglePageMode = {},
                 )
             }
         }
@@ -87,8 +89,52 @@ class ReaderScreenTest {
     }
 
     @Test
-    fun romanizeToggleInvokesCallback() {
-        var toggled = false
+    fun chapterChevronNavigatesNext() {
+        var next = false
+        compose.setContent {
+            CiaReaderTheme {
+                ReaderScreenContent(
+                    state = ReaderUiState(isLoading = false, title = "Book", chapterCount = 2, chapterIdx = 0),
+                    onBack = {},
+                    onWordTap = {},
+                    onDismissWord = {},
+                    onPrevChapter = {},
+                    onNextChapter = { next = true },
+                    onRetry = {},
+                    onSetStatus = {},
+                    onRecordPosition = { _, _ -> },
+                    onRestoreConsumed = {},
+                    onToggleRomanize = {},
+                    onTogglePageMode = {},
+                )
+            }
+        }
+        compose.onNodeWithContentDescription("Next chapter").performClick()
+        assertTrue(next)
+    }
+
+    @Test
+    fun chapterListSelectsAChapter() {
+        var picked: String? = null
+        compose.setContent {
+            CiaReaderTheme {
+                ChapterListSheet(
+                    chapters = listOf(
+                        ReaderChapterRef("Intro", textId = "t0", chapterIdx = null, isCurrent = false),
+                        ReaderChapterRef("Two", textId = "t1", chapterIdx = null, isCurrent = true),
+                    ),
+                    onSelect = { picked = it.textId },
+                )
+            }
+        }
+        compose.onNodeWithText("Intro").assertIsDisplayed()
+        compose.onNodeWithText("Current").assertIsDisplayed()
+        compose.onNodeWithText("Intro").performClick()
+        assertEquals("t0", picked)
+    }
+
+    @Test
+    fun showsSettingsButton() {
         compose.setContent {
             CiaReaderTheme {
                 ReaderScreenContent(
@@ -102,12 +148,37 @@ class ReaderScreenTest {
                     onSetStatus = {},
                     onRecordPosition = { _, _ -> },
                     onRestoreConsumed = {},
-                    onToggleRomanize = { toggled = true },
+                    onToggleRomanize = {},
+                    onTogglePageMode = {},
                 )
             }
         }
-        compose.onNodeWithContentDescription("Show romanization").performClick()
-        assertTrue(toggled)
+        compose.onNodeWithContentDescription("Reader settings").assertIsDisplayed()
+    }
+
+    @Test
+    fun settingsSheetStepsFontAndToggles() {
+        var font: Int? = null
+        var pagedToggled = false
+        compose.setContent {
+            CiaReaderTheme {
+                ReaderSettingsSheet(
+                    fontSize = 18,
+                    lineSpacing = 1.5f,
+                    pageMode = false,
+                    romanize = false,
+                    onSetFontSize = { font = it },
+                    onSetLineSpacing = {},
+                    onTogglePageMode = { pagedToggled = true },
+                    onToggleRomanize = {},
+                )
+            }
+        }
+        compose.onNodeWithText("18pt").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Increase font size").performClick()
+        assertEquals(19, font)
+        compose.onNodeWithText("Page mode").performClick()
+        assertTrue(pagedToggled)
     }
 
     @Test
@@ -127,6 +198,7 @@ class ReaderScreenTest {
                     onRecordPosition = { _, _ -> },
                     onRestoreConsumed = {},
                     onToggleRomanize = {},
+                    onTogglePageMode = {},
                 )
             }
         }
