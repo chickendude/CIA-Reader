@@ -29,7 +29,7 @@ class LibraryScreenTest {
         onOpenCollection: (CollectionSummary) -> Unit = {},
         onSelectLanguage: (String) -> Unit = {},
         onRetry: () -> Unit = {},
-        onLogout: () -> Unit = {},
+        onOpenSettings: () -> Unit = {},
     ) {
         compose.setContent {
             CiaReaderTheme {
@@ -39,7 +39,7 @@ class LibraryScreenTest {
                     onOpenText = onOpenText,
                     onOpenCollection = onOpenCollection,
                     onRetry = onRetry,
-                    onLogout = onLogout,
+                    onOpenSettings = onOpenSettings,
                 )
             }
         }

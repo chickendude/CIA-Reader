@@ -9,11 +9,13 @@ import androidx.navigation.navArgument
 import com.ciareader.reader.ui.collection.CollectionDetailScreen
 import com.ciareader.reader.ui.library.LibraryScreen
 import com.ciareader.reader.ui.reader.ReaderScreen
+import com.ciareader.reader.ui.settings.SettingsScreen
 
 object Routes {
     const val LIBRARY = "library"
     const val READER = "reader/{textId}?collectionId={collectionId}&atEnd={atEnd}&resume={resume}"
     const val COLLECTION = "collection/{collectionId}"
+    const val SETTINGS = "settings"
 
     /** Reader for [textId]; [collectionId] (optional) gives the book context so
      *  Previous/Next move between chapters; [atEnd] opens the chapter at its last
@@ -51,6 +53,12 @@ fun CiaReaderNavHost(onLogout: () -> Unit) {
                 onOpenCollection = { c ->
                     c.openTextId?.let { navController.navigate(Routes.reader(it, c.id)) }
                 },
+                onOpenSettings = { navController.navigate(Routes.SETTINGS) },
+            )
+        }
+        composable(Routes.SETTINGS) {
+            SettingsScreen(
+                onBack = { navController.popBackStack() },
                 onLogout = onLogout,
             )
         }
