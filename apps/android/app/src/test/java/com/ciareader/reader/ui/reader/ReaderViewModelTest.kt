@@ -43,12 +43,19 @@ class ReaderViewModelTest {
         settings: SettingsStore = FakeSettingsStore(),
         collections: CollectionRepository = FakeCollectionRepository(),
         collectionId: String? = null,
+        atEnd: Boolean = false,
     ) = ReaderViewModel(
         repo,
         dict,
         settings,
         collections,
-        SavedStateHandle(buildMap { put("textId", "t1"); collectionId?.let { put("collectionId", it) } }),
+        SavedStateHandle(
+            buildMap {
+                put("textId", "t1")
+                collectionId?.let { put("collectionId", it) }
+                if (atEnd) put("atEnd", true)
+            },
+        ),
     )
 
     @Test
@@ -354,6 +361,18 @@ class ReaderViewModelTest {
             progress = 0.5f,
         )
         assertEquals(0.625f, s.bookProgress, 0.0001f) // (100 + 0.5*300) / 400
+    }
+
+    @Test
+    fun goingBackOpensChapterAtItsLastToken() = runTest(mainRule.dispatcher) {
+        val repo = FakeReaderRepository(
+            meta = meta(1),
+            chapters = mapOf(0 to Chapter(0, listOf(word("a"), word("b"), word("c")))),
+        )
+        val v = vm(repo, atEnd = true)
+        advanceUntilIdle()
+
+        assertEquals(2, v.state.value.restoreTokenIdx) // last of 3 tokens
     }
 
     private fun word(surface: String) =

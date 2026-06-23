@@ -92,6 +92,7 @@ class ReaderViewModel @Inject constructor(
     private val textId: String =
         checkNotNull(savedStateHandle.get<String>("textId")) { "reader requires a textId arg" }
     private val collectionId: String? = savedStateHandle.get<String>("collectionId")
+    private val openAtEnd: Boolean = savedStateHandle.get<Boolean>("atEnd") ?: false
 
     private val _state = MutableStateFlow(ReaderUiState())
     val state: StateFlow<ReaderUiState> = _state.asStateFlow()
@@ -131,7 +132,9 @@ class ReaderViewModel @Inject constructor(
                         is Outcome.Failure -> null
                     }
                     val startChapter = (saved?.chapterIdx ?: 0).coerceIn(0, chapterCount - 1)
-                    val restoreToken = saved?.takeIf { it.chapterIdx == startChapter }?.tokenIdx
+                    // Going back to a chapter opens it at the end; otherwise resume.
+                    val restoreToken =
+                        if (openAtEnd) null else saved?.takeIf { it.chapterIdx == startChapter }?.tokenIdx
                     // For a multi-chapter single text, the TOC lists its own chapters.
                     if (collectionId == null && chapterCount > 1) {
                         _state.update { s ->
@@ -148,23 +151,25 @@ class ReaderViewModel @Inject constructor(
                             )
                         }
                     }
-                    loadChapter(startChapter, restoreToken)
+                    loadChapter(startChapter, restoreToken, atEnd = openAtEnd)
                 }
             }
         }
     }
 
-    fun loadChapter(chapterIdx: Int, restoreTokenIdx: Int? = null) {
+    fun loadChapter(chapterIdx: Int, restoreTokenIdx: Int? = null, atEnd: Boolean = false) {
         _state.update { it.copy(isLoading = true, errorMessage = null, selectedWord = null, wordTranslations = null) }
         viewModelScope.launch {
             when (val chapter = repository.chapter(textId, chapterIdx)) {
                 is Outcome.Success ->
                     _state.update {
+                        val anchor =
+                            if (atEnd) chapter.data.tokens.lastIndex.coerceAtLeast(0) else restoreTokenIdx
                         it.copy(
                             isLoading = false,
                             chapterIdx = chapterIdx,
                             tokens = chapter.data.tokens,
-                            restoreTokenIdx = restoreTokenIdx,
+                            restoreTokenIdx = anchor,
                             chapters = it.chapters.map { ref ->
                                 if (ref.chapterIdx != null) ref.copy(isCurrent = ref.chapterIdx == chapterIdx) else ref
                             },

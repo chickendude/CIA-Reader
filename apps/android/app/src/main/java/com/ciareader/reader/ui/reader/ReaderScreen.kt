@@ -78,7 +78,7 @@ import kotlin.math.roundToInt
 @Composable
 fun ReaderScreen(
     onBack: () -> Unit,
-    onOpenChapterText: (String) -> Unit,
+    onOpenChapterText: (textId: String, atEnd: Boolean) -> Unit,
     viewModel: ReaderViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -88,12 +88,13 @@ fun ReaderScreen(
         onWordTap = viewModel::onWordTap,
         onDismissWord = viewModel::dismissWord,
         // Within a multi-chapter text, move between its chapters; otherwise (e.g.
-        // a book whose chapters are separate texts) jump to the sibling chapter.
+        // a book whose chapters are separate texts) jump to the sibling chapter —
+        // going back opens that chapter at its last page.
         onPrevChapter = {
-            if (state.hasPrev) viewModel.prevChapter() else state.prevTextId?.let(onOpenChapterText)
+            if (state.hasPrev) viewModel.prevChapter() else state.prevTextId?.let { onOpenChapterText(it, true) }
         },
         onNextChapter = {
-            if (state.hasNext) viewModel.nextChapter() else state.nextTextId?.let(onOpenChapterText)
+            if (state.hasNext) viewModel.nextChapter() else state.nextTextId?.let { onOpenChapterText(it, false) }
         },
         onRetry = viewModel::retry,
         onSetStatus = viewModel::setStatus,
@@ -105,7 +106,7 @@ fun ReaderScreen(
         onSetLineSpacing = viewModel::setLineSpacing,
         onSelectChapter = { ref ->
             val tid = ref.textId
-            if (tid != null) onOpenChapterText(tid) else ref.chapterIdx?.let { viewModel.loadChapter(it) }
+            if (tid != null) onOpenChapterText(tid, false) else ref.chapterIdx?.let { viewModel.loadChapter(it) }
         },
         onProgress = viewModel::setProgress,
     )
@@ -203,6 +204,8 @@ internal fun ReaderScreenContent(
                         onNext = onNextChapter,
                         onWordTap = onWordTap,
                         onProgress = onProgress,
+                        restoreTokenIdx = state.restoreTokenIdx,
+                        onRestoreConsumed = onRestoreConsumed,
                         modifier = Modifier.fillMaxSize(),
                     )
 
@@ -391,6 +394,8 @@ private fun PagedChapter(
     onNext: () -> Unit,
     onWordTap: (ReaderToken) -> Unit,
     onProgress: (Float) -> Unit,
+    restoreTokenIdx: Int?,
+    onRestoreConsumed: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val scheme = MaterialTheme.colorScheme
@@ -450,9 +455,13 @@ private fun PagedChapter(
         val leading = if (canGoPrev) 1 else 0
         val trailing = if (canGoNext) 1 else 0
         val total = leading + pages.size + trailing
-        val pagerState = rememberPagerState(initialPage = leading, pageCount = { total })
-        // Reset to the first real page when the rendering changes (font/romanize).
-        LaunchedEffect(annotated) { pagerState.scrollToPage(leading) }
+        // Start on the saved anchor's page — the last page when coming back to a
+        // chapter — otherwise the first real page.
+        val restorePage = restoreTokenIdx?.let { t ->
+            ranges.getOrNull(t)?.first?.let { c -> pages.indexOfFirst { c in it }.takeIf { it >= 0 } }
+        }
+        val pagerState = rememberPagerState(initialPage = leading + (restorePage ?: 0), pageCount = { total })
+        LaunchedEffect(restoreTokenIdx) { if (restoreTokenIdx != null) onRestoreConsumed() }
         // Settling on an edge splash flips to that chapter.
         LaunchedEffect(pagerState, total) {
             snapshotFlow { pagerState.settledPage }.collect { settled ->
