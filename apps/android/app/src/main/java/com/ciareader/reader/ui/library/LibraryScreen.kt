@@ -18,6 +18,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -66,6 +67,7 @@ fun LibraryScreen(
         onOpenCollection = onOpenCollection,
         onRetry = viewModel::load,
         onOpenSettings = onOpenSettings,
+        onRefresh = viewModel::refresh,
     )
 }
 
@@ -78,6 +80,7 @@ internal fun LibraryScreenContent(
     onOpenCollection: (CollectionSummary) -> Unit,
     onRetry: () -> Unit,
     onOpenSettings: () -> Unit,
+    onRefresh: () -> Unit = {},
 ) {
     Scaffold(
         topBar = {
@@ -103,12 +106,15 @@ internal fun LibraryScreenContent(
             )
         },
     ) { padding ->
-        Box(
+        PullToRefreshBox(
+            isRefreshing = state.isRefreshing,
+            onRefresh = onRefresh,
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding),
         ) {
             when {
+                // The initial full-screen spinner; pull-to-refresh uses its own.
                 state.isLoading ->
                     CircularProgressIndicator(Modifier.align(Alignment.Center))
 

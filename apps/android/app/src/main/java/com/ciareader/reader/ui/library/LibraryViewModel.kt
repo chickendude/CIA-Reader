@@ -21,6 +21,7 @@ import javax.inject.Inject
 
 data class LibraryUiState(
     val isLoading: Boolean = true,
+    val isRefreshing: Boolean = false,
     val languages: List<Language> = emptyList(),
     val currentLanguage: String? = null,
     val collections: List<CollectionSummary> = emptyList(),
@@ -63,6 +64,17 @@ class LibraryViewModel @Inject constructor(
             }
             // 2) Refresh from the network in the background; update in place.
             refreshFromNetwork()
+        }
+    }
+
+    /** Pull-to-refresh: re-fetch from the network while keeping the current view
+     *  visible (drives a small indicator, not the full-screen spinner). */
+    fun refresh() {
+        if (_state.value.isRefreshing) return
+        _state.update { it.copy(isRefreshing = true, errorMessage = null) }
+        viewModelScope.launch {
+            refreshFromNetwork()
+            _state.update { it.copy(isRefreshing = false) }
         }
     }
 

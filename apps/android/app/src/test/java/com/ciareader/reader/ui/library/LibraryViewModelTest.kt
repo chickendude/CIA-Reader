@@ -164,6 +164,22 @@ class LibraryViewModelTest {
     }
 
     @Test
+    fun refreshReFetchesFromNetwork() = runTest(mainRule.dispatcher) {
+        val langRepo = FakeLanguageRepository(languages = listOf(lang("hi")))
+        val collRepo = FakeCollectionRepository(all = listOf(collection("c1", "hi")))
+        val vm = vm(langRepo, FakeLibraryRepository(byLanguage = mapOf("hi" to emptyList())), collRepo)
+        advanceUntilIdle()
+        assertEquals(listOf("c1"), vm.state.value.collections.map { it.id })
+
+        collRepo.all = listOf(collection("c2", "hi"))
+        vm.refresh()
+        advanceUntilIdle()
+
+        assertEquals(listOf("c2"), vm.state.value.collections.map { it.id })
+        assertFalse(vm.state.value.isRefreshing)
+    }
+
+    @Test
     fun showsCachedLibraryAtLaunchWhenNetworkUnavailable() = runTest(mainRule.dispatcher) {
         // Cold/offline launch: the language fetch fails, but cache has content.
         val langRepo = FakeLanguageRepository(error = "offline", cached = listOf(lang("hi"), lang("eu")))
