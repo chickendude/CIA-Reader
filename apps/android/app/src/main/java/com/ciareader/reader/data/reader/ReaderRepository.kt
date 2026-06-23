@@ -2,10 +2,12 @@ package com.ciareader.reader.data.reader
 
 import com.ciareader.reader.core.network.Outcome
 import com.ciareader.reader.core.network.apiCall
+import kotlinx.serialization.Serializable
 import javax.inject.Inject
 import javax.inject.Singleton
 
 /** A word/lemma's familiarity, driving its highlight in the reader. */
+@Serializable
 enum class KnownStatus {
     UNKNOWN,
     LEARNING,
@@ -23,7 +25,9 @@ enum class KnownStatus {
     }
 }
 
-/** A rendered token in a chapter (word or punctuation/whitespace). */
+/** A rendered token in a chapter (word or punctuation/whitespace).
+ *  Serializable so a chapter's tokens can be cached as a JSON blob. */
+@Serializable
 data class ReaderToken(
     val idx: Int,
     val surface: String,
@@ -79,13 +83,29 @@ interface ReaderRepository {
 @Singleton
 class ReaderRepositoryImpl @Inject constructor(
     private val api: ReaderApi,
+    private val cache: ReaderCache,
 ) : ReaderRepository {
 
+    // Network-first: a successful fetch refreshes the on-device cache; a
+    // failure (typically offline) falls back to the cache when we have it, so
+    // a previously-read text stays readable without a connection.
     override suspend fun textMeta(textId: String): Outcome<TextMeta> =
-        apiCall { api.textMeta(textId).toDomain() }
+        when (val net = apiCall { api.textMeta(textId).toDomain() }) {
+            is Outcome.Success -> {
+                cache.putTextMeta(net.data, System.currentTimeMillis())
+                net
+            }
+            is Outcome.Failure -> cache.textMeta(textId)?.let { Outcome.Success(it) } ?: net
+        }
 
     override suspend fun chapter(textId: String, chapterIdx: Int): Outcome<Chapter> =
-        apiCall { api.chapterTokens(textId, chapterIdx).toDomain() }
+        when (val net = apiCall { api.chapterTokens(textId, chapterIdx).toDomain() }) {
+            is Outcome.Success -> {
+                cache.putChapter(textId, net.data, System.currentTimeMillis())
+                net
+            }
+            is Outcome.Failure -> cache.chapter(textId, chapterIdx)?.let { Outcome.Success(it) } ?: net
+        }
 
     override suspend fun progress(textId: String): Outcome<ReadingProgress?> =
         apiCall {
