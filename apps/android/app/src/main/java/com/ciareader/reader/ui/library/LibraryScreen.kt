@@ -118,11 +118,13 @@ internal fun LibraryScreenContent(
                 state.isLoading ->
                     CircularProgressIndicator(Modifier.align(Alignment.Center))
 
+                // Wrapped so a downward drag still triggers pull-to-refresh even
+                // with nothing to scroll.
                 state.errorMessage != null ->
-                    ErrorState(message = state.errorMessage, onRetry = onRetry)
+                    PullableCenter { ErrorState(message = state.errorMessage, onRetry = onRetry) }
 
                 state.isEmpty ->
-                    EmptyState()
+                    PullableCenter { EmptyState() }
 
                 else ->
                     ContentList(
@@ -132,6 +134,17 @@ internal fun LibraryScreenContent(
                         onOpenText = onOpenText,
                     )
             }
+        }
+    }
+}
+
+@Composable
+private fun PullableCenter(content: @Composable () -> Unit) {
+    // A single full-viewport item keeps a scroll container present (so
+    // PullToRefreshBox captures the drag) while centering the message.
+    LazyColumn(Modifier.fillMaxSize()) {
+        item {
+            Box(Modifier.fillParentMaxSize(), contentAlignment = Alignment.Center) { content() }
         }
     }
 }
