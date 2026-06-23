@@ -116,6 +116,7 @@ export const GET: RequestHandler = async (event) => {
         status: item.text.status,
         visibility: item.text.visibility,
         createdAt: item.text.createdAt,
+        wordCount: item.wordCount,
       },
     })),
   });

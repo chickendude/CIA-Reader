@@ -120,7 +120,7 @@ class ReaderScreenTest {
             CiaReaderTheme {
                 ChapterListSheet(
                     chapters = listOf(
-                        ReaderChapterRef("Intro", textId = "t0", chapterIdx = null, isCurrent = false),
+                        ReaderChapterRef("Intro", textId = "t0", chapterIdx = null, isCurrent = false, wordCount = 1200),
                         ReaderChapterRef("Two", textId = "t1", chapterIdx = null, isCurrent = true),
                     ),
                     onSelect = { picked = it.textId },
@@ -128,6 +128,7 @@ class ReaderScreenTest {
             }
         }
         compose.onNodeWithText("Intro").assertIsDisplayed()
+        compose.onNodeWithText("1200 words").assertIsDisplayed()
         compose.onNodeWithText("Current").assertIsDisplayed()
         compose.onNodeWithText("Intro").performClick()
         assertEquals("t0", picked)

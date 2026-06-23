@@ -558,6 +558,9 @@ export type CollectionDetail = {
      *  `null` for flat collections + manually-curated ones. */
     sectionTitle: string | null;
     text: Text;
+    /** Total tokens across the chapter-text's chapters (for word counts /
+     *  book-progress weighting). */
+    wordCount: number;
   }>;
 };
 
@@ -571,6 +574,7 @@ export async function loadCollectionDetail(
       position: schema.collectionItems.position,
       sectionTitle: schema.collectionItems.sectionTitle,
       text: schema.texts,
+      wordCount: sql<number>`COALESCE((SELECT SUM(${schema.textChapters.tokenCount}) FROM ${schema.textChapters} WHERE ${schema.textChapters.textId} = ${schema.texts.id}), 0)::int`,
     })
     .from(schema.collectionItems)
     .innerJoin(
@@ -582,6 +586,7 @@ export async function loadCollectionDetail(
     position: number;
     sectionTitle: string | null;
     text: Text;
+    wordCount: number;
   }>;
   return { collection: c, items: rows };
 }

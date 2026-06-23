@@ -160,7 +160,11 @@ internal fun ReaderScreenContent(
                         }
                     }
                 },
-                navigationIcon = { TextButton(onClick = onBack) { Text("Back") } },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(painter = painterResource(R.drawable.ic_close), contentDescription = "Close")
+                    }
+                },
                 actions = {
                     IconButton(onClick = { showSettings = true }) {
                         Icon(
@@ -558,16 +562,24 @@ internal fun ChapterListSheet(
                     .padding(horizontal = 24.dp, vertical = 12.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(
-                    ch.title,
-                    modifier = Modifier.weight(1f),
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = if (ch.isCurrent) {
-                        MaterialTheme.colorScheme.primary
-                    } else {
-                        MaterialTheme.colorScheme.onSurface
-                    },
-                )
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        ch.title,
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = if (ch.isCurrent) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.onSurface
+                        },
+                    )
+                    if (ch.wordCount > 0) {
+                        Text(
+                            "${ch.wordCount} words",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
                 if (ch.isCurrent) {
                     Text(
                         "Current",

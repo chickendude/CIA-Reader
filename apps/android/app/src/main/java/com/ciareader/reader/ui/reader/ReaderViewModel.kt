@@ -281,7 +281,13 @@ class ReaderViewModel @Inject constructor(
                 val chapters = detail.data.chapters
                 val idx = chapters.indexOfFirst { it.textId == textId }
                 val refs = chapters.map {
-                    ReaderChapterRef(it.title, textId = it.textId, chapterIdx = null, isCurrent = it.textId == textId)
+                    ReaderChapterRef(
+                        it.title,
+                        textId = it.textId,
+                        chapterIdx = null,
+                        isCurrent = it.textId == textId,
+                        wordCount = it.wordCount,
+                    )
                 }
                 val prev = if (idx >= 0) chapters.getOrNull(idx - 1) else null
                 val next = if (idx >= 0) chapters.getOrNull(idx + 1) else null
