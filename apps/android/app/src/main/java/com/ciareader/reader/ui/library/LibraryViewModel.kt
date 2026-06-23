@@ -21,6 +21,7 @@ import javax.inject.Inject
 
 data class LibraryUiState(
     val isLoading: Boolean = true,
+    val isRefreshing: Boolean = false,
     val languages: List<Language> = emptyList(),
     val currentLanguage: String? = null,
     val collections: List<CollectionSummary> = emptyList(),
@@ -51,31 +52,71 @@ class LibraryViewModel @Inject constructor(
     }
 
     fun load() {
-        _state.update { it.copy(isLoading = true, errorMessage = null) }
         viewModelScope.launch {
-            when (val langs = languageRepository.myLanguages()) {
-                is Outcome.Failure ->
-                    _state.update { it.copy(isLoading = false, errorMessage = langs.message) }
+            // 1) Cache-first: paint the last-known library instantly so launch
+            //    isn't gated on the network (no spinner, no "Language" placeholder).
+            val cachedLangs = languageRepository.cachedLanguages()
+            if (cachedLangs.isNotEmpty()) {
+                applyLanguages(cachedLangs)
+                _state.value.currentLanguage?.let { showCachedContent(it) }
+            } else {
+                _state.update { it.copy(isLoading = true, errorMessage = null) }
+            }
+            // 2) Refresh from the network in the background; update in place.
+            refreshFromNetwork()
+        }
+    }
 
-                is Outcome.Success -> {
-                    // The endpoint returns every supported language; isDefault=true
-                    // marks ones the user has NOT added (column defaults). Show only
-                    // the languages they actually added; fall back to the full list
-                    // for a fresh account that has added none.
-                    val available = langs.data.filter { !it.isDefault }.ifEmpty { langs.data }
-                    val codes = available.map { it.code }.toSet()
-                    val current = _state.value.currentLanguage?.takeIf { it in codes }
-                        ?: settingsStore.currentLanguage()?.takeIf { it in codes }
-                        ?: available.firstOrNull()?.code
-                    _state.update { it.copy(languages = available, currentLanguage = current) }
-                    if (current != null) {
-                        loadContent(current)
-                    } else {
-                        _state.update { it.copy(isLoading = false) }
-                    }
+    /** Pull-to-refresh: re-fetch from the network while keeping the current view
+     *  visible (drives a small indicator, not the full-screen spinner). */
+    fun refresh() {
+        if (_state.value.isRefreshing) return
+        _state.update { it.copy(isRefreshing = true, errorMessage = null) }
+        viewModelScope.launch {
+            refreshFromNetwork()
+            _state.update { it.copy(isRefreshing = false) }
+        }
+    }
+
+    /** Network refresh used on first load. Leaves any cached view in place when
+     *  the network is unavailable (only errors when there's nothing to show). */
+    private suspend fun refreshFromNetwork() {
+        when (val langs = languageRepository.myLanguages()) {
+            is Outcome.Failure ->
+                _state.update {
+                    it.copy(
+                        isLoading = false,
+                        // Don't blank a cached library just because the refresh failed.
+                        errorMessage = if (it.languages.isEmpty()) langs.message else null,
+                    )
                 }
+
+            is Outcome.Success -> {
+                applyLanguages(langs.data)
+                _state.value.currentLanguage?.let { loadContent(it) }
+                    ?: _state.update { it.copy(isLoading = false) }
             }
         }
+    }
+
+    /** Resolve the shown languages + current selection from a language list. */
+    private suspend fun applyLanguages(langs: List<Language>) {
+        // The endpoint returns every supported language; isDefault=true marks
+        // ones the user has NOT added (column defaults). Show only the languages
+        // they actually added; fall back to the full list for a fresh account.
+        val available = langs.filter { !it.isDefault }.ifEmpty { langs }
+        val codes = available.map { it.code }.toSet()
+        val current = _state.value.currentLanguage?.takeIf { it in codes }
+            ?: settingsStore.currentLanguage()?.takeIf { it in codes }
+            ?: available.firstOrNull()?.code
+        _state.update { it.copy(languages = available, currentLanguage = current, isLoading = false) }
+    }
+
+    /** Paint cached texts/collections for [language] without a network call. */
+    private suspend fun showCachedContent(language: String) {
+        val texts = libraryRepository.cachedTexts(LibraryScope.OWNED, language)
+        val collections = collectionRepository.cachedCollections().filter { it.language == language }
+        _state.update { it.copy(texts = texts, collections = collections, isLoading = false) }
     }
 
     fun selectLanguage(code: String) {

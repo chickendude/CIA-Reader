@@ -18,6 +18,20 @@ data class CachedLibraryCardEntity(
     val position: Int,
 )
 
+/**
+ * The user's language list, cached so the library can pick a current language
+ * and render the switcher offline (the launch flow gates on this list).
+ */
+@Entity(tableName = "cached_language")
+data class CachedLanguageEntity(
+    @PrimaryKey val code: String,
+    val displayName: String,
+    val nativeName: String,
+    val script: String,
+    val isDefault: Boolean,
+    val position: Int,
+)
+
 @Entity(tableName = "cached_collection")
 data class CachedCollectionEntity(
     @PrimaryKey val id: String,

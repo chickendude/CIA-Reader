@@ -13,6 +13,15 @@ import androidx.room.Upsert
 interface LibraryCacheDao {
 
     @Upsert
+    suspend fun upsertLanguages(rows: List<CachedLanguageEntity>)
+
+    @Query("SELECT * FROM cached_language ORDER BY position")
+    suspend fun languages(): List<CachedLanguageEntity>
+
+    @Query("DELETE FROM cached_language")
+    suspend fun clearLanguages()
+
+    @Upsert
     suspend fun upsertCards(cards: List<CachedLibraryCardEntity>)
 
     @Query("SELECT * FROM cached_library_card WHERE scope = :scope AND language = :language ORDER BY position")

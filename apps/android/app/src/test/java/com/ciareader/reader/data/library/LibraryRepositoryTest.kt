@@ -4,6 +4,7 @@ import com.ciareader.reader.core.network.Outcome
 import com.ciareader.reader.data.local.CachedCollectionChapterEntity
 import com.ciareader.reader.data.local.CachedCollectionDetailEntity
 import com.ciareader.reader.data.local.CachedCollectionEntity
+import com.ciareader.reader.data.local.CachedLanguageEntity
 import com.ciareader.reader.data.local.CachedLibraryCardEntity
 import com.ciareader.reader.data.local.LibraryCacheDao
 import kotlinx.coroutines.test.runTest
@@ -107,7 +108,15 @@ private class FakeLibraryApi(
 
 /** In-memory stand-in for the Room DAO so the repository test stays pure-JVM. */
 private class FakeLibraryCacheDao : LibraryCacheDao {
+    private val languages = mutableListOf<CachedLanguageEntity>()
     private val cards = mutableListOf<CachedLibraryCardEntity>()
+
+    override suspend fun upsertLanguages(rows: List<CachedLanguageEntity>) {
+        rows.forEach { e -> languages.removeAll { it.code == e.code }; languages.add(e) }
+    }
+
+    override suspend fun languages() = languages.sortedBy { it.position }
+    override suspend fun clearLanguages() = languages.clear()
     private val collections = mutableListOf<CachedCollectionEntity>()
     private val details = mutableMapOf<String, CachedCollectionDetailEntity>()
     private val chapters = mutableListOf<CachedCollectionChapterEntity>()

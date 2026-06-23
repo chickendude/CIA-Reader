@@ -24,6 +24,9 @@ data class TextCard(
 
 interface LibraryRepository {
     suspend fun listTexts(scope: LibraryScope, language: String): Outcome<List<TextCard>>
+
+    /** Last-cached listing, without touching the network — for instant launch. */
+    suspend fun cachedTexts(scope: LibraryScope, language: String): List<TextCard>
 }
 
 @Singleton
@@ -45,6 +48,9 @@ class LibraryRepositoryImpl @Inject constructor(
             is Outcome.Failure -> cache.cards(scope, language).takeIf { it.isNotEmpty() }
                 ?.let { Outcome.Success(it) } ?: net
         }
+
+    override suspend fun cachedTexts(scope: LibraryScope, language: String): List<TextCard> =
+        cache.cards(scope, language)
 }
 
 private fun TextCardDto.toDomain() = TextCard(

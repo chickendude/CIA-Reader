@@ -20,17 +20,33 @@ data class Language(
 interface LanguageRepository {
     suspend fun myLanguages(): Outcome<List<Language>>
     suspend fun setCurrent(code: String): Outcome<String>
+
+    /** Last-cached languages, without touching the network — for instant launch. */
+    suspend fun cachedLanguages(): List<Language>
 }
 
 @Singleton
 class LanguageRepositoryImpl @Inject constructor(
     private val api: LanguagesApi,
+    private val cache: LanguageCache,
 ) : LanguageRepository {
+    // Network-first with offline fallback: the library gates its whole launch
+    // on this list, so serving the last-cached languages keeps a cold/offline
+    // start from blanking out (no language selected, no books).
     override suspend fun myLanguages(): Outcome<List<Language>> =
-        apiCall { api.myLanguages().languages.map { it.toDomain() } }
+        when (val net = apiCall { api.myLanguages().languages.map { it.toDomain() } }) {
+            is Outcome.Success -> {
+                cache.putLanguages(net.data)
+                net
+            }
+            is Outcome.Failure -> cache.languages().takeIf { it.isNotEmpty() }
+                ?.let { Outcome.Success(it) } ?: net
+        }
 
     override suspend fun setCurrent(code: String): Outcome<String> =
         apiCall { api.setLanguage(SetLanguageRequest(code)).code }
+
+    override suspend fun cachedLanguages(): List<Language> = cache.languages()
 }
 
 private fun LanguageDto.toDomain() = Language(

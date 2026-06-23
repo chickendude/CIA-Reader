@@ -163,6 +163,56 @@ class LibraryViewModelTest {
         assertEquals("chapter-4", vm.state.value.collections.single().openTextId)
     }
 
+    @Test
+    fun refreshReFetchesFromNetwork() = runTest(mainRule.dispatcher) {
+        val langRepo = FakeLanguageRepository(languages = listOf(lang("hi")))
+        val collRepo = FakeCollectionRepository(all = listOf(collection("c1", "hi")))
+        val vm = vm(langRepo, FakeLibraryRepository(byLanguage = mapOf("hi" to emptyList())), collRepo)
+        advanceUntilIdle()
+        assertEquals(listOf("c1"), vm.state.value.collections.map { it.id })
+
+        collRepo.all = listOf(collection("c2", "hi"))
+        vm.refresh()
+        advanceUntilIdle()
+
+        assertEquals(listOf("c2"), vm.state.value.collections.map { it.id })
+        assertFalse(vm.state.value.isRefreshing)
+    }
+
+    @Test
+    fun showsCachedLibraryAtLaunchWhenNetworkUnavailable() = runTest(mainRule.dispatcher) {
+        // Cold/offline launch: the language fetch fails, but cache has content.
+        val langRepo = FakeLanguageRepository(error = "offline", cached = listOf(lang("hi"), lang("eu")))
+        val libRepo = FakeLibraryRepository(cachedByLanguage = mapOf("hi" to listOf(card("t1"))))
+        val collRepo = FakeCollectionRepository(cached = listOf(collection("c1", "hi")))
+
+        val vm = vm(langRepo, libRepo, collRepo)
+        advanceUntilIdle()
+
+        val s = vm.state.value
+        assertEquals(listOf("hi", "eu"), s.languages.map { it.code })
+        assertEquals("hi", s.currentLanguage)
+        assertEquals(listOf("t1"), s.texts.map { it.id })
+        assertEquals(listOf("c1"), s.collections.map { it.id })
+        assertFalse(s.isLoading)
+        assertNull(s.errorMessage) // cached view shown, so the failed refresh is silent
+    }
+
+    @Test
+    fun networkRefreshReplacesCachedContent() = runTest(mainRule.dispatcher) {
+        val langRepo = FakeLanguageRepository(languages = listOf(lang("hi")), cached = listOf(lang("hi")))
+        val libRepo = FakeLibraryRepository(
+            byLanguage = mapOf("hi" to listOf(card("fresh"))),
+            cachedByLanguage = mapOf("hi" to listOf(card("stale"))),
+        )
+
+        val vm = vm(langRepo, libRepo)
+        advanceUntilIdle()
+
+        // After the background refresh, the fresh network listing wins.
+        assertEquals(listOf("fresh"), vm.state.value.texts.map { it.id })
+    }
+
     private fun lang(code: String, isDefault: Boolean = false) =
         Language(code = code, displayName = code.uppercase(), nativeName = code, script = "Deva", isDefault = isDefault)
 
@@ -182,6 +232,7 @@ class LibraryViewModelTest {
 private class FakeLanguageRepository(
     private val languages: List<Language> = emptyList(),
     private val error: String? = null,
+    private val cached: List<Language> = emptyList(),
 ) : LanguageRepository {
     var lastSetCode: String? = null
     override suspend fun myLanguages(): Outcome<List<Language>> =
@@ -191,25 +242,34 @@ private class FakeLanguageRepository(
         lastSetCode = code
         return Outcome.Success(code)
     }
+
+    override suspend fun cachedLanguages(): List<Language> = cached
 }
 
 private class FakeLibraryRepository(
     private val byLanguage: Map<String, List<TextCard>> = emptyMap(),
     private val error: String? = null,
+    private val cachedByLanguage: Map<String, List<TextCard>> = emptyMap(),
 ) : LibraryRepository {
     override suspend fun listTexts(scope: LibraryScope, language: String): Outcome<List<TextCard>> =
         error?.let { Outcome.Failure(it) } ?: Outcome.Success(byLanguage[language] ?: emptyList())
+
+    override suspend fun cachedTexts(scope: LibraryScope, language: String): List<TextCard> =
+        cachedByLanguage[language] ?: emptyList()
 }
 
 private class FakeCollectionRepository(
     var all: List<CollectionSummary> = emptyList(),
     private val error: String? = null,
+    private val cached: List<CollectionSummary> = emptyList(),
 ) : CollectionRepository {
     override suspend fun myCollections(): Outcome<List<CollectionSummary>> =
         error?.let { Outcome.Failure(it) } ?: Outcome.Success(all)
 
     override suspend fun detail(collectionId: String): Outcome<CollectionDetail> =
         Outcome.Failure("not used in these tests")
+
+    override suspend fun cachedCollections(): List<CollectionSummary> = cached
 }
 
 private class FakeSettingsStore(initial: String? = null) : SettingsStore {

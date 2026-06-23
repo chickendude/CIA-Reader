@@ -68,4 +68,6 @@ private class FakeCollectionRepository(
 
     override suspend fun detail(collectionId: String): Outcome<CollectionDetail> =
         error?.let { Outcome.Failure(it) } ?: Outcome.Success(detail!!)
+
+    override suspend fun cachedCollections(): List<CollectionSummary> = emptyList()
 }
