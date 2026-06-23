@@ -27,6 +27,7 @@ data class ReaderChapterRef(
     val textId: String?,   // a separate chapter-text within a book (collection)
     val chapterIdx: Int?,  // a chapter within this text
     val isCurrent: Boolean,
+    val wordCount: Int = 0,
 )
 
 data class ReaderUiState(
@@ -59,6 +60,24 @@ data class ReaderUiState(
      *  chapter-text when reading a book (collection). */
     val canGoPrev: Boolean get() = hasPrev || prevTextId != null
     val canGoNext: Boolean get() = hasNext || nextTextId != null
+
+    /** Progress through the whole book — chapters before the current one count
+     *  fully, plus the within-chapter fraction — weighted by chapter word counts
+     *  when known, else evenly. Falls back to the chapter fraction for a
+     *  standalone text with no chapter list. */
+    val bookProgress: Float
+        get() {
+            if (chapters.isEmpty()) return progress
+            val idx = chapters.indexOfFirst { it.isCurrent }.coerceAtLeast(0)
+            val weights = chapters.map { it.wordCount.coerceAtLeast(0) }
+            val total = weights.sum()
+            return if (total > 0) {
+                val before = weights.take(idx).sum()
+                ((before + progress * weights[idx]) / total).coerceIn(0f, 1f)
+            } else {
+                ((idx + progress) / chapters.size).coerceIn(0f, 1f)
+            }
+        }
 }
 
 @HiltViewModel
@@ -118,7 +137,13 @@ class ReaderViewModel @Inject constructor(
                         _state.update { s ->
                             s.copy(
                                 chapters = meta.data.chapters.map { c ->
-                                    ReaderChapterRef(c.title, textId = null, chapterIdx = c.idx, isCurrent = c.idx == startChapter)
+                                    ReaderChapterRef(
+                                        c.title,
+                                        textId = null,
+                                        chapterIdx = c.idx,
+                                        isCurrent = c.idx == startChapter,
+                                        wordCount = c.tokenCount,
+                                    )
                                 },
                             )
                         }
