@@ -281,26 +281,26 @@ private class FakeSettingsStore(initial: String? = null) : SettingsStore {
     }
 
     private var romanize = false
-    override suspend fun showRomanization(): Boolean = romanize
-    override suspend fun setShowRomanization(value: Boolean) {
+    override suspend fun showRomanization(language: String): Boolean = romanize
+    override suspend fun setShowRomanization(language: String, value: Boolean) {
         romanize = value
     }
 
     private var pageMode = false
-    override suspend fun pageMode(): Boolean = pageMode
-    override suspend fun setPageMode(value: Boolean) {
+    override suspend fun pageMode(language: String): Boolean = pageMode
+    override suspend fun setPageMode(language: String, value: Boolean) {
         pageMode = value
     }
 
     private var fontSize = 18
-    override suspend fun fontSizeSp(): Int = fontSize
-    override suspend fun setFontSizeSp(value: Int) {
+    override suspend fun fontSizeSp(language: String): Int = fontSize
+    override suspend fun setFontSizeSp(language: String, value: Int) {
         fontSize = value
     }
 
     private var lineSpacing = 1.5f
-    override suspend fun lineSpacing(): Float = lineSpacing
-    override suspend fun setLineSpacing(value: Float) {
+    override suspend fun lineSpacing(language: String): Float = lineSpacing
+    override suspend fun setLineSpacing(language: String, value: Float) {
         lineSpacing = value
     }
 }

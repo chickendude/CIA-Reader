@@ -101,6 +101,9 @@ class ReaderViewModel @Inject constructor(
     private var progressJob: Job? = null
     private var currentTopToken = 0
 
+    // This text's language, so reading prefs are read/written per-language.
+    private var language: String = ""
+
     init {
         loadInitial()
     }
@@ -113,16 +116,17 @@ class ReaderViewModel @Inject constructor(
                     _state.update { it.copy(isLoading = false, errorMessage = meta.message) }
 
                 is Outcome.Success -> {
+                    language = meta.data.language
                     val chapterCount = meta.data.chapterCount.coerceAtLeast(1)
                     _state.update {
                         it.copy(
                             title = meta.data.title,
                             chapterCount = chapterCount,
-                            romanize = settings.showRomanization(),
-                            pageMode = settings.pageMode(),
-                            fontSize = settings.fontSizeSp(),
-                            lineSpacing = settings.lineSpacing(),
-                            isRtl = isRtlLanguage(meta.data.language),
+                            romanize = settings.showRomanization(language),
+                            pageMode = settings.pageMode(language),
+                            fontSize = settings.fontSizeSp(language),
+                            lineSpacing = settings.lineSpacing(language),
+                            isRtl = isRtlLanguage(language),
                         )
                     }
                     loadSiblings()
@@ -276,14 +280,14 @@ class ReaderViewModel @Inject constructor(
     fun toggleRomanization() {
         val next = !_state.value.romanize
         _state.update { it.copy(romanize = next) }
-        viewModelScope.launch { settings.setShowRomanization(next) }
+        viewModelScope.launch { settings.setShowRomanization(language, next) }
     }
 
     /** Toggle continuous-scroll ⇄ page mode and remember the choice. */
     fun togglePageMode() {
         val next = !_state.value.pageMode
         _state.update { it.copy(pageMode = next) }
-        viewModelScope.launch { settings.setPageMode(next) }
+        viewModelScope.launch { settings.setPageMode(language, next) }
     }
 
     /** Reader body font size in sp, clamped + remembered. */
@@ -291,14 +295,14 @@ class ReaderViewModel @Inject constructor(
         val v = sp.coerceIn(FONT_SIZE_MIN, FONT_SIZE_MAX)
         // Re-anchor to the current top word so resizing doesn't lose your place.
         _state.update { it.copy(fontSize = v, restoreTokenIdx = currentTopToken) }
-        viewModelScope.launch { settings.setFontSizeSp(v) }
+        viewModelScope.launch { settings.setFontSizeSp(language, v) }
     }
 
     /** Reader line-height multiple, clamped + remembered. */
     fun setLineSpacing(value: Float) {
         val v = value.coerceIn(LINE_SPACING_MIN, LINE_SPACING_MAX)
         _state.update { it.copy(lineSpacing = v, restoreTokenIdx = currentTopToken) }
-        viewModelScope.launch { settings.setLineSpacing(v) }
+        viewModelScope.launch { settings.setLineSpacing(language, v) }
     }
 
     /** When reading a book, find the adjacent chapter-texts for Prev/Next. */

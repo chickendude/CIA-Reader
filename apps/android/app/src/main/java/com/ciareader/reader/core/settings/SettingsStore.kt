@@ -26,21 +26,25 @@ interface SettingsStore {
     suspend fun currentLanguage(): String?
     suspend fun setCurrentLanguage(code: String)
 
+    // Reading prefs are per-language: romanization is script-specific, and a
+    // reader may want a different size/spacing/mode per language. Each is keyed
+    // by language [code].
+
     /** Whether the reader shows romanization in place of the native script. */
-    suspend fun showRomanization(): Boolean
-    suspend fun setShowRomanization(value: Boolean)
+    suspend fun showRomanization(language: String): Boolean
+    suspend fun setShowRomanization(language: String, value: Boolean)
 
     /** Whether the reader paginates into pages (page mode) vs. continuous scroll. */
-    suspend fun pageMode(): Boolean
-    suspend fun setPageMode(value: Boolean)
+    suspend fun pageMode(language: String): Boolean
+    suspend fun setPageMode(language: String, value: Boolean)
 
     /** Reader body font size in sp (defaults to [DEFAULT_FONT_SIZE_SP]). */
-    suspend fun fontSizeSp(): Int
-    suspend fun setFontSizeSp(value: Int)
+    suspend fun fontSizeSp(language: String): Int
+    suspend fun setFontSizeSp(language: String, value: Int)
 
     /** Reader line-height multiple (defaults to [DEFAULT_LINE_SPACING]). */
-    suspend fun lineSpacing(): Float
-    suspend fun setLineSpacing(value: Float)
+    suspend fun lineSpacing(language: String): Float
+    suspend fun setLineSpacing(language: String, value: Float)
 
     companion object {
         const val DEFAULT_FONT_SIZE_SP = 18
@@ -64,39 +68,41 @@ class DataStoreSettingsStore @Inject constructor(
         context.settingsDataStore.edit { it[CURRENT_LANGUAGE] = code }
     }
 
-    override suspend fun showRomanization(): Boolean =
-        context.settingsDataStore.data.map { it[SHOW_ROMANIZATION] ?: false }.first()
+    override suspend fun showRomanization(language: String): Boolean =
+        context.settingsDataStore.data.map { it[romanizationKey(language)] ?: false }.first()
 
-    override suspend fun setShowRomanization(value: Boolean) {
-        context.settingsDataStore.edit { it[SHOW_ROMANIZATION] = value }
+    override suspend fun setShowRomanization(language: String, value: Boolean) {
+        context.settingsDataStore.edit { it[romanizationKey(language)] = value }
     }
 
-    override suspend fun pageMode(): Boolean =
-        context.settingsDataStore.data.map { it[PAGE_MODE] ?: false }.first()
+    override suspend fun pageMode(language: String): Boolean =
+        context.settingsDataStore.data.map { it[pageModeKey(language)] ?: false }.first()
 
-    override suspend fun setPageMode(value: Boolean) {
-        context.settingsDataStore.edit { it[PAGE_MODE] = value }
+    override suspend fun setPageMode(language: String, value: Boolean) {
+        context.settingsDataStore.edit { it[pageModeKey(language)] = value }
     }
 
-    override suspend fun fontSizeSp(): Int =
-        context.settingsDataStore.data.map { it[FONT_SIZE] ?: SettingsStore.DEFAULT_FONT_SIZE_SP }.first()
+    override suspend fun fontSizeSp(language: String): Int =
+        context.settingsDataStore.data.map { it[fontSizeKey(language)] ?: SettingsStore.DEFAULT_FONT_SIZE_SP }.first()
 
-    override suspend fun setFontSizeSp(value: Int) {
-        context.settingsDataStore.edit { it[FONT_SIZE] = value }
+    override suspend fun setFontSizeSp(language: String, value: Int) {
+        context.settingsDataStore.edit { it[fontSizeKey(language)] = value }
     }
 
-    override suspend fun lineSpacing(): Float =
-        context.settingsDataStore.data.map { it[LINE_SPACING] ?: SettingsStore.DEFAULT_LINE_SPACING }.first()
+    override suspend fun lineSpacing(language: String): Float =
+        context.settingsDataStore.data.map { it[lineSpacingKey(language)] ?: SettingsStore.DEFAULT_LINE_SPACING }.first()
 
-    override suspend fun setLineSpacing(value: Float) {
-        context.settingsDataStore.edit { it[LINE_SPACING] = value }
+    override suspend fun setLineSpacing(language: String, value: Float) {
+        context.settingsDataStore.edit { it[lineSpacingKey(language)] = value }
     }
 
     private companion object {
         val CURRENT_LANGUAGE = stringPreferencesKey("current_language")
-        val SHOW_ROMANIZATION = booleanPreferencesKey("show_romanization")
-        val PAGE_MODE = booleanPreferencesKey("page_mode")
-        val FONT_SIZE = intPreferencesKey("font_size_sp")
-        val LINE_SPACING = floatPreferencesKey("line_spacing")
+
+        // Per-language keys — the language code is part of the preference name.
+        fun romanizationKey(lang: String) = booleanPreferencesKey("show_romanization_$lang")
+        fun pageModeKey(lang: String) = booleanPreferencesKey("page_mode_$lang")
+        fun fontSizeKey(lang: String) = intPreferencesKey("font_size_sp_$lang")
+        fun lineSpacingKey(lang: String) = floatPreferencesKey("line_spacing_$lang")
     }
 }

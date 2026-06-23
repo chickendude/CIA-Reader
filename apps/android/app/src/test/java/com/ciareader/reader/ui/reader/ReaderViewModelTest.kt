@@ -518,23 +518,23 @@ private class FakeSettingsStore(
     override val currentLanguage: Flow<String?> = MutableStateFlow(null)
     override suspend fun currentLanguage(): String? = null
     override suspend fun setCurrentLanguage(code: String) {}
-    override suspend fun showRomanization(): Boolean = romanization
-    override suspend fun setShowRomanization(value: Boolean) {
+    override suspend fun showRomanization(language: String): Boolean = romanization
+    override suspend fun setShowRomanization(language: String, value: Boolean) {
         lastSetRomanization = value
     }
-    override suspend fun pageMode(): Boolean = paged
-    override suspend fun setPageMode(value: Boolean) {
+    override suspend fun pageMode(language: String): Boolean = paged
+    override suspend fun setPageMode(language: String, value: Boolean) {
         lastSetPageMode = value
     }
 
     var lastSetFontSize: Int? = null
     var lastSetLineSpacing: Float? = null
-    override suspend fun fontSizeSp(): Int = fontSize
-    override suspend fun setFontSizeSp(value: Int) {
+    override suspend fun fontSizeSp(language: String): Int = fontSize
+    override suspend fun setFontSizeSp(language: String, value: Int) {
         lastSetFontSize = value
     }
-    override suspend fun lineSpacing(): Float = lineSpacingValue
-    override suspend fun setLineSpacing(value: Float) {
+    override suspend fun lineSpacing(language: String): Float = lineSpacingValue
+    override suspend fun setLineSpacing(language: String, value: Float) {
         lastSetLineSpacing = value
     }
 }
