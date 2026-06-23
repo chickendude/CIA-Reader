@@ -170,4 +170,7 @@ private class FakeOfflineCache : OfflineCache {
     override suspend fun clear() {
         cleared++
     }
+
+    override suspend fun downloads(): List<com.ciareader.reader.data.local.Download> = emptyList()
+    override suspend fun delete(textId: String) {}
 }

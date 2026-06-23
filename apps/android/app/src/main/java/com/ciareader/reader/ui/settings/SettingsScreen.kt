@@ -45,6 +45,7 @@ import java.util.Locale
 fun SettingsScreen(
     onBack: () -> Unit,
     onLogout: () -> Unit,
+    onOpenDownloads: () -> Unit,
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -57,6 +58,7 @@ fun SettingsScreen(
         onSetLineSpacing = viewModel::setLineSpacing,
         onClearCache = viewModel::clearOfflineCache,
         onCacheClearedShown = viewModel::onCacheClearedShown,
+        onOpenDownloads = onOpenDownloads,
         onLogout = onLogout,
     )
 }
@@ -72,6 +74,7 @@ fun SettingsScreenContent(
     onSetLineSpacing: (Float) -> Unit,
     onClearCache: () -> Unit,
     onCacheClearedShown: () -> Unit,
+    onOpenDownloads: () -> Unit,
     onLogout: () -> Unit,
 ) {
     val snackbar = remember { SnackbarHostState() }
@@ -133,6 +136,10 @@ fun SettingsScreenContent(
 
             Spacer(Modifier.height(24.dp))
             SectionHeader("Storage")
+            OutlinedButton(onClick = onOpenDownloads, modifier = Modifier.fillMaxWidth()) {
+                Text("Manage downloads")
+            }
+            Spacer(Modifier.height(8.dp))
             OutlinedButton(onClick = onClearCache, modifier = Modifier.fillMaxWidth()) {
                 Text("Clear offline downloads")
             }

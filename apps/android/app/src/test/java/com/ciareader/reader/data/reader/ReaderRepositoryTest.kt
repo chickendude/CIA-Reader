@@ -4,6 +4,7 @@ import com.ciareader.reader.core.network.Outcome
 import com.ciareader.reader.data.local.CachedChapterEntity
 import com.ciareader.reader.data.local.CachedChapterRefEntity
 import com.ciareader.reader.data.local.CachedTextEntity
+import com.ciareader.reader.data.local.CachedTextSize
 import com.ciareader.reader.data.local.ReaderCacheDao
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
@@ -206,6 +207,8 @@ private class FakeReaderCacheDao : ReaderCacheDao {
     }
 
     override suspend fun text(textId: String): CachedTextEntity? = texts[textId]
+    override suspend fun allTexts(): List<CachedTextEntity> = texts.values.toList()
+    override suspend fun chapterSizes(): List<CachedTextSize> = emptyList()
 
     override suspend fun upsertChapterRefs(refs: List<CachedChapterRefEntity>) {
         refs.forEach { ref ->

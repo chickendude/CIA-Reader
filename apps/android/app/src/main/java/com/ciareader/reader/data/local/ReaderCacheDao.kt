@@ -9,6 +9,13 @@ import androidx.room.Upsert
  * refreshes it in place; reads return null/empty when a text hasn't been
  * cached, which the repository treats as "go to the network".
  */
+/** A cached text's chapter count + total token-blob size in bytes. */
+data class CachedTextSize(
+    val textId: String,
+    val chapters: Int,
+    val bytes: Long,
+)
+
 @Dao
 interface ReaderCacheDao {
 
@@ -17,6 +24,17 @@ interface ReaderCacheDao {
 
     @Query("SELECT * FROM cached_text WHERE textId = :textId")
     suspend fun text(textId: String): CachedTextEntity?
+
+    @Query("SELECT * FROM cached_text ORDER BY title")
+    suspend fun allTexts(): List<CachedTextEntity>
+
+    /** Per-text cached chapter count + byte size of the token blobs. */
+    @Query(
+        "SELECT textId, COUNT(*) AS chapters, " +
+            "COALESCE(SUM(LENGTH(CAST(tokensJson AS BLOB))), 0) AS bytes " +
+            "FROM cached_chapter GROUP BY textId",
+    )
+    suspend fun chapterSizes(): List<CachedTextSize>
 
     @Upsert
     suspend fun upsertChapterRefs(refs: List<CachedChapterRefEntity>)

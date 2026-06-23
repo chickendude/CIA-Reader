@@ -42,6 +42,7 @@ class SettingsScreenTest {
                     onSetLineSpacing = {},
                     onClearCache = onClearCache,
                     onCacheClearedShown = {},
+                    onOpenDownloads = {},
                     onLogout = onLogout,
                 )
             }
