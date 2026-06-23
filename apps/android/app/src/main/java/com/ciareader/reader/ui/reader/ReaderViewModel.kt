@@ -78,6 +78,7 @@ class ReaderViewModel @Inject constructor(
     val state: StateFlow<ReaderUiState> = _state.asStateFlow()
 
     private var progressJob: Job? = null
+    private var currentTopToken = 0
 
     init {
         loadInitial()
@@ -204,6 +205,7 @@ class ReaderViewModel @Inject constructor(
 
     /** Debounced reading-progress write-back as the user scrolls. */
     fun recordPosition(tokenIdx: Int, pctRead: Double) {
+        currentTopToken = tokenIdx
         progressJob?.cancel()
         progressJob = viewModelScope.launch {
             delay(PROGRESS_DEBOUNCE_MS)
@@ -234,14 +236,15 @@ class ReaderViewModel @Inject constructor(
     /** Reader body font size in sp, clamped + remembered. */
     fun setFontSize(sp: Int) {
         val v = sp.coerceIn(FONT_SIZE_MIN, FONT_SIZE_MAX)
-        _state.update { it.copy(fontSize = v) }
+        // Re-anchor to the current top word so resizing doesn't lose your place.
+        _state.update { it.copy(fontSize = v, restoreTokenIdx = currentTopToken) }
         viewModelScope.launch { settings.setFontSizeSp(v) }
     }
 
     /** Reader line-height multiple, clamped + remembered. */
     fun setLineSpacing(value: Float) {
         val v = value.coerceIn(LINE_SPACING_MIN, LINE_SPACING_MAX)
-        _state.update { it.copy(lineSpacing = v) }
+        _state.update { it.copy(lineSpacing = v, restoreTokenIdx = currentTopToken) }
         viewModelScope.launch { settings.setLineSpacing(v) }
     }
 

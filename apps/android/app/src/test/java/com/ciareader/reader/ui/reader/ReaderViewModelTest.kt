@@ -316,6 +316,19 @@ class ReaderViewModelTest {
         assertEquals(2.0f, v.state.value.lineSpacing, 0.0001f)
     }
 
+    @Test
+    fun fontChangeReanchorsToCurrentTopWord() = runTest(mainRule.dispatcher) {
+        val repo = FakeReaderRepository(meta = meta(1), chapters = mapOf(0 to Chapter(0, listOf(word("a")))))
+        val v = vm(repo)
+        advanceUntilIdle()
+
+        v.recordPosition(tokenIdx = 5, pctRead = 20.0) // user scrolled; top word = token 5
+        advanceUntilIdle()
+        v.setFontSize(22)
+
+        assertEquals(5, v.state.value.restoreTokenIdx)
+    }
+
     private fun word(surface: String) =
         ReaderToken(0, surface, true, KnownStatus.UNKNOWN, null, null, null, false, false, false)
 
