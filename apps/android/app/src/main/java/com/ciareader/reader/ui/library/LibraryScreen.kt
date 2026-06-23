@@ -84,11 +84,15 @@ internal fun LibraryScreenContent(
             TopAppBar(
                 title = { Text("Library") },
                 actions = {
-                    LanguageSwitcher(
-                        languages = state.languages,
-                        currentLabel = state.currentLanguageLabel,
-                        onSelect = onSelectLanguage,
-                    )
+                    // Only once we know the languages — avoids a "Language"
+                    // placeholder flashing before the (cached) list resolves.
+                    if (state.languages.isNotEmpty()) {
+                        LanguageSwitcher(
+                            languages = state.languages,
+                            currentLabel = state.currentLanguageLabel,
+                            onSelect = onSelectLanguage,
+                        )
+                    }
                     IconButton(onClick = onOpenSettings) {
                         Icon(
                             painterResource(R.drawable.ic_settings),

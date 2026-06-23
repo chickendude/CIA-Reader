@@ -20,6 +20,9 @@ data class Language(
 interface LanguageRepository {
     suspend fun myLanguages(): Outcome<List<Language>>
     suspend fun setCurrent(code: String): Outcome<String>
+
+    /** Last-cached languages, without touching the network — for instant launch. */
+    suspend fun cachedLanguages(): List<Language>
 }
 
 @Singleton
@@ -42,6 +45,8 @@ class LanguageRepositoryImpl @Inject constructor(
 
     override suspend fun setCurrent(code: String): Outcome<String> =
         apiCall { api.setLanguage(SetLanguageRequest(code)).code }
+
+    override suspend fun cachedLanguages(): List<Language> = cache.languages()
 }
 
 private fun LanguageDto.toDomain() = Language(

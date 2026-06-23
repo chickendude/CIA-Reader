@@ -35,6 +35,9 @@ data class CollectionDetail(
 interface CollectionRepository {
     suspend fun myCollections(): Outcome<List<CollectionSummary>>
     suspend fun detail(collectionId: String): Outcome<CollectionDetail>
+
+    /** Last-cached collections, without touching the network — for instant launch. */
+    suspend fun cachedCollections(): List<CollectionSummary>
 }
 
 @Singleton
@@ -94,4 +97,6 @@ class CollectionRepositoryImpl @Inject constructor(
             }
             is Outcome.Failure -> cache.detail(collectionId)?.let { Outcome.Success(it) } ?: net
         }
+
+    override suspend fun cachedCollections(): List<CollectionSummary> = cache.collections()
 }
