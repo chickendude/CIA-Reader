@@ -502,6 +502,9 @@ export async function reorderCollection(
 export type CollectionListItem = {
   collection: Collection;
   textCount: number;
+  /** The chapter-text to open when the book is tapped: the one read most
+   *  recently, else the first chapter. Null only for an empty book. */
+  openTextId?: string | null;
 };
 
 export async function listCollectionsForUser(
@@ -523,7 +526,57 @@ export async function listCollectionsForUser(
     collection: Collection;
     textCount: number;
   }>;
-  return rows;
+
+  // Most-recently-read chapter-text per collection, so opening a book resumes.
+  const progress = (await db
+    .select({
+      collectionId: schema.collectionItems.collectionId,
+      textId: schema.collectionItems.textId,
+      updatedAt: schema.userTextProgress.updatedAt,
+    })
+    .from(schema.userTextProgress)
+    .innerJoin(
+      schema.collectionItems,
+      eq(schema.collectionItems.textId, schema.userTextProgress.textId),
+    )
+    .where(eq(schema.userTextProgress.userId, userId))) as Array<{
+    collectionId: string;
+    textId: string;
+    updatedAt: Date;
+  }>;
+  const lastRead = new Map<string, { textId: string; updatedAt: Date }>();
+  for (const p of progress) {
+    const cur = lastRead.get(p.collectionId);
+    if (!cur || p.updatedAt > cur.updatedAt) {
+      lastRead.set(p.collectionId, { textId: p.textId, updatedAt: p.updatedAt });
+    }
+  }
+
+  // First chapter per collection — the fallback for a book not yet started.
+  const items = (await db
+    .select({
+      collectionId: schema.collectionItems.collectionId,
+      textId: schema.collectionItems.textId,
+    })
+    .from(schema.collectionItems)
+    .innerJoin(
+      schema.collections,
+      eq(schema.collections.id, schema.collectionItems.collectionId),
+    )
+    .where(eq(schema.collections.ownerId, userId))
+    .orderBy(asc(schema.collectionItems.position))) as Array<{
+    collectionId: string;
+    textId: string;
+  }>;
+  const firstText = new Map<string, string>();
+  for (const it of items) {
+    if (!firstText.has(it.collectionId)) firstText.set(it.collectionId, it.textId);
+  }
+
+  return rows.map((r) => ({
+    ...r,
+    openTextId: lastRead.get(r.collection.id)?.textId ?? firstText.get(r.collection.id) ?? null,
+  }));
 }
 
 export async function listOfficialCollections(

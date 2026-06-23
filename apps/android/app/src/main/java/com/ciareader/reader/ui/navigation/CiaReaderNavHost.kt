@@ -31,7 +31,16 @@ fun CiaReaderNavHost(onLogout: () -> Unit) {
         composable(Routes.LIBRARY) {
             LibraryScreen(
                 onOpenText = { textId -> navController.navigate(Routes.reader(textId)) },
-                onOpenCollection = { id -> navController.navigate(Routes.collection(id)) },
+                // Open a book straight to where you left off (or its first chapter);
+                // fall back to the chapter list only for an empty book.
+                onOpenCollection = { c ->
+                    val open = c.openTextId
+                    if (open != null) {
+                        navController.navigate(Routes.reader(open, c.id))
+                    } else {
+                        navController.navigate(Routes.collection(c.id))
+                    }
+                },
                 onLogout = onLogout,
             )
         }

@@ -38,7 +38,7 @@ import com.ciareader.reader.data.library.TextCard
 @Composable
 fun LibraryScreen(
     onOpenText: (String) -> Unit,
-    onOpenCollection: (String) -> Unit,
+    onOpenCollection: (CollectionSummary) -> Unit,
     onLogout: () -> Unit,
     viewModel: LibraryViewModel = hiltViewModel(),
 ) {
@@ -59,7 +59,7 @@ internal fun LibraryScreenContent(
     state: LibraryUiState,
     onSelectLanguage: (String) -> Unit,
     onOpenText: (String) -> Unit,
-    onOpenCollection: (String) -> Unit,
+    onOpenCollection: (CollectionSummary) -> Unit,
     onRetry: () -> Unit,
     onLogout: () -> Unit,
 ) {
@@ -109,7 +109,7 @@ internal fun LibraryScreenContent(
 private fun ContentList(
     collections: List<CollectionSummary>,
     texts: List<TextCard>,
-    onOpenCollection: (String) -> Unit,
+    onOpenCollection: (CollectionSummary) -> Unit,
     onOpenText: (String) -> Unit,
 ) {
     LazyColumn(modifier = Modifier.fillMaxSize()) {
@@ -121,7 +121,7 @@ private fun ContentList(
                     supportingContent = {
                         Text("${c.textCount} chapters", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     },
-                    modifier = Modifier.clickable { onOpenCollection(c.id) },
+                    modifier = Modifier.clickable { onOpenCollection(c) },
                 )
                 HorizontalDivider()
             }
