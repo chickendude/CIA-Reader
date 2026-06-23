@@ -316,6 +316,45 @@ class ReaderViewModelTest {
         assertEquals(2.0f, v.state.value.lineSpacing, 0.0001f)
     }
 
+    @Test
+    fun fontChangeReanchorsToCurrentTopWord() = runTest(mainRule.dispatcher) {
+        val repo = FakeReaderRepository(meta = meta(1), chapters = mapOf(0 to Chapter(0, listOf(word("a")))))
+        val v = vm(repo)
+        advanceUntilIdle()
+
+        v.recordPosition(tokenIdx = 5, pctRead = 20.0) // user scrolled; top word = token 5
+        advanceUntilIdle()
+        v.setFontSize(22)
+
+        assertEquals(5, v.state.value.restoreTokenIdx)
+    }
+
+    @Test
+    fun bookProgressIsEvenAcrossChaptersWithoutWordCounts() {
+        val s = ReaderUiState(
+            chapters = listOf(
+                ReaderChapterRef("a", "t0", null, isCurrent = false),
+                ReaderChapterRef("b", "t1", null, isCurrent = true),
+                ReaderChapterRef("c", "t2", null, isCurrent = false),
+                ReaderChapterRef("d", "t3", null, isCurrent = false),
+            ),
+            progress = 0.5f,
+        )
+        assertEquals(0.375f, s.bookProgress, 0.0001f) // (1 + 0.5) / 4
+    }
+
+    @Test
+    fun bookProgressIsWeightedByWordCounts() {
+        val s = ReaderUiState(
+            chapters = listOf(
+                ReaderChapterRef("a", "t0", null, isCurrent = false, wordCount = 100),
+                ReaderChapterRef("b", "t1", null, isCurrent = true, wordCount = 300),
+            ),
+            progress = 0.5f,
+        )
+        assertEquals(0.625f, s.bookProgress, 0.0001f) // (100 + 0.5*300) / 400
+    }
+
     private fun word(surface: String) =
         ReaderToken(0, surface, true, KnownStatus.UNKNOWN, null, null, null, false, false, false)
 

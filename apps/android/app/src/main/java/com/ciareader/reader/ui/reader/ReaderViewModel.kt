@@ -27,6 +27,7 @@ data class ReaderChapterRef(
     val textId: String?,   // a separate chapter-text within a book (collection)
     val chapterIdx: Int?,  // a chapter within this text
     val isCurrent: Boolean,
+    val wordCount: Int = 0,
 )
 
 data class ReaderUiState(
@@ -49,6 +50,7 @@ data class ReaderUiState(
     val chapters: List<ReaderChapterRef> = emptyList(),
     val fontSize: Int = SettingsStore.DEFAULT_FONT_SIZE_SP,
     val lineSpacing: Float = SettingsStore.DEFAULT_LINE_SPACING,
+    val progress: Float = 0f,
     val errorMessage: String? = null,
 ) {
     val hasPrev: Boolean get() = chapterIdx > 0
@@ -58,6 +60,24 @@ data class ReaderUiState(
      *  chapter-text when reading a book (collection). */
     val canGoPrev: Boolean get() = hasPrev || prevTextId != null
     val canGoNext: Boolean get() = hasNext || nextTextId != null
+
+    /** Progress through the whole book — chapters before the current one count
+     *  fully, plus the within-chapter fraction — weighted by chapter word counts
+     *  when known, else evenly. Falls back to the chapter fraction for a
+     *  standalone text with no chapter list. */
+    val bookProgress: Float
+        get() {
+            if (chapters.isEmpty()) return progress
+            val idx = chapters.indexOfFirst { it.isCurrent }.coerceAtLeast(0)
+            val weights = chapters.map { it.wordCount.coerceAtLeast(0) }
+            val total = weights.sum()
+            return if (total > 0) {
+                val before = weights.take(idx).sum()
+                ((before + progress * weights[idx]) / total).coerceIn(0f, 1f)
+            } else {
+                ((idx + progress) / chapters.size).coerceIn(0f, 1f)
+            }
+        }
 }
 
 @HiltViewModel
@@ -77,6 +97,7 @@ class ReaderViewModel @Inject constructor(
     val state: StateFlow<ReaderUiState> = _state.asStateFlow()
 
     private var progressJob: Job? = null
+    private var currentTopToken = 0
 
     init {
         loadInitial()
@@ -116,7 +137,13 @@ class ReaderViewModel @Inject constructor(
                         _state.update { s ->
                             s.copy(
                                 chapters = meta.data.chapters.map { c ->
-                                    ReaderChapterRef(c.title, textId = null, chapterIdx = c.idx, isCurrent = c.idx == startChapter)
+                                    ReaderChapterRef(
+                                        c.title,
+                                        textId = null,
+                                        chapterIdx = c.idx,
+                                        isCurrent = c.idx == startChapter,
+                                        wordCount = c.tokenCount,
+                                    )
                                 },
                             )
                         }
@@ -203,6 +230,7 @@ class ReaderViewModel @Inject constructor(
 
     /** Debounced reading-progress write-back as the user scrolls. */
     fun recordPosition(tokenIdx: Int, pctRead: Double) {
+        currentTopToken = tokenIdx
         progressJob?.cancel()
         progressJob = viewModelScope.launch {
             delay(PROGRESS_DEBOUNCE_MS)
@@ -212,6 +240,9 @@ class ReaderViewModel @Inject constructor(
 
     /** The UI has scrolled to the restored anchor; don't scroll there again. */
     fun onRestoreConsumed() = _state.update { it.copy(restoreTokenIdx = null) }
+
+    /** Live reading-progress fraction (0..1) for the bottom bar. UI-only. */
+    fun setProgress(fraction: Float) = _state.update { it.copy(progress = fraction.coerceIn(0f, 1f)) }
 
     /** Toggle native ⇄ romanized rendering and remember the choice. */
     fun toggleRomanization() {
@@ -230,14 +261,15 @@ class ReaderViewModel @Inject constructor(
     /** Reader body font size in sp, clamped + remembered. */
     fun setFontSize(sp: Int) {
         val v = sp.coerceIn(FONT_SIZE_MIN, FONT_SIZE_MAX)
-        _state.update { it.copy(fontSize = v) }
+        // Re-anchor to the current top word so resizing doesn't lose your place.
+        _state.update { it.copy(fontSize = v, restoreTokenIdx = currentTopToken) }
         viewModelScope.launch { settings.setFontSizeSp(v) }
     }
 
     /** Reader line-height multiple, clamped + remembered. */
     fun setLineSpacing(value: Float) {
         val v = value.coerceIn(LINE_SPACING_MIN, LINE_SPACING_MAX)
-        _state.update { it.copy(lineSpacing = v) }
+        _state.update { it.copy(lineSpacing = v, restoreTokenIdx = currentTopToken) }
         viewModelScope.launch { settings.setLineSpacing(v) }
     }
 

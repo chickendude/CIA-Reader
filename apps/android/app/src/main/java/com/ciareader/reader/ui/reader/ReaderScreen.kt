@@ -2,6 +2,7 @@
 
 package com.ciareader.reader.ui.reader
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -15,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.lazy.LazyColumn
@@ -29,6 +31,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
@@ -104,6 +107,7 @@ fun ReaderScreen(
             val tid = ref.textId
             if (tid != null) onOpenChapterText(tid) else ref.chapterIdx?.let { viewModel.loadChapter(it) }
         },
+        onProgress = viewModel::setProgress,
     )
 }
 
@@ -124,6 +128,7 @@ internal fun ReaderScreenContent(
     onSetFontSize: (Int) -> Unit = {},
     onSetLineSpacing: (Float) -> Unit = {},
     onSelectChapter: (ReaderChapterRef) -> Unit = {},
+    onProgress: (Float) -> Unit = {},
 ) {
     var showSettings by remember { mutableStateOf(false) }
     var showChapters by remember { mutableStateOf(false) }
@@ -193,6 +198,7 @@ internal fun ReaderScreenContent(
                         onPrev = onPrevChapter,
                         onNext = onNextChapter,
                         onWordTap = onWordTap,
+                        onProgress = onProgress,
                         modifier = Modifier.fillMaxSize(),
                     )
 
@@ -207,8 +213,29 @@ internal fun ReaderScreenContent(
                         restoreTokenIdx = state.restoreTokenIdx,
                         onRecordPosition = onRecordPosition,
                         onRestoreConsumed = onRestoreConsumed,
+                        onProgress = onProgress,
                         modifier = Modifier.fillMaxSize(),
                     )
+            }
+            if (!state.isLoading && state.errorMessage == null) {
+                Row(
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .fillMaxWidth()
+                        .background(MaterialTheme.colorScheme.surface)
+                        .padding(horizontal = 12.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    LinearProgressIndicator(
+                        progress = { state.bookProgress },
+                        modifier = Modifier.weight(1f),
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        "${(state.bookProgress * 100).roundToInt()}%",
+                        style = MaterialTheme.typography.labelMedium,
+                    )
+                }
             }
         }
     }
@@ -268,6 +295,7 @@ private fun ChapterText(
     restoreTokenIdx: Int?,
     onRecordPosition: (Int, Double) -> Unit,
     onRestoreConsumed: () -> Unit,
+    onProgress: (Float) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val scheme = MaterialTheme.colorScheme
@@ -317,6 +345,7 @@ private fun ChapterText(
                 0.0
             }
             onRecordPosition(tokenIdx, pct)
+            onProgress((pct / 100.0).toFloat())
         }
     }
 
@@ -357,6 +386,7 @@ private fun PagedChapter(
     onPrev: () -> Unit,
     onNext: () -> Unit,
     onWordTap: (ReaderToken) -> Unit,
+    onProgress: (Float) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val scheme = MaterialTheme.colorScheme
@@ -426,6 +456,11 @@ private fun PagedChapter(
                     leading == 1 && settled == 0 -> onPrev()
                     trailing == 1 && settled == total - 1 -> onNext()
                 }
+            }
+        }
+        LaunchedEffect(pagerState, total) {
+            snapshotFlow { pagerState.currentPage }.collect { p ->
+                onProgress(if (total > 1) p.toFloat() / (total - 1) else 0f)
             }
         }
 
