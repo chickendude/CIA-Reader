@@ -12,16 +12,24 @@ import com.ciareader.reader.ui.reader.ReaderScreen
 
 object Routes {
     const val LIBRARY = "library"
-    const val READER = "reader/{textId}?collectionId={collectionId}&atEnd={atEnd}"
+    const val READER = "reader/{textId}?collectionId={collectionId}&atEnd={atEnd}&resume={resume}"
     const val COLLECTION = "collection/{collectionId}"
 
     /** Reader for [textId]; [collectionId] (optional) gives the book context so
      *  Previous/Next move between chapters; [atEnd] opens the chapter at its last
-     *  page (for going back to a prior chapter). */
-    fun reader(textId: String, collectionId: String? = null, atEnd: Boolean = false): String {
+     *  page (for going back to a prior chapter). [resume] is true only for opening
+     *  a book/text from the library; chapter-to-chapter navigation starts fresh so
+     *  old per-chapter page anchors do not override the current book position. */
+    fun reader(
+        textId: String,
+        collectionId: String? = null,
+        atEnd: Boolean = false,
+        resume: Boolean = true,
+    ): String {
         val params = buildList {
             collectionId?.let { add("collectionId=$it") }
             if (atEnd) add("atEnd=true")
+            if (!resume) add("resume=false")
         }
         return "reader/$textId" + if (params.isEmpty()) "" else "?" + params.joinToString("&")
     }
@@ -70,6 +78,10 @@ fun CiaReaderNavHost(onLogout: () -> Unit) {
                     type = NavType.BoolType
                     defaultValue = false
                 },
+                navArgument("resume") {
+                    type = NavType.BoolType
+                    defaultValue = true
+                },
             ),
         ) { entry ->
             val collectionId = entry.arguments?.getString("collectionId")
@@ -83,7 +95,7 @@ fun CiaReaderNavHost(onLogout: () -> Unit) {
                     // entry + ViewModel. launchSingleTop reused the entry, so the
                     // reader stayed stuck on the first chapter. popUpTo still keeps
                     // only one reader, so Back exits to the book/library.
-                    navController.navigate(Routes.reader(textId, collectionId, atEnd)) {
+                    navController.navigate(Routes.reader(textId, collectionId, atEnd, resume = false)) {
                         popUpTo(Routes.READER) { inclusive = true }
                     }
                 },

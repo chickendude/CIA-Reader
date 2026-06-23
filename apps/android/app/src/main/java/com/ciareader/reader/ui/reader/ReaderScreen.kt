@@ -97,7 +97,7 @@ fun ReaderScreen(
         // Edge-swiping back opens the previous chapter at its LAST page.
         onSwipeToPrevChapter = {
             if (state.hasPrev) {
-                viewModel.loadChapter(state.chapterIdx - 1, atEnd = true)
+                viewModel.loadChapter(state.chapterIdx - 1, atEnd = true, saveOnLoad = true)
             } else {
                 state.prevTextId?.let { onOpenChapterText(it, true) }
             }
@@ -112,7 +112,11 @@ fun ReaderScreen(
         onSetLineSpacing = viewModel::setLineSpacing,
         onSelectChapter = { ref ->
             val tid = ref.textId
-            if (tid != null) onOpenChapterText(tid, false) else ref.chapterIdx?.let { viewModel.loadChapter(it) }
+            if (tid != null) {
+                onOpenChapterText(tid, false)
+            } else {
+                ref.chapterIdx?.let { viewModel.loadChapter(it, saveOnLoad = true) }
+            }
         },
         onProgress = viewModel::setProgress,
     )

@@ -44,6 +44,7 @@ class ReaderViewModelTest {
         collections: CollectionRepository = FakeCollectionRepository(),
         collectionId: String? = null,
         atEnd: Boolean = false,
+        resume: Boolean = true,
     ) = ReaderViewModel(
         repo,
         dict,
@@ -54,6 +55,7 @@ class ReaderViewModelTest {
                 put("textId", "t1")
                 collectionId?.let { put("collectionId", it) }
                 if (atEnd) put("atEnd", true)
+                if (!resume) put("resume", false)
             },
         ),
     )
@@ -178,6 +180,21 @@ class ReaderViewModelTest {
 
         assertEquals(1, v.state.value.chapterIdx)
         assertEquals(7, v.state.value.restoreTokenIdx)
+    }
+
+    @Test
+    fun chapterNavigationOpenIgnoresOldSavedTokenAndSavesFreshStart() = runTest(mainRule.dispatcher) {
+        val repo = FakeReaderRepository(
+            meta = meta(1),
+            chapters = mapOf(0 to Chapter(0, listOf(word("a"), word("b")))),
+            savedProgress = ReadingProgress(chapterIdx = 0, tokenIdx = 7, pctRead = 42.0),
+        )
+        val v = vm(repo, resume = false)
+        advanceUntilIdle()
+
+        assertEquals(0, v.state.value.chapterIdx)
+        assertNull(v.state.value.restoreTokenIdx)
+        assertEquals(ReadingProgress(0, 0, 0.0), repo.lastSaved)
     }
 
     @Test
@@ -368,11 +385,32 @@ class ReaderViewModelTest {
         val repo = FakeReaderRepository(
             meta = meta(1),
             chapters = mapOf(0 to Chapter(0, listOf(word("a"), word("b"), word("c")))),
+            savedProgress = ReadingProgress(chapterIdx = 0, tokenIdx = 1, pctRead = 50.0),
         )
-        val v = vm(repo, atEnd = true)
+        val v = vm(repo, atEnd = true, resume = false)
         advanceUntilIdle()
 
         assertEquals(2, v.state.value.restoreTokenIdx) // last of 3 tokens
+        assertEquals(ReadingProgress(0, 2, 100.0), repo.lastSaved)
+    }
+
+    @Test
+    fun nextChapterSavesFreshStartAsCurrentPosition() = runTest(mainRule.dispatcher) {
+        val repo = FakeReaderRepository(
+            meta = meta(2),
+            chapters = mapOf(
+                0 to Chapter(0, listOf(word("a"))),
+                1 to Chapter(1, listOf(word("b"), word("c"))),
+            ),
+        )
+        val v = vm(repo)
+        advanceUntilIdle()
+
+        v.nextChapter()
+        advanceUntilIdle()
+
+        assertEquals(1, v.state.value.chapterIdx)
+        assertEquals(ReadingProgress(1, 0, 0.0), repo.lastSaved)
     }
 
     @Test
