@@ -64,9 +64,12 @@ fun CiaReaderNavHost(onLogout: () -> Unit) {
                 // exits the reader (to the book / library) instead of walking back
                 // through every chapter you opened.
                 onOpenChapterText = { textId ->
+                    // Each chapter is a distinct text and needs its own back-stack
+                    // entry + ViewModel. launchSingleTop reused the entry, so the
+                    // reader stayed stuck on the first chapter. popUpTo still keeps
+                    // only one reader, so Back exits to the book/library.
                     navController.navigate(Routes.reader(textId, collectionId)) {
                         popUpTo(Routes.READER) { inclusive = true }
-                        launchSingleTop = true
                     }
                 },
             )
