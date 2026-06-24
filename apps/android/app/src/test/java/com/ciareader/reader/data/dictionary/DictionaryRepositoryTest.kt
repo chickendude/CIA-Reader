@@ -43,6 +43,24 @@ class DictionaryRepositoryTest {
     }
 
     @Test
+    fun translationsAreCachedPerLemma() = runTest {
+        val api = FakeDictionaryApi(translations = LemmaTranslationsDto(lemma = LemmaDto("l1", "w")))
+        val repo = DictionaryRepositoryImpl(api)
+        repo.translations("l1")
+        repo.translations("l1") // second tap served from cache
+        assertEquals(1, api.translationCalls)
+    }
+
+    @Test
+    fun refreshTranslationsBypassesCache() = runTest {
+        val api = FakeDictionaryApi(translations = LemmaTranslationsDto(lemma = LemmaDto("l1", "w")))
+        val repo = DictionaryRepositoryImpl(api)
+        repo.translations("l1")        // caches (1 call)
+        repo.refreshTranslations("l1") // forces a re-fetch (2 calls)
+        assertEquals(2, api.translationCalls)
+    }
+
+    @Test
     fun setStatusSendsWireValueAndReturnsConfirmedStatus() = runTest {
         val api = FakeDictionaryApi(known = KnownLemmaResponseDto(KnownLemmaDto("l1", "known")))
         val repo = DictionaryRepositoryImpl(api)
@@ -140,8 +158,11 @@ private class FakeDictionaryApi(
 ) : DictionaryApi {
     var lastSet: Pair<String, String>? = null
     var lastAdded: CreateTranslationRequest? = null
-    override suspend fun translations(lemmaId: String): LemmaTranslationsDto =
-        error?.let { throw it } ?: translations!!
+    var translationCalls = 0
+    override suspend fun translations(lemmaId: String): LemmaTranslationsDto {
+        translationCalls++
+        return error?.let { throw it } ?: translations!!
+    }
 
     override suspend fun addTranslation(body: CreateTranslationRequest): CreateTranslationResponseDto {
         lastAdded = body

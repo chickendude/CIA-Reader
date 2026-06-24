@@ -33,7 +33,11 @@ data class BasqueReference(
 )
 
 interface DictionaryRepository {
+    /** Definitions for a lemma — served from cache when available (instant). */
     suspend fun translations(lemmaId: String): Outcome<LemmaTranslations>
+
+    /** Force a re-fetch (bypassing cache) to pull the latest community suggestions. */
+    suspend fun refreshTranslations(lemmaId: String): Outcome<LemmaTranslations>
 
     /** Persists the viewer's status for a lemma; returns the confirmed status. */
     suspend fun setStatus(lemmaId: String, status: KnownStatus): Outcome<KnownStatus>
@@ -50,8 +54,27 @@ class DictionaryRepositoryImpl @Inject constructor(
     private val api: DictionaryApi,
 ) : DictionaryRepository {
 
-    override suspend fun translations(lemmaId: String): Outcome<LemmaTranslations> =
-        apiCall { api.translations(lemmaId).toDomain() }
+    // Cache definitions per lemma for the session, so re-tapping a word (or any
+    // word sharing the lemma) shows instantly instead of re-fetching.
+    private val translationsCache = mutableMapOf<String, LemmaTranslations>()
+
+    override suspend fun translations(lemmaId: String): Outcome<LemmaTranslations> {
+        translationsCache[lemmaId]?.let { return Outcome.Success(it) }
+        return fetchTranslations(lemmaId)
+    }
+
+    override suspend fun refreshTranslations(lemmaId: String): Outcome<LemmaTranslations> =
+        when (val net = fetchTranslations(lemmaId)) {
+            is Outcome.Success -> net
+            // Keep the cached copy visible if the refresh fails (offline, etc.).
+            is Outcome.Failure -> translationsCache[lemmaId]?.let { Outcome.Success(it) } ?: net
+        }
+
+    private suspend fun fetchTranslations(lemmaId: String): Outcome<LemmaTranslations> {
+        val net = apiCall { api.translations(lemmaId).toDomain() }
+        if (net is Outcome.Success) translationsCache[lemmaId] = net.data
+        return net
+    }
 
     override suspend fun setStatus(lemmaId: String, status: KnownStatus): Outcome<KnownStatus> =
         apiCall {
