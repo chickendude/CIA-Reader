@@ -110,6 +110,8 @@ fun ReaderScreen(
         onRetry = viewModel::retry,
         onSetStatus = viewModel::setStatus,
         onAddDefinition = viewModel::addDefinition,
+        onEditDefinition = viewModel::editDefinition,
+        onDeleteDefinition = viewModel::deleteDefinition,
         onSetBasqueRefSource = viewModel::setBasqueRefSource,
         onRecordPosition = viewModel::recordPosition,
         onRestoreConsumed = viewModel::onRestoreConsumed,
@@ -141,6 +143,8 @@ internal fun ReaderScreenContent(
     onRetry: () -> Unit,
     onSetStatus: (KnownStatus) -> Unit,
     onAddDefinition: (String) -> Unit = {},
+    onEditDefinition: (String, String) -> Unit = { _, _ -> },
+    onDeleteDefinition: (String) -> Unit = {},
     onSetBasqueRefSource: (String) -> Unit = {},
     onRecordPosition: (Int, Double) -> Unit,
     onRestoreConsumed: () -> Unit,
@@ -284,6 +288,8 @@ internal fun ReaderScreenContent(
                 isLoading = state.isWordLoading,
                 onSetStatus = onSetStatus,
                 onAddDefinition = onAddDefinition,
+                onEditDefinition = onEditDefinition,
+                onDeleteDefinition = onDeleteDefinition,
                 onSelectBasqueSource = onSetBasqueRefSource,
             )
         }
@@ -725,6 +731,8 @@ internal fun WordDetails(
     isLoading: Boolean,
     onSetStatus: (KnownStatus) -> Unit,
     onAddDefinition: (String) -> Unit = {},
+    onEditDefinition: (String, String) -> Unit = { _, _ -> },
+    onDeleteDefinition: (String) -> Unit = {},
     basqueReference: List<BasqueReference> = emptyList(),
     basqueRefSource: String? = null,
     onSelectBasqueSource: (String) -> Unit = {},
@@ -750,7 +758,7 @@ internal fun WordDetails(
                 Text("Loading…", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
 
             translations != null && !translations.isEmpty ->
-                TranslationGroups(translations)
+                TranslationGroups(translations, onEditDefinition, onDeleteDefinition)
 
             else ->
                 Text(token.glossDefault ?: "No definition yet.", style = MaterialTheme.typography.bodyLarge)
@@ -764,9 +772,11 @@ internal fun WordDetails(
             BrandChip("Ignored", token.status == KnownStatus.IGNORED) { onSetStatus(KnownStatus.IGNORED) }
         }
 
-        // Your own definition sits above the (admin) reference dictionaries.
+        // Offer the add box only when there's no personal note yet — once one
+        // exists it's shown (and editable) in "Your notes" above.
+        val hasPersonalNote = translations?.personal?.isNotEmpty() == true
         // Only words with a lemma can carry a user definition (OOV/punctuation can't).
-        if (token.lemmaId != null) {
+        if (token.lemmaId != null && !hasPersonalNote) {
             Spacer(Modifier.height(16.dp))
             AddDefinitionField(onAdd = onAddDefinition)
         }
@@ -901,10 +911,63 @@ private fun BasqueRefEntry(entry: BasqueReference, showPos: Boolean) {
 }
 
 @Composable
-private fun TranslationGroups(translations: LemmaTranslations) {
-    TranslationGroup("Your notes", translations.personal)
+private fun TranslationGroups(
+    translations: LemmaTranslations,
+    onEditDefinition: (String, String) -> Unit,
+    onDeleteDefinition: (String) -> Unit,
+) {
+    PersonalNotes(translations.personal, onEditDefinition, onDeleteDefinition)
     TranslationGroup("Dictionary", translations.official)
     TranslationGroup("Community", translations.community)
+}
+
+/** The viewer's own notes — each editable in place (tap "Edit"). */
+@Composable
+private fun PersonalNotes(
+    items: List<WordTranslation>,
+    onEdit: (String, String) -> Unit,
+    onDelete: (String) -> Unit,
+) {
+    if (items.isEmpty()) return
+    Text("Your notes", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+    items.forEach { item -> PersonalNote(item, onEdit, onDelete) }
+    Spacer(Modifier.height(8.dp))
+}
+
+@Composable
+private fun PersonalNote(
+    item: WordTranslation,
+    onEdit: (String, String) -> Unit,
+    onDelete: (String) -> Unit,
+) {
+    // Reset to display mode whenever the underlying note changes (e.g. after a save).
+    var editing by remember(item.id, item.body) { mutableStateOf(false) }
+    if (!editing) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(item.body, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+            // Only server-persisted notes (with an id) can be edited.
+            if (item.id != null) {
+                TextButton(onClick = { editing = true }) { Text("Edit") }
+            }
+        }
+    } else {
+        var text by remember(item.id) { mutableStateOf(item.body) }
+        OutlinedTextField(
+            value = text,
+            onValueChange = { text = it },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(onClick = { onEdit(item.id!!, text); editing = false }, enabled = text.isNotBlank()) {
+                Text("Save")
+            }
+            TextButton(onClick = { editing = false }) { Text("Cancel") }
+            TextButton(onClick = { onDelete(item.id!!); editing = false }) {
+                Text("Delete", color = MaterialTheme.colorScheme.error)
+            }
+        }
+    }
 }
 
 @Composable

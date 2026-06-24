@@ -271,6 +271,32 @@ class ReaderViewModel @Inject constructor(
         }
     }
 
+    /** Edit one of the viewer's own notes for the selected word, then refresh. */
+    fun editDefinition(translationId: String, text: String) {
+        val body = text.trim()
+        if (body.isEmpty()) return
+        viewModelScope.launch {
+            if (dictionary.editDefinition(translationId, body) is Outcome.Success) refreshSelectedTranslations()
+        }
+    }
+
+    /** Delete one of the viewer's own notes for the selected word, then refresh. */
+    fun deleteDefinition(translationId: String) {
+        viewModelScope.launch {
+            if (dictionary.deleteDefinition(translationId) is Outcome.Success) refreshSelectedTranslations()
+        }
+    }
+
+    private suspend fun refreshSelectedTranslations() {
+        val lemmaId = _state.value.selectedWord?.lemmaId ?: return
+        val refreshed = dictionary.translations(lemmaId)
+        if (refreshed is Outcome.Success) {
+            _state.update { s ->
+                if (s.selectedWord?.lemmaId == lemmaId) s.copy(wordTranslations = refreshed.data) else s
+            }
+        }
+    }
+
     /** Persist a status for the selected word's lemma and recolor every
      *  occurrence of that lemma in the current chapter. */
     fun setStatus(status: KnownStatus) {

@@ -45,6 +45,10 @@ data class CreateTranslationRequest(
 @Serializable
 data class CreateTranslationResponseDto(val translation: TranslationDto? = null)
 
+/** PATCH /api/v1/translations/:id — edit the viewer's own definition. */
+@Serializable
+data class UpdateTranslationRequest(val body: String)
+
 /** GET /api/v1/admin/basque-dictionary?word= — admin-only reference dictionaries
  *  (Elhuyar / Euskaltzaindia). 403s for non-admins. */
 @Serializable
