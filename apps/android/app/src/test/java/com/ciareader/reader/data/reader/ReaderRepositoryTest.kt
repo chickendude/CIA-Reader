@@ -234,6 +234,32 @@ class ReaderRepositoryTest {
     }
 
     @Test
+    fun cachedSentenceTranslationRequestsCacheOnlyAndMapsHit() = runTest {
+        val api = FakeReaderApi(
+            translation = TranslateSentenceResponseDto(
+                sentence = "नमस्ते दुनिया।",
+                translation = "Hello world.",
+                cached = true,
+            ),
+        )
+        val result = repo(api).cachedSentenceTranslation("chap-1", tokenIdx = 3, language = "hi")
+
+        assertTrue(result is Outcome.Success)
+        assertEquals("Hello world.", (result as Outcome.Success).data.translation)
+        // It must be a cache-only request so a miss never spends on the model.
+        assertEquals(TranslateSentenceRequest("chap-1", 3, "hi", cachedOnly = true), api.lastTranslate)
+    }
+
+    @Test
+    fun cachedSentenceTranslationMissIsFailure() = runTest {
+        val api = FakeReaderApi(
+            translation = TranslateSentenceResponseDto(sentence = "नमस्ते।", translation = null),
+        )
+        val result = repo(api).cachedSentenceTranslation("c", 0, "hi")
+        assertTrue(result is Outcome.Failure)
+    }
+
+    @Test
     fun translateSentenceHttpErrorIsFailure() = runTest {
         // 503 = translator not configured; surfaces as a Failure for the UI.
         val result = repo(FakeReaderApi(error = http(503))).translateSentence("c", 0, "hi")

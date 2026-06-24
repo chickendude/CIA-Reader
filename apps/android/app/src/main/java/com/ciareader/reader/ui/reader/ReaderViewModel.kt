@@ -249,6 +249,25 @@ class ReaderViewModel @Inject constructor(
                 sentenceTranslateError = null,
             )
         }
+        // Recall an already-saved translation for this word's sentence (cache-only,
+        // no model spend), so reopening any word in a translated sentence shows it.
+        val chapterId = currentChapterId
+        if (chapterId != null) {
+            viewModelScope.launch {
+                val recalled = repository.cachedSentenceTranslation(chapterId, token.idx, language)
+                if (recalled is Outcome.Success) {
+                    _state.update { s ->
+                        // Only apply if still on this word and nothing's shown yet
+                        // (don't clobber a fresh manual translation).
+                        if (s.selectedWord == token && s.sentenceTranslation == null) {
+                            s.copy(sentenceTranslation = recalled.data)
+                        } else {
+                            s
+                        }
+                    }
+                }
+            }
+        }
         if (lemmaId != null) {
             viewModelScope.launch {
                 val outcome = dictionary.translations(lemmaId)
