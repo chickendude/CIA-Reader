@@ -8,6 +8,7 @@
  */
 import { ext } from './browser';
 import type { SubtitleCue } from './subtitles';
+import type { LookupResult } from './lookup';
 
 export type Requests = {
   PING: { req: Record<string, never>; res: { pong: true } };
@@ -20,6 +21,7 @@ export type Requests = {
   DICT_STATUS: { req: { language: string }; res: { ready: boolean; count: number } };
   DICT_REFRESH: { req: { language: string }; res: { ready: true; count: number } };
   FETCH_SUBTITLES: { req: { url: string }; res: { cues: SubtitleCue[] } };
+  LOOKUP: { req: { language: string; surface: string }; res: LookupResult };
 };
 
 export type MessageType = keyof Requests;

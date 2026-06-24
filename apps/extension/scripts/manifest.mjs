@@ -45,7 +45,10 @@ export function buildManifest(browser) {
         matches: ['https://primeran.eus/*', 'https://*.primeran.eus/*'],
         js: ['content.js'],
         run_at: 'document_start',
-        all_frames: true,
+        // Top frame only — the player, <video>, and subtitle fetch all live in
+        // the top document; all_frames would spawn a duplicate overlay in
+        // ad/analytics iframes.
+        all_frames: false,
       },
     ],
     web_accessible_resources: [

@@ -73,4 +73,13 @@ describe('ParseCache', () => {
     expect(await cache.resolveLemmas('eu', '   ')).toEqual([]);
     expect(postJson).not.toHaveBeenCalled();
   });
+
+  it('degrades to [] (uncached) when the parse call fails', async () => {
+    const store = memoryKvStore();
+    const postJson = vi.fn().mockRejectedValue(new Error('HTTP 502'));
+    const cache = new ParseCache(store, { postJson });
+    expect(await cache.resolveLemmas('eu', 'jaten')).toEqual([]);
+    // not cached, so a later (working) call still hits the backend
+    expect(await store.get('parse:eu:jaten')).toBeNull();
+  });
 });

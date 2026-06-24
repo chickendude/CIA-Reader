@@ -31,13 +31,21 @@ export class ParseCache {
     const cached = await this.store.get<string[]>(cacheKey);
     if (cached) return cached;
 
-    const parse = await this.client.postJson<ParseResponse>('/api/v1/parse', {
-      language,
-      text: word,
-    });
-    const lemmas = pickLemmas(parse);
-    await this.store.set(cacheKey, lemmas);
-    return lemmas;
+    try {
+      const parse = await this.client.postJson<ParseResponse>('/api/v1/parse', {
+        language,
+        text: word,
+      });
+      const lemmas = pickLemmas(parse);
+      await this.store.set(cacheKey, lemmas);
+      return lemmas;
+    } catch (e) {
+      // The NLP service may be down or not support this language yet. Degrade to
+      // the raw surface form (the caller falls back to looking that up directly)
+      // and DON'T cache, so it retries once parsing is available again.
+      console.warn('[primeran-miner] parse failed; using surface form', e);
+      return [];
+    }
   }
 }
 

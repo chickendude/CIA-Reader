@@ -1,17 +1,29 @@
 /**
  * Content script — runs on Primeran pages at document_start.
  *
- * It injects the MAIN-world network shim (which discovers the subtitle `.vtt`
- * URL), then asks the background worker to fetch + parse it into cues. The
- * clickable overlay, playback controls, and frequency counting build on these
- * cues (subsequent tasks); for now it loads them and logs.
+ * Injects the MAIN-world network shim (which discovers the subtitle `.vtt` URL),
+ * asks the background to fetch + parse it into cues, then drives the clickable
+ * overlay: it shows the active cue's words and looks them up on click. Playback
+ * controls + episode frequency layer on next.
  */
 import { ext } from '../shared/browser';
 import { sendMessage } from '../shared/messages';
 import type { SubtitleCue } from '../shared/subtitles';
+import { Overlay } from './overlay';
+import { VideoController } from './video';
+
+// Primeran is Basque.
+const LANGUAGE = 'eu';
 
 const seenUrls = new Set<string>();
-let cues: SubtitleCue[] = [];
+
+// `overlay` and `video` reference each other only inside callbacks that run
+// later (a word click / a timeupdate), so this declaration order is safe.
+const overlay = new Overlay(
+  (surface) => sendMessage('LOOKUP', { language: LANGUAGE, surface }),
+  { onOpen: () => video.pauseForLookup(), onClose: () => video.resumeAfterLookup() },
+);
+const video = new VideoController((cue) => overlay.setCue(cue?.text ?? null));
 
 function injectNetIntercept(): void {
   try {
@@ -29,9 +41,9 @@ async function onSubtitleUrl(url: string): Promise<void> {
   seenUrls.add(url);
   try {
     const res = await sendMessage('FETCH_SUBTITLES', { url });
-    cues = res.cues;
+    const cues: SubtitleCue[] = res.cues;
     console.info(`[primeran-miner] loaded ${cues.length} subtitle cues from`, url);
-    // TODO(overlay): render clickable cues, wire playback + frequency from here.
+    video.setCues(cues);
   } catch (e) {
     console.warn('[primeran-miner] subtitle fetch failed', e);
   }
