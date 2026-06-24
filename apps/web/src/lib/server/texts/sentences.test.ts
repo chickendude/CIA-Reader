@@ -58,4 +58,43 @@ describe('sentenceFromTokens', () => {
   it('returns empty string when the token idx is not present', () => {
     expect(sentenceFromTokens(TOKENS, 999)).toBe('');
   });
+
+  // Regression: the worker emits paragraph/heading/title breaks as non-word
+  // tokens whose surface spans a blank line. Without honouring them, the
+  // backward scan sailed past a heading with no terminal punctuation and
+  // glued the title + heading onto the following sentence.
+  const BLOCKS = [
+    { idx: 0, surface: 'Hitzaurrea', isWord: true }, // chapter title
+    { idx: 1, surface: '\n\n', isWord: false },
+    { idx: 2, surface: 'HITZAURREA', isWord: true }, // heading
+    { idx: 3, surface: '\n\n', isWord: false },
+    { idx: 4, surface: 'Azken', isWord: true },
+    { idx: 5, surface: ' ', isWord: false },
+    { idx: 6, surface: 'urteotan', isWord: true },
+    { idx: 7, surface: ' ', isWord: false },
+    { idx: 8, surface: 'erraztu', isWord: true },
+    { idx: 9, surface: '.', isWord: false },
+  ];
+
+  it('does not cross a paragraph break into a preceding heading or title', () => {
+    expect(sentenceFromTokens(BLOCKS, 6)).toBe('Azken urteotan erraztu.');
+  });
+
+  it('returns only the heading when a heading word is clicked', () => {
+    expect(sentenceFromTokens(BLOCKS, 2)).toBe('HITZAURREA');
+  });
+
+  it('returns only the title when the title word is clicked', () => {
+    expect(sentenceFromTokens(BLOCKS, 0)).toBe('Hitzaurrea');
+  });
+
+  it('stops at a paragraph break with no terminal punctuation on either side', () => {
+    const tokens = [
+      { idx: 0, surface: 'lehena', isWord: true },
+      { idx: 1, surface: '\n\n', isWord: false },
+      { idx: 2, surface: 'bigarrena', isWord: true },
+    ];
+    expect(sentenceFromTokens(tokens, 2)).toBe('bigarrena');
+    expect(sentenceFromTokens(tokens, 0)).toBe('lehena');
+  });
 });
