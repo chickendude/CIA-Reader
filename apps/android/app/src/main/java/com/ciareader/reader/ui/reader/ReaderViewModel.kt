@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.ciareader.reader.core.network.Outcome
 import com.ciareader.reader.core.settings.SettingsStore
 import com.ciareader.reader.data.collection.CollectionRepository
+import com.ciareader.reader.data.dictionary.BasqueReference
 import com.ciareader.reader.data.dictionary.DictionaryRepository
 import com.ciareader.reader.data.dictionary.LemmaTranslations
 import com.ciareader.reader.data.reader.KnownStatus
@@ -38,6 +39,7 @@ data class ReaderUiState(
     val tokens: List<ReaderToken> = emptyList(),
     val selectedWord: ReaderToken? = null,
     val wordTranslations: LemmaTranslations? = null,
+    val basqueReference: List<BasqueReference> = emptyList(),
     val isWordLoading: Boolean = false,
     val restoreTokenIdx: Int? = null,
     val romanize: Boolean = false,
@@ -103,6 +105,9 @@ class ReaderViewModel @Inject constructor(
 
     // This text's language, so reading prefs are read/written per-language.
     private var language: String = ""
+
+    // Admin-only Basque reference lookups; after one denial (non-admin) we stop asking.
+    private var basqueRefDisabled = false
 
     init {
         loadInitial()
@@ -212,17 +217,53 @@ class ReaderViewModel @Inject constructor(
         if (!token.isWord) return
         val lemmaId = token.lemmaId
         _state.update {
-            it.copy(selectedWord = token, wordTranslations = null, isWordLoading = lemmaId != null)
+            it.copy(
+                selectedWord = token,
+                wordTranslations = null,
+                basqueReference = emptyList(),
+                isWordLoading = lemmaId != null,
+            )
         }
-        if (lemmaId == null) return
+        if (lemmaId != null) {
+            viewModelScope.launch {
+                val outcome = dictionary.translations(lemmaId)
+                _state.update { s ->
+                    // Ignore if the user has since tapped a different word.
+                    if (s.selectedWord?.lemmaId != lemmaId) return@update s
+                    when (outcome) {
+                        is Outcome.Success -> s.copy(isWordLoading = false, wordTranslations = outcome.data)
+                        is Outcome.Failure -> s.copy(isWordLoading = false)
+                    }
+                }
+            }
+        }
+        // Admin-only Basque reference dictionaries. The endpoint 403s non-admins,
+        // after which we stop asking for the rest of the session.
+        if (language == "eu" && !basqueRefDisabled) {
+            viewModelScope.launch {
+                when (val ref = dictionary.basqueReference(token.surface)) {
+                    is Outcome.Success -> _state.update { s ->
+                        if (s.selectedWord == token) s.copy(basqueReference = ref.data) else s
+                    }
+                    is Outcome.Failure -> basqueRefDisabled = true
+                }
+            }
+        }
+    }
+
+    /** Save the viewer's own definition for the selected word, then refresh the
+     *  panel so it appears under "Your notes". */
+    fun addDefinition(text: String) {
+        val body = text.trim()
+        if (body.isEmpty()) return
+        val lemmaId = _state.value.selectedWord?.lemmaId ?: return
         viewModelScope.launch {
-            val outcome = dictionary.translations(lemmaId)
-            _state.update { s ->
-                // Ignore if the user has since tapped a different word.
-                if (s.selectedWord?.lemmaId != lemmaId) return@update s
-                when (outcome) {
-                    is Outcome.Success -> s.copy(isWordLoading = false, wordTranslations = outcome.data)
-                    is Outcome.Failure -> s.copy(isWordLoading = false)
+            if (dictionary.addDefinition(lemmaId, body) is Outcome.Success) {
+                val refreshed = dictionary.translations(lemmaId)
+                if (refreshed is Outcome.Success) {
+                    _state.update { s ->
+                        if (s.selectedWord?.lemmaId == lemmaId) s.copy(wordTranslations = refreshed.data) else s
+                    }
                 }
             }
         }

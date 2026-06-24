@@ -55,6 +55,42 @@ class DictionaryRepositoryTest {
     }
 
     @Test
+    fun addDefinitionPostsLemmaAndBody() = runTest {
+        val api = FakeDictionaryApi()
+        val result = DictionaryRepositoryImpl(api).addDefinition("l1", "my own definition")
+        assertTrue(result is Outcome.Success)
+        assertEquals("l1", api.lastAdded?.lemmaId)
+        assertEquals("my own definition", api.lastAdded?.body)
+    }
+
+    @Test
+    fun basqueReferenceMapsResults() = runTest {
+        val api = FakeDictionaryApi(
+            basque = BasqueReferenceResponseDto(
+                word = "etxe",
+                results = listOf(
+                    BasqueRefDto(
+                        source = "elhuyar_es", label = "Elhuyar eu-es", headword = "etxe",
+                        pos = "iz.", definition = "casa", examples = listOf("etxe handia"),
+                    ),
+                ),
+            ),
+        )
+        val result = DictionaryRepositoryImpl(api).basqueReference("etxe")
+        assertTrue(result is Outcome.Success)
+        val r = (result as Outcome.Success).data.single()
+        assertEquals("Elhuyar eu-es", r.label)
+        assertEquals("casa", r.definition)
+        assertEquals(listOf("etxe handia"), r.examples)
+    }
+
+    @Test
+    fun basqueReferenceForbiddenMapsToFailure() = runTest {
+        val result = DictionaryRepositoryImpl(FakeDictionaryApi(error = http(403))).basqueReference("etxe")
+        assertTrue(result is Outcome.Failure)
+    }
+
+    @Test
     fun httpErrorMapsToFailure() = runTest {
         val repo = DictionaryRepositoryImpl(FakeDictionaryApi(error = http(404)))
         assertTrue(repo.translations("missing") is Outcome.Failure)
@@ -88,11 +124,21 @@ class DictionaryRepositoryTest {
 private class FakeDictionaryApi(
     private val translations: LemmaTranslationsDto? = null,
     private val known: KnownLemmaResponseDto? = null,
+    private val basque: BasqueReferenceResponseDto? = null,
     private val error: Throwable? = null,
 ) : DictionaryApi {
     var lastSet: Pair<String, String>? = null
+    var lastAdded: CreateTranslationRequest? = null
     override suspend fun translations(lemmaId: String): LemmaTranslationsDto =
         error?.let { throw it } ?: translations!!
+
+    override suspend fun addTranslation(body: CreateTranslationRequest): CreateTranslationResponseDto {
+        lastAdded = body
+        return error?.let { throw it } ?: CreateTranslationResponseDto(TranslationDto("new", body.body))
+    }
+
+    override suspend fun basqueReference(word: String): BasqueReferenceResponseDto =
+        error?.let { throw it } ?: basque!!
 
     override suspend fun setKnownStatus(lemmaId: String, body: KnownLemmaRequest): KnownLemmaResponseDto {
         lastSet = lemmaId to body.status

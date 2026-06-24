@@ -33,6 +33,37 @@ data class TranslationDto(
     val sourceAttribution: String? = null,
 )
 
+/** POST /api/v1/translations — submit the viewer's own definition for a lemma.
+ *  targetLanguage is optional; omitted lets the server use the account default. */
+@Serializable
+data class CreateTranslationRequest(
+    val lemmaId: String,
+    val body: String,
+    val targetLanguage: String? = null,
+)
+
+@Serializable
+data class CreateTranslationResponseDto(val translation: TranslationDto? = null)
+
+/** GET /api/v1/admin/basque-dictionary?word= — admin-only reference dictionaries
+ *  (Elhuyar / Euskaltzaindia). 403s for non-admins. */
+@Serializable
+data class BasqueReferenceResponseDto(
+    val word: String = "",
+    val results: List<BasqueRefDto> = emptyList(),
+)
+
+@Serializable
+data class BasqueRefDto(
+    val source: String = "",
+    val label: String = "",
+    val headword: String = "",
+    val pos: String = "",
+    val definition: String = "",
+    val examples: List<String> = emptyList(),
+    val url: String = "",
+)
+
 /** PATCH /api/v1/me/known-lemmas/:lemmaId */
 @Serializable
 data class KnownLemmaRequest(val status: String)

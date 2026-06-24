@@ -34,6 +34,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -69,6 +70,7 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.ciareader.reader.R
+import com.ciareader.reader.data.dictionary.BasqueReference
 import com.ciareader.reader.data.dictionary.LemmaTranslations
 import com.ciareader.reader.data.dictionary.WordTranslation
 import com.ciareader.reader.data.reader.KnownStatus
@@ -104,6 +106,7 @@ fun ReaderScreen(
         },
         onRetry = viewModel::retry,
         onSetStatus = viewModel::setStatus,
+        onAddDefinition = viewModel::addDefinition,
         onRecordPosition = viewModel::recordPosition,
         onRestoreConsumed = viewModel::onRestoreConsumed,
         onToggleRomanize = viewModel::toggleRomanization,
@@ -133,6 +136,7 @@ internal fun ReaderScreenContent(
     onSwipeToPrevChapter: () -> Unit = onPrevChapter,
     onRetry: () -> Unit,
     onSetStatus: (KnownStatus) -> Unit,
+    onAddDefinition: (String) -> Unit = {},
     onRecordPosition: (Int, Double) -> Unit,
     onRestoreConsumed: () -> Unit,
     onToggleRomanize: () -> Unit,
@@ -265,8 +269,10 @@ internal fun ReaderScreenContent(
             WordDetails(
                 token = selected,
                 translations = state.wordTranslations,
+                basqueReference = state.basqueReference,
                 isLoading = state.isWordLoading,
                 onSetStatus = onSetStatus,
+                onAddDefinition = onAddDefinition,
             )
         }
     }
@@ -706,6 +712,8 @@ internal fun WordDetails(
     translations: LemmaTranslations?,
     isLoading: Boolean,
     onSetStatus: (KnownStatus) -> Unit,
+    onAddDefinition: (String) -> Unit = {},
+    basqueReference: List<BasqueReference> = emptyList(),
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -731,6 +739,11 @@ internal fun WordDetails(
                 Text(token.glossDefault ?: "No definition yet.", style = MaterialTheme.typography.bodyLarge)
         }
 
+        if (basqueReference.isNotEmpty()) {
+            Spacer(Modifier.height(16.dp))
+            BasqueReferenceSection(basqueReference)
+        }
+
         Spacer(Modifier.height(16.dp))
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             StatusChip("New", token.status == KnownStatus.UNKNOWN) { onSetStatus(KnownStatus.UNKNOWN) }
@@ -738,12 +751,60 @@ internal fun WordDetails(
             StatusChip("Known", token.status == KnownStatus.KNOWN) { onSetStatus(KnownStatus.KNOWN) }
             StatusChip("Ignored", token.status == KnownStatus.IGNORED) { onSetStatus(KnownStatus.IGNORED) }
         }
+
+        // Only words with a lemma can carry a user definition (OOV/punctuation can't).
+        if (token.lemmaId != null) {
+            Spacer(Modifier.height(16.dp))
+            AddDefinitionField(onAdd = onAddDefinition)
+        }
+    }
+}
+
+@Composable
+private fun AddDefinitionField(onAdd: (String) -> Unit) {
+    var text by remember { mutableStateOf("") }
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        OutlinedTextField(
+            value = text,
+            onValueChange = { text = it },
+            placeholder = { Text("Add your own definition") },
+            singleLine = true,
+            modifier = Modifier.weight(1f),
+        )
+        Button(onClick = { onAdd(text); text = "" }, enabled = text.isNotBlank()) {
+            Text("Add")
+        }
     }
 }
 
 @Composable
 private fun StatusChip(label: String, selected: Boolean, onClick: () -> Unit) {
     FilterChip(selected = selected, onClick = onClick, label = { Text(label) })
+}
+
+@Composable
+private fun BasqueReferenceSection(entries: List<BasqueReference>) {
+    Text(
+        "Reference dictionaries",
+        style = MaterialTheme.typography.labelMedium,
+        color = MaterialTheme.colorScheme.primary,
+    )
+    entries.forEach { e ->
+        val head = listOfNotNull(e.label.ifBlank { null }, e.pos.ifBlank { null }).joinToString("  ·  ")
+        if (head.isNotEmpty()) {
+            Text(head, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        if (e.definition.isNotBlank()) {
+            Text(e.definition, style = MaterialTheme.typography.bodyLarge)
+        }
+        e.examples.forEach { ex ->
+            Text(ex, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Spacer(Modifier.height(8.dp))
+    }
 }
 
 @Composable
