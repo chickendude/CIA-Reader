@@ -53,6 +53,38 @@ class ReaderRepositoryTest {
     }
 
     @Test
+    fun mapsParseCandidatesToDomain() = runTest {
+        val api = FakeReaderApi(
+            chapter = ChapterTokensDto(
+                chapterId = "c1",
+                chapterIdx = 0,
+                tokens = listOf(
+                    TokenDto(
+                        idx = 0,
+                        surface = "सोने",
+                        isWord = true,
+                        status = "unknown",
+                        lemmaId = "l-gold",
+                        isAmbiguous = true,
+                        candidates = listOf(
+                            CandidateDto("l-sleep", "सोना", "VERB", "to sleep"),
+                            CandidateDto("l-silver", "चाँदी", "NOUN", null),
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+        val result = repo(api).chapter("t1", 0)
+
+        assertTrue(result is Outcome.Success)
+        val candidates = (result as Outcome.Success).data.tokens[0].candidates
+        assertEquals(2, candidates.size)
+        assertEquals(ParseCandidate("l-sleep", "सोना", "VERB", "to sleep"), candidates[0])
+        assertEquals(ParseCandidate("l-silver", "चाँदी", "NOUN", null), candidates[1])
+    }
+
+    @Test
     fun mapsTextMetaAndFillsUntitledChapters() = runTest {
         val api = FakeReaderApi(
             meta = TextMetaDto(

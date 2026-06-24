@@ -14,6 +14,7 @@ import com.ciareader.reader.data.dictionary.WordTranslation
 import com.ciareader.reader.data.reader.Chapter
 import com.ciareader.reader.data.reader.ChapterRef
 import com.ciareader.reader.data.reader.KnownStatus
+import com.ciareader.reader.data.reader.ParseCandidate
 import com.ciareader.reader.data.reader.ReaderRepository
 import com.ciareader.reader.data.reader.ReaderToken
 import com.ciareader.reader.data.reader.ReadingProgress
@@ -133,6 +134,71 @@ class ReaderViewModelTest {
         assertNotNull(v.state.value.wordTranslations)
         assertEquals("नमस्ते", v.state.value.wordTranslations?.headword)
         assertFalse(v.state.value.isWordLoading)
+    }
+
+    @Test
+    fun wordTapDefaultsActiveParseToChosenLemma() = runTest(mainRule.dispatcher) {
+        val w = ReaderToken(0, "सोने", true, KnownStatus.UNKNOWN, "l-gold", null, null, false, true, true)
+        val repo = FakeReaderRepository(meta = meta(1), chapters = mapOf(0 to Chapter(0, listOf(w))))
+        val dict = FakeDictionaryRepository(translations = translations("सोना", "gold"))
+        val v = vm(repo, dict)
+        advanceUntilIdle()
+
+        v.onWordTap(w)
+        advanceUntilIdle()
+
+        assertEquals("l-gold", v.state.value.activeParseLemmaId)
+        // The chosen lemma's headword/POS are captured for the primary chip label.
+        assertEquals("सोना", v.state.value.primaryHeadword)
+    }
+
+    @Test
+    fun selectParseLoadsAlternateDefinition() = runTest(mainRule.dispatcher) {
+        val w = ReaderToken(
+            idx = 0, surface = "सोने", isWord = true, status = KnownStatus.UNKNOWN,
+            lemmaId = "l-gold", romanization = null, glossDefault = null,
+            isOov = false, isAmbiguous = true, hasDefinition = true,
+            candidates = listOf(ParseCandidate("l-sleep", "सोना", "VERB", "to sleep")),
+        )
+        val repo = FakeReaderRepository(meta = meta(1), chapters = mapOf(0 to Chapter(0, listOf(w))))
+        val dict = FakeDictionaryRepository(
+            byLemma = mapOf(
+                "l-gold" to translations("सोना", "gold"),
+                "l-sleep" to translations("सोना", "to sleep"),
+            ),
+        )
+        val v = vm(repo, dict)
+        advanceUntilIdle()
+
+        v.onWordTap(w)
+        advanceUntilIdle()
+        assertEquals("gold", v.state.value.wordTranslations?.official?.first()?.body)
+
+        v.selectParse("l-sleep")
+        advanceUntilIdle()
+
+        assertEquals("l-sleep", v.state.value.activeParseLemmaId)
+        assertEquals("to sleep", v.state.value.wordTranslations?.official?.first()?.body)
+        // The primary chip label stays anchored to the parser's chosen lemma.
+        assertEquals("सोना", v.state.value.primaryHeadword)
+        assertEquals(listOf("l-gold", "l-sleep"), dict.requestedLemmaIds)
+    }
+
+    @Test
+    fun selectParseIsNoopForAlreadyActiveParse() = runTest(mainRule.dispatcher) {
+        val w = ReaderToken(0, "सोने", true, KnownStatus.UNKNOWN, "l-gold", null, null, false, true, true)
+        val repo = FakeReaderRepository(meta = meta(1), chapters = mapOf(0 to Chapter(0, listOf(w))))
+        val dict = FakeDictionaryRepository(translations = translations("सोना", "gold"))
+        val v = vm(repo, dict)
+        advanceUntilIdle()
+
+        v.onWordTap(w)
+        advanceUntilIdle()
+        v.selectParse("l-gold") // already the active parse
+        advanceUntilIdle()
+
+        // Only the initial tap fetched; the redundant select didn't refetch.
+        assertEquals(listOf("l-gold"), dict.requestedLemmaIds)
     }
 
     @Test
@@ -620,6 +686,15 @@ class ReaderViewModelTest {
     private fun word(surface: String) =
         ReaderToken(0, surface, true, KnownStatus.UNKNOWN, null, null, null, false, false, false)
 
+    private fun translations(headword: String, gloss: String) = LemmaTranslations(
+        headword = headword,
+        pos = "NOUN",
+        gloss = gloss,
+        personal = emptyList(),
+        official = listOf(WordTranslation(gloss, null)),
+        community = emptyList(),
+    )
+
     private fun meta(chapterCount: Int, language: String = "hi") = TextMeta(
         id = "t1",
         title = "Book",
@@ -720,9 +795,20 @@ private class FakeReaderRepository(
 private class FakeDictionaryRepository(
     private var translations: LemmaTranslations? = null,
     private val basque: List<BasqueReference> = emptyList(),
+    /** Per-lemma overrides so a test can fetch distinct definitions for the
+     *  primary parse and its alternate candidates. */
+    private val byLemma: Map<String, LemmaTranslations> = emptyMap(),
 ) : DictionaryRepository {
     var lastAdded: Pair<String, String>? = null
-    override suspend fun translations(lemmaId: String): Outcome<LemmaTranslations> =
+    val requestedLemmaIds = mutableListOf<String>()
+
+    override suspend fun translations(lemmaId: String): Outcome<LemmaTranslations> {
+        requestedLemmaIds += lemmaId
+        val hit = byLemma[lemmaId] ?: translations
+        return hit?.let { Outcome.Success(it) } ?: Outcome.Failure("no translations")
+    }
+
+    override suspend fun refreshTranslations(lemmaId: String): Outcome<LemmaTranslations> =
         translations?.let { Outcome.Success(it) } ?: Outcome.Failure("no translations")
 
     override suspend fun setStatus(lemmaId: String, status: KnownStatus): Outcome<KnownStatus> =

@@ -25,6 +25,17 @@ enum class KnownStatus {
     }
 }
 
+/** An alternate parsing the parser scored for an ambiguous surface form. The
+ *  word sheet's parse switcher lists these so a reader can view the definition
+ *  of a lemma other than the one the parser chose. */
+@Serializable
+data class ParseCandidate(
+    val lemmaId: String,
+    val headword: String,
+    val pos: String?,
+    val glossDefault: String?,
+)
+
 /** A rendered token in a chapter (word or punctuation/whitespace).
  *  Serializable so a chapter's tokens can be cached as a JSON blob. */
 @Serializable
@@ -39,6 +50,9 @@ data class ReaderToken(
     val isOov: Boolean,
     val isAmbiguous: Boolean,
     val hasDefinition: Boolean,
+    /** Alternate parsings beyond the parser's chosen lemma; empty when
+     *  unambiguous. Drives the word sheet's parse switcher. */
+    val candidates: List<ParseCandidate> = emptyList(),
 )
 
 data class Chapter(
@@ -248,4 +262,7 @@ private fun TokenDto.toDomain() = ReaderToken(
     isOov = isOov,
     isAmbiguous = isAmbiguous,
     hasDefinition = hasDefinition,
+    candidates = candidates.map {
+        ParseCandidate(it.lemmaId, it.headword, it.pos, it.glossDefault)
+    },
 )
