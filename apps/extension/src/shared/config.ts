@@ -25,7 +25,9 @@ export type ExtensionConfig = {
 };
 
 export const DEFAULT_CONFIG: ExtensionConfig = {
-  apiBaseUrl: 'http://localhost:5173',
+  // 127.0.0.1 (IPv4), not `localhost`: on macOS `localhost` resolves to IPv6
+  // (::1) first, which can land on a different dev server bound to [::1]:5173.
+  apiBaseUrl: 'http://127.0.0.1:5173',
   language: 'eu',
   deckName: 'Primeran',
   modelName: 'Basic',
