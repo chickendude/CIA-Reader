@@ -30,6 +30,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -756,10 +757,10 @@ internal fun WordDetails(
 
         Spacer(Modifier.height(16.dp))
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            StatusChip("New", token.status == KnownStatus.UNKNOWN) { onSetStatus(KnownStatus.UNKNOWN) }
-            StatusChip("Learning", token.status == KnownStatus.LEARNING) { onSetStatus(KnownStatus.LEARNING) }
-            StatusChip("Known", token.status == KnownStatus.KNOWN) { onSetStatus(KnownStatus.KNOWN) }
-            StatusChip("Ignored", token.status == KnownStatus.IGNORED) { onSetStatus(KnownStatus.IGNORED) }
+            BrandChip("New", token.status == KnownStatus.UNKNOWN) { onSetStatus(KnownStatus.UNKNOWN) }
+            BrandChip("Learning", token.status == KnownStatus.LEARNING) { onSetStatus(KnownStatus.LEARNING) }
+            BrandChip("Known", token.status == KnownStatus.KNOWN) { onSetStatus(KnownStatus.KNOWN) }
+            BrandChip("Ignored", token.status == KnownStatus.IGNORED) { onSetStatus(KnownStatus.IGNORED) }
         }
 
         // Only words with a lemma can carry a user definition (OOV/punctuation can't).
@@ -791,8 +792,24 @@ private fun AddDefinitionField(onAdd: (String) -> Unit) {
 }
 
 @Composable
-private fun StatusChip(label: String, selected: Boolean, onClick: () -> Unit) {
-    FilterChip(selected = selected, onClick = onClick, label = { Text(label) })
+private fun BrandChip(label: String, selected: Boolean, onClick: () -> Unit) {
+    FilterChip(
+        selected = selected,
+        onClick = onClick,
+        label = { Text(label) },
+        // Default selected chip has a transparent border + a container near our
+        // surface colour, so it reads as unselected — give it the saffron brand.
+        colors = FilterChipDefaults.filterChipColors(
+            selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+            selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
+        ),
+        border = FilterChipDefaults.filterChipBorder(
+            enabled = true,
+            selected = selected,
+            selectedBorderColor = MaterialTheme.colorScheme.primary,
+            selectedBorderWidth = 1.dp,
+        ),
+    )
 }
 
 private val BASQUE_REF_ORDER = listOf("elhuyar_es", "elhuyar_en", "euskaltzaindia")
@@ -822,10 +839,10 @@ private fun BasqueReferenceSection(
     Spacer(Modifier.height(8.dp))
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         available.forEach { src ->
-            FilterChip(
+            BrandChip(
+                label = basqueRefTabLabel(src),
                 selected = src == selected,
                 onClick = { onSelectSource(src) },
-                label = { Text(basqueRefTabLabel(src)) },
             )
         }
     }
