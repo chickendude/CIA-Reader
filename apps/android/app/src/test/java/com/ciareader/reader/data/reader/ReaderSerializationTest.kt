@@ -17,8 +17,8 @@ class ReaderSerializationTest {
 
     @Test
     fun decodesChapterTokensIgnoringUnmodeledFields() {
-        // Includes server fields we don't model yet (candidates, features,
-        // numberForms, personalGloss) to prove ignoreUnknownKeys tolerance.
+        // Includes server fields we don't model (features, numberForms,
+        // personalGloss) to prove ignoreUnknownKeys tolerance.
         val payload = """
             {
               "chapterId": "c1", "chapterIdx": 0, "body": "नमस्ते।",
@@ -44,6 +44,46 @@ class ReaderSerializationTest {
         assertEquals("namaste", dto.tokens[0].romanization)
         assertTrue(dto.tokens[0].isWord)
         assertFalse(dto.tokens[1].isWord)
+    }
+
+    @Test
+    fun decodesTokenParseCandidates() {
+        // An ambiguous token: the server returns the alternate lemmas it scored,
+        // each carrying score/features we don't model (proving tolerance).
+        val payload = """
+            {
+              "chapterId": "c1", "chapterIdx": 0, "body": "सोने",
+              "tokens": [
+                {
+                  "id": "tok1", "idx": 0, "chapterId": "c1", "surface": "सोने",
+                  "isWord": true, "isAmbiguous": true, "isOov": false,
+                  "lemmaId": "l-gold", "status": "unknown",
+                  "candidates": [
+                    {
+                      "lemmaId": "l-sleep", "headword": "सोना", "pos": "VERB",
+                      "glossDefault": "to sleep", "score": 0.8, "features": { "VerbForm": "Inf" }
+                    },
+                    {
+                      "lemmaId": "l-silver", "headword": "चाँदी", "pos": "NOUN",
+                      "glossDefault": null, "score": 0.3, "features": {}
+                    }
+                  ]
+                }
+              ],
+              "phraseSpans": []
+            }
+        """.trimIndent()
+
+        val dto = json.decodeFromString<ChapterTokensDto>(payload)
+        val candidates = dto.tokens[0].candidates
+        assertEquals(2, candidates.size)
+        assertEquals("l-sleep", candidates[0].lemmaId)
+        assertEquals("सोना", candidates[0].headword)
+        assertEquals("VERB", candidates[0].pos)
+        assertEquals("to sleep", candidates[0].glossDefault)
+        // Null gloss + absent score/features still decode cleanly.
+        assertEquals("चाँदी", candidates[1].headword)
+        assertEquals(null, candidates[1].glossDefault)
     }
 
     @Test

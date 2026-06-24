@@ -54,7 +54,7 @@ class ReaderCache @Inject constructor(
     suspend fun chapter(textId: String, chapterIdx: Int): Chapter? {
         val row = dao.chapter(textId, chapterIdx) ?: return null
         val tokens = json.decodeFromString<List<ReaderToken>>(row.tokensJson)
-        return Chapter(chapterIdx, tokens)
+        return Chapter(chapterIdx, tokens, chapterId = row.chapterId)
     }
 
     suspend fun putChapter(textId: String, chapter: Chapter, now: Long) {
@@ -64,6 +64,7 @@ class ReaderCache @Inject constructor(
                 chapterIdx = chapter.chapterIdx,
                 tokensJson = json.encodeToString(chapter.tokens),
                 cachedAt = now,
+                chapterId = chapter.chapterId,
             ),
         )
     }

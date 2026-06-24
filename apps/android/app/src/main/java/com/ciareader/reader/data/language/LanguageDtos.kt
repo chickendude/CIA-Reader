@@ -16,6 +16,8 @@ data class LanguageDto(
     val scriptPreference: String? = null,
     val romanizationScheme: String? = null,
     val supportedRomanizations: List<String> = emptyList(),
+    /** Distinct known lemmas in this language; 0 for older servers. */
+    val knownLemmaCount: Int = 0,
 )
 
 @Serializable

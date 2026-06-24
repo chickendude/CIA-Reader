@@ -6,6 +6,7 @@ import {
   upsertUserLanguage,
   withDefaultsForAllLanguages,
 } from '$lib/server/profile.js';
+import { knownLemmaCountsByLanguage } from '$lib/server/learning-stats.js';
 import {
   LANG_COOKIE,
   LANG_COOKIE_MAX_AGE,
@@ -16,7 +17,13 @@ import type { RequestHandler } from './$types';
 
 export const GET: RequestHandler = async (event) => {
   const user = await requireUser(event);
-  const persisted = await listUserLanguages(user.id);
+  const [persisted, knownCounts] = await Promise.all([
+    listUserLanguages(user.id),
+    // Distinct known lemmas per language, fetched once and looked up
+    // per row below so the Android switcher can show "N words" without
+    // a separate stats request.
+    knownLemmaCountsByLanguage(user.id),
+  ]);
   return json({
     languages: withDefaultsForAllLanguages(persisted).map((row) => ({
       ...row,
@@ -24,6 +31,7 @@ export const GET: RequestHandler = async (event) => {
       nativeName: LANGUAGES[row.code].nativeName,
       script: LANGUAGES[row.code].script,
       supportedRomanizations: LANGUAGES[row.code].supportedRomanizations,
+      knownLemmaCount: knownCounts.get(row.code) ?? 0,
     })),
   });
 };

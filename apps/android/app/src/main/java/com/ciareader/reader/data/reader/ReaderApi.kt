@@ -3,6 +3,7 @@ package com.ciareader.reader.data.reader
 import retrofit2.http.Body
 import retrofit2.http.GET
 import retrofit2.http.PATCH
+import retrofit2.http.POST
 import retrofit2.http.Path
 
 /** Reader endpoints: text metadata, per-chapter tokens, and reading progress. */
@@ -24,4 +25,9 @@ interface ReaderApi {
         @Path("textId") textId: String,
         @Body body: SaveProgressRequest,
     ): TextProgressEnvelopeDto
+
+    @POST("api/v1/translate-sentence")
+    suspend fun translateSentence(
+        @Body body: TranslateSentenceRequest,
+    ): TranslateSentenceResponseDto
 }
