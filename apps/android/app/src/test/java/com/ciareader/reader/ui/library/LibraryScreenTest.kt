@@ -3,6 +3,7 @@ package com.ciareader.reader.ui.library
 import android.app.Application
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import com.ciareader.reader.data.collection.CollectionSummary
@@ -94,7 +95,7 @@ class LibraryScreenTest {
     }
 
     @Test
-    fun showsCurrentLanguageLabel() {
+    fun showsCurrentLanguageChip() {
         setContent(
             LibraryUiState(
                 isLoading = false,
@@ -102,7 +103,8 @@ class LibraryScreenTest {
                 currentLanguage = "hi",
             ),
         )
-        compose.onNodeWithText("Hindi").assertIsDisplayed()
+        // Top bar shows a chip, not the full name; it's labelled for a11y.
+        compose.onNodeWithContentDescription("Language: Hindi").assertIsDisplayed()
     }
 
     @Test

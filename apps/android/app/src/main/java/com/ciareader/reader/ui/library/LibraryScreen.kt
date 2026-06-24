@@ -1,13 +1,20 @@
 package com.ciareader.reader.ui.library
 
+import androidx.annotation.DrawableRes
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -20,8 +27,8 @@ import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.ui.res.painterResource
 import com.ciareader.reader.R
@@ -33,6 +40,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -92,7 +101,7 @@ internal fun LibraryScreenContent(
                     if (state.languages.isNotEmpty()) {
                         LanguageSwitcher(
                             languages = state.languages,
-                            currentLabel = state.currentLanguageLabel,
+                            currentCode = state.currentLanguage,
                             onSelect = onSelectLanguage,
                         )
                     }
@@ -199,17 +208,28 @@ private fun SectionHeader(text: String) {
 @Composable
 private fun LanguageSwitcher(
     languages: List<Language>,
-    currentLabel: String,
+    currentCode: String?,
     onSelect: (String) -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
-    TextButton(onClick = { expanded = true }) {
-        Text(currentLabel.ifEmpty { "Language" })
+    val current = languages.firstOrNull { it.code == currentCode }
+    IconButton(
+        onClick = { expanded = true },
+        // The chip alone is opaque to screen readers, so name the language.
+        modifier = Modifier.semantics { contentDescription = "Language: ${current?.displayName ?: "none"}" },
+    ) {
+        current?.let { LanguageChip(it) }
     }
     DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
         languages.forEach { lang ->
             DropdownMenuItem(
-                text = { Text("${lang.displayName} · ${lang.nativeName}") },
+                text = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        LanguageChip(lang)
+                        Spacer(Modifier.width(12.dp))
+                        Text("${lang.displayName} · ${lang.nativeName}")
+                    }
+                },
                 onClick = {
                     expanded = false
                     onSelect(lang.code)
@@ -217,6 +237,46 @@ private fun LanguageSwitcher(
             )
         }
     }
+}
+
+/** A small round chip for a language: a custom emblem where we have one (e.g.
+ *  the Basque pinwheel), otherwise the language's script glyph (ह Hindi, म
+ *  Marathi, ଓ Odia, א Yiddish). */
+@Composable
+private fun LanguageChip(language: Language) {
+    val iconRes = languageIconRes(language.code)
+    if (iconRes != null) {
+        Image(
+            painter = painterResource(iconRes),
+            contentDescription = null,
+            modifier = Modifier.size(28.dp),
+        )
+    } else {
+        Surface(
+            shape = CircleShape,
+            color = MaterialTheme.colorScheme.primaryContainer,
+            contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+            modifier = Modifier.size(28.dp),
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Text(language.glyph(), style = MaterialTheme.typography.labelLarge)
+            }
+        }
+    }
+}
+
+/** A custom chip emblem for a language, or null to use its script glyph. */
+@DrawableRes
+private fun languageIconRes(code: String): Int? = when (code) {
+    "eu" -> R.drawable.ic_lang_eu
+    else -> null
+}
+
+/** The language's representative glyph: the first letter of its native name
+ *  (its own script), falling back to the language code. */
+private fun Language.glyph(): String {
+    val native = nativeName.trim()
+    return if (native.isNotEmpty()) native.take(1) else code.uppercase().take(2)
 }
 
 @Composable
