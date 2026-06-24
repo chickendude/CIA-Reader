@@ -571,11 +571,15 @@ export async function listCollectionsForUser(
     }
   }
 
-  // First chapter per collection — the fallback for a book not yet started.
+  // Every chapter per collection (ordered): the first is the not-started
+  // fallback, and the token counts drive the same weighted whole-book progress
+  // the reader shows. Token count = sum of the chapter-text's chapter rows.
   const items = (await db
     .select({
       collectionId: schema.collectionItems.collectionId,
       textId: schema.collectionItems.textId,
+      position: schema.collectionItems.position,
+      tokens: sql<number>`COALESCE((SELECT SUM(${schema.textChapters.tokenCount}) FROM ${schema.textChapters} WHERE ${schema.textChapters.textId} = ${schema.collectionItems.textId}), 0)::int`,
     })
     .from(schema.collectionItems)
     .innerJoin(
@@ -586,26 +590,48 @@ export async function listCollectionsForUser(
     .orderBy(asc(schema.collectionItems.position))) as Array<{
     collectionId: string;
     textId: string;
+    position: number;
+    tokens: number;
   }>;
   const firstText = new Map<string, string>();
+  const chaptersByCollection = new Map<string, Array<{ position: number; tokens: number }>>();
   for (const it of items) {
     if (!firstText.has(it.collectionId)) firstText.set(it.collectionId, it.textId);
+    const arr = chaptersByCollection.get(it.collectionId) ?? [];
+    arr.push({ position: it.position, tokens: it.tokens });
+    chaptersByCollection.set(it.collectionId, arr);
   }
 
   return rows.map((r) => {
     const lr = lastRead.get(r.collection.id);
-    // chapters fully before the current one (lr.position) + the current
-    // chapter's own fraction, over the total chapter count.
-    const progressPct =
-      lr && r.textCount > 0
-        ? Math.min(100, Math.round(((lr.position + lr.pctRead / 100) / r.textCount) * 100))
-        : 0;
     return {
       ...r,
       openTextId: lr?.textId ?? firstText.get(r.collection.id) ?? null,
-      progressPct,
+      // Whole-book progress weighted by chapter token counts, matching the
+      // reader's bar (chapters before the current count fully + the current
+      // chapter's fraction). Even weighting when token counts aren't known.
+      progressPct: bookProgressPct(chaptersByCollection.get(r.collection.id) ?? [], lr),
     };
   });
+}
+
+/** Token-weighted whole-book progress (0–100), mirroring the reader's bar.
+ *  [lr] is the resume chapter: its position + within-chapter pct_read. */
+export function bookProgressPct(
+  chapters: Array<{ position: number; tokens: number }>,
+  lr: { position: number; pctRead: number } | undefined,
+): number {
+  if (!lr || chapters.length === 0) return 0;
+  const fraction = lr.pctRead / 100;
+  const totalTokens = chapters.reduce((s, c) => s + c.tokens, 0);
+  if (totalTokens > 0) {
+    const before = chapters
+      .filter((c) => c.position < lr.position)
+      .reduce((s, c) => s + c.tokens, 0);
+    const current = chapters.find((c) => c.position === lr.position)?.tokens ?? 0;
+    return Math.min(100, Math.round(((before + fraction * current) / totalTokens) * 100));
+  }
+  return Math.min(100, Math.round(((lr.position + fraction) / chapters.length) * 100));
 }
 
 export async function listOfficialCollections(
