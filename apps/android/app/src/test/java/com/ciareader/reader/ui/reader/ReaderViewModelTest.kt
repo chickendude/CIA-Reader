@@ -7,6 +7,7 @@ import com.ciareader.reader.data.collection.CollectionChapter
 import com.ciareader.reader.data.collection.CollectionDetail
 import com.ciareader.reader.data.collection.CollectionRepository
 import com.ciareader.reader.data.collection.CollectionSummary
+import com.ciareader.reader.data.dictionary.BasqueReference
 import com.ciareader.reader.data.dictionary.DictionaryRepository
 import com.ciareader.reader.data.dictionary.LemmaTranslations
 import com.ciareader.reader.data.dictionary.WordTranslation
@@ -433,6 +434,59 @@ class ReaderViewModelTest {
         assertEquals(2, reopened.state.value.restoreTokenIdx)
     }
 
+    @Test
+    fun addDefinitionPostsAndRefreshesPanel() = runTest(mainRule.dispatcher) {
+        val dict = FakeDictionaryRepository(
+            LemmaTranslations("नमस्ते", "INTJ", "hello", emptyList(), emptyList(), emptyList()),
+        )
+        val token = ReaderToken(0, "नमस्ते", true, KnownStatus.UNKNOWN, "l1", null, null, false, false, true)
+        val repo = FakeReaderRepository(meta = meta(1), chapters = mapOf(0 to Chapter(0, listOf(token))))
+        val v = vm(repo, dict)
+        advanceUntilIdle()
+        v.onWordTap(token)
+        advanceUntilIdle()
+
+        v.addDefinition("my own def")
+        advanceUntilIdle()
+
+        assertEquals("l1" to "my own def", dict.lastAdded)
+        assertEquals(listOf("my own def"), v.state.value.wordTranslations?.personal?.map { it.body })
+    }
+
+    @Test
+    fun basqueWordTapLoadsReferenceDictionaries() = runTest(mainRule.dispatcher) {
+        val dict = FakeDictionaryRepository(
+            translations = LemmaTranslations("etxe", null, null, emptyList(), emptyList(), emptyList()),
+            basque = listOf(BasqueReference("elhuyar_es", "Elhuyar eu-es", "iz.", "casa", listOf("etxe handia"))),
+        )
+        val token = ReaderToken(0, "etxe", true, KnownStatus.UNKNOWN, "l1", null, null, false, false, true)
+        val repo = FakeReaderRepository(meta = meta(1, "eu"), chapters = mapOf(0 to Chapter(0, listOf(token))))
+        val v = vm(repo, dict)
+        advanceUntilIdle()
+
+        v.onWordTap(token)
+        advanceUntilIdle()
+
+        assertEquals(listOf("casa"), v.state.value.basqueReference.map { it.definition })
+    }
+
+    @Test
+    fun nonBasqueWordTapSkipsReferenceDictionaries() = runTest(mainRule.dispatcher) {
+        val dict = FakeDictionaryRepository(
+            translations = LemmaTranslations("x", null, null, emptyList(), emptyList(), emptyList()),
+            basque = listOf(BasqueReference("elhuyar_en", "L", "", "d", emptyList())),
+        )
+        val token = ReaderToken(0, "x", true, KnownStatus.UNKNOWN, "l1", null, null, false, false, true)
+        val repo = FakeReaderRepository(meta = meta(1, "hi"), chapters = mapOf(0 to Chapter(0, listOf(token))))
+        val v = vm(repo, dict)
+        advanceUntilIdle()
+
+        v.onWordTap(token)
+        advanceUntilIdle()
+
+        assertEquals(emptyList<String>(), v.state.value.basqueReference.map { it.definition })
+    }
+
     private fun word(surface: String) =
         ReaderToken(0, surface, true, KnownStatus.UNKNOWN, null, null, null, false, false, false)
 
@@ -498,13 +552,24 @@ private class FakeReaderRepository(
 }
 
 private class FakeDictionaryRepository(
-    private val translations: LemmaTranslations? = null,
+    private var translations: LemmaTranslations? = null,
+    private val basque: List<BasqueReference> = emptyList(),
 ) : DictionaryRepository {
+    var lastAdded: Pair<String, String>? = null
     override suspend fun translations(lemmaId: String): Outcome<LemmaTranslations> =
         translations?.let { Outcome.Success(it) } ?: Outcome.Failure("no translations")
 
     override suspend fun setStatus(lemmaId: String, status: KnownStatus): Outcome<KnownStatus> =
         Outcome.Success(status)
+
+    override suspend fun addDefinition(lemmaId: String, body: String): Outcome<Unit> {
+        lastAdded = lemmaId to body
+        translations = translations?.let { it.copy(personal = it.personal + WordTranslation(body, null)) }
+        return Outcome.Success(Unit)
+    }
+
+    override suspend fun basqueReference(word: String): Outcome<List<BasqueReference>> =
+        if (basque.isNotEmpty()) Outcome.Success(basque) else Outcome.Failure("not admin")
 }
 
 private class FakeSettingsStore(
@@ -536,6 +601,12 @@ private class FakeSettingsStore(
     override suspend fun lineSpacing(language: String): Float = lineSpacingValue
     override suspend fun setLineSpacing(language: String, value: Float) {
         lastSetLineSpacing = value
+    }
+
+    private var basqueRef: String? = null
+    override suspend fun basqueRefSource(): String? = basqueRef
+    override suspend fun setBasqueRefSource(source: String) {
+        basqueRef = source
     }
 }
 
