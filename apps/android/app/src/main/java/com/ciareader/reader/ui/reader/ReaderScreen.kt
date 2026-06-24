@@ -5,6 +5,7 @@ package com.ciareader.reader.ui.reader
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -19,6 +20,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.ScrollState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.pager.HorizontalPager
@@ -104,6 +106,7 @@ fun ReaderScreen(
         },
         onRetry = viewModel::retry,
         onSetStatus = viewModel::setStatus,
+        onSelectParse = viewModel::selectParse,
         onRecordPosition = viewModel::recordPosition,
         onRestoreConsumed = viewModel::onRestoreConsumed,
         onToggleRomanize = viewModel::toggleRomanization,
@@ -133,6 +136,7 @@ internal fun ReaderScreenContent(
     onSwipeToPrevChapter: () -> Unit = onPrevChapter,
     onRetry: () -> Unit,
     onSetStatus: (KnownStatus) -> Unit,
+    onSelectParse: (String) -> Unit = {},
     onRecordPosition: (Int, Double) -> Unit,
     onRestoreConsumed: () -> Unit,
     onToggleRomanize: () -> Unit,
@@ -267,6 +271,10 @@ internal fun ReaderScreenContent(
                 translations = state.wordTranslations,
                 isLoading = state.isWordLoading,
                 onSetStatus = onSetStatus,
+                activeParseLemmaId = state.activeParseLemmaId,
+                primaryHeadword = state.primaryHeadword,
+                primaryPos = state.primaryPos,
+                onSelectParse = onSelectParse,
             )
         }
     }
@@ -707,12 +715,29 @@ internal fun WordDetails(
     isLoading: Boolean,
     onSetStatus: (KnownStatus) -> Unit,
     modifier: Modifier = Modifier,
+    activeParseLemmaId: String? = token.lemmaId,
+    primaryHeadword: String? = null,
+    primaryPos: String? = null,
+    onSelectParse: (String) -> Unit = {},
 ) {
+    // The parser's chosen lemma plus any alternate candidates the parser scored.
+    // Two or more selectable parses surface the switcher so a reader can view the
+    // definition of a lemma the parser didn't pick.
+    val parses = remember(token, primaryHeadword, primaryPos) {
+        buildList {
+            token.lemmaId?.let { add(WordParse(it, primaryHeadword ?: token.surface, primaryPos)) }
+            token.candidates.forEach { add(WordParse(it.lemmaId, it.headword, it.pos)) }
+        }
+    }
     Column(
         modifier = modifier
             .fillMaxWidth()
             .padding(24.dp),
     ) {
+        if (parses.size >= 2) {
+            ParseSwitcher(parses = parses, activeLemmaId = activeParseLemmaId, onSelect = onSelectParse)
+            Spacer(Modifier.height(12.dp))
+        }
         Text(translations?.headword ?: token.surface, style = MaterialTheme.typography.headlineSmall)
         val subtitle = listOfNotNull(token.romanization, translations?.pos).joinToString("  ·  ")
         if (subtitle.isNotEmpty()) {
@@ -744,6 +769,37 @@ internal fun WordDetails(
 @Composable
 private fun StatusChip(label: String, selected: Boolean, onClick: () -> Unit) {
     FilterChip(selected = selected, onClick = onClick, label = { Text(label) })
+}
+
+/** One selectable parsing of the tapped word: a lemma plus a label. */
+private data class WordParse(val lemmaId: String, val headword: String, val pos: String?)
+
+/** Segmented control at the top of the word sheet for switching which parsing's
+ *  definition is shown. Scrolls horizontally so any number of candidates fits.
+ *  POS rides on the label so same-headword parses (e.g. a noun vs. a verb) stay
+ *  distinguishable. */
+@Composable
+private fun ParseSwitcher(
+    parses: List<WordParse>,
+    activeLemmaId: String?,
+    onSelect: (String) -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState())
+            .semantics { contentDescription = "Word parsings" },
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        parses.forEach { parse ->
+            val label = parse.pos?.takeIf { it.isNotBlank() }?.let { "${parse.headword} · $it" } ?: parse.headword
+            FilterChip(
+                selected = parse.lemmaId == activeLemmaId,
+                onClick = { onSelect(parse.lemmaId) },
+                label = { Text(label) },
+            )
+        }
+    }
 }
 
 @Composable

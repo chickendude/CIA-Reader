@@ -39,6 +39,17 @@ data class ReaderUiState(
     val selectedWord: ReaderToken? = null,
     val wordTranslations: LemmaTranslations? = null,
     val isWordLoading: Boolean = false,
+    /** Which parse (lemma) the word sheet is currently showing a definition for.
+     *  Defaults to the tapped token's chosen lemma; the parse switcher flips it
+     *  among the token's alternate candidates. Null when the word has no
+     *  linkable lemma. */
+    val activeParseLemmaId: String? = null,
+    /** Headword/POS of the token's chosen (primary) parse, captured when its
+     *  translations load. Kept in state so the first switcher chip keeps a
+     *  stable label after the reader flips to an alternate parse — whose
+     *  translations then occupy [wordTranslations]. */
+    val primaryHeadword: String? = null,
+    val primaryPos: String? = null,
     val restoreTokenIdx: Int? = null,
     val romanize: Boolean = false,
     val isRtl: Boolean = false,
@@ -178,7 +189,17 @@ class ReaderViewModel @Inject constructor(
         saveOnLoad: Boolean = false,
     ) {
         progressJob?.cancel()
-        _state.update { it.copy(isLoading = true, errorMessage = null, selectedWord = null, wordTranslations = null) }
+        _state.update {
+            it.copy(
+                isLoading = true,
+                errorMessage = null,
+                selectedWord = null,
+                wordTranslations = null,
+                activeParseLemmaId = null,
+                primaryHeadword = null,
+                primaryPos = null,
+            )
+        }
         viewModelScope.launch {
             when (val chapter = repository.chapter(textId, chapterIdx)) {
                 is Outcome.Success -> {
@@ -212,16 +233,47 @@ class ReaderViewModel @Inject constructor(
         if (!token.isWord) return
         val lemmaId = token.lemmaId
         _state.update {
-            it.copy(selectedWord = token, wordTranslations = null, isWordLoading = lemmaId != null)
+            it.copy(
+                selectedWord = token,
+                wordTranslations = null,
+                isWordLoading = lemmaId != null,
+                activeParseLemmaId = lemmaId,
+                primaryHeadword = null,
+                primaryPos = null,
+            )
         }
         if (lemmaId == null) return
+        loadParse(lemmaId, isPrimary = true)
+    }
+
+    /** Switch the word sheet to a different parse of the selected word and load
+     *  that lemma's definition. The parse switcher (shown for ambiguous tokens)
+     *  drives this. No-op when nothing is selected or it's already the active
+     *  parse. */
+    fun selectParse(lemmaId: String) {
+        val current = _state.value
+        if (current.selectedWord == null || current.activeParseLemmaId == lemmaId) return
+        _state.update { it.copy(activeParseLemmaId = lemmaId, wordTranslations = null, isWordLoading = true) }
+        loadParse(lemmaId, isPrimary = lemmaId == current.selectedWord.lemmaId)
+    }
+
+    /** Fetch a lemma's translations into the word sheet, ignoring the result if
+     *  the user has since tapped another word or flipped to another parse. When
+     *  the parser's chosen lemma loads, its headword/POS are cached so the
+     *  primary switcher chip stays labelled after the reader views an
+     *  alternate. */
+    private fun loadParse(lemmaId: String, isPrimary: Boolean) {
         viewModelScope.launch {
             val outcome = dictionary.translations(lemmaId)
             _state.update { s ->
-                // Ignore if the user has since tapped a different word.
-                if (s.selectedWord?.lemmaId != lemmaId) return@update s
+                if (s.activeParseLemmaId != lemmaId) return@update s
                 when (outcome) {
-                    is Outcome.Success -> s.copy(isWordLoading = false, wordTranslations = outcome.data)
+                    is Outcome.Success -> s.copy(
+                        isWordLoading = false,
+                        wordTranslations = outcome.data,
+                        primaryHeadword = if (isPrimary) outcome.data.headword else s.primaryHeadword,
+                        primaryPos = if (isPrimary) outcome.data.pos else s.primaryPos,
+                    )
                     is Outcome.Failure -> s.copy(isWordLoading = false)
                 }
             }
@@ -249,7 +301,16 @@ class ReaderViewModel @Inject constructor(
         }
     }
 
-    fun dismissWord() = _state.update { it.copy(selectedWord = null, wordTranslations = null, isWordLoading = false) }
+    fun dismissWord() = _state.update {
+        it.copy(
+            selectedWord = null,
+            wordTranslations = null,
+            isWordLoading = false,
+            activeParseLemmaId = null,
+            primaryHeadword = null,
+            primaryPos = null,
+        )
+    }
 
     fun nextChapter() {
         if (_state.value.hasNext) loadChapter(_state.value.chapterIdx + 1, saveOnLoad = true)

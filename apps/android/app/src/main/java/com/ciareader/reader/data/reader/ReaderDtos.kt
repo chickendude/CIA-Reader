@@ -49,6 +49,20 @@ data class TokenDto(
     val isOov: Boolean = false,
     val isAmbiguous: Boolean = false,
     val hasDefinition: Boolean = false,
+    /** Alternate lemmas the parser scored for this surface form (T-6.1 on the
+     *  web). The server already excludes the chosen lemma, so this is the list of
+     *  *other* parsings the word sheet's parse switcher offers. Empty when the
+     *  parse is unambiguous. The wire entries also carry `score`/`features`,
+     *  which we drop (ignoreUnknownKeys). */
+    val candidates: List<CandidateDto> = emptyList(),
+)
+
+@Serializable
+data class CandidateDto(
+    val lemmaId: String,
+    val headword: String,
+    val pos: String? = null,
+    val glossDefault: String? = null,
 )
 
 @Serializable

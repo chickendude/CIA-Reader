@@ -9,6 +9,7 @@ import androidx.compose.ui.test.performClick
 import com.ciareader.reader.data.dictionary.LemmaTranslations
 import com.ciareader.reader.data.dictionary.WordTranslation
 import com.ciareader.reader.data.reader.KnownStatus
+import com.ciareader.reader.data.reader.ParseCandidate
 import com.ciareader.reader.data.reader.ReaderToken
 import com.ciareader.reader.ui.theme.CiaReaderTheme
 import org.junit.Assert.assertEquals
@@ -246,6 +247,68 @@ class ReaderScreenTest {
         compose.onNodeWithText("Known").assertIsDisplayed()
         compose.onNodeWithText("Known").performClick()
         assertEquals(KnownStatus.KNOWN, chosen)
+    }
+
+    @Test
+    fun wordDetailsShowsParseSwitcherAndSwitchesParse() {
+        var picked: String? = null
+        compose.setContent {
+            CiaReaderTheme {
+                WordDetails(
+                    token = ReaderToken(
+                        idx = 0,
+                        surface = "सोने",
+                        isWord = true,
+                        status = KnownStatus.UNKNOWN,
+                        lemmaId = "l-gold",
+                        romanization = null,
+                        glossDefault = null,
+                        isOov = false,
+                        isAmbiguous = true,
+                        hasDefinition = true,
+                        candidates = listOf(ParseCandidate("l-sleep", "सोना", "VERB", "to sleep")),
+                    ),
+                    translations = LemmaTranslations(
+                        headword = "सोना",
+                        pos = "NOUN",
+                        gloss = "gold",
+                        personal = emptyList(),
+                        official = listOf(WordTranslation("gold", null)),
+                        community = emptyList(),
+                    ),
+                    isLoading = false,
+                    onSetStatus = {},
+                    activeParseLemmaId = "l-gold",
+                    primaryHeadword = "सोना",
+                    primaryPos = "NOUN",
+                    onSelectParse = { picked = it },
+                )
+            }
+        }
+        // Both parses appear as chips (POS disambiguates the shared headword).
+        compose.onNodeWithText("सोना · NOUN").assertIsDisplayed()
+        compose.onNodeWithText("सोना · VERB").assertIsDisplayed()
+        compose.onNodeWithText("सोना · VERB").performClick()
+        assertEquals("l-sleep", picked)
+    }
+
+    @Test
+    fun wordDetailsHidesParseSwitcherWhenUnambiguous() {
+        compose.setContent {
+            CiaReaderTheme {
+                WordDetails(
+                    token = ReaderToken(0, "नमस्ते", true, KnownStatus.UNKNOWN, "l1", "namaste", "hello", false, false, true),
+                    translations = null,
+                    isLoading = false,
+                    onSetStatus = {},
+                    activeParseLemmaId = "l1",
+                    primaryHeadword = "नमस्ते",
+                    primaryPos = "INTJ",
+                )
+            }
+        }
+        // A single parse: no switcher chip pair, just the headword title.
+        compose.onNodeWithText("नमस्ते · INTJ").assertDoesNotExist()
     }
 
     @Test
