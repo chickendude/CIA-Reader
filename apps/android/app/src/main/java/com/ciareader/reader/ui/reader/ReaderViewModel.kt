@@ -40,6 +40,7 @@ data class ReaderUiState(
     val selectedWord: ReaderToken? = null,
     val wordTranslations: LemmaTranslations? = null,
     val basqueReference: List<BasqueReference> = emptyList(),
+    val basqueRefSource: String? = null,
     val isWordLoading: Boolean = false,
     val restoreTokenIdx: Int? = null,
     val romanize: Boolean = false,
@@ -132,6 +133,7 @@ class ReaderViewModel @Inject constructor(
                             fontSize = settings.fontSizeSp(language),
                             lineSpacing = settings.lineSpacing(language),
                             isRtl = isRtlLanguage(language),
+                            basqueRefSource = settings.basqueRefSource(),
                         )
                     }
                     loadSiblings()
@@ -344,6 +346,12 @@ class ReaderViewModel @Inject constructor(
         val v = value.coerceIn(LINE_SPACING_MIN, LINE_SPACING_MAX)
         _state.update { it.copy(lineSpacing = v, restoreTokenIdx = currentTopToken) }
         viewModelScope.launch { settings.setLineSpacing(language, v) }
+    }
+
+    /** Remember the admin Basque reference source tab (ES/EN/EU). */
+    fun setBasqueRefSource(source: String) {
+        _state.update { it.copy(basqueRefSource = source) }
+        viewModelScope.launch { settings.setBasqueRefSource(source) }
     }
 
     /** When reading a book, find the adjacent chapter-texts for Prev/Next. */

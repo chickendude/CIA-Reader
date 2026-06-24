@@ -157,6 +157,12 @@ private class FakeSettingsStore(var lang: String? = "hi") : SettingsStore {
     override suspend fun setLineSpacing(language: String, value: Float) {
         spacing[language] = value
     }
+
+    private var basqueRef: String? = null
+    override suspend fun basqueRefSource(): String? = basqueRef
+    override suspend fun setBasqueRefSource(source: String) {
+        basqueRef = source
+    }
 }
 
 private class FakeLanguageRepository(private val langs: List<Language> = emptyList()) : LanguageRepository {

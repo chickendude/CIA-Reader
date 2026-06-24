@@ -85,6 +85,17 @@ class DictionaryRepositoryTest {
     }
 
     @Test
+    fun basqueReferenceIsCachedPerWord() = runTest {
+        val api = FakeDictionaryApi(
+            basque = BasqueReferenceResponseDto("etxe", listOf(BasqueRefDto(source = "elhuyar_es", definition = "casa"))),
+        )
+        val repo = DictionaryRepositoryImpl(api)
+        repo.basqueReference("etxe")
+        repo.basqueReference("ETXE") // case-insensitive key -> served from cache
+        assertEquals(1, api.basqueCalls)
+    }
+
+    @Test
     fun basqueReferenceForbiddenMapsToFailure() = runTest {
         val result = DictionaryRepositoryImpl(FakeDictionaryApi(error = http(403))).basqueReference("etxe")
         assertTrue(result is Outcome.Failure)
@@ -137,8 +148,11 @@ private class FakeDictionaryApi(
         return error?.let { throw it } ?: CreateTranslationResponseDto(TranslationDto("new", body.body))
     }
 
-    override suspend fun basqueReference(word: String): BasqueReferenceResponseDto =
-        error?.let { throw it } ?: basque!!
+    var basqueCalls = 0
+    override suspend fun basqueReference(word: String): BasqueReferenceResponseDto {
+        basqueCalls++
+        return error?.let { throw it } ?: basque!!
+    }
 
     override suspend fun setKnownStatus(lemmaId: String, body: KnownLemmaRequest): KnownLemmaResponseDto {
         lastSet = lemmaId to body.status

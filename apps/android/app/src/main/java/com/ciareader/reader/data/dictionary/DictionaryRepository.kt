@@ -21,8 +21,11 @@ data class LemmaTranslations(
         get() = personal.isEmpty() && official.isEmpty() && community.isEmpty()
 }
 
-/** A reference-dictionary entry (admin-only, Basque) for the word sheet. */
+/** A reference-dictionary entry (admin-only, Basque) for the word sheet.
+ *  [source] is the upstream id (elhuyar_es / elhuyar_en / euskaltzaindia), which
+ *  the UI groups into ES/EN/EU tabs. */
 data class BasqueReference(
+    val source: String,
     val label: String,
     val pos: String,
     val definition: String,
@@ -59,12 +62,21 @@ class DictionaryRepositoryImpl @Inject constructor(
     override suspend fun addDefinition(lemmaId: String, body: String): Outcome<Unit> =
         apiCall { api.addTranslation(CreateTranslationRequest(lemmaId, body)); Unit }
 
-    override suspend fun basqueReference(word: String): Outcome<List<BasqueReference>> =
-        apiCall {
+    // Reference lookups are stable, so cache per word for the session — reopening
+    // a word shows them instantly instead of re-hitting the network.
+    private val basqueCache = mutableMapOf<String, List<BasqueReference>>()
+
+    override suspend fun basqueReference(word: String): Outcome<List<BasqueReference>> {
+        val key = word.lowercase()
+        basqueCache[key]?.let { return Outcome.Success(it) }
+        val net = apiCall {
             api.basqueReference(word).results.map {
-                BasqueReference(label = it.label, pos = it.pos, definition = it.definition, examples = it.examples)
+                BasqueReference(it.source, it.label, it.pos, it.definition, it.examples)
             }
         }
+        if (net is Outcome.Success) basqueCache[key] = net.data
+        return net
+    }
 }
 
 private fun KnownStatus.wire(): String = when (this) {

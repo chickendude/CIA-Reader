@@ -46,6 +46,10 @@ interface SettingsStore {
     suspend fun lineSpacing(language: String): Float
     suspend fun setLineSpacing(language: String, value: Float)
 
+    /** Remembered source tab for the admin Basque reference panel (global). */
+    suspend fun basqueRefSource(): String?
+    suspend fun setBasqueRefSource(source: String)
+
     companion object {
         const val DEFAULT_FONT_SIZE_SP = 18
         const val DEFAULT_LINE_SPACING = 1.5f
@@ -96,8 +100,16 @@ class DataStoreSettingsStore @Inject constructor(
         context.settingsDataStore.edit { it[lineSpacingKey(language)] = value }
     }
 
+    override suspend fun basqueRefSource(): String? =
+        context.settingsDataStore.data.map { it[BASQUE_REF_SOURCE] }.first()
+
+    override suspend fun setBasqueRefSource(source: String) {
+        context.settingsDataStore.edit { it[BASQUE_REF_SOURCE] = source }
+    }
+
     private companion object {
         val CURRENT_LANGUAGE = stringPreferencesKey("current_language")
+        val BASQUE_REF_SOURCE = stringPreferencesKey("basque_ref_source")
 
         // Per-language keys — the language code is part of the preference name.
         fun romanizationKey(lang: String) = booleanPreferencesKey("show_romanization_$lang")

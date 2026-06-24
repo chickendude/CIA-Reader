@@ -457,7 +457,7 @@ class ReaderViewModelTest {
     fun basqueWordTapLoadsReferenceDictionaries() = runTest(mainRule.dispatcher) {
         val dict = FakeDictionaryRepository(
             translations = LemmaTranslations("etxe", null, null, emptyList(), emptyList(), emptyList()),
-            basque = listOf(BasqueReference("Elhuyar eu-es", "iz.", "casa", listOf("etxe handia"))),
+            basque = listOf(BasqueReference("elhuyar_es", "Elhuyar eu-es", "iz.", "casa", listOf("etxe handia"))),
         )
         val token = ReaderToken(0, "etxe", true, KnownStatus.UNKNOWN, "l1", null, null, false, false, true)
         val repo = FakeReaderRepository(meta = meta(1, "eu"), chapters = mapOf(0 to Chapter(0, listOf(token))))
@@ -474,7 +474,7 @@ class ReaderViewModelTest {
     fun nonBasqueWordTapSkipsReferenceDictionaries() = runTest(mainRule.dispatcher) {
         val dict = FakeDictionaryRepository(
             translations = LemmaTranslations("x", null, null, emptyList(), emptyList(), emptyList()),
-            basque = listOf(BasqueReference("L", "", "d", emptyList())),
+            basque = listOf(BasqueReference("elhuyar_en", "L", "", "d", emptyList())),
         )
         val token = ReaderToken(0, "x", true, KnownStatus.UNKNOWN, "l1", null, null, false, false, true)
         val repo = FakeReaderRepository(meta = meta(1, "hi"), chapters = mapOf(0 to Chapter(0, listOf(token))))
@@ -601,6 +601,12 @@ private class FakeSettingsStore(
     override suspend fun lineSpacing(language: String): Float = lineSpacingValue
     override suspend fun setLineSpacing(language: String, value: Float) {
         lastSetLineSpacing = value
+    }
+
+    private var basqueRef: String? = null
+    override suspend fun basqueRefSource(): String? = basqueRef
+    override suspend fun setBasqueRefSource(source: String) {
+        basqueRef = source
     }
 }
 

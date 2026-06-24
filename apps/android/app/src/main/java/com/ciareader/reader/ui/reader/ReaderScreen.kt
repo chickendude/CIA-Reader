@@ -107,6 +107,7 @@ fun ReaderScreen(
         onRetry = viewModel::retry,
         onSetStatus = viewModel::setStatus,
         onAddDefinition = viewModel::addDefinition,
+        onSetBasqueRefSource = viewModel::setBasqueRefSource,
         onRecordPosition = viewModel::recordPosition,
         onRestoreConsumed = viewModel::onRestoreConsumed,
         onToggleRomanize = viewModel::toggleRomanization,
@@ -137,6 +138,7 @@ internal fun ReaderScreenContent(
     onRetry: () -> Unit,
     onSetStatus: (KnownStatus) -> Unit,
     onAddDefinition: (String) -> Unit = {},
+    onSetBasqueRefSource: (String) -> Unit = {},
     onRecordPosition: (Int, Double) -> Unit,
     onRestoreConsumed: () -> Unit,
     onToggleRomanize: () -> Unit,
@@ -270,9 +272,11 @@ internal fun ReaderScreenContent(
                 token = selected,
                 translations = state.wordTranslations,
                 basqueReference = state.basqueReference,
+                basqueRefSource = state.basqueRefSource,
                 isLoading = state.isWordLoading,
                 onSetStatus = onSetStatus,
                 onAddDefinition = onAddDefinition,
+                onSelectBasqueSource = onSetBasqueRefSource,
             )
         }
     }
@@ -714,6 +718,8 @@ internal fun WordDetails(
     onSetStatus: (KnownStatus) -> Unit,
     onAddDefinition: (String) -> Unit = {},
     basqueReference: List<BasqueReference> = emptyList(),
+    basqueRefSource: String? = null,
+    onSelectBasqueSource: (String) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -741,7 +747,7 @@ internal fun WordDetails(
 
         if (basqueReference.isNotEmpty()) {
             Spacer(Modifier.height(16.dp))
-            BasqueReferenceSection(basqueReference)
+            BasqueReferenceSection(basqueReference, basqueRefSource, onSelectBasqueSource)
         }
 
         Spacer(Modifier.height(16.dp))
@@ -785,17 +791,45 @@ private fun StatusChip(label: String, selected: Boolean, onClick: () -> Unit) {
     FilterChip(selected = selected, onClick = onClick, label = { Text(label) })
 }
 
+private val BASQUE_REF_ORDER = listOf("elhuyar_es", "elhuyar_en", "euskaltzaindia")
+
+private fun basqueRefTabLabel(source: String): String = when (source) {
+    "elhuyar_es" -> "ES"
+    "elhuyar_en" -> "EN"
+    "euskaltzaindia" -> "EU"
+    else -> source.uppercase()
+}
+
 @Composable
-private fun BasqueReferenceSection(entries: List<BasqueReference>) {
+private fun BasqueReferenceSection(
+    entries: List<BasqueReference>,
+    selectedSource: String?,
+    onSelectSource: (String) -> Unit,
+) {
+    val available = BASQUE_REF_ORDER.filter { src -> entries.any { it.source == src } }
+    if (available.isEmpty()) return
+    val selected = selectedSource?.takeIf { it in available } ?: available.first()
+
     Text(
         "Reference dictionaries",
         style = MaterialTheme.typography.labelMedium,
         color = MaterialTheme.colorScheme.primary,
     )
-    entries.forEach { e ->
-        val head = listOfNotNull(e.label.ifBlank { null }, e.pos.ifBlank { null }).joinToString("  ·  ")
-        if (head.isNotEmpty()) {
-            Text(head, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    Spacer(Modifier.height(8.dp))
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        available.forEach { src ->
+            FilterChip(
+                selected = src == selected,
+                onClick = { onSelectSource(src) },
+                label = { Text(basqueRefTabLabel(src)) },
+            )
+        }
+    }
+    Spacer(Modifier.height(8.dp))
+    // Tab carries the source, so only show pos + definition + examples per entry.
+    entries.filter { it.source == selected }.forEach { e ->
+        if (e.pos.isNotBlank()) {
+            Text(e.pos, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         if (e.definition.isNotBlank()) {
             Text(e.definition, style = MaterialTheme.typography.bodyLarge)
