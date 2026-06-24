@@ -37,6 +37,7 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -269,7 +270,12 @@ internal fun ReaderScreenContent(
 
     val selected = state.selectedWord
     if (selected != null) {
-        ModalBottomSheet(onDismissRequest = onDismissWord) {
+        // skipPartiallyExpanded: with no partial anchor the sheet can't snap back
+        // down when its content changes (e.g. expanding examples) or on any tap.
+        ModalBottomSheet(
+            onDismissRequest = onDismissWord,
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        ) {
             WordDetails(
                 token = selected,
                 translations = state.wordTranslations,
@@ -750,11 +756,6 @@ internal fun WordDetails(
                 Text(token.glossDefault ?: "No definition yet.", style = MaterialTheme.typography.bodyLarge)
         }
 
-        if (basqueReference.isNotEmpty()) {
-            Spacer(Modifier.height(16.dp))
-            BasqueReferenceSection(basqueReference, basqueRefSource, onSelectBasqueSource)
-        }
-
         Spacer(Modifier.height(16.dp))
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             BrandChip("New", token.status == KnownStatus.UNKNOWN) { onSetStatus(KnownStatus.UNKNOWN) }
@@ -763,10 +764,16 @@ internal fun WordDetails(
             BrandChip("Ignored", token.status == KnownStatus.IGNORED) { onSetStatus(KnownStatus.IGNORED) }
         }
 
+        // Your own definition sits above the (admin) reference dictionaries.
         // Only words with a lemma can carry a user definition (OOV/punctuation can't).
         if (token.lemmaId != null) {
             Spacer(Modifier.height(16.dp))
             AddDefinitionField(onAdd = onAddDefinition)
+        }
+
+        if (basqueReference.isNotEmpty()) {
+            Spacer(Modifier.height(16.dp))
+            BasqueReferenceSection(basqueReference, basqueRefSource, onSelectBasqueSource)
         }
     }
 }
