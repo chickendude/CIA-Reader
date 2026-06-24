@@ -71,6 +71,20 @@ class LibraryRepositoryTest {
         assertTrue(result is Outcome.Failure)
     }
 
+    @Test
+    fun deleteTextSendsRequest() = runTest {
+        val api = FakeLibraryApi()
+        val result = repo(api).deleteText("t7")
+        assertTrue(result is Outcome.Success)
+        assertEquals("t7", api.lastDeletedId)
+    }
+
+    @Test
+    fun deleteTextFailsWhenOffline() = runTest {
+        val result = repo(FakeLibraryApi().apply { online = false }).deleteText("t7")
+        assertTrue(result is Outcome.Failure)
+    }
+
     private fun card(id: String, status: String) = TextCardDto(
         id = id,
         title = "Title $id",
@@ -92,6 +106,7 @@ private class FakeLibraryApi(
 ) : LibraryApi {
     var lastScope: String? = null
     var lastLanguage: String? = null
+    var lastDeletedId: String? = null
     override suspend fun listTexts(
         scope: String,
         language: String,
@@ -103,6 +118,12 @@ private class FakeLibraryApi(
         if (!online) throw IOException("offline")
         error?.let { throw it }
         return page!!
+    }
+
+    override suspend fun deleteText(textId: String): DeleteTextResponseDto {
+        if (!online) throw IOException("offline")
+        lastDeletedId = textId
+        return DeleteTextResponseDto(ok = true)
     }
 }
 

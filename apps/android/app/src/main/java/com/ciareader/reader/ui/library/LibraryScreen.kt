@@ -1,12 +1,14 @@
 package com.ciareader.reader.ui.library
 
 import androidx.annotation.DrawableRes
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.padding
@@ -15,6 +17,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -25,23 +28,32 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.ui.res.painterResource
 import com.ciareader.reader.R
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -77,6 +89,12 @@ fun LibraryScreen(
         onRetry = viewModel::load,
         onOpenSettings = onOpenSettings,
         onRefresh = viewModel::refresh,
+        onEditCollection = viewModel::editCollection,
+        onDeleteCollection = viewModel::deleteCollection,
+        onDeleteText = viewModel::deleteText,
+        onShowStats = viewModel::showStats,
+        onDismissStats = viewModel::dismissStats,
+        onClearActionError = viewModel::clearActionError,
     )
 }
 
@@ -90,8 +108,23 @@ internal fun LibraryScreenContent(
     onRetry: () -> Unit,
     onOpenSettings: () -> Unit,
     onRefresh: () -> Unit = {},
+    onEditCollection: (String, String, String?) -> Unit = { _, _, _ -> },
+    onDeleteCollection: (String) -> Unit = {},
+    onDeleteText: (String) -> Unit = {},
+    onShowStats: (CollectionSummary) -> Unit = {},
+    onDismissStats: () -> Unit = {},
+    onClearActionError: () -> Unit = {},
 ) {
+    val snackbarHostState = remember { SnackbarHostState() }
+    // Surface an edit/delete failure as a transient banner, then clear it.
+    LaunchedEffect(state.actionError) {
+        state.actionError?.let {
+            snackbarHostState.showSnackbar(it)
+            onClearActionError()
+        }
+    }
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = { Text("Library") },
@@ -141,10 +174,17 @@ internal fun LibraryScreenContent(
                         texts = state.texts,
                         onOpenCollection = onOpenCollection,
                         onOpenText = onOpenText,
+                        onEditCollection = onEditCollection,
+                        onDeleteCollection = onDeleteCollection,
+                        onDeleteText = onDeleteText,
+                        onShowStats = onShowStats,
                     )
             }
         }
     }
+
+    // The stats sheet floats above the list when a book's "Stats" is chosen.
+    state.stats?.let { StatsSheet(stats = it, onDismiss = onDismissStats) }
 }
 
 @Composable
@@ -164,17 +204,21 @@ private fun ContentList(
     texts: List<TextCard>,
     onOpenCollection: (CollectionSummary) -> Unit,
     onOpenText: (String) -> Unit,
+    onEditCollection: (String, String, String?) -> Unit,
+    onDeleteCollection: (String) -> Unit,
+    onDeleteText: (String) -> Unit,
+    onShowStats: (CollectionSummary) -> Unit,
 ) {
     LazyColumn(modifier = Modifier.fillMaxSize()) {
         if (collections.isNotEmpty()) {
             item { SectionHeader("Books") }
             items(collections, key = { "c-${it.id}" }) { c ->
-                ListItem(
-                    headlineContent = { Text(c.title) },
-                    supportingContent = {
-                        Text("${c.textCount} chapters", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    },
-                    modifier = Modifier.clickable { onOpenCollection(c) },
+                CollectionRow(
+                    collection = c,
+                    onOpen = { onOpenCollection(c) },
+                    onEdit = { title, desc -> onEditCollection(c.id, title, desc) },
+                    onDelete = { onDeleteCollection(c.id) },
+                    onShowStats = { onShowStats(c) },
                 )
                 HorizontalDivider()
             }
@@ -182,16 +226,271 @@ private fun ContentList(
         if (texts.isNotEmpty()) {
             item { SectionHeader("Texts") }
             items(texts, key = { "t-${it.id}" }) { card ->
-                ListItem(
-                    headlineContent = { Text(card.title) },
-                    supportingContent = {
-                        if (!card.isReady) Text(card.status, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    },
-                    modifier = Modifier.clickable(enabled = card.isReady) { onOpenText(card.id) },
+                TextRow(
+                    card = card,
+                    onOpen = { onOpenText(card.id) },
+                    onDelete = { onDeleteText(card.id) },
                 )
                 HorizontalDivider()
             }
         }
+    }
+}
+
+/** A book row with tap-to-open, an overflow menu, and long-press for the same
+ *  menu. Hosts the per-book Edit dialog, Delete confirm, and Stats trigger. */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun CollectionRow(
+    collection: CollectionSummary,
+    onOpen: () -> Unit,
+    onEdit: (title: String, description: String?) -> Unit,
+    onDelete: () -> Unit,
+    onShowStats: () -> Unit,
+) {
+    var menuOpen by remember { mutableStateOf(false) }
+    var showEdit by remember { mutableStateOf(false) }
+    var showDeleteConfirm by remember { mutableStateOf(false) }
+
+    ListItem(
+        headlineContent = { Text(collection.title) },
+        supportingContent = {
+            Text("${collection.textCount} chapters", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        },
+        trailingContent = {
+            Box {
+                OverflowButton(
+                    contentDescription = "More actions for ${collection.title}",
+                    onClick = { menuOpen = true },
+                )
+                BookMenu(
+                    expanded = menuOpen,
+                    onDismiss = { menuOpen = false },
+                    onEdit = { menuOpen = false; showEdit = true },
+                    onStats = { menuOpen = false; onShowStats() },
+                    onDelete = { menuOpen = false; showDeleteConfirm = true },
+                )
+            }
+        },
+        modifier = Modifier.combinedClickable(
+            onClick = onOpen,
+            onLongClick = { menuOpen = true },
+        ),
+    )
+
+    if (showEdit) {
+        EditCollectionDialog(
+            initialTitle = collection.title,
+            onDismiss = { showEdit = false },
+            onConfirm = { title, desc ->
+                showEdit = false
+                onEdit(title, desc)
+            },
+        )
+    }
+    if (showDeleteConfirm) {
+        ConfirmDeleteDialog(
+            itemName = collection.title,
+            kind = "book",
+            onDismiss = { showDeleteConfirm = false },
+            onConfirm = {
+                showDeleteConfirm = false
+                onDelete()
+            },
+        )
+    }
+}
+
+/** A text row: tap-to-open (ready only), overflow + long-press Delete. Texts have
+ *  no PATCH endpoint yet, so Edit/Stats are book-only. */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun TextRow(
+    card: TextCard,
+    onOpen: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    var menuOpen by remember { mutableStateOf(false) }
+    var showDeleteConfirm by remember { mutableStateOf(false) }
+
+    ListItem(
+        headlineContent = { Text(card.title) },
+        supportingContent = {
+            if (!card.isReady) Text(card.status, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        },
+        trailingContent = {
+            Box {
+                OverflowButton(
+                    contentDescription = "More actions for ${card.title}",
+                    onClick = { menuOpen = true },
+                )
+                DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                    DropdownMenuItem(
+                        text = { Text("Delete") },
+                        onClick = { menuOpen = false; showDeleteConfirm = true },
+                    )
+                }
+            }
+        },
+        modifier = Modifier.combinedClickable(
+            // Tapping a not-ready text does nothing, but long-press still offers Delete.
+            onClick = { if (card.isReady) onOpen() },
+            onLongClick = { menuOpen = true },
+        ),
+    )
+
+    if (showDeleteConfirm) {
+        ConfirmDeleteDialog(
+            itemName = card.title,
+            kind = "text",
+            onDismiss = { showDeleteConfirm = false },
+            onConfirm = {
+                showDeleteConfirm = false
+                onDelete()
+            },
+        )
+    }
+}
+
+/** The kebab (⋮) overflow trigger, labelled for screen readers. */
+@Composable
+private fun OverflowButton(contentDescription: String, onClick: () -> Unit) {
+    IconButton(
+        onClick = onClick,
+        modifier = Modifier.semantics { this.contentDescription = contentDescription },
+    ) {
+        Text("⋮", style = MaterialTheme.typography.titleLarge)
+    }
+}
+
+/** Edit / Stats / Delete menu shared by the overflow button and long-press. */
+@Composable
+private fun BookMenu(
+    expanded: Boolean,
+    onDismiss: () -> Unit,
+    onEdit: () -> Unit,
+    onStats: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    DropdownMenu(expanded = expanded, onDismissRequest = onDismiss) {
+        DropdownMenuItem(text = { Text("Edit") }, onClick = onEdit)
+        DropdownMenuItem(text = { Text("Stats") }, onClick = onStats)
+        DropdownMenuItem(text = { Text("Delete") }, onClick = onDelete)
+    }
+}
+
+/** Title (required) + optional description editor for a book. */
+@Composable
+private fun EditCollectionDialog(
+    initialTitle: String,
+    onDismiss: () -> Unit,
+    onConfirm: (title: String, description: String?) -> Unit,
+) {
+    var title by rememberSaveable { mutableStateOf(initialTitle) }
+    var description by rememberSaveable { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Edit book") },
+        text = {
+            Column {
+                OutlinedTextField(
+                    value = title,
+                    onValueChange = { title = it },
+                    label = { Text("Title") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Spacer(Modifier.size(12.dp))
+                OutlinedTextField(
+                    value = description,
+                    onValueChange = { description = it },
+                    label = { Text("Description (optional)") },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { onConfirm(title.trim(), description.trim().ifBlank { null }) },
+                // Title is required by the endpoint (min length 1).
+                enabled = title.isNotBlank(),
+            ) { Text("Save") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+}
+
+/** Generic destructive confirm for a book or text. */
+@Composable
+private fun ConfirmDeleteDialog(
+    itemName: String,
+    kind: String,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Delete $kind?") },
+        text = { Text("\"$itemName\" will be permanently deleted. This can't be undone.") },
+        confirmButton = {
+            TextButton(
+                onClick = onConfirm,
+                colors = androidx.compose.material3.ButtonDefaults.textButtonColors(
+                    contentColor = MaterialTheme.colorScheme.error,
+                ),
+            ) { Text("Delete") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+}
+
+/** A bottom sheet of per-book figures (comprehension, words, chapters, progress). */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun StatsSheet(stats: StatsUiState, onDismiss: () -> Unit) {
+    val sheetState = rememberModalBottomSheetState()
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 24.dp, end = 24.dp, bottom = 32.dp),
+        ) {
+            Text(
+                stats.title,
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Spacer(Modifier.size(16.dp))
+            when {
+                stats.isLoading ->
+                    CircularProgressIndicator(Modifier.align(Alignment.CenterHorizontally))
+
+                stats.errorMessage != null ->
+                    Text(stats.errorMessage, color = MaterialTheme.colorScheme.error)
+
+                stats.stats != null -> {
+                    val s = stats.stats
+                    StatRow("Comprehension", "${s.comprehensionPct}%")
+                    StatRow("Total words", s.totalWords.toString())
+                    StatRow("Chapters", s.chapterCount.toString())
+                    StatRow("Reading progress", "${s.progressPct}%")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun StatRow(label: String, value: String) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 8.dp)
+            .semantics(mergeDescendants = true) { contentDescription = "$label: $value" },
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(value, fontWeight = FontWeight.SemiBold)
     }
 }
 

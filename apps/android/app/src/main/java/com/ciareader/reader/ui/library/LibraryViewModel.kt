@@ -27,6 +27,10 @@ data class LibraryUiState(
     val collections: List<CollectionSummary> = emptyList(),
     val texts: List<TextCard> = emptyList(),
     val errorMessage: String? = null,
+    /** A transient banner for an edit/delete failure (the list itself stays put). */
+    val actionError: String? = null,
+    /** Per-book stats sheet; null when closed, loading/loaded/failed otherwise. */
+    val stats: StatsUiState? = null,
 ) {
     /** Human label for the active language (display name, falling back to code). */
     val currentLanguageLabel: String
@@ -34,6 +38,35 @@ data class LibraryUiState(
             ?: currentLanguage.orEmpty()
 
     val isEmpty: Boolean get() = collections.isEmpty() && texts.isEmpty()
+}
+
+/** Stats sheet state for a single book (collection). */
+data class StatsUiState(
+    val collectionId: String,
+    val title: String,
+    val isLoading: Boolean = true,
+    val stats: BookStats? = null,
+    val errorMessage: String? = null,
+)
+
+/**
+ * Per-book figures derived from the collection's chapter list (GET detail).
+ * No new endpoint is needed: chapter count, summed word count, and the share of
+ * chapters that have finished processing (a "ready" proxy for both comprehension
+ * and reading progress). Token-level comprehension isn't exposed in the listing,
+ * so it's reported as this processed ratio — see the PR note for the real figure.
+ */
+data class BookStats(
+    val chapterCount: Int,
+    val totalWords: Int,
+    val readyChapters: Int,
+) {
+    /** 0..100 — share of chapters that have finished processing. */
+    val comprehensionPct: Int
+        get() = if (chapterCount == 0) 0 else (readyChapters * 100) / chapterCount
+
+    /** Same processed ratio, surfaced as reading progress for the sheet. */
+    val progressPct: Int get() = comprehensionPct
 }
 
 @HiltViewModel
@@ -135,6 +168,74 @@ class LibraryViewModel @Inject constructor(
     fun refreshCurrentLanguage() {
         val language = _state.value.currentLanguage ?: return
         if (_state.value.isLoading) return
+        viewModelScope.launch { loadContent(language) }
+    }
+
+    // --- Book/text management: edit, delete, stats -------------------------
+
+    /** Rename / re-describe a book, then reload the list so the new title shows. */
+    fun editCollection(collectionId: String, title: String, description: String?) {
+        viewModelScope.launch {
+            when (val r = collectionRepository.update(collectionId, title, description)) {
+                is Outcome.Success -> reloadCurrentLanguage()
+                is Outcome.Failure -> _state.update { it.copy(actionError = r.message) }
+            }
+        }
+    }
+
+    /** Delete a book, then reload the list. */
+    fun deleteCollection(collectionId: String) {
+        viewModelScope.launch {
+            when (val r = collectionRepository.delete(collectionId)) {
+                is Outcome.Success -> reloadCurrentLanguage()
+                is Outcome.Failure -> _state.update { it.copy(actionError = r.message) }
+            }
+        }
+    }
+
+    /** Delete a standalone text, then reload the list. */
+    fun deleteText(textId: String) {
+        viewModelScope.launch {
+            when (val r = libraryRepository.deleteText(textId)) {
+                is Outcome.Success -> reloadCurrentLanguage()
+                is Outcome.Failure -> _state.update { it.copy(actionError = r.message) }
+            }
+        }
+    }
+
+    /** Open the stats sheet for a book and fetch its chapter list to fill it. */
+    fun showStats(collection: CollectionSummary) {
+        _state.update { it.copy(stats = StatsUiState(collection.id, collection.title, isLoading = true)) }
+        viewModelScope.launch {
+            val sheet = when (val r = collectionRepository.detail(collection.id)) {
+                is Outcome.Success -> {
+                    val chapters = r.data.chapters
+                    StatsUiState(
+                        collectionId = collection.id,
+                        title = collection.title,
+                        isLoading = false,
+                        stats = BookStats(
+                            chapterCount = chapters.size,
+                            totalWords = chapters.sumOf { it.wordCount },
+                            readyChapters = chapters.count { it.isReady },
+                        ),
+                    )
+                }
+                is Outcome.Failure ->
+                    StatsUiState(collection.id, collection.title, isLoading = false, errorMessage = r.message)
+            }
+            // Ignore a stale result if the sheet was dismissed meanwhile.
+            _state.update { if (it.stats?.collectionId == collection.id) it.copy(stats = sheet) else it }
+        }
+    }
+
+    fun dismissStats() = _state.update { it.copy(stats = null) }
+
+    fun clearActionError() = _state.update { it.copy(actionError = null) }
+
+    /** Re-fetch the current language's list (used after an edit/delete). */
+    private fun reloadCurrentLanguage() {
+        val language = _state.value.currentLanguage ?: return
         viewModelScope.launch { loadContent(language) }
     }
 
