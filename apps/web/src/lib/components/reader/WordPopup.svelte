@@ -2233,7 +2233,7 @@
             {#each shownRefResults as r, i (r.source + i)}
               <li class="ext-row">
                 <div class="ext-def">
-                  {#if r.pos}<span class="ext-pos">{r.pos}</span>{/if}
+                  {#if r.pos && (i === 0 || shownRefResults[i - 1].pos !== r.pos)}<span class="ext-pos">{r.pos}</span>{/if}
                   <span>{r.definition}</span>
                   {#if r.examples.length > 0}
                     <button
