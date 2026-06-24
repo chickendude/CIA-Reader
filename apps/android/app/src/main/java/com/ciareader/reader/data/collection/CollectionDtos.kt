@@ -12,6 +12,8 @@ data class CollectionListItemDto(
     val collection: CollectionDto,
     val textCount: Int = 0,
     val openTextId: String? = null,
+    /** Aggregate reading progress across the book's chapters, 0–100. */
+    val progressPct: Int = 0,
 )
 
 @Serializable

@@ -11,9 +11,9 @@ function stage(rows: unknown[]) {
   staged.push(rows);
 }
 function nextStaged(): unknown[] {
-  const v = staged.shift();
-  if (!v) throw new Error('Test bug: no staged result available');
-  return v;
+  // Empty when nothing's staged — e.g. the per-text reading-progress lookup,
+  // which tests don't stage and which should just contribute no progress.
+  return staged.shift() ?? [];
 }
 
 function makeSelectChain() {
@@ -51,6 +51,11 @@ vi.mock('../db/index.js', () => ({
       language: 'texts.language',
       visibility: 'texts.visibility',
       createdAt: 'texts.created_at',
+    },
+    userTextProgress: {
+      userId: 'utp.user_id',
+      textId: 'utp.text_id',
+      pctRead: 'utp.pct_read',
     },
   },
 }));
@@ -90,6 +95,14 @@ afterEach(() => {
 });
 
 describe('listOwnedTexts', () => {
+  it('carries the viewer reading progress (pct_read) onto each card', async () => {
+    stage([{ count: 1 }]); // count query
+    stage([textRow({ id: 't1', status: 'ready' })]); // page rows
+    stage([{ textId: 't1', pctRead: 42 }]); // per-text progress lookup
+    const page = await listOwnedTexts({ id: 'user-1' });
+    expect(page.cards[0]?.progressPct).toBe(42);
+  });
+
   it('returns page + total + clamped pagination defaults', async () => {
     stage([{ count: 7 }]); // count query
     stage([textRow(), textRow({ id: 't2' })]); // page rows

@@ -234,10 +234,9 @@ private fun CollectionCard(
                 )
             }
         }
-        // Per-item progress. The library model doesn't carry per-book progress
-        // yet, so this reads 0; a sibling PR wires the real fraction in.
+        // Aggregate reading progress across the book's chapters.
         Spacer(Modifier.size(12.dp))
-        ItemProgress(fraction = 0f, label = "Reading progress")
+        ItemProgress(fraction = collection.progress, label = "Reading progress")
     }
 }
 
@@ -272,11 +271,11 @@ private fun TextCardItem(
                 }
             }
         }
-        // Ready texts show a progress track (0 for now; a sibling PR supplies the
-        // real value). Not-yet-ready texts surface their status line instead.
+        // Ready texts show their reading-progress track; not-yet-ready texts
+        // surface their status line instead.
         if (card.isReady) {
             Spacer(Modifier.size(12.dp))
-            ItemProgress(fraction = 0f, label = "Reading progress")
+            ItemProgress(fraction = card.progress, label = "Reading progress")
         }
     }
 }

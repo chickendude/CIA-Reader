@@ -505,6 +505,9 @@ export type CollectionListItem = {
   /** The chapter-text to open when the book is tapped: the one read most
    *  recently, else the first chapter. Null only for an empty book. */
   openTextId?: string | null;
+  /** Aggregate reading progress across the book's chapter-texts, 0–100
+   *  (equal-weighted average of each chapter's pct_read). */
+  progressPct: number;
 };
 
 export async function listCollectionsForUser(
@@ -533,6 +536,7 @@ export async function listCollectionsForUser(
       collectionId: schema.collectionItems.collectionId,
       textId: schema.collectionItems.textId,
       updatedAt: schema.userTextProgress.updatedAt,
+      pctRead: schema.userTextProgress.pctRead,
     })
     .from(schema.userTextProgress)
     .innerJoin(
@@ -543,13 +547,18 @@ export async function listCollectionsForUser(
     collectionId: string;
     textId: string;
     updatedAt: Date;
+    pctRead: number;
   }>;
   const lastRead = new Map<string, { textId: string; updatedAt: Date }>();
+  // Sum of pct_read across each book's read chapters; divided by textCount below
+  // for an equal-weighted progress average.
+  const progressSum = new Map<string, number>();
   for (const p of progress) {
     const cur = lastRead.get(p.collectionId);
     if (!cur || p.updatedAt > cur.updatedAt) {
       lastRead.set(p.collectionId, { textId: p.textId, updatedAt: p.updatedAt });
     }
+    progressSum.set(p.collectionId, (progressSum.get(p.collectionId) ?? 0) + p.pctRead);
   }
 
   // First chapter per collection — the fallback for a book not yet started.
@@ -576,6 +585,8 @@ export async function listCollectionsForUser(
   return rows.map((r) => ({
     ...r,
     openTextId: lastRead.get(r.collection.id)?.textId ?? firstText.get(r.collection.id) ?? null,
+    progressPct:
+      r.textCount > 0 ? Math.round((progressSum.get(r.collection.id) ?? 0) / r.textCount) : 0,
   }));
 }
 
@@ -600,7 +611,7 @@ export async function listOfficialCollections(
     collection: Collection;
     textCount: number;
   }>;
-  return rows;
+  return rows.map((r) => ({ ...r, progressPct: 0 }));
 }
 
 export type CollectionDetail = {

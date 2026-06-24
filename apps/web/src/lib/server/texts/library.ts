@@ -16,7 +16,7 @@
  * a future concern when individual users have thousands of imports —
  * for the first year of MVP a learner has a few dozen at most.
  */
-import { and, desc, eq, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 
 import { db, schema } from '../db/index.js';
 import type { Text, User } from '../db/schema.js';
@@ -36,6 +36,9 @@ export type LibraryCard = {
   status: string;
   visibility: string;
   createdAt: Date;
+  /** The viewer's reading progress through this text, 0–100. 0 when unread or
+   *  for anonymous/official listings. */
+  progressPct: number;
 };
 
 export type ListPage = {
@@ -45,7 +48,7 @@ export type ListPage = {
   offset: number;
 };
 
-function projectCard(row: Text): LibraryCard {
+function projectCard(row: Text, progressPct = 0): LibraryCard {
   return {
     id: row.id,
     title: row.title,
@@ -54,7 +57,31 @@ function projectCard(row: Text): LibraryCard {
     status: row.status,
     visibility: row.visibility,
     createdAt: row.createdAt,
+    progressPct,
   };
+}
+
+/** The viewer's reading progress (pct_read, 0–100) for the given text ids. */
+async function progressByText(
+  userId: string,
+  textIds: string[],
+): Promise<Map<string, number>> {
+  if (textIds.length === 0) return new Map();
+  const rows = (await db
+    .select({
+      textId: schema.userTextProgress.textId,
+      pctRead: schema.userTextProgress.pctRead,
+    })
+    .from(schema.userTextProgress)
+    .where(
+      and(
+        eq(schema.userTextProgress.userId, userId),
+        inArray(schema.userTextProgress.textId, textIds),
+      ),
+    )) as Array<{ textId: string; pctRead: number }>;
+  const m = new Map<string, number>();
+  for (const r of rows) m.set(r.textId, r.pctRead);
+  return m;
 }
 
 function clampPage(opts: { limit?: number; offset?: number }): {
@@ -114,8 +141,9 @@ export async function listOwnedTexts(
     .limit(limit)
     .offset(offset)) as Text[];
 
+  const progress = await progressByText(viewer.id, rows.map((r) => r.id));
   return {
-    cards: rows.map(projectCard),
+    cards: rows.map((r) => projectCard(r, progress.get(r.id) ?? 0)),
     totalCount: count,
     limit,
     offset,
@@ -183,8 +211,9 @@ export async function listSharedTexts(
     .limit(limit)
     .offset(offset)) as Text[];
 
+  const progress = await progressByText(viewer.id, rows.map((r) => r.id));
   return {
-    cards: rows.map(projectCard),
+    cards: rows.map((r) => projectCard(r, progress.get(r.id) ?? 0)),
     totalCount: count,
     limit,
     offset,

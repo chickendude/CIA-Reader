@@ -18,6 +18,8 @@ data class TextCard(
     val title: String,
     val language: String,
     val status: String,
+    /** Reading progress 0f–1f for the card's progress track. */
+    val progress: Float = 0f,
 ) {
     val isReady: Boolean get() = status == "ready"
 }
@@ -58,4 +60,5 @@ private fun TextCardDto.toDomain() = TextCard(
     title = title,
     language = language,
     status = status,
+    progress = (progressPct / 100f).coerceIn(0f, 1f),
 )

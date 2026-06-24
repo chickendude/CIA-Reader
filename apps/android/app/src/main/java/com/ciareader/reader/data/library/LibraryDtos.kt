@@ -20,4 +20,6 @@ data class TextCardDto(
     val status: String,
     val visibility: String,
     val createdAt: String,
+    /** Viewer's reading progress, 0–100 (0 when unread/anonymous). */
+    val progressPct: Int = 0,
 )

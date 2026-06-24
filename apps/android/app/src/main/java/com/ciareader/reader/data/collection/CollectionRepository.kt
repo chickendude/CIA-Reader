@@ -14,6 +14,8 @@ data class CollectionSummary(
     val textCount: Int,
     /** Chapter-text to open when tapped: last-read, else the first chapter. */
     val openTextId: String? = null,
+    /** Aggregate reading progress 0f–1f for the card's progress track. */
+    val progress: Float = 0f,
 )
 
 data class CollectionChapter(
@@ -60,6 +62,7 @@ class CollectionRepositoryImpl @Inject constructor(
                         kind = it.collection.kind,
                         textCount = it.textCount,
                         openTextId = it.openTextId,
+                        progress = (it.progressPct / 100f).coerceIn(0f, 1f),
                     )
                 }
             }
