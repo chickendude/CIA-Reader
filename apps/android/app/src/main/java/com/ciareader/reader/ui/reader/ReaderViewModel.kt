@@ -261,11 +261,28 @@ class ReaderViewModel @Inject constructor(
         val lemmaId = _state.value.selectedWord?.lemmaId ?: return
         viewModelScope.launch {
             if (dictionary.addDefinition(lemmaId, body) is Outcome.Success) {
-                val refreshed = dictionary.translations(lemmaId)
+                // Force-refresh so the new note appears (the cache is now stale).
+                val refreshed = dictionary.refreshTranslations(lemmaId)
                 if (refreshed is Outcome.Success) {
                     _state.update { s ->
                         if (s.selectedWord?.lemmaId == lemmaId) s.copy(wordTranslations = refreshed.data) else s
                     }
+                }
+            }
+        }
+    }
+
+    /** Pull the latest definitions/community suggestions for the open word. */
+    fun refreshSelectedWord() {
+        val lemmaId = _state.value.selectedWord?.lemmaId ?: return
+        _state.update { it.copy(isWordLoading = true) }
+        viewModelScope.launch {
+            val o = dictionary.refreshTranslations(lemmaId)
+            _state.update { s ->
+                if (s.selectedWord?.lemmaId != lemmaId) return@update s
+                when (o) {
+                    is Outcome.Success -> s.copy(isWordLoading = false, wordTranslations = o.data)
+                    is Outcome.Failure -> s.copy(isWordLoading = false)
                 }
             }
         }

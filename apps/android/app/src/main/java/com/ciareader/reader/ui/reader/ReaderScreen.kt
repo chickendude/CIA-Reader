@@ -110,6 +110,7 @@ fun ReaderScreen(
         onRetry = viewModel::retry,
         onSetStatus = viewModel::setStatus,
         onAddDefinition = viewModel::addDefinition,
+        onRefreshWord = viewModel::refreshSelectedWord,
         onSetBasqueRefSource = viewModel::setBasqueRefSource,
         onRecordPosition = viewModel::recordPosition,
         onRestoreConsumed = viewModel::onRestoreConsumed,
@@ -141,6 +142,7 @@ internal fun ReaderScreenContent(
     onRetry: () -> Unit,
     onSetStatus: (KnownStatus) -> Unit,
     onAddDefinition: (String) -> Unit = {},
+    onRefreshWord: () -> Unit = {},
     onSetBasqueRefSource: (String) -> Unit = {},
     onRecordPosition: (Int, Double) -> Unit,
     onRestoreConsumed: () -> Unit,
@@ -284,6 +286,7 @@ internal fun ReaderScreenContent(
                 isLoading = state.isWordLoading,
                 onSetStatus = onSetStatus,
                 onAddDefinition = onAddDefinition,
+                onRefresh = onRefreshWord,
                 onSelectBasqueSource = onSetBasqueRefSource,
             )
         }
@@ -725,6 +728,7 @@ internal fun WordDetails(
     isLoading: Boolean,
     onSetStatus: (KnownStatus) -> Unit,
     onAddDefinition: (String) -> Unit = {},
+    onRefresh: () -> Unit = {},
     basqueReference: List<BasqueReference> = emptyList(),
     basqueRefSource: String? = null,
     onSelectBasqueSource: (String) -> Unit = {},
@@ -738,10 +742,22 @@ internal fun WordDetails(
             .verticalScroll(rememberScrollState())
             .padding(24.dp),
     ) {
-        Text(translations?.headword ?: token.surface, style = MaterialTheme.typography.headlineSmall)
-        val subtitle = listOfNotNull(token.romanization, translations?.pos).joinToString("  ·  ")
-        if (subtitle.isNotEmpty()) {
-            Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(translations?.headword ?: token.surface, style = MaterialTheme.typography.headlineSmall)
+                val subtitle = listOfNotNull(token.romanization, translations?.pos).joinToString("  ·  ")
+                if (subtitle.isNotEmpty()) {
+                    Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+            if (token.lemmaId != null) {
+                IconButton(
+                    onClick = onRefresh,
+                    modifier = Modifier.semantics { contentDescription = "Refresh definitions" },
+                ) {
+                    Text("↻", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.primary)
+                }
+            }
         }
         Spacer(Modifier.height(12.dp))
 
