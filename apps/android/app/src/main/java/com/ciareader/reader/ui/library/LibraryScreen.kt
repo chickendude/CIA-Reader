@@ -1,5 +1,7 @@
 package com.ciareader.reader.ui.library
 
+import androidx.annotation.DrawableRes
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -216,14 +218,14 @@ private fun LanguageSwitcher(
         // The chip alone is opaque to screen readers, so name the language.
         modifier = Modifier.semantics { contentDescription = "Language: ${current?.displayName ?: "none"}" },
     ) {
-        LanguageChip(current?.glyph().orEmpty())
+        current?.let { LanguageChip(it) }
     }
     DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
         languages.forEach { lang ->
             DropdownMenuItem(
                 text = {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        LanguageChip(lang.glyph())
+                        LanguageChip(lang)
                         Spacer(Modifier.width(12.dp))
                         Text("${lang.displayName} · ${lang.nativeName}")
                     }
@@ -237,20 +239,37 @@ private fun LanguageSwitcher(
     }
 }
 
-/** A small round chip showing a language's script — a compact stand-in for its
- *  name (e.g. ह for Hindi, म for Marathi, א for Yiddish, E for Basque). */
+/** A small round chip for a language: a custom emblem where we have one (e.g.
+ *  the Basque pinwheel), otherwise the language's script glyph (ह Hindi, म
+ *  Marathi, ଓ Odia, א Yiddish). */
 @Composable
-private fun LanguageChip(glyph: String) {
-    Surface(
-        shape = CircleShape,
-        color = MaterialTheme.colorScheme.primaryContainer,
-        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-        modifier = Modifier.size(28.dp),
-    ) {
-        Box(contentAlignment = Alignment.Center) {
-            Text(glyph, style = MaterialTheme.typography.labelLarge)
+private fun LanguageChip(language: Language) {
+    val iconRes = languageIconRes(language.code)
+    if (iconRes != null) {
+        Image(
+            painter = painterResource(iconRes),
+            contentDescription = null,
+            modifier = Modifier.size(28.dp),
+        )
+    } else {
+        Surface(
+            shape = CircleShape,
+            color = MaterialTheme.colorScheme.primaryContainer,
+            contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+            modifier = Modifier.size(28.dp),
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Text(language.glyph(), style = MaterialTheme.typography.labelLarge)
+            }
         }
     }
+}
+
+/** A custom chip emblem for a language, or null to use its script glyph. */
+@DrawableRes
+private fun languageIconRes(code: String): Int? = when (code) {
+    "eu" -> R.drawable.ic_lang_eu
+    else -> null
 }
 
 /** The language's representative glyph: the first letter of its native name
