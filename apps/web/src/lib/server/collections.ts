@@ -535,6 +535,7 @@ export async function listCollectionsForUser(
     .select({
       collectionId: schema.collectionItems.collectionId,
       textId: schema.collectionItems.textId,
+      position: schema.collectionItems.position,
       updatedAt: schema.userTextProgress.updatedAt,
       pctRead: schema.userTextProgress.pctRead,
     })
@@ -546,19 +547,28 @@ export async function listCollectionsForUser(
     .where(eq(schema.userTextProgress.userId, userId))) as Array<{
     collectionId: string;
     textId: string;
+    position: number;
     updatedAt: Date;
     pctRead: number;
   }>;
-  const lastRead = new Map<string, { textId: string; updatedAt: Date }>();
-  // Sum of pct_read across each book's read chapters; divided by textCount below
-  // for an equal-weighted progress average.
-  const progressSum = new Map<string, number>();
+  // The resume point per book: the most-recently-read chapter, with its
+  // position + within-chapter pct. Book progress is position-based below
+  // (chapters before the current count as done), matching the reader's
+  // whole-book bar — averaging pct_read barely moves across many chapters.
+  const lastRead = new Map<
+    string,
+    { textId: string; position: number; pctRead: number; updatedAt: Date }
+  >();
   for (const p of progress) {
     const cur = lastRead.get(p.collectionId);
     if (!cur || p.updatedAt > cur.updatedAt) {
-      lastRead.set(p.collectionId, { textId: p.textId, updatedAt: p.updatedAt });
+      lastRead.set(p.collectionId, {
+        textId: p.textId,
+        position: p.position,
+        pctRead: p.pctRead,
+        updatedAt: p.updatedAt,
+      });
     }
-    progressSum.set(p.collectionId, (progressSum.get(p.collectionId) ?? 0) + p.pctRead);
   }
 
   // First chapter per collection — the fallback for a book not yet started.
@@ -582,12 +592,20 @@ export async function listCollectionsForUser(
     if (!firstText.has(it.collectionId)) firstText.set(it.collectionId, it.textId);
   }
 
-  return rows.map((r) => ({
-    ...r,
-    openTextId: lastRead.get(r.collection.id)?.textId ?? firstText.get(r.collection.id) ?? null,
-    progressPct:
-      r.textCount > 0 ? Math.round((progressSum.get(r.collection.id) ?? 0) / r.textCount) : 0,
-  }));
+  return rows.map((r) => {
+    const lr = lastRead.get(r.collection.id);
+    // chapters fully before the current one (lr.position) + the current
+    // chapter's own fraction, over the total chapter count.
+    const progressPct =
+      lr && r.textCount > 0
+        ? Math.min(100, Math.round(((lr.position + lr.pctRead / 100) / r.textCount) * 100))
+        : 0;
+    return {
+      ...r,
+      openTextId: lr?.textId ?? firstText.get(r.collection.id) ?? null,
+      progressPct,
+    };
+  });
 }
 
 export async function listOfficialCollections(

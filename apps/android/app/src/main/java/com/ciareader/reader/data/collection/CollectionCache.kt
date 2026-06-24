@@ -15,14 +15,14 @@ class CollectionCache @Inject constructor(
 
     suspend fun collections(): List<CollectionSummary> =
         dao.collections().map {
-            CollectionSummary(it.id, it.title, it.language, it.kind, it.textCount, it.openTextId)
+            CollectionSummary(it.id, it.title, it.language, it.kind, it.textCount, it.openTextId, it.progress)
         }
 
     suspend fun putCollections(collections: List<CollectionSummary>) {
         dao.clearCollections()
         dao.upsertCollections(
             collections.mapIndexed { i, c ->
-                CachedCollectionEntity(c.id, c.language, c.title, c.kind, c.textCount, c.openTextId, position = i)
+                CachedCollectionEntity(c.id, c.language, c.title, c.kind, c.textCount, c.openTextId, position = i, progress = c.progress)
             },
         )
     }
