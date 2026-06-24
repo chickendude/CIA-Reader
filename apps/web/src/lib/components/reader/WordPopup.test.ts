@@ -593,6 +593,56 @@ describe('WordPopup — admin Basque reference panel', () => {
     expect(panel.textContent).not.toContain('source');
   });
 
+  it('shows each part-of-speech once, suppressing it on consecutive same-POS senses', async () => {
+    const mkRef = (pos: string, definition: string) => ({
+      source: 'elhuyar_es',
+      label: 'Elhuyar eu-es',
+      headword: 'nabarmen',
+      pos,
+      definition,
+      examples: [] as string[],
+      url: 'https://hiztegiak.elhuyar.eus/eu/nabarmen',
+    });
+    // Five senses under one tab: izond. ×3 then adb. ×2 (mirrors the reader popup).
+    const MULTI = {
+      word: 'nabarmen',
+      results: [
+        mkRef('izond.', 'evidente, patente, manifiesto'),
+        mkRef('izond.', 'notable, importante, singular'),
+        mkRef('izond.', 'extravagante, excéntrico'),
+        mkRef('adb.', 'notoriamente, obviamente'),
+        mkRef('adb.', 'llamando la atención'),
+      ],
+    };
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: unknown) => {
+        const url = String(input);
+        if (url.includes('/admin/basque-dictionary')) return jres(MULTI);
+        return jres(TRANSLATIONS);
+      }),
+    );
+    render(WordPopup, {
+      token: makeToken({ surface: 'nabarmen', lemmaId: 'lem-eu' }),
+      language: 'eu',
+      isOwner: false,
+      isAdmin: true,
+      onClose: vi.fn(),
+    });
+    await waitFor(() => {
+      expect(document.body.querySelector('[data-testid="admin-ref"]')!.textContent).toContain(
+        'evidente, patente, manifiesto',
+      );
+    });
+    // All five senses render…
+    expect(document.body.querySelectorAll('[data-testid="admin-ref"] .ext-row').length).toBe(5);
+    // …but the POS label appears only when it changes: izond. once, adb. once.
+    const poses = Array.from(
+      document.body.querySelectorAll('[data-testid="admin-ref"] .ext-pos'),
+    ).map((el) => el.textContent);
+    expect(poses).toEqual(['izond.', 'adb.']);
+  });
+
   it('switches the upstream source when another tab is selected', async () => {
     stubFetch();
     render(WordPopup, {

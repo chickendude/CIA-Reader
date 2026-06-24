@@ -111,11 +111,19 @@ async function bookSamples(
     neededChapters.add(o.chapterId);
   }
 
-  // Load each needed chapter's tokens once.
-  const chapterTokens = new Map<string, Array<{ idx: number; surface: string }>>();
+  // Load each needed chapter's tokens once. `isWord` lets sentenceFromTokens
+  // stop at paragraph/heading breaks rather than mining across them.
+  const chapterTokens = new Map<
+    string,
+    Array<{ idx: number; surface: string; isWord: boolean }>
+  >();
   for (const chapterId of neededChapters) {
     const rows = await db
-      .select({ idx: schema.textTokens.idx, surface: schema.textTokens.surface })
+      .select({
+        idx: schema.textTokens.idx,
+        surface: schema.textTokens.surface,
+        isWord: schema.textTokens.isWord,
+      })
       .from(schema.textTokens)
       .where(eq(schema.textTokens.chapterId, chapterId))
       .orderBy(asc(schema.textTokens.idx));

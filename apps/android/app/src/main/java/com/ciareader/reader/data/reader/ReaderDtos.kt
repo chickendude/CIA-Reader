@@ -49,6 +49,20 @@ data class TokenDto(
     val isOov: Boolean = false,
     val isAmbiguous: Boolean = false,
     val hasDefinition: Boolean = false,
+    /** Alternate lemmas the parser scored for this surface form (T-6.1 on the
+     *  web). The server already excludes the chosen lemma, so this is the list of
+     *  *other* parsings the word sheet's parse switcher offers. Empty when the
+     *  parse is unambiguous. The wire entries also carry `score`/`features`,
+     *  which we drop (ignoreUnknownKeys). */
+    val candidates: List<CandidateDto> = emptyList(),
+)
+
+@Serializable
+data class CandidateDto(
+    val lemmaId: String,
+    val headword: String,
+    val pos: String? = null,
+    val glossDefault: String? = null,
 )
 
 @Serializable
@@ -77,4 +91,26 @@ data class SaveProgressRequest(
     val chapterIdx: Int,
     val tokenIdx: Int,
     val pctRead: Double,
+)
+
+// --- POST /api/v1/translate-sentence ---
+
+/** Body for the sentence translator. The server reconstructs the sentence
+ *  around [tokenIdx] within [chapterId] and translates it (default target en),
+ *  so we send the locator rather than the text. */
+@Serializable
+data class TranslateSentenceRequest(
+    val chapterId: String,
+    val tokenIdx: Int,
+    val language: String,
+    // true = cache-only lookup: return a saved translation or nothing, never
+    // calling the model. Used to recall a saved sentence when a word opens.
+    val cachedOnly: Boolean? = null,
+)
+
+@Serializable
+data class TranslateSentenceResponseDto(
+    val sentence: String = "",
+    val translation: String? = null,
+    val cached: Boolean = false,
 )

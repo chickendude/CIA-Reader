@@ -43,12 +43,45 @@ class ReaderRepositoryTest {
         assertTrue(result is Outcome.Success)
         val chapter = (result as Outcome.Success).data
         assertEquals(0, chapter.chapterIdx)
+        assertEquals("c1", chapter.chapterId)
         assertEquals(2, chapter.tokens.size)
         assertEquals(KnownStatus.LEARNING, chapter.tokens[0].status)
         assertTrue(chapter.tokens[0].isWord)
         assertEquals("l1", chapter.tokens[0].lemmaId)
         assertEquals(KnownStatus.UNKNOWN, chapter.tokens[1].status)
         assertEquals(false, chapter.tokens[1].isWord)
+    }
+
+    @Test
+    fun mapsParseCandidatesToDomain() = runTest {
+        val api = FakeReaderApi(
+            chapter = ChapterTokensDto(
+                chapterId = "c1",
+                chapterIdx = 0,
+                tokens = listOf(
+                    TokenDto(
+                        idx = 0,
+                        surface = "सोने",
+                        isWord = true,
+                        status = "unknown",
+                        lemmaId = "l-gold",
+                        isAmbiguous = true,
+                        candidates = listOf(
+                            CandidateDto("l-sleep", "सोना", "VERB", "to sleep"),
+                            CandidateDto("l-silver", "चाँदी", "NOUN", null),
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+        val result = repo(api).chapter("t1", 0)
+
+        assertTrue(result is Outcome.Success)
+        val candidates = (result as Outcome.Success).data.tokens[0].candidates
+        assertEquals(2, candidates.size)
+        assertEquals(ParseCandidate("l-sleep", "सोना", "VERB", "to sleep"), candidates[0])
+        assertEquals(ParseCandidate("l-silver", "चाँदी", "NOUN", null), candidates[1])
     }
 
     @Test
@@ -202,6 +235,69 @@ class ReaderRepositoryTest {
         assertEquals(null, (p as Outcome.Success).data) // fake server returns no progress
     }
 
+    // --- sentence translation ---
+
+    @Test
+    fun translateSentenceSendsLocatorAndMapsResult() = runTest {
+        val api = FakeReaderApi(
+            translation = TranslateSentenceResponseDto(
+                sentence = "नमस्ते दुनिया।",
+                translation = "Hello world.",
+                cached = true,
+            ),
+        )
+        val result = repo(api).translateSentence("chap-1", tokenIdx = 3, language = "hi")
+
+        assertTrue(result is Outcome.Success)
+        val data = (result as Outcome.Success).data
+        assertEquals("नमस्ते दुनिया।", data.sentence)
+        assertEquals("Hello world.", data.translation)
+        assertEquals(TranslateSentenceRequest("chap-1", 3, "hi"), api.lastTranslate)
+    }
+
+    @Test
+    fun translateSentenceBlankTranslationIsFailure() = runTest {
+        // cachedOnly-style miss / empty body → not a usable translation.
+        val api = FakeReaderApi(
+            translation = TranslateSentenceResponseDto(sentence = "नमस्ते।", translation = null),
+        )
+        val result = repo(api).translateSentence("c", 0, "hi")
+        assertTrue(result is Outcome.Failure)
+    }
+
+    @Test
+    fun cachedSentenceTranslationRequestsCacheOnlyAndMapsHit() = runTest {
+        val api = FakeReaderApi(
+            translation = TranslateSentenceResponseDto(
+                sentence = "नमस्ते दुनिया।",
+                translation = "Hello world.",
+                cached = true,
+            ),
+        )
+        val result = repo(api).cachedSentenceTranslation("chap-1", tokenIdx = 3, language = "hi")
+
+        assertTrue(result is Outcome.Success)
+        assertEquals("Hello world.", (result as Outcome.Success).data.translation)
+        // It must be a cache-only request so a miss never spends on the model.
+        assertEquals(TranslateSentenceRequest("chap-1", 3, "hi", cachedOnly = true), api.lastTranslate)
+    }
+
+    @Test
+    fun cachedSentenceTranslationMissIsFailure() = runTest {
+        val api = FakeReaderApi(
+            translation = TranslateSentenceResponseDto(sentence = "नमस्ते।", translation = null),
+        )
+        val result = repo(api).cachedSentenceTranslation("c", 0, "hi")
+        assertTrue(result is Outcome.Failure)
+    }
+
+    @Test
+    fun translateSentenceHttpErrorIsFailure() = runTest {
+        // 503 = translator not configured; surfaces as a Failure for the UI.
+        val result = repo(FakeReaderApi(error = http(503))).translateSentence("c", 0, "hi")
+        assertTrue(result is Outcome.Failure)
+    }
+
     private fun http(code: Int) =
         HttpException(Response.error<Any>(code, "e".toResponseBody("text/plain".toMediaType())))
 }
@@ -210,11 +306,13 @@ private class FakeReaderApi(
     private val meta: TextMetaDto? = null,
     private val chapter: ChapterTokensDto? = null,
     private val progress: TextProgressEnvelopeDto = TextProgressEnvelopeDto(progress = null),
+    private val translation: TranslateSentenceResponseDto = TranslateSentenceResponseDto(),
     private val error: Throwable? = null,
     /** Flip to false to simulate going offline mid-session (throws like the transport would). */
     var online: Boolean = true,
 ) : ReaderApi {
     var lastSaved: SaveProgressRequest? = null
+    var lastTranslate: TranslateSentenceRequest? = null
 
     private fun guard() {
         if (!online) throw IOException("offline")
@@ -237,6 +335,12 @@ private class FakeReaderApi(
         guard() // offline → throws, so the repository queues the write
         lastSaved = body
         return TextProgressEnvelopeDto(progress = TextProgressDto(body.chapterIdx, body.tokenIdx, body.pctRead))
+    }
+
+    override suspend fun translateSentence(body: TranslateSentenceRequest): TranslateSentenceResponseDto {
+        guard()
+        lastTranslate = body
+        return translation
     }
 }
 

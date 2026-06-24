@@ -16,13 +16,23 @@ class LanguageCache @Inject constructor(
 ) {
 
     suspend fun languages(): List<Language> =
-        dao.languages().map { Language(it.code, it.displayName, it.nativeName, it.script, it.isDefault) }
+        dao.languages().map {
+            Language(it.code, it.displayName, it.nativeName, it.script, it.isDefault, it.knownLemmaCount)
+        }
 
     suspend fun putLanguages(languages: List<Language>) {
         dao.clearLanguages()
         dao.upsertLanguages(
             languages.mapIndexed { i, l ->
-                CachedLanguageEntity(l.code, l.displayName, l.nativeName, l.script, l.isDefault, position = i)
+                CachedLanguageEntity(
+                    l.code,
+                    l.displayName,
+                    l.nativeName,
+                    l.script,
+                    l.isDefault,
+                    position = i,
+                    knownLemmaCount = l.knownLemmaCount,
+                )
             },
         )
     }
