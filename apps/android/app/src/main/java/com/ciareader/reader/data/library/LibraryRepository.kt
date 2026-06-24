@@ -25,6 +25,9 @@ data class TextCard(
 interface LibraryRepository {
     suspend fun listTexts(scope: LibraryScope, language: String): Outcome<List<TextCard>>
 
+    /** Delete a standalone text (DELETE). The caller re-lists on success. */
+    suspend fun deleteText(textId: String): Outcome<Unit>
+
     /** Last-cached listing, without touching the network — for instant launch. */
     suspend fun cachedTexts(scope: LibraryScope, language: String): List<TextCard>
 }
@@ -48,6 +51,13 @@ class LibraryRepositoryImpl @Inject constructor(
             is Outcome.Failure -> cache.cards(scope, language).takeIf { it.isNotEmpty() }
                 ?.let { Outcome.Success(it) } ?: net
         }
+
+    // Network delete; the caller re-lists on success, and listTexts replaces the
+    // cached listing wholesale, so the removed text drops from the offline cache too.
+    override suspend fun deleteText(textId: String): Outcome<Unit> = apiCall {
+        api.deleteText(textId)
+        Unit
+    }
 
     override suspend fun cachedTexts(scope: LibraryScope, language: String): List<TextCard> =
         cache.cards(scope, language)

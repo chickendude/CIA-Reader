@@ -44,3 +44,20 @@ data class CollectionItemTextDto(
     val status: String,
     val wordCount: Int = 0,
 )
+
+// --- PATCH /api/v1/collections/:id ---
+
+/** Partial edit body; only non-null fields are sent (the endpoint is `.partial()`). */
+@Serializable
+data class UpdateCollectionRequest(
+    val title: String? = null,
+    val description: String? = null,
+)
+
+@Serializable
+data class UpdateCollectionResponseDto(val collection: CollectionDto)
+
+// --- DELETE /api/v1/collections/:id and /api/v1/texts/:id ---
+
+@Serializable
+data class OkResponseDto(val ok: Boolean = false)

@@ -21,3 +21,8 @@ data class TextCardDto(
     val visibility: String,
     val createdAt: String,
 )
+
+// --- DELETE /api/v1/texts/:id ---
+
+@Serializable
+data class DeleteTextResponseDto(val ok: Boolean = false)

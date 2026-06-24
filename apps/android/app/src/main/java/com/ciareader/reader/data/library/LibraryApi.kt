@@ -1,6 +1,8 @@
 package com.ciareader.reader.data.library
 
+import retrofit2.http.DELETE
 import retrofit2.http.GET
+import retrofit2.http.Path
 import retrofit2.http.Query
 
 /** Library listing under GET /api/v1/texts. */
@@ -13,4 +15,7 @@ interface LibraryApi {
         @Query("limit") limit: Int? = null,
         @Query("offset") offset: Int? = null,
     ): LibraryPageDto
+
+    @DELETE("api/v1/texts/{id}")
+    suspend fun deleteText(@Path("id") textId: String): DeleteTextResponseDto
 }
