@@ -2,28 +2,33 @@ package com.ciareader.reader.ui.library
 
 import androidx.annotation.DrawableRes
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.ListItem
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.Scaffold
@@ -40,9 +45,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
@@ -137,6 +145,7 @@ internal fun LibraryScreenContent(
 
                 else ->
                     ContentList(
+                        currentLanguage = state.languages.firstOrNull { it.code == state.currentLanguage },
                         collections = state.collections,
                         texts = state.texts,
                         onOpenCollection = onOpenCollection,
@@ -160,38 +169,201 @@ private fun PullableCenter(content: @Composable () -> Unit) {
 
 @Composable
 private fun ContentList(
+    currentLanguage: Language?,
     collections: List<CollectionSummary>,
     texts: List<TextCard>,
     onOpenCollection: (CollectionSummary) -> Unit,
     onOpenText: (String) -> Unit,
 ) {
-    LazyColumn(modifier = Modifier.fillMaxSize()) {
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
         if (collections.isNotEmpty()) {
-            item { SectionHeader("Books") }
+            item(key = "h-books") { SectionHeader("Books") }
             items(collections, key = { "c-${it.id}" }) { c ->
-                ListItem(
-                    headlineContent = { Text(c.title) },
-                    supportingContent = {
-                        Text("${c.textCount} chapters", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    },
-                    modifier = Modifier.clickable { onOpenCollection(c) },
+                CollectionCard(
+                    collection = c,
+                    language = currentLanguage,
+                    onClick = { onOpenCollection(c) },
                 )
-                HorizontalDivider()
             }
         }
         if (texts.isNotEmpty()) {
-            item { SectionHeader("Texts") }
+            item(key = "h-texts") { SectionHeader("Texts") }
             items(texts, key = { "t-${it.id}" }) { card ->
-                ListItem(
-                    headlineContent = { Text(card.title) },
-                    supportingContent = {
-                        if (!card.isReady) Text(card.status, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    },
-                    modifier = Modifier.clickable(enabled = card.isReady) { onOpenText(card.id) },
+                TextCardItem(
+                    card = card,
+                    language = currentLanguage,
+                    onClick = { onOpenText(card.id) },
                 )
-                HorizontalDivider()
             }
         }
+    }
+}
+
+/** A book/collection row: a tinted cover with the title initial, the title, a
+ *  chapter count, and a thin progress track at the foot of the card. Leaves
+ *  room above the progress track for a sibling PR's comprehension/language
+ *  badges. */
+@Composable
+private fun CollectionCard(
+    collection: CollectionSummary,
+    language: Language?,
+    onClick: () -> Unit,
+) {
+    LibraryCard(onClick = onClick, enabled = true) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            CoverArt(initial = coverInitial(collection.title, language), tinted = true)
+            Spacer(Modifier.width(16.dp))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    collection.title,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Spacer(Modifier.size(4.dp))
+                Text(
+                    chapterLabel(collection.textCount),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        // Aggregate reading progress across the book's chapters.
+        Spacer(Modifier.size(12.dp))
+        ItemProgress(fraction = collection.progress, label = "Reading progress")
+    }
+}
+
+/** A text row: a cover initial, the title, a status line for not-yet-ready
+ *  texts, and a progress track for ready ones. */
+@Composable
+private fun TextCardItem(
+    card: TextCard,
+    language: Language?,
+    onClick: () -> Unit,
+) {
+    LibraryCard(onClick = onClick, enabled = card.isReady) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            CoverArt(initial = coverInitial(card.title, language), tinted = false)
+            Spacer(Modifier.width(16.dp))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    card.title,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                if (!card.isReady) {
+                    Spacer(Modifier.size(4.dp))
+                    Text(
+                        card.status,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        }
+        // Ready texts show their reading-progress track; not-yet-ready texts
+        // surface their status line instead.
+        if (card.isReady) {
+            Spacer(Modifier.size(12.dp))
+            ItemProgress(fraction = card.progress, label = "Reading progress")
+        }
+    }
+}
+
+/** Shared card surface: an elevated paper card with consistent inner padding and
+ *  click/disabled behavior. Children stack vertically. */
+@Composable
+private fun LibraryCard(
+    onClick: () -> Unit,
+    enabled: Boolean,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    Card(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLowest,
+            contentColor = MaterialTheme.colorScheme.onSurface,
+            // Keep disabled (not-ready) cards legible: same surface/ink, the
+            // muted "processing" status line signals the disabled state instead.
+            disabledContainerColor = MaterialTheme.colorScheme.surfaceContainerLowest,
+            disabledContentColor = MaterialTheme.colorScheme.onSurface,
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+    ) {
+        Column(modifier = Modifier.padding(16.dp), content = content)
+    }
+}
+
+/** A square cover placeholder: a tinted block carrying the item's initial (or
+ *  language script glyph). Books get a saffron tint; texts a calmer surface. */
+@Composable
+private fun CoverArt(initial: String, tinted: Boolean) {
+    val container = if (tinted) {
+        MaterialTheme.colorScheme.primaryContainer
+    } else {
+        MaterialTheme.colorScheme.secondaryContainer
+    }
+    val onContainer = if (tinted) {
+        MaterialTheme.colorScheme.onPrimaryContainer
+    } else {
+        MaterialTheme.colorScheme.onSecondaryContainer
+    }
+    Surface(
+        shape = RoundedCornerShape(12.dp),
+        color = container,
+        contentColor = onContainer,
+        modifier = Modifier.size(56.dp),
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Text(
+                initial,
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.SemiBold,
+            )
+        }
+    }
+}
+
+/** A thin reading-progress track plus a trailing percentage. Labelled as one
+ *  unit for screen readers ("Reading progress, 0 percent"). */
+@Composable
+private fun ItemProgress(fraction: Float, label: String) {
+    val clamped = fraction.coerceIn(0f, 1f)
+    val pct = (clamped * 100).toInt()
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.semantics(mergeDescendants = true) {
+            contentDescription = "$label, $pct percent"
+        },
+    ) {
+        LinearProgressIndicator(
+            progress = { clamped },
+            modifier = Modifier
+                .weight(1f)
+                .height(6.dp)
+                .clip(RoundedCornerShape(3.dp)),
+            color = MaterialTheme.colorScheme.primary,
+            trackColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+        )
+        Spacer(Modifier.width(12.dp))
+        Text(
+            "$pct%",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 
@@ -200,9 +372,25 @@ private fun SectionHeader(text: String) {
     Text(
         text,
         style = MaterialTheme.typography.titleSmall,
+        fontWeight = FontWeight.SemiBold,
         color = MaterialTheme.colorScheme.primary,
-        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+        modifier = Modifier.padding(top = 4.dp, bottom = 2.dp),
     )
+}
+
+/** "12 chapters" / "1 chapter" — never a bare "0". */
+private fun chapterLabel(count: Int): String =
+    if (count == 1) "1 chapter" else "$count chapters"
+
+/** Cover glyph: the title's first letter/digit, falling back to the language
+ *  script glyph for a title that starts with whitespace/symbols. */
+private fun coverInitial(title: String, language: Language?): String {
+    val first = title.trim().firstOrNull { it.isLetterOrDigit() }
+    return when {
+        first != null -> first.uppercase()
+        language != null -> language.glyph()
+        else -> "?"
+    }
 }
 
 @Composable
