@@ -12,6 +12,7 @@ import com.ciareader.reader.data.dictionary.LemmaTranslations
 import com.ciareader.reader.data.reader.KnownStatus
 import com.ciareader.reader.data.reader.ReaderRepository
 import com.ciareader.reader.data.reader.ReaderToken
+import com.ciareader.reader.data.reader.SentenceTranslation
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -42,6 +43,10 @@ data class ReaderUiState(
     val basqueReference: List<BasqueReference> = emptyList(),
     val basqueRefSource: String? = null,
     val isWordLoading: Boolean = false,
+    /** Sentence translation for the selected word (word sheet action). */
+    val sentenceTranslation: SentenceTranslation? = null,
+    val isSentenceTranslating: Boolean = false,
+    val sentenceTranslateError: String? = null,
     val restoreTokenIdx: Int? = null,
     val romanize: Boolean = false,
     val isRtl: Boolean = false,
@@ -103,6 +108,9 @@ class ReaderViewModel @Inject constructor(
 
     private var progressJob: Job? = null
     private var currentTopToken = 0
+
+    // The loaded chapter's server id (UUID), needed for sentence translation.
+    private var currentChapterId: String? = null
 
     // This text's language, so reading prefs are read/written per-language.
     private var language: String = ""
@@ -185,10 +193,21 @@ class ReaderViewModel @Inject constructor(
         saveOnLoad: Boolean = false,
     ) {
         progressJob?.cancel()
-        _state.update { it.copy(isLoading = true, errorMessage = null, selectedWord = null, wordTranslations = null) }
+        _state.update {
+            it.copy(
+                isLoading = true,
+                errorMessage = null,
+                selectedWord = null,
+                wordTranslations = null,
+                sentenceTranslation = null,
+                isSentenceTranslating = false,
+                sentenceTranslateError = null,
+            )
+        }
         viewModelScope.launch {
             when (val chapter = repository.chapter(textId, chapterIdx)) {
                 is Outcome.Success -> {
+                    currentChapterId = chapter.data.chapterId
                     val anchor =
                         if (atEnd) chapter.data.tokens.lastIndex.coerceAtLeast(0) else restoreTokenIdx
                     _state.update {
@@ -224,6 +243,10 @@ class ReaderViewModel @Inject constructor(
                 wordTranslations = null,
                 basqueReference = emptyList(),
                 isWordLoading = lemmaId != null,
+                // Each word opens with a fresh sentence-translation slot.
+                sentenceTranslation = null,
+                isSentenceTranslating = false,
+                sentenceTranslateError = null,
             )
         }
         if (lemmaId != null) {
@@ -292,7 +315,39 @@ class ReaderViewModel @Inject constructor(
         }
     }
 
-    fun dismissWord() = _state.update { it.copy(selectedWord = null, wordTranslations = null, isWordLoading = false) }
+    /** Translate the sentence the selected word sits in, via the server (which
+     *  reconstructs + caches it). No-op without a chapter id or selection. */
+    fun translateSentence() {
+        val token = _state.value.selectedWord ?: return
+        val chapterId = currentChapterId ?: return
+        // Don't re-fetch if we already have it or a request is in flight.
+        if (_state.value.sentenceTranslation != null || _state.value.isSentenceTranslating) return
+        _state.update { it.copy(isSentenceTranslating = true, sentenceTranslateError = null) }
+        viewModelScope.launch {
+            val outcome = repository.translateSentence(chapterId, token.idx, language)
+            _state.update { s ->
+                // Drop the result if the user has moved to a different word.
+                if (s.selectedWord != token) return@update s
+                when (outcome) {
+                    is Outcome.Success ->
+                        s.copy(isSentenceTranslating = false, sentenceTranslation = outcome.data)
+                    is Outcome.Failure ->
+                        s.copy(isSentenceTranslating = false, sentenceTranslateError = outcome.message)
+                }
+            }
+        }
+    }
+
+    fun dismissWord() = _state.update {
+        it.copy(
+            selectedWord = null,
+            wordTranslations = null,
+            isWordLoading = false,
+            sentenceTranslation = null,
+            isSentenceTranslating = false,
+            sentenceTranslateError = null,
+        )
+    }
 
     fun nextChapter() {
         if (_state.value.hasNext) loadChapter(_state.value.chapterIdx + 1, saveOnLoad = true)

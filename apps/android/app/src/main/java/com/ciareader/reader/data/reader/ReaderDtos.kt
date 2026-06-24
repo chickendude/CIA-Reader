@@ -78,3 +78,22 @@ data class SaveProgressRequest(
     val tokenIdx: Int,
     val pctRead: Double,
 )
+
+// --- POST /api/v1/translate-sentence ---
+
+/** Body for the sentence translator. The server reconstructs the sentence
+ *  around [tokenIdx] within [chapterId] and translates it (default target en),
+ *  so we send the locator rather than the text. */
+@Serializable
+data class TranslateSentenceRequest(
+    val chapterId: String,
+    val tokenIdx: Int,
+    val language: String,
+)
+
+@Serializable
+data class TranslateSentenceResponseDto(
+    val sentence: String = "",
+    val translation: String? = null,
+    val cached: Boolean = false,
+)

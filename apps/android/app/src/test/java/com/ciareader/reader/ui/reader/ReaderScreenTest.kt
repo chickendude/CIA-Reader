@@ -10,6 +10,7 @@ import com.ciareader.reader.data.dictionary.LemmaTranslations
 import com.ciareader.reader.data.dictionary.WordTranslation
 import com.ciareader.reader.data.reader.KnownStatus
 import com.ciareader.reader.data.reader.ReaderToken
+import com.ciareader.reader.data.reader.SentenceTranslation
 import com.ciareader.reader.ui.theme.CiaReaderTheme
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -303,6 +304,41 @@ class ReaderScreenTest {
         compose.waitForIdle()
         // The first page starts at the first token, so that's the saved spot.
         assertEquals(0, recordedToken)
+    }
+
+    @Test
+    fun wordDetailsTranslateSentenceButtonFires() {
+        var translated = false
+        compose.setContent {
+            CiaReaderTheme {
+                WordDetails(
+                    token = ReaderToken(0, "नमस्ते", true, KnownStatus.UNKNOWN, "l1", null, null, false, false, true),
+                    translations = null,
+                    isLoading = false,
+                    onSetStatus = {},
+                    onTranslateSentence = { translated = true },
+                )
+            }
+        }
+        compose.onNodeWithText("Translate sentence").performClick()
+        assertTrue(translated)
+    }
+
+    @Test
+    fun wordDetailsShowsSentenceTranslationResult() {
+        compose.setContent {
+            CiaReaderTheme {
+                WordDetails(
+                    token = ReaderToken(0, "नमस्ते", true, KnownStatus.UNKNOWN, "l1", null, null, false, false, true),
+                    translations = null,
+                    isLoading = false,
+                    onSetStatus = {},
+                    sentenceTranslation = SentenceTranslation("नमस्ते दुनिया।", "Hello world."),
+                )
+            }
+        }
+        compose.onNodeWithText("Hello world.").assertIsDisplayed()
+        compose.onNodeWithText("नमस्ते दुनिया।").assertIsDisplayed()
     }
 
     private fun token(surface: String, isWord: Boolean, status: KnownStatus = KnownStatus.UNKNOWN) =
