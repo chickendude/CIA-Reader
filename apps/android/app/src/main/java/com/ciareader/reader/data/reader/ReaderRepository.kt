@@ -58,6 +58,16 @@ data class ReaderToken(
 data class Chapter(
     val chapterIdx: Int,
     val tokens: List<ReaderToken>,
+    /** The chapter's server id (UUID), needed to ask the server to translate a
+     *  sentence around a token. Null for chapters cached before this column was
+     *  added (the destructive-migration DB clears those on upgrade anyway). */
+    val chapterId: String? = null,
+)
+
+/** A sentence and its translation, for the word sheet's "Translate sentence". */
+data class SentenceTranslation(
+    val sentence: String,
+    val translation: String,
 )
 
 data class ChapterRef(
@@ -92,6 +102,24 @@ interface ReaderRepository {
         tokenIdx: Int,
         pctRead: Double,
     ): Outcome<Unit>
+
+    /** Translate the sentence around [tokenIdx] in [chapterId] (server-side
+     *  reconstruction + cache). A blank translation maps to Failure so the UI
+     *  can show a "couldn't translate" message rather than an empty result. */
+    suspend fun translateSentence(
+        chapterId: String,
+        tokenIdx: Int,
+        language: String,
+    ): Outcome<SentenceTranslation>
+
+    /** Cache-only lookup for an already-saved sentence translation — never spends
+     *  on the model. Failure on a miss. Used to recall a saved translation the
+     *  moment a word in that sentence opens. */
+    suspend fun cachedSentenceTranslation(
+        chapterId: String,
+        tokenIdx: Int,
+        language: String,
+    ): Outcome<SentenceTranslation>
 }
 
 @Singleton
@@ -161,6 +189,40 @@ class ReaderRepositoryImpl @Inject constructor(
             }
         }
 
+    override suspend fun translateSentence(
+        chapterId: String,
+        tokenIdx: Int,
+        language: String,
+    ): Outcome<SentenceTranslation> =
+        sentenceTranslation(TranslateSentenceRequest(chapterId, tokenIdx, language), "Couldn't translate this sentence.")
+
+    override suspend fun cachedSentenceTranslation(
+        chapterId: String,
+        tokenIdx: Int,
+        language: String,
+    ): Outcome<SentenceTranslation> =
+        sentenceTranslation(
+            TranslateSentenceRequest(chapterId, tokenIdx, language, cachedOnly = true),
+            "No saved translation.",
+        )
+
+    private suspend fun sentenceTranslation(
+        request: TranslateSentenceRequest,
+        missMessage: String,
+    ): Outcome<SentenceTranslation> =
+        when (val net = apiCall { api.translateSentence(request) }) {
+            is Outcome.Success -> {
+                val body = net.data
+                val translation = body.translation?.takeIf { it.isNotBlank() }
+                if (translation != null) {
+                    Outcome.Success(SentenceTranslation(body.sentence, translation))
+                } else {
+                    Outcome.Failure(missMessage)
+                }
+            }
+            is Outcome.Failure -> net
+        }
+
     /** Upload queued offline positions; drop each as it succeeds. */
     private suspend fun flushPending() {
         for (w in cache.pendingWrites()) {
@@ -186,6 +248,7 @@ private fun TextMetaDto.toDomain() = TextMeta(
 private fun ChapterTokensDto.toDomain() = Chapter(
     chapterIdx = chapterIdx,
     tokens = tokens.map { it.toDomain() },
+    chapterId = chapterId,
 )
 
 private fun TokenDto.toDomain() = ReaderToken(

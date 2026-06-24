@@ -39,6 +39,9 @@ data class CachedChapterEntity(
     val chapterIdx: Int,
     val tokensJson: String,
     val cachedAt: Long,
+    /** The chapter's server id (UUID); kept so sentence translation works
+     *  offline-cached too. Nullable for rows written before this column. */
+    val chapterId: String? = null,
 )
 
 /**

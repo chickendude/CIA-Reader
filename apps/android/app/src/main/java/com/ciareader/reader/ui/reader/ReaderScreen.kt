@@ -18,7 +18,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.rememberScrollState
@@ -42,12 +44,12 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -91,6 +93,7 @@ import com.ciareader.reader.data.dictionary.LemmaTranslations
 import com.ciareader.reader.data.dictionary.WordTranslation
 import com.ciareader.reader.data.reader.KnownStatus
 import com.ciareader.reader.data.reader.ReaderToken
+import com.ciareader.reader.data.reader.SentenceTranslation
 import kotlin.math.roundToInt
 
 @Composable
@@ -124,6 +127,7 @@ fun ReaderScreen(
         onSetStatus = viewModel::setStatus,
         onSelectParse = viewModel::selectParse,
         onAddDefinition = viewModel::addDefinition,
+        onTranslateSentence = viewModel::translateSentence,
         onRefreshWord = viewModel::refreshSelectedWord,
         onSetBasqueRefSource = viewModel::setBasqueRefSource,
         onRecordPosition = viewModel::recordPosition,
@@ -157,6 +161,7 @@ internal fun ReaderScreenContent(
     onSetStatus: (KnownStatus) -> Unit,
     onSelectParse: (String) -> Unit = {},
     onAddDefinition: (String) -> Unit = {},
+    onTranslateSentence: () -> Unit = {},
     onRefreshWord: () -> Unit = {},
     onSetBasqueRefSource: (String) -> Unit = {},
     onRecordPosition: (Int, Double) -> Unit,
@@ -299,12 +304,17 @@ internal fun ReaderScreenContent(
                 basqueReference = state.basqueReference,
                 basqueRefSource = state.basqueRefSource,
                 isLoading = state.isWordLoading,
+                sentenceTranslation = state.sentenceTranslation,
+                isSentenceTranslating = state.isSentenceTranslating,
+                sentenceTranslateError = state.sentenceTranslateError,
+                autoExpandSentence = state.autoExpandSentence,
                 onSetStatus = onSetStatus,
                 activeParseLemmaId = state.activeParseLemmaId,
                 primaryHeadword = state.primaryHeadword,
                 primaryPos = state.primaryPos,
                 onSelectParse = onSelectParse,
                 onAddDefinition = onAddDefinition,
+                onTranslateSentence = onTranslateSentence,
                 onRefresh = onRefreshWord,
                 onSelectBasqueSource = onSetBasqueRefSource,
             )
@@ -747,6 +757,11 @@ internal fun WordDetails(
     isLoading: Boolean,
     onSetStatus: (KnownStatus) -> Unit,
     onAddDefinition: (String) -> Unit = {},
+    sentenceTranslation: SentenceTranslation? = null,
+    isSentenceTranslating: Boolean = false,
+    sentenceTranslateError: String? = null,
+    autoExpandSentence: Boolean = false,
+    onTranslateSentence: () -> Unit = {},
     onRefresh: () -> Unit = {},
     basqueReference: List<BasqueReference> = emptyList(),
     basqueRefSource: String? = null,
@@ -816,6 +831,19 @@ internal fun WordDetails(
             BrandChip("Ignored", token.status == KnownStatus.IGNORED) { onSetStatus(KnownStatus.IGNORED) }
         }
 
+        // Sentence translation (OpenAI, server-cached). Offered for any word in
+        // a chapter; the server reconstructs the sentence around this token.
+        if (token.isWord) {
+            Spacer(Modifier.height(16.dp))
+            SentenceTranslationSection(
+                translation = sentenceTranslation,
+                isTranslating = isSentenceTranslating,
+                error = sentenceTranslateError,
+                startExpanded = autoExpandSentence,
+                onTranslate = onTranslateSentence,
+            )
+        }
+
         // Your own definition sits above the (admin) reference dictionaries.
         // Only words with a lemma can carry a user definition (OOV/punctuation can't).
         if (token.lemmaId != null) {
@@ -826,6 +854,89 @@ internal fun WordDetails(
         if (basqueReference.isNotEmpty()) {
             Spacer(Modifier.height(16.dp))
             BasqueReferenceSection(basqueReference, basqueRefSource, onSelectBasqueSource)
+        }
+    }
+}
+
+/**
+ * Sentence translation. Before translating, a subtle text action (not a big
+ * button). While in flight, a small spinner. Once a translation exists, a
+ * tappable "Sentence translation" header expands/collapses the sentence + its
+ * translation — collapsed by default on recall, expanded right after an explicit
+ * translate ([startExpanded]).
+ */
+@Composable
+private fun SentenceTranslationSection(
+    translation: SentenceTranslation?,
+    isTranslating: Boolean,
+    error: String?,
+    startExpanded: Boolean,
+    onTranslate: () -> Unit,
+) {
+    Column(modifier = Modifier.fillMaxWidth()) {
+        when {
+            translation != null -> {
+                var expanded by remember(translation) { mutableStateOf(startExpanded) }
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { expanded = !expanded },
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        "Sentence translation",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Text(
+                        if (expanded) "–" else "+",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
+                if (expanded) {
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        translation.sentence,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Text(translation.translation, style = MaterialTheme.typography.bodyLarge)
+                }
+            }
+
+            isTranslating ->
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                    Text(
+                        "Translating sentence…",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+
+            else -> {
+                // Outlined (not filled/full-width) — clearly a button so it's
+                // obvious it translates the sentence, without dominating the sheet.
+                OutlinedButton(
+                    onClick = onTranslate,
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                ) {
+                    Text("Translate sentence", color = MaterialTheme.colorScheme.onSurface)
+                }
+                if (error != null) {
+                    Text(
+                        error,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+            }
         }
     }
 }
