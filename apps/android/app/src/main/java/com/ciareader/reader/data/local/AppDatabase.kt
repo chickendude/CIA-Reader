@@ -18,9 +18,10 @@ import androidx.room.RoomDatabase
         CachedCollectionEntity::class,
         CachedCollectionDetailEntity::class,
         CachedCollectionChapterEntity::class,
+        CachedLemmaEntity::class,
         PendingProgressEntity::class,
     ],
-    version = 5,
+    version = 6,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {

@@ -45,6 +45,19 @@ data class CachedChapterEntity(
 )
 
 /**
+ * A looked-up lemma's definitions, stored as the raw server JSON in [json] so a
+ * tapped word stays fast on re-tap and readable offline. Keyed by lemmaId; like
+ * the other content tables it's a disposable server mirror carrying a [cachedAt]
+ * stamp for a future staleness/refresh policy.
+ */
+@Entity(tableName = "cached_lemma")
+data class CachedLemmaEntity(
+    @PrimaryKey val lemmaId: String,
+    val json: String,
+    val cachedAt: Long,
+)
+
+/**
  * A reading position saved while offline, awaiting upload to the server. One
  * row per text (latest position); cleared once flushed. Unlike the content
  * tables this is genuine user state, not a server mirror — but it lives in the
