@@ -303,4 +303,10 @@ private class FakeSettingsStore(initial: String? = null) : SettingsStore {
     override suspend fun setLineSpacing(language: String, value: Float) {
         lineSpacing = value
     }
+
+    private var basqueRef: String? = null
+    override suspend fun basqueRefSource(): String? = basqueRef
+    override suspend fun setBasqueRefSource(source: String) {
+        basqueRef = source
+    }
 }

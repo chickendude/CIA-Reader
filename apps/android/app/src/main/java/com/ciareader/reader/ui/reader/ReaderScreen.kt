@@ -25,17 +25,21 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -71,6 +75,7 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.ciareader.reader.R
+import com.ciareader.reader.data.dictionary.BasqueReference
 import com.ciareader.reader.data.dictionary.LemmaTranslations
 import com.ciareader.reader.data.dictionary.WordTranslation
 import com.ciareader.reader.data.reader.KnownStatus
@@ -107,6 +112,9 @@ fun ReaderScreen(
         onRetry = viewModel::retry,
         onSetStatus = viewModel::setStatus,
         onSelectParse = viewModel::selectParse,
+        onAddDefinition = viewModel::addDefinition,
+        onRefreshWord = viewModel::refreshSelectedWord,
+        onSetBasqueRefSource = viewModel::setBasqueRefSource,
         onRecordPosition = viewModel::recordPosition,
         onRestoreConsumed = viewModel::onRestoreConsumed,
         onToggleRomanize = viewModel::toggleRomanization,
@@ -137,6 +145,9 @@ internal fun ReaderScreenContent(
     onRetry: () -> Unit,
     onSetStatus: (KnownStatus) -> Unit,
     onSelectParse: (String) -> Unit = {},
+    onAddDefinition: (String) -> Unit = {},
+    onRefreshWord: () -> Unit = {},
+    onSetBasqueRefSource: (String) -> Unit = {},
     onRecordPosition: (Int, Double) -> Unit,
     onRestoreConsumed: () -> Unit,
     onToggleRomanize: () -> Unit,
@@ -265,16 +276,26 @@ internal fun ReaderScreenContent(
 
     val selected = state.selectedWord
     if (selected != null) {
-        ModalBottomSheet(onDismissRequest = onDismissWord) {
+        // skipPartiallyExpanded: with no partial anchor the sheet can't snap back
+        // down when its content changes (e.g. expanding examples) or on any tap.
+        ModalBottomSheet(
+            onDismissRequest = onDismissWord,
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        ) {
             WordDetails(
                 token = selected,
                 translations = state.wordTranslations,
+                basqueReference = state.basqueReference,
+                basqueRefSource = state.basqueRefSource,
                 isLoading = state.isWordLoading,
                 onSetStatus = onSetStatus,
                 activeParseLemmaId = state.activeParseLemmaId,
                 primaryHeadword = state.primaryHeadword,
                 primaryPos = state.primaryPos,
                 onSelectParse = onSelectParse,
+                onAddDefinition = onAddDefinition,
+                onRefresh = onRefreshWord,
+                onSelectBasqueSource = onSetBasqueRefSource,
             )
         }
     }
@@ -714,6 +735,11 @@ internal fun WordDetails(
     translations: LemmaTranslations?,
     isLoading: Boolean,
     onSetStatus: (KnownStatus) -> Unit,
+    onAddDefinition: (String) -> Unit = {},
+    onRefresh: () -> Unit = {},
+    basqueReference: List<BasqueReference> = emptyList(),
+    basqueRefSource: String? = null,
+    onSelectBasqueSource: (String) -> Unit = {},
     modifier: Modifier = Modifier,
     activeParseLemmaId: String? = token.lemmaId,
     primaryHeadword: String? = null,
@@ -732,16 +758,31 @@ internal fun WordDetails(
     Column(
         modifier = modifier
             .fillMaxWidth()
+            // Scrollable so revealing examples grows the content, not the sheet —
+            // otherwise the bottom sheet re-settles (snaps back down) on expand.
+            .verticalScroll(rememberScrollState())
             .padding(24.dp),
     ) {
         if (parses.size >= 2) {
             ParseSwitcher(parses = parses, activeLemmaId = activeParseLemmaId, onSelect = onSelectParse)
             Spacer(Modifier.height(12.dp))
         }
-        Text(translations?.headword ?: token.surface, style = MaterialTheme.typography.headlineSmall)
-        val subtitle = listOfNotNull(token.romanization, translations?.pos).joinToString("  ·  ")
-        if (subtitle.isNotEmpty()) {
-            Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(translations?.headword ?: token.surface, style = MaterialTheme.typography.headlineSmall)
+                val subtitle = listOfNotNull(token.romanization, translations?.pos).joinToString("  ·  ")
+                if (subtitle.isNotEmpty()) {
+                    Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+            if (token.lemmaId != null) {
+                IconButton(
+                    onClick = onRefresh,
+                    modifier = Modifier.semantics { contentDescription = "Refresh definitions" },
+                ) {
+                    Text("↻", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.primary)
+                }
+            }
         }
         Spacer(Modifier.height(12.dp))
 
@@ -758,17 +799,146 @@ internal fun WordDetails(
 
         Spacer(Modifier.height(16.dp))
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            StatusChip("New", token.status == KnownStatus.UNKNOWN) { onSetStatus(KnownStatus.UNKNOWN) }
-            StatusChip("Learning", token.status == KnownStatus.LEARNING) { onSetStatus(KnownStatus.LEARNING) }
-            StatusChip("Known", token.status == KnownStatus.KNOWN) { onSetStatus(KnownStatus.KNOWN) }
-            StatusChip("Ignored", token.status == KnownStatus.IGNORED) { onSetStatus(KnownStatus.IGNORED) }
+            BrandChip("New", token.status == KnownStatus.UNKNOWN) { onSetStatus(KnownStatus.UNKNOWN) }
+            BrandChip("Learning", token.status == KnownStatus.LEARNING) { onSetStatus(KnownStatus.LEARNING) }
+            BrandChip("Known", token.status == KnownStatus.KNOWN) { onSetStatus(KnownStatus.KNOWN) }
+            BrandChip("Ignored", token.status == KnownStatus.IGNORED) { onSetStatus(KnownStatus.IGNORED) }
+        }
+
+        // Your own definition sits above the (admin) reference dictionaries.
+        // Only words with a lemma can carry a user definition (OOV/punctuation can't).
+        if (token.lemmaId != null) {
+            Spacer(Modifier.height(16.dp))
+            AddDefinitionField(onAdd = onAddDefinition)
+        }
+
+        if (basqueReference.isNotEmpty()) {
+            Spacer(Modifier.height(16.dp))
+            BasqueReferenceSection(basqueReference, basqueRefSource, onSelectBasqueSource)
         }
     }
 }
 
 @Composable
-private fun StatusChip(label: String, selected: Boolean, onClick: () -> Unit) {
-    FilterChip(selected = selected, onClick = onClick, label = { Text(label) })
+private fun AddDefinitionField(onAdd: (String) -> Unit) {
+    var text by remember { mutableStateOf("") }
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        OutlinedTextField(
+            value = text,
+            onValueChange = { text = it },
+            placeholder = { Text("Add your own definition") },
+            singleLine = true,
+            modifier = Modifier.weight(1f),
+        )
+        Button(onClick = { onAdd(text); text = "" }, enabled = text.isNotBlank()) {
+            Text("Add")
+        }
+    }
+}
+
+@Composable
+private fun BrandChip(label: String, selected: Boolean, onClick: () -> Unit) {
+    FilterChip(
+        selected = selected,
+        onClick = onClick,
+        label = { Text(label) },
+        // Default selected chip has a transparent border + a container near our
+        // surface colour, so it reads as unselected — give it the saffron brand.
+        colors = FilterChipDefaults.filterChipColors(
+            selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+            selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
+        ),
+        border = FilterChipDefaults.filterChipBorder(
+            enabled = true,
+            selected = selected,
+            selectedBorderColor = MaterialTheme.colorScheme.primary,
+            selectedBorderWidth = 1.dp,
+        ),
+    )
+}
+
+private val BASQUE_REF_ORDER = listOf("elhuyar_es", "elhuyar_en", "euskaltzaindia")
+
+private fun basqueRefTabLabel(source: String): String = when (source) {
+    "elhuyar_es" -> "ES"
+    "elhuyar_en" -> "EN"
+    "euskaltzaindia" -> "EU"
+    else -> source.uppercase()
+}
+
+@Composable
+private fun BasqueReferenceSection(
+    entries: List<BasqueReference>,
+    selectedSource: String?,
+    onSelectSource: (String) -> Unit,
+) {
+    val available = BASQUE_REF_ORDER.filter { src -> entries.any { it.source == src } }
+    if (available.isEmpty()) return
+    val selected = selectedSource?.takeIf { it in available } ?: available.first()
+
+    Text(
+        "Reference dictionaries",
+        style = MaterialTheme.typography.labelMedium,
+        color = MaterialTheme.colorScheme.primary,
+    )
+    Spacer(Modifier.height(8.dp))
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        available.forEach { src ->
+            BrandChip(
+                label = basqueRefTabLabel(src),
+                selected = src == selected,
+                onClick = { onSelectSource(src) },
+            )
+        }
+    }
+    Spacer(Modifier.height(8.dp))
+    val shown = entries.filter { it.source == selected }
+    // POS shows only when it changes from the previous entry (1,2,3 izond. → one label).
+    shown.forEachIndexed { i, e ->
+        BasqueRefEntry(e, showPos = i == 0 || shown[i - 1].pos != e.pos)
+        Spacer(Modifier.height(8.dp))
+    }
+}
+
+@Composable
+private fun BasqueRefEntry(entry: BasqueReference, showPos: Boolean) {
+    var showExamples by remember { mutableStateOf(false) }
+    val hasExamples = entry.examples.isNotEmpty()
+    if (showPos && entry.pos.isNotBlank()) {
+        Text(entry.pos, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        // The whole row toggles the examples, not just the +.
+        modifier = if (hasExamples) {
+            Modifier
+                .fillMaxWidth()
+                .clickable { showExamples = !showExamples }
+                .semantics { contentDescription = if (showExamples) "Hide examples" else "Show examples" }
+        } else {
+            Modifier.fillMaxWidth()
+        },
+    ) {
+        if (entry.definition.isNotBlank()) {
+            Text(entry.definition, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+        }
+        if (hasExamples) {
+            Text(
+                if (showExamples) "–" else "+",
+                style = MaterialTheme.typography.titleLarge,
+                color = if (showExamples) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(start = 12.dp),
+            )
+        }
+    }
+    if (showExamples) {
+        entry.examples.forEach { ex ->
+            Text(ex, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
 }
 
 /** One selectable parsing of the tapped word: a lemma plus a label. */

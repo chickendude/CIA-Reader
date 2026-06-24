@@ -27,6 +27,10 @@ coverage.lcov
 .env.local
 .env.*.local
 
+# editor swap files (a stray .env.swp once leaked a key into a commit)
+*.swp
+*.swo
+
 # logs / os
 *.log
 .DS_Store

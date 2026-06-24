@@ -43,6 +43,24 @@ class DictionaryRepositoryTest {
     }
 
     @Test
+    fun translationsAreCachedPerLemma() = runTest {
+        val api = FakeDictionaryApi(translations = LemmaTranslationsDto(lemma = LemmaDto("l1", "w")))
+        val repo = DictionaryRepositoryImpl(api)
+        repo.translations("l1")
+        repo.translations("l1") // second tap served from cache
+        assertEquals(1, api.translationCalls)
+    }
+
+    @Test
+    fun refreshTranslationsBypassesCache() = runTest {
+        val api = FakeDictionaryApi(translations = LemmaTranslationsDto(lemma = LemmaDto("l1", "w")))
+        val repo = DictionaryRepositoryImpl(api)
+        repo.translations("l1")        // caches (1 call)
+        repo.refreshTranslations("l1") // forces a re-fetch (2 calls)
+        assertEquals(2, api.translationCalls)
+    }
+
+    @Test
     fun setStatusSendsWireValueAndReturnsConfirmedStatus() = runTest {
         val api = FakeDictionaryApi(known = KnownLemmaResponseDto(KnownLemmaDto("l1", "known")))
         val repo = DictionaryRepositoryImpl(api)
@@ -52,6 +70,53 @@ class DictionaryRepositoryTest {
         assertTrue(result is Outcome.Success)
         assertEquals(KnownStatus.KNOWN, (result as Outcome.Success).data)
         assertEquals("l1" to "known", api.lastSet)
+    }
+
+    @Test
+    fun addDefinitionPostsLemmaAndBody() = runTest {
+        val api = FakeDictionaryApi()
+        val result = DictionaryRepositoryImpl(api).addDefinition("l1", "my own definition")
+        assertTrue(result is Outcome.Success)
+        assertEquals("l1", api.lastAdded?.lemmaId)
+        assertEquals("my own definition", api.lastAdded?.body)
+    }
+
+    @Test
+    fun basqueReferenceMapsResults() = runTest {
+        val api = FakeDictionaryApi(
+            basque = BasqueReferenceResponseDto(
+                word = "etxe",
+                results = listOf(
+                    BasqueRefDto(
+                        source = "elhuyar_es", label = "Elhuyar eu-es", headword = "etxe",
+                        pos = "iz.", definition = "casa", examples = listOf("etxe handia"),
+                    ),
+                ),
+            ),
+        )
+        val result = DictionaryRepositoryImpl(api).basqueReference("etxe")
+        assertTrue(result is Outcome.Success)
+        val r = (result as Outcome.Success).data.single()
+        assertEquals("Elhuyar eu-es", r.label)
+        assertEquals("casa", r.definition)
+        assertEquals(listOf("etxe handia"), r.examples)
+    }
+
+    @Test
+    fun basqueReferenceIsCachedPerWord() = runTest {
+        val api = FakeDictionaryApi(
+            basque = BasqueReferenceResponseDto("etxe", listOf(BasqueRefDto(source = "elhuyar_es", definition = "casa"))),
+        )
+        val repo = DictionaryRepositoryImpl(api)
+        repo.basqueReference("etxe")
+        repo.basqueReference("ETXE") // case-insensitive key -> served from cache
+        assertEquals(1, api.basqueCalls)
+    }
+
+    @Test
+    fun basqueReferenceForbiddenMapsToFailure() = runTest {
+        val result = DictionaryRepositoryImpl(FakeDictionaryApi(error = http(403))).basqueReference("etxe")
+        assertTrue(result is Outcome.Failure)
     }
 
     @Test
@@ -88,11 +153,27 @@ class DictionaryRepositoryTest {
 private class FakeDictionaryApi(
     private val translations: LemmaTranslationsDto? = null,
     private val known: KnownLemmaResponseDto? = null,
+    private val basque: BasqueReferenceResponseDto? = null,
     private val error: Throwable? = null,
 ) : DictionaryApi {
     var lastSet: Pair<String, String>? = null
-    override suspend fun translations(lemmaId: String): LemmaTranslationsDto =
-        error?.let { throw it } ?: translations!!
+    var lastAdded: CreateTranslationRequest? = null
+    var translationCalls = 0
+    override suspend fun translations(lemmaId: String): LemmaTranslationsDto {
+        translationCalls++
+        return error?.let { throw it } ?: translations!!
+    }
+
+    override suspend fun addTranslation(body: CreateTranslationRequest): CreateTranslationResponseDto {
+        lastAdded = body
+        return error?.let { throw it } ?: CreateTranslationResponseDto(TranslationDto("new", body.body))
+    }
+
+    var basqueCalls = 0
+    override suspend fun basqueReference(word: String): BasqueReferenceResponseDto {
+        basqueCalls++
+        return error?.let { throw it } ?: basque!!
+    }
 
     override suspend fun setKnownStatus(lemmaId: String, body: KnownLemmaRequest): KnownLemmaResponseDto {
         lastSet = lemmaId to body.status

@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.ciareader.reader.core.network.Outcome
 import com.ciareader.reader.core.settings.SettingsStore
 import com.ciareader.reader.data.collection.CollectionRepository
+import com.ciareader.reader.data.dictionary.BasqueReference
 import com.ciareader.reader.data.dictionary.DictionaryRepository
 import com.ciareader.reader.data.dictionary.LemmaTranslations
 import com.ciareader.reader.data.reader.KnownStatus
@@ -38,6 +39,8 @@ data class ReaderUiState(
     val tokens: List<ReaderToken> = emptyList(),
     val selectedWord: ReaderToken? = null,
     val wordTranslations: LemmaTranslations? = null,
+    val basqueReference: List<BasqueReference> = emptyList(),
+    val basqueRefSource: String? = null,
     val isWordLoading: Boolean = false,
     /** Which parse (lemma) the word sheet is currently showing a definition for.
      *  Defaults to the tapped token's chosen lemma; the parse switcher flips it
@@ -115,6 +118,9 @@ class ReaderViewModel @Inject constructor(
     // This text's language, so reading prefs are read/written per-language.
     private var language: String = ""
 
+    // Admin-only Basque reference lookups; after one denial (non-admin) we stop asking.
+    private var basqueRefDisabled = false
+
     init {
         loadInitial()
     }
@@ -138,6 +144,7 @@ class ReaderViewModel @Inject constructor(
                             fontSize = settings.fontSizeSp(language),
                             lineSpacing = settings.lineSpacing(language),
                             isRtl = isRtlLanguage(language),
+                            basqueRefSource = settings.basqueRefSource(),
                         )
                     }
                     loadSiblings()
@@ -236,11 +243,24 @@ class ReaderViewModel @Inject constructor(
             it.copy(
                 selectedWord = token,
                 wordTranslations = null,
+                basqueReference = emptyList(),
                 isWordLoading = lemmaId != null,
                 activeParseLemmaId = lemmaId,
                 primaryHeadword = null,
                 primaryPos = null,
             )
+        }
+        // Admin-only Basque reference dictionaries (per surface word). The endpoint
+        // 403s non-admins, after which we stop asking for the rest of the session.
+        if (language == "eu" && !basqueRefDisabled) {
+            viewModelScope.launch {
+                when (val ref = dictionary.basqueReference(token.surface)) {
+                    is Outcome.Success -> _state.update { s ->
+                        if (s.selectedWord == token) s.copy(basqueReference = ref.data) else s
+                    }
+                    is Outcome.Failure -> basqueRefDisabled = true
+                }
+            }
         }
         if (lemmaId == null) return
         loadParse(lemmaId, isPrimary = true)
@@ -274,6 +294,41 @@ class ReaderViewModel @Inject constructor(
                         primaryHeadword = if (isPrimary) outcome.data.headword else s.primaryHeadword,
                         primaryPos = if (isPrimary) outcome.data.pos else s.primaryPos,
                     )
+                    is Outcome.Failure -> s.copy(isWordLoading = false)
+                }
+            }
+        }
+    }
+
+    /** Save the viewer's own definition for the active parse, then refresh the
+     *  panel so it appears under "Your notes". */
+    fun addDefinition(text: String) {
+        val body = text.trim()
+        if (body.isEmpty()) return
+        val lemmaId = _state.value.activeParseLemmaId ?: return
+        viewModelScope.launch {
+            if (dictionary.addDefinition(lemmaId, body) is Outcome.Success) {
+                // Force-refresh so the new note appears (the cache is now stale).
+                val refreshed = dictionary.refreshTranslations(lemmaId)
+                if (refreshed is Outcome.Success) {
+                    _state.update { s ->
+                        if (s.activeParseLemmaId == lemmaId) s.copy(wordTranslations = refreshed.data) else s
+                    }
+                }
+            }
+        }
+    }
+
+    /** Pull the latest definitions/community suggestions for the active parse. */
+    fun refreshSelectedWord() {
+        val lemmaId = _state.value.activeParseLemmaId ?: return
+        _state.update { it.copy(isWordLoading = true) }
+        viewModelScope.launch {
+            val o = dictionary.refreshTranslations(lemmaId)
+            _state.update { s ->
+                if (s.activeParseLemmaId != lemmaId) return@update s
+                when (o) {
+                    is Outcome.Success -> s.copy(isWordLoading = false, wordTranslations = o.data)
                     is Outcome.Failure -> s.copy(isWordLoading = false)
                 }
             }
@@ -364,6 +419,12 @@ class ReaderViewModel @Inject constructor(
         val v = value.coerceIn(LINE_SPACING_MIN, LINE_SPACING_MAX)
         _state.update { it.copy(lineSpacing = v, restoreTokenIdx = currentTopToken) }
         viewModelScope.launch { settings.setLineSpacing(language, v) }
+    }
+
+    /** Remember the admin Basque reference source tab (ES/EN/EU). */
+    fun setBasqueRefSource(source: String) {
+        _state.update { it.copy(basqueRefSource = source) }
+        viewModelScope.launch { settings.setBasqueRefSource(source) }
     }
 
     /** When reading a book, find the adjacent chapter-texts for Prev/Next. */
