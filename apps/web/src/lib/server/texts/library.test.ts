@@ -98,9 +98,9 @@ describe('listOwnedTexts', () => {
   it('carries the viewer reading progress (pct_read) onto each card', async () => {
     stage([{ count: 1 }]); // count query
     stage([textRow({ id: 't1', status: 'ready' })]); // page rows
-    stage([{ textId: 't1', pctRead: 42 }]); // per-text progress lookup
+    stage([{ textId: 't1', pctRead: 42.7 }]); // per-text progress lookup (raw float)
     const page = await listOwnedTexts({ id: 'user-1' });
-    expect(page.cards[0]?.progressPct).toBe(42);
+    expect(page.cards[0]?.progressPct).toBe(43); // rounded to a whole percent
   });
 
   it('returns page + total + clamped pagination defaults', async () => {

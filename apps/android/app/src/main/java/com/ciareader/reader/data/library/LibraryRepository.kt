@@ -60,5 +60,5 @@ private fun TextCardDto.toDomain() = TextCard(
     title = title,
     language = language,
     status = status,
-    progress = (progressPct / 100f).coerceIn(0f, 1f),
+    progress = (progressPct / 100.0).toFloat().coerceIn(0f, 1f),
 )

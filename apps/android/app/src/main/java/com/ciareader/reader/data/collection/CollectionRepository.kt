@@ -62,7 +62,7 @@ class CollectionRepositoryImpl @Inject constructor(
                         kind = it.collection.kind,
                         textCount = it.textCount,
                         openTextId = it.openTextId,
-                        progress = (it.progressPct / 100f).coerceIn(0f, 1f),
+                        progress = (it.progressPct / 100.0).toFloat().coerceIn(0f, 1f),
                     )
                 }
             }

@@ -12,8 +12,9 @@ data class CollectionListItemDto(
     val collection: CollectionDto,
     val textCount: Int = 0,
     val openTextId: String? = null,
-    /** Aggregate reading progress across the book's chapters, 0–100. */
-    val progressPct: Int = 0,
+    /** Aggregate reading progress across the book's chapters, 0–100. Double so a
+     *  raw float decodes even if unrounded. */
+    val progressPct: Double = 0.0,
 )
 
 @Serializable

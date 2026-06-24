@@ -57,7 +57,7 @@ function projectCard(row: Text, progressPct = 0): LibraryCard {
     status: row.status,
     visibility: row.visibility,
     createdAt: row.createdAt,
-    progressPct,
+    progressPct: Math.round(progressPct),
   };
 }
 
