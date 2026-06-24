@@ -12,6 +12,8 @@ data class Language(
     val nativeName: String,
     val script: String,
     val isDefault: Boolean,
+    /** Distinct known lemmas the user has in this language. */
+    val knownLemmaCount: Int = 0,
 ) {
     /** Hebrew script (Yiddish) reads right-to-left. */
     val isRtl: Boolean get() = script.equals("Hebr", ignoreCase = true)
@@ -55,4 +57,5 @@ private fun LanguageDto.toDomain() = Language(
     nativeName = nativeName,
     script = script,
     isDefault = isDefault,
+    knownLemmaCount = knownLemmaCount,
 )

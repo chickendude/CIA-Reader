@@ -38,6 +38,30 @@ class LanguageRepositoryTest {
     }
 
     @Test
+    fun mapsKnownLemmaCountAndSurvivesCacheRoundTrip() = runTest {
+        val api = FakeLanguagesApi(
+            languages = listOf(
+                lang("hi", "Hindi", "हिन्दी", "Deva", knownLemmaCount = 42),
+                lang("mr", "Marathi", "मराठी", "Deva"), // defaults to 0
+            ),
+        )
+        val r = repo(api)
+
+        val online = r.myLanguages()
+        assertTrue(online is Outcome.Success)
+        val langs = (online as Outcome.Success).data
+        assertEquals(42, langs[0].knownLemmaCount)
+        assertEquals(0, langs[1].knownLemmaCount)
+
+        // The count is persisted alongside the rest of the row, so the
+        // offline switcher still shows "N words".
+        api.online = false
+        val offline = r.myLanguages()
+        assertTrue(offline is Outcome.Success)
+        assertEquals(42, (offline as Outcome.Success).data[0].knownLemmaCount)
+    }
+
+    @Test
     fun setCurrentReturnsConfirmedCode() = runTest {
         val api = FakeLanguagesApi(languages = emptyList())
 
@@ -79,12 +103,14 @@ class LanguageRepositoryTest {
         nativeName: String,
         script: String,
         isDefault: Boolean = false,
+        knownLemmaCount: Int = 0,
     ) = LanguageDto(
         code = code,
         displayName = displayName,
         nativeName = nativeName,
         script = script,
         isDefault = isDefault,
+        knownLemmaCount = knownLemmaCount,
     )
 }
 

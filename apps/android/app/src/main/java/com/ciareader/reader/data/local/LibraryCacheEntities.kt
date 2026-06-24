@@ -30,6 +30,11 @@ data class CachedLanguageEntity(
     val script: String,
     val isDefault: Boolean,
     val position: Int,
+    /** Distinct known lemmas in this language; mirrors the server count
+     *  so the offline switcher can still show "N words". Defaults to 0
+     *  for rows written before the column existed (destructive migration
+     *  rebuilds the cache, so the default only matters in code paths). */
+    val knownLemmaCount: Int = 0,
 )
 
 @Entity(tableName = "cached_collection")
