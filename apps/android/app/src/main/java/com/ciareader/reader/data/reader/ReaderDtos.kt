@@ -89,6 +89,9 @@ data class TranslateSentenceRequest(
     val chapterId: String,
     val tokenIdx: Int,
     val language: String,
+    // true = cache-only lookup: return a saved translation or nothing, never
+    // calling the model. Used to recall a saved sentence when a word opens.
+    val cachedOnly: Boolean? = null,
 )
 
 @Serializable

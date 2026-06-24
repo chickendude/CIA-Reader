@@ -47,6 +47,9 @@ data class ReaderUiState(
     val sentenceTranslation: SentenceTranslation? = null,
     val isSentenceTranslating: Boolean = false,
     val sentenceTranslateError: String? = null,
+    /** Expand the translation by default — true right after an explicit translate,
+     *  false on recall (so reopening words in a translated sentence stays compact). */
+    val autoExpandSentence: Boolean = false,
     val restoreTokenIdx: Int? = null,
     val romanize: Boolean = false,
     val isRtl: Boolean = false,
@@ -202,6 +205,7 @@ class ReaderViewModel @Inject constructor(
                 sentenceTranslation = null,
                 isSentenceTranslating = false,
                 sentenceTranslateError = null,
+                autoExpandSentence = false,
             )
         }
         viewModelScope.launch {
@@ -247,7 +251,27 @@ class ReaderViewModel @Inject constructor(
                 sentenceTranslation = null,
                 isSentenceTranslating = false,
                 sentenceTranslateError = null,
+                autoExpandSentence = false,
             )
+        }
+        // Recall an already-saved translation for this word's sentence (cache-only,
+        // no model spend), so reopening any word in a translated sentence shows it.
+        val chapterId = currentChapterId
+        if (chapterId != null) {
+            viewModelScope.launch {
+                val recalled = repository.cachedSentenceTranslation(chapterId, token.idx, language)
+                if (recalled is Outcome.Success) {
+                    _state.update { s ->
+                        // Only apply if still on this word and nothing's shown yet
+                        // (don't clobber a fresh manual translation).
+                        if (s.selectedWord == token && s.sentenceTranslation == null) {
+                            s.copy(sentenceTranslation = recalled.data)
+                        } else {
+                            s
+                        }
+                    }
+                }
+            }
         }
         if (lemmaId != null) {
             viewModelScope.launch {
@@ -330,7 +354,7 @@ class ReaderViewModel @Inject constructor(
                 if (s.selectedWord != token) return@update s
                 when (outcome) {
                     is Outcome.Success ->
-                        s.copy(isSentenceTranslating = false, sentenceTranslation = outcome.data)
+                        s.copy(isSentenceTranslating = false, sentenceTranslation = outcome.data, autoExpandSentence = true)
                     is Outcome.Failure ->
                         s.copy(isSentenceTranslating = false, sentenceTranslateError = outcome.message)
                 }
@@ -346,6 +370,7 @@ class ReaderViewModel @Inject constructor(
             sentenceTranslation = null,
             isSentenceTranslating = false,
             sentenceTranslateError = null,
+            autoExpandSentence = false,
         )
     }
 

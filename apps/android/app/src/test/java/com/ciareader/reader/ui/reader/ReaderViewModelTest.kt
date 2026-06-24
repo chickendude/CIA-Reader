@@ -480,6 +480,25 @@ class ReaderViewModelTest {
     }
 
     @Test
+    fun openingWordRecallsSavedSentenceTranslation() = runTest(mainRule.dispatcher) {
+        val token = ReaderToken(0, "नमस्ते", true, KnownStatus.UNKNOWN, "l1", null, null, false, false, true)
+        val repo = FakeReaderRepository(
+            meta = meta(1),
+            chapters = mapOf(0 to Chapter(0, listOf(token), chapterId = "chap-1")),
+            // A previously-saved translation for this sentence is in the cache.
+            cachedSentence = SentenceTranslation("नमस्ते दुनिया।", "Hello world."),
+        )
+        val v = vm(repo)
+        advanceUntilIdle()
+
+        // Just opening the word recalls the saved translation — no translate tap.
+        v.onWordTap(token)
+        advanceUntilIdle()
+
+        assertEquals("Hello world.", v.state.value.sentenceTranslation?.translation)
+    }
+
+    @Test
     fun translateSentenceSurfacesError() = runTest(mainRule.dispatcher) {
         val token = ReaderToken(0, "नमस्ते", true, KnownStatus.UNKNOWN, "l1", null, null, false, false, true)
         val repo = FakeReaderRepository(
@@ -636,6 +655,12 @@ private class SavingReaderRepository(
         tokenIdx: Int,
         language: String,
     ): Outcome<SentenceTranslation> = Outcome.Failure("not used")
+
+    override suspend fun cachedSentenceTranslation(
+        chapterId: String,
+        tokenIdx: Int,
+        language: String,
+    ): Outcome<SentenceTranslation> = Outcome.Failure("not used")
 }
 
 private class FakeReaderRepository(
@@ -646,6 +671,7 @@ private class FakeReaderRepository(
     private val savedProgress: ReadingProgress? = null,
     private val sentenceTranslation: SentenceTranslation? = null,
     private val sentenceTranslateError: String? = null,
+    private val cachedSentence: SentenceTranslation? = null,
 ) : ReaderRepository {
     var lastSaved: ReadingProgress? = null
     var lastTranslate: Triple<String, Int, String>? = null
@@ -682,6 +708,13 @@ private class FakeReaderRepository(
             ?: sentenceTranslation?.let { Outcome.Success(it) }
             ?: Outcome.Failure("no translation configured")
     }
+
+    override suspend fun cachedSentenceTranslation(
+        chapterId: String,
+        tokenIdx: Int,
+        language: String,
+    ): Outcome<SentenceTranslation> =
+        cachedSentence?.let { Outcome.Success(it) } ?: Outcome.Failure("cache miss")
 }
 
 private class FakeDictionaryRepository(

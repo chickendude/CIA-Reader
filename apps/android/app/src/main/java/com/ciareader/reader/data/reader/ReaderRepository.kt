@@ -97,6 +97,15 @@ interface ReaderRepository {
         tokenIdx: Int,
         language: String,
     ): Outcome<SentenceTranslation>
+
+    /** Cache-only lookup for an already-saved sentence translation — never spends
+     *  on the model. Failure on a miss. Used to recall a saved translation the
+     *  moment a word in that sentence opens. */
+    suspend fun cachedSentenceTranslation(
+        chapterId: String,
+        tokenIdx: Int,
+        language: String,
+    ): Outcome<SentenceTranslation>
 }
 
 @Singleton
@@ -171,18 +180,30 @@ class ReaderRepositoryImpl @Inject constructor(
         tokenIdx: Int,
         language: String,
     ): Outcome<SentenceTranslation> =
-        when (
-            val net = apiCall {
-                api.translateSentence(TranslateSentenceRequest(chapterId, tokenIdx, language))
-            }
-        ) {
+        sentenceTranslation(TranslateSentenceRequest(chapterId, tokenIdx, language), "Couldn't translate this sentence.")
+
+    override suspend fun cachedSentenceTranslation(
+        chapterId: String,
+        tokenIdx: Int,
+        language: String,
+    ): Outcome<SentenceTranslation> =
+        sentenceTranslation(
+            TranslateSentenceRequest(chapterId, tokenIdx, language, cachedOnly = true),
+            "No saved translation.",
+        )
+
+    private suspend fun sentenceTranslation(
+        request: TranslateSentenceRequest,
+        missMessage: String,
+    ): Outcome<SentenceTranslation> =
+        when (val net = apiCall { api.translateSentence(request) }) {
             is Outcome.Success -> {
                 val body = net.data
                 val translation = body.translation?.takeIf { it.isNotBlank() }
                 if (translation != null) {
                     Outcome.Success(SentenceTranslation(body.sentence, translation))
                 } else {
-                    Outcome.Failure("Couldn't translate this sentence.")
+                    Outcome.Failure(missMessage)
                 }
             }
             is Outcome.Failure -> net

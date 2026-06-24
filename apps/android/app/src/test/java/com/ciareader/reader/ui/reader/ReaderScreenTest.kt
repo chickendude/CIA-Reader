@@ -325,7 +325,7 @@ class ReaderScreenTest {
     }
 
     @Test
-    fun wordDetailsShowsSentenceTranslationResult() {
+    fun wordDetailsShowsSentenceTranslationResultWhenAutoExpanded() {
         compose.setContent {
             CiaReaderTheme {
                 WordDetails(
@@ -334,11 +334,32 @@ class ReaderScreenTest {
                     isLoading = false,
                     onSetStatus = {},
                     sentenceTranslation = SentenceTranslation("नमस्ते दुनिया।", "Hello world."),
+                    autoExpandSentence = true, // expanded right after an explicit translate
                 )
             }
         }
         compose.onNodeWithText("Hello world.").assertIsDisplayed()
         compose.onNodeWithText("नमस्ते दुनिया।").assertIsDisplayed()
+    }
+
+    @Test
+    fun wordDetailsSentenceTranslationStartsCollapsedAndExpandsOnTap() {
+        compose.setContent {
+            CiaReaderTheme {
+                WordDetails(
+                    token = ReaderToken(0, "नमस्ते", true, KnownStatus.UNKNOWN, "l1", null, null, false, false, true),
+                    translations = null,
+                    isLoading = false,
+                    onSetStatus = {},
+                    sentenceTranslation = SentenceTranslation("नमस्ते दुनिया।", "Hello world."),
+                    // autoExpandSentence defaults false → collapsed (recall behaviour)
+                )
+            }
+        }
+        compose.onNodeWithText("Sentence translation", substring = true).assertIsDisplayed()
+        compose.onNodeWithText("Hello world.").assertDoesNotExist()
+        compose.onNodeWithText("Sentence translation", substring = true).performClick()
+        compose.onNodeWithText("Hello world.").assertIsDisplayed()
     }
 
     private fun token(surface: String, isWord: Boolean, status: KnownStatus = KnownStatus.UNKNOWN) =

@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.lazy.LazyColumn
@@ -37,12 +38,12 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -289,6 +290,7 @@ internal fun ReaderScreenContent(
                 sentenceTranslation = state.sentenceTranslation,
                 isSentenceTranslating = state.isSentenceTranslating,
                 sentenceTranslateError = state.sentenceTranslateError,
+                autoExpandSentence = state.autoExpandSentence,
                 onSetStatus = onSetStatus,
                 onAddDefinition = onAddDefinition,
                 onTranslateSentence = onTranslateSentence,
@@ -736,6 +738,7 @@ internal fun WordDetails(
     sentenceTranslation: SentenceTranslation? = null,
     isSentenceTranslating: Boolean = false,
     sentenceTranslateError: String? = null,
+    autoExpandSentence: Boolean = false,
     onTranslateSentence: () -> Unit = {},
     basqueReference: List<BasqueReference> = emptyList(),
     basqueRefSource: String? = null,
@@ -784,6 +787,7 @@ internal fun WordDetails(
                 translation = sentenceTranslation,
                 isTranslating = isSentenceTranslating,
                 error = sentenceTranslateError,
+                startExpanded = autoExpandSentence,
                 onTranslate = onTranslateSentence,
             )
         }
@@ -803,29 +807,52 @@ internal fun WordDetails(
 }
 
 /**
- * "Translate sentence" action + result. Before translating, a single button.
- * While the request is in flight, a small spinner with a label. On success, the
- * source sentence over its translation; on failure, an error line.
+ * Sentence translation. Before translating, a subtle text action (not a big
+ * button). While in flight, a small spinner. Once a translation exists, a
+ * tappable "Sentence translation" header expands/collapses the sentence + its
+ * translation — collapsed by default on recall, expanded right after an explicit
+ * translate ([startExpanded]).
  */
 @Composable
 private fun SentenceTranslationSection(
     translation: SentenceTranslation?,
     isTranslating: Boolean,
     error: String?,
+    startExpanded: Boolean,
     onTranslate: () -> Unit,
 ) {
     Column(modifier = Modifier.fillMaxWidth()) {
         when {
             translation != null -> {
-                Text(
-                    "Sentence translation",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Spacer(Modifier.height(4.dp))
-                Text(translation.sentence, style = MaterialTheme.typography.bodyMedium)
-                Spacer(Modifier.height(4.dp))
-                Text(translation.translation, style = MaterialTheme.typography.bodyLarge)
+                var expanded by remember(translation) { mutableStateOf(startExpanded) }
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { expanded = !expanded },
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        "Sentence translation",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Text(
+                        if (expanded) "–" else "+",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
+                if (expanded) {
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        translation.sentence,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Text(translation.translation, style = MaterialTheme.typography.bodyLarge)
+                }
             }
 
             isTranslating ->
@@ -834,15 +861,23 @@ private fun SentenceTranslationSection(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
-                    Text("Translating sentence…", style = MaterialTheme.typography.bodyMedium)
+                    Text(
+                        "Translating sentence…",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
 
             else -> {
-                Button(onClick = onTranslate, modifier = Modifier.fillMaxWidth()) {
-                    Text("Translate sentence")
+                // Outlined (not filled/full-width) — clearly a button so it's
+                // obvious it translates the sentence, without dominating the sheet.
+                OutlinedButton(
+                    onClick = onTranslate,
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                ) {
+                    Text("Translate sentence", color = MaterialTheme.colorScheme.onSurface)
                 }
                 if (error != null) {
-                    Spacer(Modifier.height(4.dp))
                     Text(
                         error,
                         style = MaterialTheme.typography.bodySmall,
