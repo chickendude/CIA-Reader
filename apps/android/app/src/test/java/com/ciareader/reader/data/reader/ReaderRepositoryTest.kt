@@ -3,6 +3,7 @@ package com.ciareader.reader.data.reader
 import com.ciareader.reader.core.network.Outcome
 import com.ciareader.reader.data.local.CachedChapterEntity
 import com.ciareader.reader.data.local.CachedChapterRefEntity
+import com.ciareader.reader.data.local.CachedLemmaEntity
 import com.ciareader.reader.data.local.CachedTextEntity
 import com.ciareader.reader.data.local.CachedTextSize
 import com.ciareader.reader.data.local.PendingProgressEntity
@@ -271,6 +272,13 @@ private class FakeReaderCacheDao : ReaderCacheDao {
 
     override suspend fun chapter(textId: String, chapterIdx: Int): CachedChapterEntity? =
         chapters[textId to chapterIdx]
+
+    private val lemmas = mutableMapOf<String, CachedLemmaEntity>()
+    override suspend fun upsertLemma(lemma: CachedLemmaEntity) {
+        lemmas[lemma.lemmaId] = lemma
+    }
+
+    override suspend fun lemma(lemmaId: String): CachedLemmaEntity? = lemmas[lemmaId]
 
     private val pendingMap = mutableMapOf<String, PendingProgressEntity>()
     override suspend fun upsertPending(pending: PendingProgressEntity) {

@@ -48,6 +48,13 @@ interface ReaderCacheDao {
     @Query("SELECT * FROM cached_chapter WHERE textId = :textId AND chapterIdx = :chapterIdx")
     suspend fun chapter(textId: String, chapterIdx: Int): CachedChapterEntity?
 
+    // Looked-up lemma definitions, cached for fast re-taps + offline reading.
+    @Upsert
+    suspend fun upsertLemma(lemma: CachedLemmaEntity)
+
+    @Query("SELECT * FROM cached_lemma WHERE lemmaId = :lemmaId")
+    suspend fun lemma(lemmaId: String): CachedLemmaEntity?
+
     // Reading positions saved offline, awaiting upload.
     @Upsert
     suspend fun upsertPending(pending: PendingProgressEntity)

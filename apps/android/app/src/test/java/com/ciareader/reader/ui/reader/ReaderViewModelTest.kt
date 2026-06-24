@@ -559,6 +559,9 @@ private class FakeDictionaryRepository(
     override suspend fun translations(lemmaId: String): Outcome<LemmaTranslations> =
         translations?.let { Outcome.Success(it) } ?: Outcome.Failure("no translations")
 
+    override suspend fun refreshTranslations(lemmaId: String): Outcome<LemmaTranslations> =
+        translations?.let { Outcome.Success(it) } ?: Outcome.Failure("no translations")
+
     override suspend fun setStatus(lemmaId: String, status: KnownStatus): Outcome<KnownStatus> =
         Outcome.Success(status)
 
