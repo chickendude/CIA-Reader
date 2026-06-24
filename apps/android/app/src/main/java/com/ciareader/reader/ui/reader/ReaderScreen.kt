@@ -826,18 +826,43 @@ private fun BasqueReferenceSection(
         }
     }
     Spacer(Modifier.height(8.dp))
-    // Tab carries the source, so only show pos + definition + examples per entry.
+    // Tab carries the source, so only show pos + definition per entry; examples
+    // are hidden behind the quote toggle.
     entries.filter { it.source == selected }.forEach { e ->
-        if (e.pos.isNotBlank()) {
-            Text(e.pos, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        BasqueRefEntry(e)
+        Spacer(Modifier.height(8.dp))
+    }
+}
+
+@Composable
+private fun BasqueRefEntry(entry: BasqueReference) {
+    var showExamples by remember { mutableStateOf(false) }
+    if (entry.pos.isNotBlank()) {
+        Text(entry.pos, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        if (entry.definition.isNotBlank()) {
+            Text(entry.definition, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
         }
-        if (e.definition.isNotBlank()) {
-            Text(e.definition, style = MaterialTheme.typography.bodyLarge)
+        if (entry.examples.isNotEmpty()) {
+            IconButton(
+                onClick = { showExamples = !showExamples },
+                modifier = Modifier.semantics {
+                    contentDescription = if (showExamples) "Hide examples" else "Show examples"
+                },
+            ) {
+                Text(
+                    if (showExamples) "–" else "+",
+                    style = MaterialTheme.typography.titleLarge,
+                    color = if (showExamples) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
-        e.examples.forEach { ex ->
+    }
+    if (showExamples) {
+        entry.examples.forEach { ex ->
             Text(ex, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        Spacer(Modifier.height(8.dp))
     }
 }
 
