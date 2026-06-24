@@ -176,6 +176,33 @@ export async function getLanguageStats(
   };
 }
 
+/**
+ * Distinct known-lemma count per language for one user, in a single
+ * grouped query. Powers the language switcher's "N words" badge
+ * (GET /api/v1/me/languages) — a per-language `getLanguageStats`
+ * fan-out would be one round-trip per supported language, so we
+ * group once and let the caller fill 0 for languages absent from
+ * the map. Only `status = 'known'` rows count, matching
+ * `getLanguageStats().knownCount`.
+ */
+export async function knownLemmaCountsByLanguage(
+  userId: string,
+): Promise<Map<LanguageCode, number>> {
+  const rows = unwrapRows<{ language: LanguageCode; n: number }>(
+    await db.execute(sql`
+      SELECT l.language AS language, COUNT(*)::int AS n
+      FROM user_known_lemmas ukl
+      INNER JOIN lemmas l ON l.id = ukl.lemma_id
+      WHERE ukl.user_id = ${userId}
+        AND ukl.status = 'known'
+      GROUP BY l.language
+    `),
+  );
+  const out = new Map<LanguageCode, number>();
+  for (const r of rows) out.set(r.language, r.n ?? 0);
+  return out;
+}
+
 export type TextStats = {
   textId: string;
   title: string;

@@ -227,7 +227,14 @@ private fun LanguageSwitcher(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         LanguageChip(lang)
                         Spacer(Modifier.width(12.dp))
-                        Text("${lang.displayName} · ${lang.nativeName}")
+                        Column {
+                            Text("${lang.displayName} · ${lang.nativeName}")
+                            Text(
+                                lang.knownWordsLabel(),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
                     }
                 },
                 onClick = {
@@ -271,6 +278,11 @@ private fun languageIconRes(code: String): Int? = when (code) {
     "eu" -> R.drawable.ic_lang_eu
     else -> null
 }
+
+/** Switcher subtitle: how many distinct words the user knows in this
+ *  language. Singular/plural so "1 word" reads naturally. */
+private fun Language.knownWordsLabel(): String =
+    if (knownLemmaCount == 1) "1 word" else "$knownLemmaCount words"
 
 /** The language's representative glyph: the first letter of its native name
  *  (its own script), falling back to the language code. */
