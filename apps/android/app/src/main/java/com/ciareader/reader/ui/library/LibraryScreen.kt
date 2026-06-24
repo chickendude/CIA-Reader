@@ -17,6 +17,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -52,11 +53,14 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.ciareader.reader.data.collection.CollectionSummary
 import com.ciareader.reader.data.language.Language
 import com.ciareader.reader.data.library.TextCard
+import com.ciareader.reader.data.upload.ImportResult
+import com.ciareader.reader.ui.importer.ImportSheet
 
 @Composable
 fun LibraryScreen(
     onOpenText: (String) -> Unit,
     onOpenCollection: (CollectionSummary) -> Unit,
+    onOpenCollectionById: (String) -> Unit,
     onOpenSettings: () -> Unit,
     viewModel: LibraryViewModel = hiltViewModel(),
 ) {
@@ -69,6 +73,9 @@ fun LibraryScreen(
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
+
+    var showImport by remember { mutableStateOf(false) }
+
     LibraryScreenContent(
         state = state,
         onSelectLanguage = viewModel::selectLanguage,
@@ -77,7 +84,30 @@ fun LibraryScreen(
         onRetry = viewModel::load,
         onOpenSettings = onOpenSettings,
         onRefresh = viewModel::refresh,
+        // The FAB only makes sense once we know which language to file under.
+        onImportClick = if (state.currentLanguage != null) {
+            { showImport = true }
+        } else {
+            null
+        },
     )
+
+    val language = state.currentLanguage
+    if (showImport && language != null) {
+        ImportSheet(
+            language = language,
+            onDismiss = { showImport = false },
+            onImported = { result ->
+                showImport = false
+                // Refresh the library so the new text/book appears, then open it.
+                viewModel.refreshCurrentLanguage()
+                when (result) {
+                    is ImportResult.Text -> onOpenText(result.textId)
+                    is ImportResult.Collection -> onOpenCollectionById(result.collectionId)
+                }
+            },
+        )
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -90,6 +120,7 @@ internal fun LibraryScreenContent(
     onRetry: () -> Unit,
     onOpenSettings: () -> Unit,
     onRefresh: () -> Unit = {},
+    onImportClick: (() -> Unit)? = null,
 ) {
     Scaffold(
         topBar = {
@@ -113,6 +144,16 @@ internal fun LibraryScreenContent(
                     }
                 },
             )
+        },
+        floatingActionButton = {
+            onImportClick?.let {
+                FloatingActionButton(onClick = it) {
+                    Icon(
+                        painterResource(R.drawable.ic_add),
+                        contentDescription = "Import a text",
+                    )
+                }
+            }
         },
     ) { padding ->
         PullToRefreshBox(
@@ -290,7 +331,7 @@ private fun EmptyState() {
     ) {
         Text("Nothing here yet", style = MaterialTheme.typography.titleMedium)
         Text(
-            "Add a text or book from the web app to start reading.",
+            "Tap + to import a text or book and start reading.",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center,

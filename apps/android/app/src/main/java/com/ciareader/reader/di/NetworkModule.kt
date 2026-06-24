@@ -10,6 +10,7 @@ import com.ciareader.reader.data.library.LibraryApi
 import com.ciareader.reader.data.collection.CollectionsApi
 import com.ciareader.reader.data.dictionary.DictionaryApi
 import com.ciareader.reader.data.reader.ReaderApi
+import com.ciareader.reader.data.upload.UploadApi
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -131,6 +132,11 @@ object NetworkModule {
     @Singleton
     fun provideDictionaryApi(@Authenticated retrofit: Retrofit): DictionaryApi =
         retrofit.create(DictionaryApi::class.java)
+
+    @Provides
+    @Singleton
+    fun provideUploadApi(@Authenticated retrofit: Retrofit): UploadApi =
+        retrofit.create(UploadApi::class.java)
 
     private val JSON_MEDIA_TYPE = "application/json".toMediaType()
 }

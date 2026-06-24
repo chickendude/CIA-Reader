@@ -18,6 +18,10 @@ import com.ciareader.reader.data.local.OfflineCache
 import com.ciareader.reader.data.local.RoomOfflineCache
 import com.ciareader.reader.data.reader.ReaderRepository
 import com.ciareader.reader.data.reader.ReaderRepositoryImpl
+import com.ciareader.reader.data.upload.ContentResolverDocumentReader
+import com.ciareader.reader.data.upload.DocumentReader
+import com.ciareader.reader.data.upload.UploadRepository
+import com.ciareader.reader.data.upload.UploadRepositoryImpl
 import dagger.Binds
 import dagger.Module
 import dagger.hilt.InstallIn
@@ -63,4 +67,12 @@ abstract class BindingsModule {
     @Binds
     @Singleton
     abstract fun bindOfflineCache(impl: RoomOfflineCache): OfflineCache
+
+    @Binds
+    @Singleton
+    abstract fun bindUploadRepository(impl: UploadRepositoryImpl): UploadRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindDocumentReader(impl: ContentResolverDocumentReader): DocumentReader
 }
