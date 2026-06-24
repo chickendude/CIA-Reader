@@ -3,6 +3,7 @@
 package com.ciareader.reader.ui.reader
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
@@ -26,13 +27,16 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -54,6 +58,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
@@ -70,6 +80,7 @@ import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -954,23 +965,80 @@ private fun ParseSwitcher(
     activeLemmaId: String?,
     onSelect: (String) -> Unit,
 ) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .horizontalScroll(rememberScrollState())
-            .semantics { contentDescription = "Word parsings" },
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        parses.forEach { parse ->
-            val label = parse.pos?.takeIf { it.isNotBlank() }?.let { "${parse.headword} · $it" } ?: parse.headword
-            FilterChip(
-                selected = parse.lemmaId == activeLemmaId,
-                onClick = { onSelect(parse.lemmaId) },
-                label = { Text(label) },
-            )
+    // Folder tabs: a light base line flanks the tabs. The active tab is open at the
+    // bottom (3-sided outline) and paints over the line with the sheet colour, so
+    // the line is broken under it and the tab "opens" into the definition panel
+    // below — while still bordering the line to its left and right. Neutral colours
+    // (no bold accent). A plain clickable Box (not Surface) avoids the 48dp min
+    // touch target that would add a gap.
+    // One colour for the base line AND every tab border, so they read as a single
+    // continuous frame. onSurface (near-white in dark, near-black in light) so the
+    // frame stands out a bit more than the faint outline roles, theme-safely.
+    val lineColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+    val sheetColor = BottomSheetDefaults.ContainerColor
+    val tabShape = RoundedCornerShape(topStart = 10.dp, topEnd = 10.dp)
+    Box(modifier = Modifier.fillMaxWidth().semantics { contentDescription = "Word parsings" }) {
+        HorizontalDivider(
+            modifier = Modifier.align(Alignment.BottomStart),
+            thickness = 1.dp,
+            color = lineColor,
+        )
+        Row(
+            modifier = Modifier.horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            verticalAlignment = Alignment.Bottom,
+        ) {
+            parses.forEach { parse ->
+                val selected = parse.lemmaId == activeLemmaId
+                val label = parse.pos?.takeIf { it.isNotBlank() }?.let { "${parse.headword} · $it" } ?: parse.headword
+                val tabModifier =
+                    if (selected) {
+                        Modifier
+                            .background(sheetColor, tabShape) // break the line under the open mouth
+                            .openTopTabOutline(lineColor, 1.5.dp, 10.dp)
+                    } else {
+                        Modifier.border(1.dp, lineColor, tabShape)
+                    }
+                Box(
+                    modifier = Modifier
+                        .clip(tabShape)
+                        .then(tabModifier)
+                        .clickable { onSelect(parse.lemmaId) }
+                        .padding(horizontal = 14.dp, vertical = if (selected) 9.dp else 6.dp),
+                ) {
+                    Text(
+                        label,
+                        style = MaterialTheme.typography.labelLarge,
+                        color = if (selected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                    )
+                }
+            }
         }
     }
 }
+
+/** A rounded-top, OPEN-bottom border (top + both sides only) so the active parse
+ *  tab reads like a folder tab opening into the content below. */
+private fun Modifier.openTopTabOutline(color: Color, stroke: Dp, radius: Dp): Modifier =
+    drawBehind {
+        val sw = stroke.toPx()
+        val r = radius.toPx()
+        val inset = sw / 2f
+        val left = inset
+        val right = size.width - inset
+        val top = inset
+        val bottom = size.height
+        val path = Path().apply {
+            moveTo(left, bottom)
+            lineTo(left, top + r)
+            arcTo(Rect(left, top, left + 2f * r, top + 2f * r), 180f, 90f, false)
+            lineTo(right - r, top)
+            arcTo(Rect(right - 2f * r, top, right, top + 2f * r), 270f, 90f, false)
+            lineTo(right, bottom)
+        }
+        drawPath(path, color, style = Stroke(width = sw))
+    }
 
 @Composable
 private fun TranslationGroups(translations: LemmaTranslations) {
