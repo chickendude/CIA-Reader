@@ -37,7 +37,9 @@ async function handle(msg: Message): Promise<unknown> {
 ext.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   handle(message as Message).then(
     (result) => sendResponse(result),
-    (err: unknown) => sendResponse({ error: err instanceof Error ? err.message : String(err) }),
+    // `__error` (not `error`) so a thrown handler is distinguishable from a
+    // handler that legitimately returns an `error` field (e.g. login failure).
+    (err: unknown) => sendResponse({ __error: err instanceof Error ? err.message : String(err) }),
   );
   // Returning true keeps the message channel open for the async sendResponse,
   // which is the cross-browser-safe way to reply asynchronously.

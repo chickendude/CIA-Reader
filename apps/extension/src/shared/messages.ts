@@ -27,10 +27,16 @@ export type MessageType = keyof Requests;
 export type Message = { [T in MessageType]: { type: T } & Requests[T]['req'] }[MessageType];
 export type Response<T extends MessageType> = Requests[T]['res'];
 
-/** Send a typed message to the background worker and await its response. */
+/** Send a typed message to the background worker and await its response. A
+ *  handler that threw comes back as `{ __error }`; rethrow it so callers'
+ *  try/catch works. */
 export async function sendMessage<T extends MessageType>(
   type: T,
   payload: Requests[T]['req'] = {} as Requests[T]['req'],
 ): Promise<Response<T>> {
-  return (await ext.runtime.sendMessage({ type, ...payload })) as Response<T>;
+  const res = await ext.runtime.sendMessage({ type, ...payload });
+  if (res && typeof res === 'object' && '__error' in res) {
+    throw new Error(String((res as { __error: unknown }).__error));
+  }
+  return res as Response<T>;
 }
