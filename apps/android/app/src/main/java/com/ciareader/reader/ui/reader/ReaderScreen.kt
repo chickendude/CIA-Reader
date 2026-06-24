@@ -23,6 +23,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -725,6 +726,9 @@ internal fun WordDetails(
     Column(
         modifier = modifier
             .fillMaxWidth()
+            // Scrollable so revealing examples grows the content, not the sheet —
+            // otherwise the bottom sheet re-settles (snaps back down) on expand.
+            .verticalScroll(rememberScrollState())
             .padding(24.dp),
     ) {
         Text(translations?.headword ?: token.surface, style = MaterialTheme.typography.headlineSmall)
@@ -826,37 +830,43 @@ private fun BasqueReferenceSection(
         }
     }
     Spacer(Modifier.height(8.dp))
-    // Tab carries the source, so only show pos + definition per entry; examples
-    // are hidden behind the quote toggle.
-    entries.filter { it.source == selected }.forEach { e ->
-        BasqueRefEntry(e)
+    val shown = entries.filter { it.source == selected }
+    // POS shows only when it changes from the previous entry (1,2,3 izond. → one label).
+    shown.forEachIndexed { i, e ->
+        BasqueRefEntry(e, showPos = i == 0 || shown[i - 1].pos != e.pos)
         Spacer(Modifier.height(8.dp))
     }
 }
 
 @Composable
-private fun BasqueRefEntry(entry: BasqueReference) {
+private fun BasqueRefEntry(entry: BasqueReference, showPos: Boolean) {
     var showExamples by remember { mutableStateOf(false) }
-    if (entry.pos.isNotBlank()) {
+    val hasExamples = entry.examples.isNotEmpty()
+    if (showPos && entry.pos.isNotBlank()) {
         Text(entry.pos, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
-    Row(verticalAlignment = Alignment.CenterVertically) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        // The whole row toggles the examples, not just the +.
+        modifier = if (hasExamples) {
+            Modifier
+                .fillMaxWidth()
+                .clickable { showExamples = !showExamples }
+                .semantics { contentDescription = if (showExamples) "Hide examples" else "Show examples" }
+        } else {
+            Modifier.fillMaxWidth()
+        },
+    ) {
         if (entry.definition.isNotBlank()) {
             Text(entry.definition, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
         }
-        if (entry.examples.isNotEmpty()) {
-            IconButton(
-                onClick = { showExamples = !showExamples },
-                modifier = Modifier.semantics {
-                    contentDescription = if (showExamples) "Hide examples" else "Show examples"
-                },
-            ) {
-                Text(
-                    if (showExamples) "–" else "+",
-                    style = MaterialTheme.typography.titleLarge,
-                    color = if (showExamples) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
+        if (hasExamples) {
+            Text(
+                if (showExamples) "–" else "+",
+                style = MaterialTheme.typography.titleLarge,
+                color = if (showExamples) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(start = 12.dp),
+            )
         }
     }
     if (showExamples) {
