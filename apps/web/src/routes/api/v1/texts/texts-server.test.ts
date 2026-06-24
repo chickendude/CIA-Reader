@@ -286,6 +286,45 @@ describe('GET /api/v1/texts', () => {
     expect(listOfficialTexts).not.toHaveBeenCalled();
   });
 
+  it('surfaces estimatedComprehensionPct on each card for the library badge', async () => {
+    listOwnedTexts.mockResolvedValueOnce({
+      ...PAGE,
+      totalCount: 2,
+      cards: [
+        {
+          id: 't1',
+          title: 'Story',
+          language: 'hi',
+          sourceType: 'paste',
+          status: 'ready',
+          visibility: 'private',
+          createdAt: new Date('2026-04-27T00:00:00Z'),
+          estimatedComprehensionPct: 85,
+        },
+        {
+          // Unprocessed text — null so the UI shows a dash, not 0%.
+          id: 't2',
+          title: 'Draft',
+          language: 'hi',
+          sourceType: 'paste',
+          status: 'pending',
+          visibility: 'private',
+          createdAt: new Date('2026-04-27T00:00:00Z'),
+          estimatedComprehensionPct: null,
+        },
+      ],
+    });
+    const res = (await callGet('')) as Response;
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(
+      json.cards.map(
+        (c: { estimatedComprehensionPct: number | null }) =>
+          c.estimatedComprehensionPct,
+      ),
+    ).toEqual([85, null]);
+  });
+
   it('serves official scope without requiring auth', async () => {
     listOfficialTexts.mockResolvedValueOnce(PAGE);
     const res = (await callGet('?scope=official', null)) as Response;

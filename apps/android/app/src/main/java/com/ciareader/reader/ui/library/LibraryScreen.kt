@@ -174,6 +174,7 @@ private fun ContentList(
                     supportingContent = {
                         Text("${c.textCount} chapters", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     },
+                    trailingContent = { ComprehensionBadge(c.estimatedComprehensionPct) },
                     modifier = Modifier.clickable { onOpenCollection(c) },
                 )
                 HorizontalDivider()
@@ -187,6 +188,7 @@ private fun ContentList(
                     supportingContent = {
                         if (!card.isReady) Text(card.status, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     },
+                    trailingContent = { ComprehensionBadge(card.estimatedComprehensionPct) },
                     modifier = Modifier.clickable(enabled = card.isReady) { onOpenText(card.id) },
                 )
                 HorizontalDivider()
@@ -203,6 +205,31 @@ private fun SectionHeader(text: String) {
         color = MaterialTheme.colorScheme.primary,
         modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
     )
+}
+
+/**
+ * A small "85%" pill on a library card showing the user's estimated
+ * comprehension. Hidden entirely when [pct] is null (text not processed yet)
+ * so we never imply "0% understood" for an unprocessed import. Colours use the
+ * secondary-container role pair, which meets WCAG-AA contrast in both themes.
+ */
+@Composable
+private fun ComprehensionBadge(pct: Int?) {
+    if (pct == null) return
+    val clamped = pct.coerceIn(0, 100)
+    Surface(
+        shape = MaterialTheme.shapes.small,
+        color = MaterialTheme.colorScheme.secondaryContainer,
+        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+        // Named for screen readers; the bare "85%" is ambiguous out of context.
+        modifier = Modifier.semantics { contentDescription = "Estimated comprehension $clamped percent" },
+    ) {
+        Text(
+            "$clamped%",
+            style = MaterialTheme.typography.labelMedium,
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+        )
+    }
 }
 
 @Composable

@@ -12,14 +12,24 @@ class LibraryCache @Inject constructor(
 ) {
 
     suspend fun cards(scope: LibraryScope, language: String): List<TextCard> =
-        dao.cards(scope.wire, language).map { TextCard(it.id, it.title, it.language, it.status) }
+        dao.cards(scope.wire, language).map {
+            TextCard(it.id, it.title, it.language, it.status, it.estimatedComprehensionPct)
+        }
 
     suspend fun putCards(scope: LibraryScope, language: String, cards: List<TextCard>) {
         // Replace wholesale so texts removed server-side don't linger offline.
         dao.clearCards(scope.wire, language)
         dao.upsertCards(
             cards.mapIndexed { i, c ->
-                CachedLibraryCardEntity(scope.wire, language, c.id, c.title, c.status, position = i)
+                CachedLibraryCardEntity(
+                    scope.wire,
+                    language,
+                    c.id,
+                    c.title,
+                    c.status,
+                    position = i,
+                    estimatedComprehensionPct = c.estimatedComprehensionPct,
+                )
             },
         )
     }

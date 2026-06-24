@@ -20,4 +20,7 @@ data class TextCardDto(
     val status: String,
     val visibility: String,
     val createdAt: String,
+    /** Estimated comprehension for the caller (0–100), or null when the text
+     *  has no tokens yet (worker hasn't run). Defaults null for older servers. */
+    val estimatedComprehensionPct: Int? = null,
 )

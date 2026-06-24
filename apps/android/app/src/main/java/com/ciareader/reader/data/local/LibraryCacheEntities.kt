@@ -16,6 +16,8 @@ data class CachedLibraryCardEntity(
     val title: String,
     val status: String,
     val position: Int,
+    /** Cached estimated comprehension (0–100), null when unknown. */
+    val estimatedComprehensionPct: Int? = null,
 )
 
 /**
@@ -41,6 +43,8 @@ data class CachedCollectionEntity(
     val textCount: Int,
     val openTextId: String?,
     val position: Int,
+    /** Cached estimated comprehension (0–100), null when unknown. */
+    val estimatedComprehensionPct: Int? = null,
 )
 
 /** A collection's title, kept so [detail] can be served offline on its own. */

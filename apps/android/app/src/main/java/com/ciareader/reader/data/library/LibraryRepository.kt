@@ -18,6 +18,9 @@ data class TextCard(
     val title: String,
     val language: String,
     val status: String,
+    /** Estimated comprehension (0–100), or null when not yet computed; the
+     *  library card renders a small "%"" badge when present. */
+    val estimatedComprehensionPct: Int? = null,
 ) {
     val isReady: Boolean get() = status == "ready"
 }
@@ -58,4 +61,5 @@ private fun TextCardDto.toDomain() = TextCard(
     title = title,
     language = language,
     status = status,
+    estimatedComprehensionPct = estimatedComprehensionPct,
 )

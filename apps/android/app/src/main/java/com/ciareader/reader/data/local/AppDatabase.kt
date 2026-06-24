@@ -20,7 +20,8 @@ import androidx.room.RoomDatabase
         CachedCollectionChapterEntity::class,
         PendingProgressEntity::class,
     ],
-    version = 4,
+    // v5: + estimatedComprehensionPct on cached_library_card / cached_collection.
+    version = 5,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {

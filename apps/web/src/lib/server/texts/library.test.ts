@@ -55,6 +55,19 @@ vi.mock('../db/index.js', () => ({
   },
 }));
 
+// The card decorator fans out one bulk comprehension query per page;
+// stub it so these unit tests stay focused on paging/projection. The
+// fake echoes a deterministic pct per text id so we can assert the
+// field is threaded onto each card (first id → null, rest → 42).
+const estimatedComprehensionForTexts = vi.fn(
+  async (_userId: string, textIds: string[]) =>
+    new Map(textIds.map((id, i) => [id, i === 0 ? null : 42])),
+);
+vi.mock('../learning-stats.js', () => ({
+  estimatedComprehensionForTexts: (...a: unknown[]) =>
+    estimatedComprehensionForTexts(...(a as [string, string[]])),
+}));
+
 const {
   DEFAULT_PAGE_SIZE,
   MAX_PAGE_SIZE,
@@ -83,6 +96,7 @@ beforeEach(() => {
   calls.length = 0;
   staged.length = 0;
   selectFn.mockClear();
+  estimatedComprehensionForTexts.mockClear();
 });
 
 afterEach(() => {
@@ -98,6 +112,24 @@ describe('listOwnedTexts', () => {
     expect(page.cards).toHaveLength(2);
     expect(page.limit).toBe(DEFAULT_PAGE_SIZE);
     expect(page.offset).toBe(0);
+    // Comprehension is bulk-decorated onto each card (null when the
+    // text has no tokens yet, an int otherwise).
+    expect(estimatedComprehensionForTexts).toHaveBeenCalledWith('user-1', [
+      't1',
+      't2',
+    ]);
+    expect(page.cards.map((c) => c.estimatedComprehensionPct)).toEqual([
+      null,
+      42,
+    ]);
+  });
+
+  it('skips the comprehension query for an empty page', async () => {
+    stage([{ count: 0 }]);
+    stage([]);
+    const page = await listOwnedTexts({ id: 'user-1' });
+    expect(page.cards).toEqual([]);
+    expect(estimatedComprehensionForTexts).not.toHaveBeenCalled();
   });
 
   it('clamps a limit above MAX_PAGE_SIZE', async () => {
@@ -143,6 +175,10 @@ describe('listSharedTexts', () => {
     const page = await listSharedTexts({ id: 'user-1' });
     expect(page.totalCount).toBe(2);
     expect(page.cards.map((c) => c.id)).toEqual(['t1', 't2']);
+    expect(page.cards.map((c) => c.estimatedComprehensionPct)).toEqual([
+      null,
+      42,
+    ]);
   });
 });
 
@@ -156,6 +192,12 @@ describe('listOfficialTexts', () => {
     const page = await listOfficialTexts();
     expect(page.totalCount).toBe(3);
     expect(page.cards.every((c) => c.visibility === 'official')).toBe(true);
+    // Official listing is unauthenticated — no viewer, so comprehension
+    // stays null and the bulk query is never issued.
+    expect(page.cards.every((c) => c.estimatedComprehensionPct === null)).toBe(
+      true,
+    );
+    expect(estimatedComprehensionForTexts).not.toHaveBeenCalled();
   });
 
   it('honors a language filter', async () => {

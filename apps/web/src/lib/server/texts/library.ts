@@ -21,6 +21,7 @@ import { and, desc, eq, sql } from 'drizzle-orm';
 import { db, schema } from '../db/index.js';
 import type { Text, User } from '../db/schema.js';
 import type { LanguageCode } from '@ciareader/shared-types';
+import { estimatedComprehensionForTexts } from '../learning-stats.js';
 
 export const DEFAULT_PAGE_SIZE = 20;
 export const MAX_PAGE_SIZE = 100;
@@ -36,6 +37,11 @@ export type LibraryCard = {
   status: string;
   visibility: string;
   createdAt: Date;
+  /** Estimated comprehension for `viewer` (0–100 int), or null when
+   *  the text has no tokens yet (worker hasn't run) so the UI can show
+   *  a dash rather than 0%. Always null for the unauthenticated
+   *  official listing — there's no viewer to score against. */
+  estimatedComprehensionPct: number | null;
 };
 
 export type ListPage = {
@@ -45,7 +51,10 @@ export type ListPage = {
   offset: number;
 };
 
-function projectCard(row: Text): LibraryCard {
+function projectCard(
+  row: Text,
+  estimatedComprehensionPct: number | null = null,
+): LibraryCard {
   return {
     id: row.id,
     title: row.title,
@@ -54,7 +63,28 @@ function projectCard(row: Text): LibraryCard {
     status: row.status,
     visibility: row.visibility,
     createdAt: row.createdAt,
+    estimatedComprehensionPct,
   };
+}
+
+/**
+ * Decorate the page's rows with the viewer's estimated comprehension
+ * in a single bulk query (one round-trip for the whole page, not one
+ * per card). Returns plain projections with null comprehension when
+ * there's no viewer (the unauthenticated official listing).
+ */
+async function projectCardsWithComprehension(
+  rows: Text[],
+  viewerId: string | null,
+): Promise<LibraryCard[]> {
+  if (rows.length === 0 || !viewerId) {
+    return rows.map((r) => projectCard(r));
+  }
+  const byText = await estimatedComprehensionForTexts(
+    viewerId,
+    rows.map((r) => r.id),
+  );
+  return rows.map((r) => projectCard(r, byText.get(r.id) ?? null));
 }
 
 function clampPage(opts: { limit?: number; offset?: number }): {
@@ -115,7 +145,7 @@ export async function listOwnedTexts(
     .offset(offset)) as Text[];
 
   return {
-    cards: rows.map(projectCard),
+    cards: await projectCardsWithComprehension(rows, viewer.id),
     totalCount: count,
     limit,
     offset,
@@ -184,7 +214,7 @@ export async function listSharedTexts(
     .offset(offset)) as Text[];
 
   return {
-    cards: rows.map(projectCard),
+    cards: await projectCardsWithComprehension(rows, viewer.id),
     totalCount: count,
     limit,
     offset,
@@ -221,8 +251,10 @@ export async function listOfficialTexts(
     .limit(limit)
     .offset(offset)) as Text[];
 
+  // Official listing is unauthenticated — no viewer to score against,
+  // so comprehension stays null.
   return {
-    cards: rows.map(projectCard),
+    cards: await projectCardsWithComprehension(rows, null),
     totalCount: count,
     limit,
     offset,

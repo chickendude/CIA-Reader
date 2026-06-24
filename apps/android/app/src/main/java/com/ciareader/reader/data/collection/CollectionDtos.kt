@@ -12,6 +12,9 @@ data class CollectionListItemDto(
     val collection: CollectionDto,
     val textCount: Int = 0,
     val openTextId: String? = null,
+    /** Estimated comprehension for the caller across the book (0–100), or null
+     *  when none of its texts have tokens yet. Defaults null for older servers. */
+    val estimatedComprehensionPct: Int? = null,
 )
 
 @Serializable

@@ -29,6 +29,7 @@ class CollectionRepositoryTest {
                     CollectionListItemDto(
                         collection = CollectionDto("c1", "Afrika express (20920)", "eu", "chapter_book"),
                         textCount = 12,
+                        estimatedComprehensionPct = 73,
                     ),
                 ),
             ),
@@ -41,6 +42,8 @@ class CollectionRepositoryTest {
         assertEquals("Afrika express (20920)", summaries[0].title)
         assertEquals("eu", summaries[0].language)
         assertEquals(12, summaries[0].textCount)
+        // Comprehension threads through from the DTO onto the summary.
+        assertEquals(73, summaries[0].estimatedComprehensionPct)
     }
 
     @Test
@@ -74,6 +77,7 @@ class CollectionRepositoryTest {
                         collection = CollectionDto("c1", "Book", "eu", "chapter_book"),
                         textCount = 3,
                         openTextId = "t1",
+                        estimatedComprehensionPct = 42,
                     ),
                 ),
             ),
@@ -87,6 +91,8 @@ class CollectionRepositoryTest {
         val first = (offline as Outcome.Success).data.first()
         assertEquals("Book", first.title)
         assertEquals("t1", first.openTextId)
+        // Comprehension survives the round-trip through the offline cache.
+        assertEquals(42, first.estimatedComprehensionPct)
     }
 
     @Test

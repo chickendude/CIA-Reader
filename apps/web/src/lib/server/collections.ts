@@ -22,6 +22,7 @@ import type {
 import type { LanguageCode } from '@ciareader/shared-types';
 import { enqueueNlpJob } from './texts/jobs.js';
 import { prependTitleToBody, type ChapterDraft } from './texts/chunking.js';
+import { estimatedComprehensionForCollections } from './learning-stats.js';
 
 export class CollectionError extends Error {
   constructor(
@@ -505,6 +506,10 @@ export type CollectionListItem = {
   /** The chapter-text to open when the book is tapped: the one read most
    *  recently, else the first chapter. Null only for an empty book. */
   openTextId?: string | null;
+  /** Estimated comprehension for the owner (0–100 int) aggregated over
+   *  every text in the collection, or null when none of its texts have
+   *  tokens yet (worker hasn't run) so the UI shows a dash, not 0%. */
+  estimatedComprehensionPct?: number | null;
 };
 
 export async function listCollectionsForUser(
@@ -573,9 +578,18 @@ export async function listCollectionsForUser(
     if (!firstText.has(it.collectionId)) firstText.set(it.collectionId, it.textId);
   }
 
+  // Bulk comprehension for every collection in one round trip — the
+  // library card badge (web + Android) reads this directly so the grid
+  // stays cheap regardless of collection count.
+  const comprehension = await estimatedComprehensionForCollections(
+    userId,
+    rows.map((r) => r.collection.id),
+  );
+
   return rows.map((r) => ({
     ...r,
     openTextId: lastRead.get(r.collection.id)?.textId ?? firstText.get(r.collection.id) ?? null,
+    estimatedComprehensionPct: comprehension.get(r.collection.id) ?? null,
   }));
 }
 

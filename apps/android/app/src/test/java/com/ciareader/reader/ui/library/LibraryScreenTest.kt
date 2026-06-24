@@ -1,8 +1,10 @@
 package com.ciareader.reader.ui.library
 
 import android.app.Application
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -61,6 +63,46 @@ class LibraryScreenTest {
         compose.onNodeWithText("Story One").assertIsDisplayed()
         compose.onNodeWithText("Story One").performClick()
         assertEquals("t1", opened)
+    }
+
+    @Test
+    fun showsComprehensionBadgeWhenPresentAndHidesItWhenNull() {
+        setContent(
+            LibraryUiState(
+                isLoading = false,
+                languages = listOf(lang("hi", "Hindi")),
+                currentLanguage = "hi",
+                texts = listOf(
+                    TextCard("t1", "Scored", "hi", "ready", estimatedComprehensionPct = 85),
+                    TextCard("t2", "Unscored", "hi", "ready", estimatedComprehensionPct = null),
+                ),
+            ),
+        )
+        // The scored card shows an "85%" pill; the unscored one shows none.
+        compose.onNodeWithText("85%").assertIsDisplayed()
+        compose.onAllNodesWithText("%", substring = true).assertCountEquals(1)
+    }
+
+    @Test
+    fun showsComprehensionBadgeOnCollectionCards() {
+        setContent(
+            LibraryUiState(
+                isLoading = false,
+                languages = listOf(lang("eu", "Basque")),
+                currentLanguage = "eu",
+                collections = listOf(
+                    CollectionSummary(
+                        "c1",
+                        "Afrika express",
+                        "eu",
+                        "chapter_book",
+                        12,
+                        estimatedComprehensionPct = 47,
+                    ),
+                ),
+            ),
+        )
+        compose.onNodeWithText("47%").assertIsDisplayed()
     }
 
     @Test
