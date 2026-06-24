@@ -2,6 +2,7 @@ package com.ciareader.reader.ui.reader
 
 import androidx.lifecycle.SavedStateHandle
 import com.ciareader.reader.core.network.Outcome
+import com.ciareader.reader.core.settings.ReadingTimeStore
 import com.ciareader.reader.core.settings.SettingsStore
 import com.ciareader.reader.data.collection.CollectionChapter
 import com.ciareader.reader.data.collection.CollectionDetail
@@ -43,6 +44,7 @@ class ReaderViewModelTest {
         dict: DictionaryRepository = FakeDictionaryRepository(),
         settings: SettingsStore = FakeSettingsStore(),
         collections: CollectionRepository = FakeCollectionRepository(),
+        readingTime: FakeReadingTimeStore = FakeReadingTimeStore(),
         collectionId: String? = null,
         atEnd: Boolean = false,
         resume: Boolean = true,
@@ -51,6 +53,7 @@ class ReaderViewModelTest {
         dict,
         settings,
         collections,
+        readingTime,
         SavedStateHandle(
             buildMap {
                 put("textId", "t1")
@@ -84,6 +87,74 @@ class ReaderViewModelTest {
         advanceUntilIdle()
         assertEquals("boom", v.state.value.errorMessage)
         assertFalse(v.state.value.isLoading)
+    }
+
+    @Test
+    fun readingTimeAccruesBetweenVisibleAndHidden() = runTest(mainRule.dispatcher) {
+        val repo = FakeReaderRepository(
+            meta = meta(1, language = "hi"),
+            chapters = mapOf(0 to Chapter(0, emptyList())),
+        )
+        val timeStore = FakeReadingTimeStore()
+        val v = vm(repo, readingTime = timeStore)
+        advanceUntilIdle()
+
+        var now = 1_000L
+        v.clock = { now }
+        v.onScreenVisible()
+        now = 31_000L // 30s later
+        v.onScreenHidden()
+        advanceUntilIdle()
+
+        assertEquals(30_000L, timeStore.readingTimeMs("hi"))
+    }
+
+    @Test
+    fun readingTimeAccumulatesAcrossSessions() = runTest(mainRule.dispatcher) {
+        val repo = FakeReaderRepository(meta = meta(1), chapters = mapOf(0 to Chapter(0, emptyList())))
+        val timeStore = FakeReadingTimeStore()
+        val v = vm(repo, readingTime = timeStore)
+        advanceUntilIdle()
+
+        var now = 0L
+        v.clock = { now }
+        v.onScreenVisible(); now = 10_000L; v.onScreenHidden()
+        now = 50_000L; v.onScreenVisible(); now = 55_000L; v.onScreenHidden()
+        advanceUntilIdle()
+
+        assertEquals(15_000L, timeStore.readingTimeMs("hi"))
+    }
+
+    @Test
+    fun secondVisibleWithoutHiddenIsIdempotent() = runTest(mainRule.dispatcher) {
+        val repo = FakeReaderRepository(meta = meta(1), chapters = mapOf(0 to Chapter(0, emptyList())))
+        val timeStore = FakeReadingTimeStore()
+        val v = vm(repo, readingTime = timeStore)
+        advanceUntilIdle()
+
+        var now = 0L
+        v.clock = { now }
+        v.onScreenVisible()
+        now = 5_000L
+        v.onScreenVisible() // ignored — should not reset the start time
+        now = 20_000L
+        v.onScreenHidden()
+        advanceUntilIdle()
+
+        // Elapsed measured from the first onScreenVisible (0), not the second.
+        assertEquals(20_000L, timeStore.readingTimeMs("hi"))
+    }
+
+    @Test
+    fun hiddenWithoutVisibleRecordsNothing() = runTest(mainRule.dispatcher) {
+        val repo = FakeReaderRepository(meta = meta(1), chapters = mapOf(0 to Chapter(0, emptyList())))
+        val timeStore = FakeReadingTimeStore()
+        val v = vm(repo, readingTime = timeStore)
+        advanceUntilIdle()
+
+        v.onScreenHidden()
+        advanceUntilIdle()
+        assertEquals(0L, timeStore.totalReadingTimeMs())
     }
 
     @Test
@@ -618,4 +689,15 @@ private class FakeCollectionRepository(
         detail?.let { Outcome.Success(it) } ?: Outcome.Failure("no detail")
 
     override suspend fun cachedCollections(): List<CollectionSummary> = emptyList()
+}
+
+private class FakeReadingTimeStore : ReadingTimeStore {
+    val added = mutableMapOf<String, Long>()
+    override suspend fun addReadingTime(language: String, deltaMs: Long) {
+        added[language] = (added[language] ?: 0L) + deltaMs
+    }
+
+    override suspend fun readingTimeMs(language: String): Long = added[language] ?: 0L
+    override suspend fun readingTimeByLanguage(): Map<String, Long> = added.toMap()
+    override suspend fun totalReadingTimeMs(): Long = added.values.sum()
 }
