@@ -16,10 +16,12 @@ export type ExtensionConfig = {
   deckName: string;
   /** AnkiConnect endpoint (local Anki + add-on). */
   ankiConnectUrl: string;
-  /** Pause playback at the end of each subtitle line. */
+  /** Start with auto-pause at the end of each subtitle line enabled. */
   autoPauseAtLineEnd: boolean;
-  /** Pause playback while a word look-up popup is open. */
+  /** Pause playback while a word look-up popup is open (pause-on-hover). */
   pauseOnLookup: boolean;
+  /** Turn on Basque subtitles automatically if none are showing. */
+  autoEnableSubtitles: boolean;
 };
 
 export const DEFAULT_CONFIG: ExtensionConfig = {
@@ -31,6 +33,7 @@ export const DEFAULT_CONFIG: ExtensionConfig = {
   ankiConnectUrl: 'http://127.0.0.1:8765',
   autoPauseAtLineEnd: false,
   pauseOnLookup: true,
+  autoEnableSubtitles: true,
 };
 
 const CONFIG_KEY = 'config';

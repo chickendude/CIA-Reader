@@ -9,30 +9,84 @@
         color-scheme: light dark;
       }
       body {
-        font: 13px/1.4 system-ui, sans-serif;
+        font: 13px/1.45 system-ui, -apple-system, sans-serif;
         margin: 0;
-        padding: 14px;
-        width: 260px;
+        padding: 14px 16px;
+        width: 300px;
       }
       h1 {
-        font-size: 14px;
-        margin: 0 0 8px;
+        font-size: 15px;
+        margin: 0 0 2px;
       }
-      #status {
-        margin: 0 0 12px;
-        color: #555;
+      h2 {
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: #888;
+        margin: 16px 0 6px;
+      }
+      .status {
+        margin: 0;
+        color: #666;
+        font-size: 12px;
+      }
+      .keys {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+      }
+      .keys li {
+        display: flex;
+        align-items: baseline;
+        gap: 8px;
+        margin: 4px 0;
+      }
+      kbd {
+        flex: 0 0 auto;
+        min-width: 34px;
+        text-align: center;
+        font: 600 11px/1.6 ui-monospace, monospace;
+        background: rgba(127, 127, 127, 0.18);
+        border: 1px solid rgba(127, 127, 127, 0.3);
+        border-radius: 4px;
+        padding: 0 5px;
+      }
+      label.opt {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin: 7px 0;
+        cursor: pointer;
       }
       button {
         font: inherit;
-        padding: 6px 10px;
+        margin-top: 14px;
+        padding: 7px 12px;
         cursor: pointer;
+        width: 100%;
       }
     </style>
   </head>
   <body>
     <h1>Primeran Subtitle Miner</h1>
-    <p id="status">Loading…</p>
-    <button id="open-options" type="button">Open settings</button>
+    <p class="status" id="auth-status">…</p>
+    <p class="status" id="dict-status"></p>
+
+    <h2>Controls</h2>
+    <ul class="keys">
+      <li><kbd>hover</kbd> Look up a word (definition + Add to Anki)</li>
+      <li><kbd>←</kbd><kbd>→</kbd> Previous / next subtitle line</li>
+      <li><kbd>A</kbd> Repeat the current line</li>
+      <li><kbd>W</kbd> Auto-pause at line end</li>
+      <li><kbd>E</kbd> Listening mode (hide subtitle, reveal at line end)</li>
+    </ul>
+
+    <h2>Options</h2>
+    <label class="opt"><input type="checkbox" id="pauseOnLookup" /> Pause video on word hover</label>
+    <label class="opt"><input type="checkbox" id="autoEnableSubtitles" /> Auto-enable Basque subtitles</label>
+    <label class="opt"><input type="checkbox" id="autoPauseAtLineEnd" /> Auto-pause at line end by default</label>
+
+    <button id="open-options" type="button">Settings & account…</button>
     <script src="popup.js"></script>
   </body>
 </html>

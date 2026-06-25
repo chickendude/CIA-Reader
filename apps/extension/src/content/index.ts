@@ -7,6 +7,7 @@
  * prev / next line, auto-pause). We never patch the page's fetch/XHR.
  */
 import { ext } from '../shared/browser';
+import { DEFAULT_CONFIG, loadConfig, type ExtensionConfig } from '../shared/config';
 import { sendMessage } from '../shared/messages';
 import type { SubtitleCue } from '../shared/subtitles';
 import { SubtitleMirror } from './mirror';
@@ -20,11 +21,19 @@ const LANGUAGE = 'eu';
 const video = new VideoController();
 const playback = new PlaybackController(video);
 
+// Live config (popup/options can change it via storage).
+let config: ExtensionConfig = DEFAULT_CONFIG;
+ext.storage.onChanged.addListener(() => {
+  void loadConfig().then((c) => (config = c));
+});
+
 const overlay = new Overlay({
   lookup: (surface) => sendMessage('LOOKUP', { language: LANGUAGE, surface }),
   reference: (word) => sendMessage('REFERENCE', { language: LANGUAGE, word }).then((r) => r.results),
-  // Pause the video while a word's definition is open, resume on leave.
-  onOpen: () => video.pauseForLookup(),
+  // Pause the video while a word's definition is open (if enabled), resume on leave.
+  onOpen: () => {
+    if (config.pauseOnLookup) video.pauseForLookup();
+  },
   onClose: () => video.resumeAfterLookup(),
   frequency: (lemma, surface) =>
     sendMessage('FREQUENCY', { language: LANGUAGE, url: location.href, lemma, surface }).then(
@@ -79,10 +88,14 @@ async function enableBasqueSubtitles(): Promise<void> {
   (eu?.closest('button') ?? eu)?.click();
 }
 
-// If no subtitle has appeared shortly after load, try to turn them on.
-setTimeout(() => {
-  if (!seenSubs) void enableBasqueSubtitles();
-}, 6000);
+// Apply initial config: optional auto-pause default + auto-enable subtitles.
+void loadConfig().then((c) => {
+  config = c;
+  if (c.autoPauseAtLineEnd) toggleAutoPause();
+  setTimeout(() => {
+    if (!seenSubs && config.autoEnableSubtitles) void enableBasqueSubtitles();
+  }, 6000);
+});
 
 // Cues power the playback controls (timing). Load cached ones, and take pushes.
 async function loadCues(): Promise<void> {

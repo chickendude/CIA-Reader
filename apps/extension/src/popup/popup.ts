@@ -1,20 +1,54 @@
 /**
- * Toolbar popup: shows auth status and a shortcut to settings. The real login
- * form lives on the options page.
+ * Toolbar popup: auth + dictionary status, a controls cheatsheet, and quick
+ * option toggles. The full login/backend/Anki settings live on the options page.
  */
 import { ext } from '../shared/browser';
+import { loadConfig, saveConfig, type ExtensionConfig } from '../shared/config';
 import { sendMessage } from '../shared/messages';
 
-async function render(): Promise<void> {
-  const statusEl = document.getElementById('status');
-  if (!statusEl) return;
-  try {
-    const auth = await sendMessage('AUTH_STATUS');
-    statusEl.textContent = auth.loggedIn
-      ? `Logged in${auth.email ? ` as ${auth.email}` : ''}.`
-      : 'Not logged in — open settings to log in.';
-  } catch (e) {
-    statusEl.textContent = `Background unavailable: ${e instanceof Error ? e.message : String(e)}`;
+const LANGUAGE = 'eu';
+
+async function renderStatus(): Promise<void> {
+  const auth = document.getElementById('auth-status');
+  if (auth) {
+    try {
+      const a = await sendMessage('AUTH_STATUS');
+      auth.textContent = a.loggedIn
+        ? `Logged in${a.email ? ` as ${a.email}` : ''}.`
+        : 'Not logged in — open Settings to log in.';
+    } catch {
+      auth.textContent = 'Background unavailable.';
+    }
+  }
+
+  const dict = document.getElementById('dict-status');
+  if (dict) {
+    const s = await sendMessage('DICT_STATUS', { language: LANGUAGE }).catch(() => ({
+      ready: false,
+      count: 0,
+    }));
+    dict.textContent = s.ready
+      ? `${s.count.toLocaleString()} ${LANGUAGE} words cached.`
+      : 'Dictionary not downloaded — see Settings.';
+  }
+}
+
+const TOGGLES: (keyof ExtensionConfig)[] = [
+  'pauseOnLookup',
+  'autoEnableSubtitles',
+  'autoPauseAtLineEnd',
+];
+
+async function renderOptions(): Promise<void> {
+  const cfg = await loadConfig();
+  for (const key of TOGGLES) {
+    const box = document.getElementById(key);
+    if (box instanceof HTMLInputElement) {
+      box.checked = Boolean(cfg[key]);
+      box.addEventListener('change', () => {
+        void saveConfig({ [key]: box.checked });
+      });
+    }
   }
 }
 
@@ -22,4 +56,5 @@ document.getElementById('open-options')?.addEventListener('click', () => {
   void ext.runtime.openOptionsPage();
 });
 
-void render();
+void renderStatus();
+void renderOptions();
