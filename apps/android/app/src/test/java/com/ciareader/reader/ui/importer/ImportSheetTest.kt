@@ -31,18 +31,19 @@ class ImportSheetTest {
                     onSubmitPaste = { _, _, _ -> },
                     onImportTxt = { _, _ -> },
                     onImportEpub = { _, _ -> },
+                    onImportPdf = { _, _ -> },
                 )
             }
         }
     }
 
     @Test
-    fun showsAllImportOptionsIncludingDisabledPdf() {
+    fun showsAllImportOptionsIncludingPdf() {
         setContent()
         compose.onNodeWithText("Paste text").assertIsDisplayed()
         compose.onNodeWithText("Plain text file (.txt)").assertIsDisplayed()
         compose.onNodeWithText("EPUB book (.epub)").assertIsDisplayed()
-        compose.onNodeWithText("PDF (coming soon)").assertIsDisplayed()
+        compose.onNodeWithText("PDF document (.pdf)").assertIsDisplayed()
     }
 
     @Test

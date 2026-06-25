@@ -130,7 +130,13 @@ fun LibraryScreen(
                 viewModel.refreshCurrentLanguage()
                 when (result) {
                     is ImportResult.Text -> onOpenText(result.textId)
-                    is ImportResult.Collection -> onOpenCollectionById(result.collectionId)
+                    // Open the reader on chapter 1 (which carries book nav) rather
+                    // than the chapter-list page, whose chapters are still
+                    // "processing" with no live refresh. Fall back to the list only
+                    // if the server didn't surface a first chapter.
+                    is ImportResult.Collection ->
+                        result.firstTextId?.let(onOpenText)
+                            ?: onOpenCollectionById(result.collectionId)
                 }
             },
         )

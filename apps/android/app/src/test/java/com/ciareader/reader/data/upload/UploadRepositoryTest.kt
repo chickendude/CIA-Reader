@@ -16,7 +16,8 @@ import java.io.IOException
 
 class UploadRepositoryTest {
 
-    private fun repo(api: FakeUploadApi) = UploadRepositoryImpl(api)
+    private fun repo(api: FakeUploadApi, rasterizer: PdfRasterizer = FakePdfRasterizer()) =
+        UploadRepositoryImpl(api, rasterizer)
 
     @Test
     fun createTextSendsLanguageTitleBodyAndSourceTypeAndReturnsTextId() = runTest {
@@ -118,6 +119,45 @@ class UploadRepositoryTest {
     }
 
     @Test
+    fun uploadEpubCarriesFirstTextIdForACollection() = runTest {
+        val api = FakeUploadApi(
+            epubResponse = EpubUploadResponseDto(
+                kind = "collection",
+                collection = CreatedCollectionDto(id = "c9", language = "eu", title = "Big Book"),
+                textCount = 12,
+                firstTextId = "ch1",
+            ),
+        )
+        val result = repo(api).uploadEpub("eu", "Big Book", "big.epub", byteArrayOf(1))
+        val import = (result as Outcome.Success).data as ImportResult.Collection
+        assertEquals("ch1", import.firstTextId)
+    }
+
+    @Test
+    fun importPdfBeginsThenStreamsEachPageInOrderAndReturnsTheTextId() = runTest {
+        val api = FakeUploadApi(pdfBeginResponse = PdfBeginResponseDto(id = "p1", pageCount = 3))
+        val result = repo(api, FakePdfRasterizer(fileName = "scan.pdf", pages = 3))
+            .importPdf("hi", "content://scan.pdf")
+
+        assertTrue(result is Outcome.Success)
+        val import = (result as Outcome.Success).data
+        assertTrue(import is ImportResult.Text)
+        assertEquals("p1", (import as ImportResult.Text).textId)
+        assertEquals("scan", import.title) // file name sans .pdf
+        assertEquals(3, api.lastPdfBegin!!.pageCount)
+        assertEquals("hi", api.lastPdfBegin!!.language)
+        assertEquals(listOf(0, 1, 2), api.uploadedPages)
+    }
+
+    @Test
+    fun importPdfFailsClearlyForAnUnreadableFile() = runTest {
+        val result = repo(FakeUploadApi(), ThrowingPdfRasterizer())
+            .importPdf("hi", "content://broken.pdf")
+        assertTrue(result is Outcome.Failure)
+        assertEquals("Could not read that PDF.", (result as Outcome.Failure).message)
+    }
+
+    @Test
     fun uploadEpubMapsNetworkErrorToFailure() = runTest {
         val result = repo(FakeUploadApi(online = false))
             .uploadEpub("hi", "t", "f.epub", byteArrayOf(1))
@@ -166,11 +206,14 @@ private class FakeUploadApi(
     private val epubResponse: EpubUploadResponseDto? = null,
     private val error: Throwable? = null,
     private val online: Boolean = true,
+    private val pdfBeginResponse: PdfBeginResponseDto? = null,
 ) : UploadApi {
     var lastCreateRequest: CreateTextRequest? = null
     lateinit var lastLanguagePart: RequestBody
     lateinit var lastTitlePart: RequestBody
     var lastFilePart: MultipartBody.Part? = null
+    var lastPdfBegin: PdfBeginRequest? = null
+    val uploadedPages = mutableListOf<Int>()
 
     override suspend fun createText(body: CreateTextRequest): CreateTextResponseDto {
         lastCreateRequest = body
@@ -191,4 +234,47 @@ private class FakeUploadApi(
         error?.let { throw it }
         return epubResponse!!
     }
+
+    override suspend fun pdfBegin(body: PdfBeginRequest): PdfBeginResponseDto {
+        lastPdfBegin = body
+        if (!online) throw IOException("offline")
+        error?.let { throw it }
+        return pdfBeginResponse!!
+    }
+
+    override suspend fun uploadPage(
+        textId: String,
+        idx: Int,
+        image: MultipartBody.Part,
+        width: RequestBody,
+        height: RequestBody,
+    ): PageUploadResponseDto {
+        uploadedPages += idx
+        if (!online) throw IOException("offline")
+        error?.let { throw it }
+        return PageUploadResponseDto(complete = idx == (lastPdfBegin?.pageCount ?: 0) - 1)
+    }
+}
+
+/** Renders [pages] dummy JPEG pages; the upload repo streams them via the API. */
+private class FakePdfRasterizer(
+    private val fileName: String = "doc.pdf",
+    private val pages: Int = 2,
+) : PdfRasterizer {
+    override suspend fun open(uriString: String): PdfPages = object : PdfPages {
+        override val fileName = this@FakePdfRasterizer.fileName
+        override val pageCount = pages
+        override suspend fun render(index: Int) = RenderedPage(
+            bytes = byteArrayOf(index.toByte()),
+            width = 100,
+            height = 200,
+            mime = "image/jpeg",
+        )
+        override fun close() {}
+    }
+}
+
+/** A rasterizer that fails to open — stands in for a corrupt / non-PDF file. */
+private class ThrowingPdfRasterizer : PdfRasterizer {
+    override suspend fun open(uriString: String): PdfPages = throw IOException("nope")
 }

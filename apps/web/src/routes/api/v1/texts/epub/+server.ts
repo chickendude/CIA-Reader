@@ -141,6 +141,9 @@ export const POST: RequestHandler = async (event) => {
           createdAt: collection.createdAt,
         },
         textCount: created.texts.length,
+        // First chapter's text id (texts are in spine/position order) so an API
+        // client can open the reader on chapter 1 instead of the chapter list.
+        firstTextId: created.texts[0]?.id ?? null,
       },
       { status: 201, headers: rateLimitHeaders(requestLimit) },
     );

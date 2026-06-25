@@ -70,7 +70,8 @@ class UploadSerializationTest {
                 "id": "c1", "ownerId": "u1", "language": "eu", "title": "Big Book",
                 "kind": "chapter_book", "visibility": "private", "createdAt": "2026-06-23T00:00:00Z"
               },
-              "textCount": 12
+              "textCount": 12,
+              "firstTextId": "ch1"
             }
         """.trimIndent()
 
@@ -78,6 +79,31 @@ class UploadSerializationTest {
         assertEquals("collection", dto.kind)
         assertEquals("c1", dto.collection?.id)
         assertEquals(12, dto.textCount)
+        assertEquals("ch1", dto.firstTextId)
         assertNull(dto.text)
+    }
+
+    @Test
+    fun encodesPdfBeginRequestAndDecodesItsResponse() {
+        val encoded = json.encodeToString(
+            PdfBeginRequest(language = "hi", title = "Scan", pageCount = 3),
+        )
+        assertTrue(encoded.contains("\"pageCount\":3"))
+        assertTrue(encoded.contains("\"title\":\"Scan\""))
+
+        val begin = json.decodeFromString<PdfBeginResponseDto>(
+            """{ "id": "p1", "pageCount": 3 }""",
+        )
+        assertEquals("p1", begin.id)
+        assertEquals(3, begin.pageCount)
+    }
+
+    @Test
+    fun decodesPageUploadResponseWithCompleteFlag() {
+        val dto = json.decodeFromString<PageUploadResponseDto>(
+            """{ "chapterId": "c0", "tokenCount": 42, "complete": true }""",
+        )
+        assertEquals(42, dto.tokenCount)
+        assertTrue(dto.complete)
     }
 }

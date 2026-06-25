@@ -66,6 +66,7 @@ fun ImportSheet(
         onSubmitPaste = viewModel::submitPaste,
         onImportTxt = viewModel::importTxt,
         onImportEpub = viewModel::importEpub,
+        onImportPdf = viewModel::importPdf,
     )
 }
 
@@ -84,6 +85,7 @@ internal fun ImportSheetContent(
     onSubmitPaste: (language: String, title: String, body: String) -> Unit,
     onImportTxt: (language: String, uri: String) -> Unit,
     onImportEpub: (language: String, uri: String) -> Unit,
+    onImportPdf: (language: String, uri: String) -> Unit,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
@@ -94,14 +96,15 @@ internal fun ImportSheetContent(
             onSubmitPaste = onSubmitPaste,
             onImportTxt = onImportTxt,
             onImportEpub = onImportEpub,
+            onImportPdf = onImportPdf,
         )
     }
 }
 
 /**
- * The import options column: paste / `.txt` / `.epub` rows + a disabled PDF row,
- * plus the paste dialog. The SAF pickers live here because they only need the
- * picked URI string.
+ * The import options column: paste / `.txt` / `.epub` / `.pdf` rows, plus the
+ * paste dialog. The SAF pickers live here because they only need the picked URI
+ * string.
  */
 @Composable
 internal fun ImportSheetBody(
@@ -111,6 +114,7 @@ internal fun ImportSheetBody(
     onSubmitPaste: (language: String, title: String, body: String) -> Unit,
     onImportTxt: (language: String, uri: String) -> Unit,
     onImportEpub: (language: String, uri: String) -> Unit,
+    onImportPdf: (language: String, uri: String) -> Unit,
 ) {
     var showPasteDialog by remember { mutableStateOf(false) }
 
@@ -122,6 +126,9 @@ internal fun ImportSheetBody(
     val epubPicker = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument(),
     ) { uri -> uri?.let { onImportEpub(language, it.toString()) } }
+    val pdfPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument(),
+    ) { uri -> uri?.let { onImportPdf(language, it.toString()) } }
 
     Column(Modifier.padding(bottom = 24.dp)) {
         Text(
@@ -172,10 +179,9 @@ internal fun ImportSheetBody(
                 },
             )
             ImportOption(
-                title = "PDF (coming soon)",
-                subtitle = "PDF import isn't available in the app yet",
-                enabled = false,
-                onClick = {},
+                title = "PDF document (.pdf)",
+                subtitle = "Pick a PDF — pages are scanned into readable text",
+                onClick = { pdfPicker.launch(arrayOf("application/pdf")) },
             )
         }
     }

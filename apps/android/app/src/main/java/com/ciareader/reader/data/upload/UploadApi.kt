@@ -6,8 +6,9 @@ import retrofit2.http.Body
 import retrofit2.http.Multipart
 import retrofit2.http.POST
 import retrofit2.http.Part
+import retrofit2.http.Path
 
-/** Text/EPUB import endpoints under /api/v1/texts. */
+/** Text/EPUB/PDF import endpoints under /api/v1/texts. */
 interface UploadApi {
     /** Plain text (paste or `.txt`) → JSON body. Returns the new text metadata. */
     @POST("api/v1/texts")
@@ -25,4 +26,20 @@ interface UploadApi {
         @Part("title") title: RequestBody,
         @Part file: MultipartBody.Part,
     ): EpubUploadResponseDto
+
+    /** Opens a PDF import (text + N empty page chapters). Returns the new text id. */
+    @POST("api/v1/texts/pdf/begin")
+    suspend fun pdfBegin(@Body body: PdfBeginRequest): PdfBeginResponseDto
+
+    /** Ingest one rasterized PDF page; the server OCRs it and flips the text to
+     *  `ready` after the final page. */
+    @Multipart
+    @POST("api/v1/texts/{id}/pages/{idx}")
+    suspend fun uploadPage(
+        @Path("id") textId: String,
+        @Path("idx") idx: Int,
+        @Part image: MultipartBody.Part,
+        @Part("width") width: RequestBody,
+        @Part("height") height: RequestBody,
+    ): PageUploadResponseDto
 }

@@ -129,6 +129,18 @@ class ImportViewModelTest {
     }
 
     @Test
+    fun importPdfPassesTheUriThroughAndSurfacesTheResult() = runTest(mainRule.dispatcher) {
+        val repo = FakeUploadRepository(pdfResult = ImportResult.Text("p1", "Scan"))
+        val vm = vm(repo)
+
+        vm.importPdf(language = "hi", uriString = "content://docs/5")
+        advanceUntilIdle()
+
+        assertEquals("content://docs/5", repo.lastPdfUri)
+        assertEquals(ImportResult.Text("p1", "Scan"), vm.state.value.result)
+    }
+
+    @Test
     fun repoFailureSurfacesErrorAndKeepsNoResult() = runTest(mainRule.dispatcher) {
         val repo = FakeUploadRepository(failure = "Daily text upload limit reached. Try again tomorrow.")
         val vm = vm(repo)
@@ -181,10 +193,12 @@ private data class EpubArgs(
 private class FakeUploadRepository(
     private val textResult: ImportResult = ImportResult.Text("t", "Title"),
     private val epubResult: ImportResult = ImportResult.Text("e", "Title"),
+    private val pdfResult: ImportResult = ImportResult.Text("p", "Title"),
     private val failure: String? = null,
 ) : UploadRepository {
     var lastCreate: CreateArgs? = null
     var lastEpub: EpubArgs? = null
+    var lastPdfUri: String? = null
 
     override suspend fun createText(
         language: String,
@@ -204,6 +218,11 @@ private class FakeUploadRepository(
     ): Outcome<ImportResult> {
         lastEpub = EpubArgs(language, title, fileName, bytes)
         return failure?.let { Outcome.Failure(it) } ?: Outcome.Success(epubResult)
+    }
+
+    override suspend fun importPdf(language: String, uriString: String): Outcome<ImportResult> {
+        lastPdfUri = uriString
+        return failure?.let { Outcome.Failure(it) } ?: Outcome.Success(pdfResult)
     }
 }
 

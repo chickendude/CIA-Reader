@@ -20,6 +20,8 @@ import com.ciareader.reader.data.reader.ReaderRepository
 import com.ciareader.reader.data.reader.ReaderRepositoryImpl
 import com.ciareader.reader.data.upload.ContentResolverDocumentReader
 import com.ciareader.reader.data.upload.DocumentReader
+import com.ciareader.reader.data.upload.PdfRasterizer
+import com.ciareader.reader.data.upload.PdfRendererRasterizer
 import com.ciareader.reader.data.upload.UploadRepository
 import com.ciareader.reader.data.upload.UploadRepositoryImpl
 import dagger.Binds
@@ -75,4 +77,8 @@ abstract class BindingsModule {
     @Binds
     @Singleton
     abstract fun bindDocumentReader(impl: ContentResolverDocumentReader): DocumentReader
+
+    @Binds
+    @Singleton
+    abstract fun bindPdfRasterizer(impl: PdfRendererRasterizer): PdfRasterizer
 }

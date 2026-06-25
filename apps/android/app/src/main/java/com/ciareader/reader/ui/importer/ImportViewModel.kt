@@ -25,11 +25,10 @@ data class ImportUiState(
 )
 
 /**
- * Drives the "import a text" flow: paste plain text, pick a `.txt`, or pick an
- * `.epub`. The screen owns the SAF launchers and hands us the picked `content://`
- * URI; we read its bytes via [DocumentReader] and POST via [UploadRepository].
- * PDF is not handled here — it needs client-side page rasterization (pdf.js on
- * web) that a thin native client can't replicate, so the UI shows it disabled.
+ * Drives the "import a text" flow: paste plain text, pick a `.txt`/`.epub`, or
+ * pick a `.pdf`. The screen owns the SAF launchers and hands us the picked
+ * `content://` URI; we read its bytes via [DocumentReader] (or rasterize pages
+ * via the repository's [PdfRasterizer]) and POST via [UploadRepository].
  */
 @HiltViewModel
 class ImportViewModel @Inject constructor(
@@ -87,6 +86,13 @@ class ImportViewModel @Inject constructor(
                 fileName = doc.fileName,
                 bytes = doc.bytes,
             )
+        }
+    }
+
+    /** `.pdf` flow: the repository rasterizes pages on-device and streams them. */
+    fun importPdf(language: String, uriString: String) {
+        runImport {
+            uploadRepository.importPdf(language, uriString)
         }
     }
 
