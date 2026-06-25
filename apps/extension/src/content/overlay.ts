@@ -126,9 +126,20 @@ export class Overlay {
     this.root.append(style, this.bar);
     document.documentElement.append(this.host);
 
-    document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape') this.close();
-    });
+    // Capture phase + stopImmediatePropagation so Escape only closes our popup
+    // and doesn't also reach Primeran (which would exit the player/page). When
+    // no popup is open we leave Escape alone (fullscreen exit etc. still work).
+    document.addEventListener(
+      'keydown',
+      (e) => {
+        if (e.key === 'Escape' && this.popup) {
+          e.stopImmediatePropagation();
+          e.preventDefault();
+          this.close();
+        }
+      },
+      true,
+    );
   }
 
   setCue(text: string | null): void {
