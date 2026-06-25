@@ -35,6 +35,7 @@ class LibraryScreenTest {
         onDeleteCollection: (String) -> Unit = {},
         onDeleteText: (String) -> Unit = {},
         onShowStats: (CollectionSummary) -> Unit = {},
+        onEditText: (String, String) -> Unit = { _, _ -> },
     ) {
         compose.setContent {
             CiaReaderTheme {
@@ -49,6 +50,7 @@ class LibraryScreenTest {
                     onDeleteCollection = onDeleteCollection,
                     onDeleteText = onDeleteText,
                     onShowStats = onShowStats,
+                    onEditText = onEditText,
                 )
             }
         }
@@ -260,6 +262,40 @@ class LibraryScreenTest {
         compose.onNodeWithText("Delete text?").assertIsDisplayed()
         compose.onNodeWithText("Delete").performClick()
         assertEquals("t1", deleted)
+    }
+
+    @Test
+    fun textOverflowMenuShowsEditStatsDelete() {
+        setContent(
+            LibraryUiState(
+                isLoading = false,
+                languages = listOf(lang("hi", "Hindi")),
+                currentLanguage = "hi",
+                texts = listOf(TextCard("t1", "Story One", "hi", "ready")),
+            ),
+        )
+        compose.onNodeWithContentDescription("More actions for Story One").performClick()
+        compose.onNodeWithText("Edit").assertIsDisplayed()
+        compose.onNodeWithText("Stats").assertIsDisplayed()
+        compose.onNodeWithText("Delete").assertIsDisplayed()
+    }
+
+    @Test
+    fun editingATextSubmitsTheNewTitle() {
+        var edited: Pair<String, String>? = null
+        setContent(
+            LibraryUiState(
+                isLoading = false,
+                languages = listOf(lang("hi", "Hindi")),
+                currentLanguage = "hi",
+                texts = listOf(TextCard("t1", "Story One", "hi", "ready")),
+            ),
+            onEditText = { id, title -> edited = id to title },
+        )
+        compose.onNodeWithContentDescription("More actions for Story One").performClick()
+        compose.onNodeWithText("Edit").performClick()
+        compose.onNodeWithText("Save").performClick()
+        assertEquals("t1" to "Story One", edited)
     }
 
     private fun lang(code: String, displayName: String) =

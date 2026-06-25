@@ -11,6 +11,7 @@ import com.ciareader.reader.data.language.LanguageRepository
 import com.ciareader.reader.data.library.LibraryRepository
 import com.ciareader.reader.data.library.LibraryScope
 import com.ciareader.reader.data.library.TextCard
+import com.ciareader.reader.data.library.TextStats
 import com.ciareader.reader.util.MainDispatcherRule
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -367,13 +368,62 @@ class LibraryViewModelTest {
         assertEquals(0, s.progressPct)
     }
 
+    @Test
+    fun showTextStatsDerivesFiguresFromTheText() = runTest(mainRule.dispatcher) {
+        val libRepo = FakeLibraryRepository(
+            byLanguage = mapOf("hi" to listOf(card("t1"))),
+            stats = TextStats(chapterCount = 1, totalWords = 320, comprehensionPct = 47),
+        )
+        val vm = vm(FakeLanguageRepository(listOf(lang("hi"))), libRepo, FakeCollectionRepository())
+        advanceUntilIdle()
+
+        vm.showTextStats(card("t1", progress = 0.5f))
+        advanceUntilIdle()
+
+        val s = vm.state.value.stats?.stats
+        assertNotNull(s)
+        assertEquals(1, s!!.chapterCount)
+        assertEquals(320, s.totalWords)
+        assertEquals(47, s.comprehensionPct) // real, from the server
+        assertEquals(50, s.progressPct) // card.progress 0.5 → 50%
+    }
+
+    @Test
+    fun editTextRenamesAndReloadsTheList() = runTest(mainRule.dispatcher) {
+        val libRepo = FakeLibraryRepository(byLanguage = mapOf("hi" to listOf(card("t1"))))
+        val vm = vm(FakeLanguageRepository(listOf(lang("hi"))), libRepo, FakeCollectionRepository())
+        advanceUntilIdle()
+
+        vm.editText("t1", "Renamed")
+        advanceUntilIdle()
+
+        assertEquals("t1" to "Renamed", libRepo.lastEdited)
+        assertNull(vm.state.value.actionError)
+    }
+
+    @Test
+    fun editTextFailureSurfacesActionError() = runTest(mainRule.dispatcher) {
+        val libRepo = FakeLibraryRepository(
+            byLanguage = mapOf("hi" to listOf(card("t1"))),
+            updateError = "nope",
+        )
+        val vm = vm(FakeLanguageRepository(listOf(lang("hi"))), libRepo, FakeCollectionRepository())
+        advanceUntilIdle()
+
+        vm.editText("t1", "Renamed")
+        advanceUntilIdle()
+
+        assertEquals("nope", vm.state.value.actionError)
+    }
+
     private fun chapter(id: String, status: String, words: Int) =
         CollectionChapter(textId = id, title = "Ch $id", position = 0, status = status, wordCount = words)
 
     private fun lang(code: String, isDefault: Boolean = false) =
         Language(code = code, displayName = code.uppercase(), nativeName = code, script = "Deva", isDefault = isDefault)
 
-    private fun card(id: String) = TextCard(id = id, title = "Title $id", language = "hi", status = "ready")
+    private fun card(id: String, progress: Float = 0f) =
+        TextCard(id = id, title = "Title $id", language = "hi", status = "ready", progress = progress)
 
     private fun collection(
         id: String,
@@ -414,11 +464,24 @@ private class FakeLibraryRepository(
     private val error: String? = null,
     private val cachedByLanguage: Map<String, List<TextCard>> = emptyMap(),
     private val deleteError: String? = null,
+    private val stats: TextStats? = null,
+    private val statsError: String? = null,
+    private val updateError: String? = null,
 ) : LibraryRepository {
     var lastDeletedId: String? = null
+    var lastEdited: Pair<String, String>? = null
 
     override suspend fun listTexts(scope: LibraryScope, language: String): Outcome<List<TextCard>> =
         error?.let { Outcome.Failure(it) } ?: Outcome.Success(byLanguage[language] ?: emptyList())
+
+    override suspend fun textStats(textId: String): Outcome<TextStats> =
+        statsError?.let { Outcome.Failure(it) }
+            ?: Outcome.Success(stats ?: TextStats(chapterCount = 1, totalWords = 0, comprehensionPct = null))
+
+    override suspend fun updateText(textId: String, title: String): Outcome<String> {
+        lastEdited = textId to title
+        return updateError?.let { Outcome.Failure(it) } ?: Outcome.Success(title)
+    }
 
     override suspend fun deleteText(textId: String): Outcome<Unit> {
         lastDeletedId = textId

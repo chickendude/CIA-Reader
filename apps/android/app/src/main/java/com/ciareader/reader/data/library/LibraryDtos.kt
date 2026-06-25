@@ -25,6 +25,17 @@ data class TextCardDto(
     val progressPct: Double = 0.0,
 )
 
+// --- PATCH /api/v1/texts/:id (rename) ---
+
+@Serializable
+data class UpdateTextRequest(val title: String)
+
+@Serializable
+data class UpdateTextResponseDto(val text: UpdatedTextDto)
+
+@Serializable
+data class UpdatedTextDto(val title: String)
+
 // --- DELETE /api/v1/texts/:id ---
 
 @Serializable

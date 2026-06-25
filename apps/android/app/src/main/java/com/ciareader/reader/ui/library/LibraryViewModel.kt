@@ -200,6 +200,16 @@ class LibraryViewModel @Inject constructor(
         }
     }
 
+    /** Rename a standalone text, then reload the list. */
+    fun editText(textId: String, title: String) {
+        viewModelScope.launch {
+            when (val r = libraryRepository.updateText(textId, title)) {
+                is Outcome.Success -> reloadCurrentLanguage()
+                is Outcome.Failure -> _state.update { it.copy(actionError = r.message) }
+            }
+        }
+    }
+
     /** Open the stats sheet for a book and fetch its chapter list to fill it. */
     fun showStats(collection: CollectionSummary) {
         _state.update { it.copy(stats = StatsUiState(collection.id, collection.title, isLoading = true)) }
@@ -224,6 +234,29 @@ class LibraryViewModel @Inject constructor(
             }
             // Ignore a stale result if the sheet was dismissed meanwhile.
             _state.update { if (it.stats?.collectionId == collection.id) it.copy(stats = sheet) else it }
+        }
+    }
+
+    /** Open the stats sheet for a standalone text and fetch its figures. */
+    fun showTextStats(card: TextCard) {
+        _state.update { it.copy(stats = StatsUiState(card.id, card.title, isLoading = true)) }
+        viewModelScope.launch {
+            val sheet = when (val r = libraryRepository.textStats(card.id)) {
+                is Outcome.Success -> StatsUiState(
+                    collectionId = card.id,
+                    title = card.title,
+                    isLoading = false,
+                    stats = BookStats(
+                        chapterCount = r.data.chapterCount,
+                        totalWords = r.data.totalWords,
+                        comprehensionPct = r.data.comprehensionPct,
+                        progressPct = (card.progress * 100).roundToInt(),
+                    ),
+                )
+                is Outcome.Failure ->
+                    StatsUiState(card.id, card.title, isLoading = false, errorMessage = r.message)
+            }
+            _state.update { if (it.stats?.collectionId == card.id) it.copy(stats = sheet) else it }
         }
     }
 

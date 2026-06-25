@@ -102,6 +102,8 @@ fun LibraryScreen(
         onShowStats = viewModel::showStats,
         onDismissStats = viewModel::dismissStats,
         onClearActionError = viewModel::clearActionError,
+        onEditText = viewModel::editText,
+        onShowTextStats = viewModel::showTextStats,
     )
 }
 
@@ -121,6 +123,8 @@ internal fun LibraryScreenContent(
     onShowStats: (CollectionSummary) -> Unit = {},
     onDismissStats: () -> Unit = {},
     onClearActionError: () -> Unit = {},
+    onEditText: (String, String) -> Unit = { _, _ -> },
+    onShowTextStats: (TextCard) -> Unit = {},
 ) {
     val snackbarHostState = remember { SnackbarHostState() }
     // Surface an edit/delete failure as a transient banner, then clear it.
@@ -186,6 +190,8 @@ internal fun LibraryScreenContent(
                         onDeleteCollection = onDeleteCollection,
                         onDeleteText = onDeleteText,
                         onShowStats = onShowStats,
+                        onEditText = onEditText,
+                        onShowTextStats = onShowTextStats,
                     )
             }
         }
@@ -217,6 +223,8 @@ private fun ContentList(
     onDeleteCollection: (String) -> Unit,
     onDeleteText: (String) -> Unit,
     onShowStats: (CollectionSummary) -> Unit,
+    onEditText: (String, String) -> Unit,
+    onShowTextStats: (TextCard) -> Unit,
 ) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -243,7 +251,9 @@ private fun ContentList(
                     card = card,
                     language = currentLanguage,
                     onOpen = { onOpenText(card.id) },
+                    onEdit = { title -> onEditText(card.id, title) },
                     onDelete = { onDeleteText(card.id) },
+                    onShowStats = { onShowTextStats(card) },
                 )
             }
         }
@@ -338,9 +348,12 @@ private fun TextCardItem(
     card: TextCard,
     language: Language?,
     onOpen: () -> Unit,
+    onEdit: (title: String) -> Unit,
     onDelete: () -> Unit,
+    onShowStats: () -> Unit,
 ) {
     var menuOpen by remember { mutableStateOf(false) }
+    var showEdit by remember { mutableStateOf(false) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
 
     LibraryCard(
@@ -374,12 +387,13 @@ private fun TextCardItem(
                     contentDescription = "More actions for ${card.title}",
                     onClick = { menuOpen = true },
                 )
-                DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                    DropdownMenuItem(
-                        text = { Text("Delete") },
-                        onClick = { menuOpen = false; showDeleteConfirm = true },
-                    )
-                }
+                BookMenu(
+                    expanded = menuOpen,
+                    onDismiss = { menuOpen = false },
+                    onEdit = { menuOpen = false; showEdit = true },
+                    onStats = { menuOpen = false; onShowStats() },
+                    onDelete = { menuOpen = false; showDeleteConfirm = true },
+                )
             }
         }
         // Ready texts show their reading-progress track; not-yet-ready texts
@@ -390,6 +404,17 @@ private fun TextCardItem(
         }
     }
 
+    if (showEdit) {
+        EditTitleDialog(
+            label = "Rename text",
+            initialTitle = card.title,
+            onDismiss = { showEdit = false },
+            onConfirm = { title ->
+                showEdit = false
+                onEdit(title)
+            },
+        )
+    }
     if (showDeleteConfirm) {
         ConfirmDeleteDialog(
             itemName = card.title,
@@ -557,6 +582,37 @@ private fun EditCollectionDialog(
     )
 }
 
+/** Title-only rename dialog (texts have no description field). */
+@Composable
+private fun EditTitleDialog(
+    label: String,
+    initialTitle: String,
+    onDismiss: () -> Unit,
+    onConfirm: (title: String) -> Unit,
+) {
+    var title by rememberSaveable { mutableStateOf(initialTitle) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(label) },
+        text = {
+            OutlinedTextField(
+                value = title,
+                onValueChange = { title = it },
+                label = { Text("Title") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { onConfirm(title.trim()) },
+                enabled = title.isNotBlank(),
+            ) { Text("Save") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+}
+
 /** Generic destructive confirm for a book or text. */
 @Composable
 private fun ConfirmDeleteDialog(
@@ -610,7 +666,8 @@ private fun StatsSheet(stats: StatsUiState, onDismiss: () -> Unit) {
                     // "—" until the NLP worker has tokenized the book (no known/total yet).
                     StatRow("Comprehension", s.comprehensionPct?.let { "$it%" } ?: "—")
                     StatRow("Total words", s.totalWords.toString())
-                    StatRow("Chapters", s.chapterCount.toString())
+                    // A standalone text is one chapter — the row only matters for books.
+                    if (s.chapterCount > 1) StatRow("Chapters", s.chapterCount.toString())
                     StatRow("Reading progress", "${s.progressPct}%")
                 }
             }
