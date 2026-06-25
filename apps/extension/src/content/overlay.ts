@@ -61,8 +61,8 @@ const STYLE = `
 .popup .pos { color: #8fce8f; font-size: 12px; margin-left: 6px; }
 .popup .def { margin: 2px 0; }
 .popup .pill {
-  display: inline-block; font-size: 10px; font-weight: 700; line-height: 1.5;
-  padding: 0 6px; border-radius: 999px; background: #2b6cb0; color: #fff;
+  display: inline-block; font-size: 9px; font-weight: 600; letter-spacing: .02em; line-height: 1.6;
+  padding: 0 5px; border-radius: 3px; background: #2a2d33; color: #7e858f;
   margin-right: 7px; vertical-align: middle;
 }
 .popup .more {
