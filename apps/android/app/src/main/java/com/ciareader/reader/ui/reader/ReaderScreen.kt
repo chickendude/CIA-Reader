@@ -231,6 +231,9 @@ internal fun ReaderScreenContent(
                 state.errorMessage != null ->
                     ReaderError(message = state.errorMessage, onRetry = onRetry)
 
+                state.isProcessing ->
+                    ReaderProcessing(modifier = Modifier.align(Alignment.Center))
+
                 state.pageMode ->
                     PagedChapter(
                         tokens = state.tokens,
@@ -1182,6 +1185,26 @@ private fun ReaderError(message: String, onRetry: () -> Unit) {
     ) {
         Text(message, color = MaterialTheme.colorScheme.error, textAlign = TextAlign.Center)
         Button(onClick = onRetry, modifier = Modifier.padding(top = 16.dp)) { Text("Retry") }
+    }
+}
+
+/** Shown while a freshly-imported chapter is still being tokenized server-side. */
+@Composable
+private fun ReaderProcessing(modifier: Modifier = Modifier) {
+    Column(
+        modifier = modifier.padding(32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        CircularProgressIndicator()
+        Spacer(Modifier.size(16.dp))
+        Text("Preparing this text…", style = MaterialTheme.typography.titleMedium)
+        Spacer(Modifier.size(4.dp))
+        Text(
+            "Words become tappable once it's ready.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+        )
     }
 }
 

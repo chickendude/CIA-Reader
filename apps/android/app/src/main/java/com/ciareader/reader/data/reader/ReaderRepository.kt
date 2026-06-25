@@ -247,7 +247,7 @@ private fun TextMetaDto.toDomain() = TextMeta(
 
 private fun ChapterTokensDto.toDomain() = Chapter(
     chapterIdx = chapterIdx,
-    tokens = tokens.map { it.toDomain() },
+    tokens = tokens.orEmpty().map { it.toDomain() },
     chapterId = chapterId,
 )
 

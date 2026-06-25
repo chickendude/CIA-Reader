@@ -32,8 +32,14 @@ data class ReaderChapterRef(
     val wordCount: Int = 0,
 )
 
+private const val PROCESSING_POLL_MS = 3_000L
+private const val MAX_PROCESSING_POLLS = 40 // ~2 min of auto-retry before pausing
+
 data class ReaderUiState(
     val isLoading: Boolean = true,
+    /** The chapter loaded but isn't tokenized yet (freshly imported / processing);
+     *  the reader shows a "preparing" state and polls until words are ready. */
+    val isProcessing: Boolean = false,
     val title: String = "",
     val chapterCount: Int = 1,
     val chapterIdx: Int = 0,
@@ -121,6 +127,7 @@ class ReaderViewModel @Inject constructor(
     val state: StateFlow<ReaderUiState> = _state.asStateFlow()
 
     private var progressJob: Job? = null
+    private var pollJob: Job? = null
     private var currentTopToken = 0
 
     // The loaded chapter's server id (UUID), needed for sentence translation.
@@ -207,9 +214,11 @@ class ReaderViewModel @Inject constructor(
         saveOnLoad: Boolean = false,
     ) {
         progressJob?.cancel()
+        pollJob?.cancel()
         _state.update {
             it.copy(
                 isLoading = true,
+                isProcessing = false,
                 errorMessage = null,
                 selectedWord = null,
                 wordTranslations = null,
@@ -222,33 +231,65 @@ class ReaderViewModel @Inject constructor(
                 primaryPos = null,
             )
         }
-        viewModelScope.launch {
-            when (val chapter = repository.chapter(textId, chapterIdx)) {
-                is Outcome.Success -> {
-                    currentChapterId = chapter.data.chapterId
-                    val anchor =
-                        if (atEnd) chapter.data.tokens.lastIndex.coerceAtLeast(0) else restoreTokenIdx
-                    _state.update {
-                        it.copy(
-                            isLoading = false,
-                            chapterIdx = chapterIdx,
-                            tokens = chapter.data.tokens,
-                            restoreTokenIdx = anchor,
-                            chapters = it.chapters.map { ref ->
-                                if (ref.chapterIdx != null) ref.copy(isCurrent = ref.chapterIdx == chapterIdx) else ref
-                            },
-                        )
-                    }
-                    if (saveOnLoad) {
-                        val tokenIdx = anchor ?: 0
-                        val pctRead = if (atEnd) 100.0 else 0.0
-                        repository.saveProgress(textId, chapterIdx, tokenIdx, pctRead)
-                    }
-                }
+        pollJob = viewModelScope.launch {
+            fetchChapter(chapterIdx, restoreTokenIdx, atEnd, saveOnLoad, attempt = 0)
+        }
+    }
 
-                is Outcome.Failure ->
-                    _state.update { it.copy(isLoading = false, errorMessage = chapter.message) }
+    /**
+     * Load a chapter's tokens. A just-imported chapter comes back with no tokens
+     * (the NLP worker hasn't run yet); surface a "processing" state and poll until
+     * the tokens land or we hit [MAX_PROCESSING_POLLS], so opening chapter 1 of a
+     * fresh import resolves to readable text on its own.
+     */
+    private suspend fun fetchChapter(
+        chapterIdx: Int,
+        restoreTokenIdx: Int?,
+        atEnd: Boolean,
+        saveOnLoad: Boolean,
+        attempt: Int,
+    ) {
+        when (val chapter = repository.chapter(textId, chapterIdx)) {
+            is Outcome.Success -> {
+                currentChapterId = chapter.data.chapterId
+                if (chapter.data.tokens.isEmpty()) {
+                    // Not tokenized yet — show the preparing state and keep polling.
+                    _state.update {
+                        it.copy(isLoading = false, isProcessing = true, chapterIdx = chapterIdx)
+                    }
+                    if (attempt < MAX_PROCESSING_POLLS) {
+                        delay(PROCESSING_POLL_MS)
+                        fetchChapter(chapterIdx, restoreTokenIdx, atEnd, saveOnLoad, attempt + 1)
+                    }
+                    // Past the cap we stop auto-retrying but keep the preparing UI;
+                    // re-entering the chapter restarts the poll.
+                    return
+                }
+                val anchor =
+                    if (atEnd) chapter.data.tokens.lastIndex.coerceAtLeast(0) else restoreTokenIdx
+                _state.update {
+                    it.copy(
+                        isLoading = false,
+                        isProcessing = false,
+                        chapterIdx = chapterIdx,
+                        tokens = chapter.data.tokens,
+                        restoreTokenIdx = anchor,
+                        chapters = it.chapters.map { ref ->
+                            if (ref.chapterIdx != null) ref.copy(isCurrent = ref.chapterIdx == chapterIdx) else ref
+                        },
+                    )
+                }
+                if (saveOnLoad) {
+                    val tokenIdx = anchor ?: 0
+                    val pctRead = if (atEnd) 100.0 else 0.0
+                    repository.saveProgress(textId, chapterIdx, tokenIdx, pctRead)
+                }
             }
+
+            is Outcome.Failure ->
+                _state.update {
+                    it.copy(isLoading = false, isProcessing = false, errorMessage = chapter.message)
+                }
         }
     }
 

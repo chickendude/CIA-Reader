@@ -23,6 +23,9 @@ import javax.inject.Inject
 data class LibraryUiState(
     val isLoading: Boolean = true,
     val isRefreshing: Boolean = false,
+    /** A book/text edit or delete is in flight (delete cascades server-side and
+     *  can take a few seconds) — the UI shows a progress bar. */
+    val isMutating: Boolean = false,
     val languages: List<Language> = emptyList(),
     val currentLanguage: String? = null,
     val collections: List<CollectionSummary> = emptyList(),
@@ -171,42 +174,35 @@ class LibraryViewModel @Inject constructor(
     // --- Book/text management: edit, delete, stats -------------------------
 
     /** Rename / re-describe a book, then reload the list so the new title shows. */
-    fun editCollection(collectionId: String, title: String, description: String?) {
-        viewModelScope.launch {
-            when (val r = collectionRepository.update(collectionId, title, description)) {
-                is Outcome.Success -> reloadCurrentLanguage()
-                is Outcome.Failure -> _state.update { it.copy(actionError = r.message) }
-            }
-        }
-    }
+    fun editCollection(collectionId: String, title: String, description: String?) =
+        mutate { collectionRepository.update(collectionId, title, description) }
 
     /** Delete a book, then reload the list. */
-    fun deleteCollection(collectionId: String) {
-        viewModelScope.launch {
-            when (val r = collectionRepository.delete(collectionId)) {
-                is Outcome.Success -> reloadCurrentLanguage()
-                is Outcome.Failure -> _state.update { it.copy(actionError = r.message) }
-            }
-        }
-    }
+    fun deleteCollection(collectionId: String) =
+        mutate { collectionRepository.delete(collectionId) }
 
     /** Delete a standalone text, then reload the list. */
-    fun deleteText(textId: String) {
-        viewModelScope.launch {
-            when (val r = libraryRepository.deleteText(textId)) {
-                is Outcome.Success -> reloadCurrentLanguage()
-                is Outcome.Failure -> _state.update { it.copy(actionError = r.message) }
-            }
-        }
-    }
+    fun deleteText(textId: String) =
+        mutate { libraryRepository.deleteText(textId) }
 
     /** Rename a standalone text, then reload the list. */
-    fun editText(textId: String, title: String) {
+    fun editText(textId: String, title: String) =
+        mutate { libraryRepository.updateText(textId, title) }
+
+    /**
+     * Run a book/text mutation (edit/delete) with a busy flag so the UI can show
+     * progress — a book delete cascades server-side and can take a few seconds.
+     * On success reloads the list (awaited, so the flag spans the reload); on
+     * failure surfaces the message and leaves the list untouched.
+     */
+    private fun mutate(block: suspend () -> Outcome<*>) {
         viewModelScope.launch {
-            when (val r = libraryRepository.updateText(textId, title)) {
-                is Outcome.Success -> reloadCurrentLanguage()
+            _state.update { it.copy(isMutating = true) }
+            when (val r = block()) {
+                is Outcome.Success -> _state.value.currentLanguage?.let { loadContent(it) }
                 is Outcome.Failure -> _state.update { it.copy(actionError = r.message) }
             }
+            _state.update { it.copy(isMutating = false) }
         }
     }
 
@@ -263,12 +259,6 @@ class LibraryViewModel @Inject constructor(
     fun dismissStats() = _state.update { it.copy(stats = null) }
 
     fun clearActionError() = _state.update { it.copy(actionError = null) }
-
-    /** Re-fetch the current language's list (used after an edit/delete). */
-    private fun reloadCurrentLanguage() {
-        val language = _state.value.currentLanguage ?: return
-        viewModelScope.launch { loadContent(language) }
-    }
 
     private suspend fun loadContent(language: String) {
         when (val textsRes = libraryRepository.listTexts(LibraryScope.OWNED, language)) {

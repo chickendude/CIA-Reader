@@ -241,6 +241,15 @@ internal fun LibraryScreenContent(
                         onShowTextStats = onShowTextStats,
                     )
             }
+            // A book delete cascades server-side; show progress until it + the
+            // list reload finish.
+            if (state.isMutating) {
+                LinearProgressIndicator(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .align(Alignment.TopCenter),
+                )
+            }
         }
     }
 

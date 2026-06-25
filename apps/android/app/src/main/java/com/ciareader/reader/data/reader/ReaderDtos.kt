@@ -36,8 +36,11 @@ data class ChapterTokensDto(
     val chapterId: String,
     val chapterIdx: Int,
     val body: String = "",
-    val tokens: List<TokenDto> = emptyList(),
-    val phraseSpans: List<PhraseSpanDto> = emptyList(),
+    // Nullable: the server returns `null` (not `[]`) for a chapter that hasn't
+    // been tokenized yet — a freshly imported / still-processing chapter. A
+    // default only covers an absent key, so a non-null type crashes on `null`.
+    val tokens: List<TokenDto>? = null,
+    val phraseSpans: List<PhraseSpanDto>? = null,
 )
 
 @Serializable
