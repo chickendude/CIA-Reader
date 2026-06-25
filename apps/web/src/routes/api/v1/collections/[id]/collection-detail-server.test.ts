@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const loadCollectionDetail = vi.fn();
 const viewerHasCollectionShare = vi.fn();
 const resolveUser = vi.fn();
+const bookComprehensionPct = vi.fn();
 
 vi.mock('$lib/server/collections.js', async () => {
   const actual = await vi.importActual<typeof import('$lib/server/collections.js')>(
@@ -22,6 +23,10 @@ vi.mock('$lib/server/collections.js', async () => {
 vi.mock('$lib/server/auth/require-user.js', () => ({
   resolveUser: (...a: unknown[]) => resolveUser(...a),
   requireUser: (...a: unknown[]) => resolveUser(...a),
+}));
+
+vi.mock('$lib/server/learning-stats.js', () => ({
+  bookComprehensionPct: (...a: unknown[]) => bookComprehensionPct(...a),
 }));
 
 type GetFn = (typeof import('./+server.js'))['GET'];
@@ -85,6 +90,8 @@ beforeEach(() => {
   loadCollectionDetail.mockReset();
   viewerHasCollectionShare.mockReset();
   resolveUser.mockReset();
+  bookComprehensionPct.mockReset();
+  bookComprehensionPct.mockResolvedValue(57);
 });
 
 afterEach(() => {
@@ -113,6 +120,9 @@ describe('GET /api/v1/collections/:id', () => {
     expect(json.items).toHaveLength(1);
     expect(json.items[0]).toMatchObject({ position: 0, sectionTitle: null });
     expect(json.items[0].text).toMatchObject({ id: 'text-1', title: 'Ch 1', wordCount: 1234 });
+    // Real viewer comprehension is computed over the member texts and attached.
+    expect(json.collection.comprehensionPct).toBe(57);
+    expect(bookComprehensionPct).toHaveBeenCalledWith(OWNER.id, ['text-1']);
   });
 
   it('404s a private collection for a non-owner without a share', async () => {
@@ -136,5 +146,9 @@ describe('GET /api/v1/collections/:id', () => {
     const res = (await callGet(ID, null)) as Response;
     expect(res.status).toBe(200);
     expect(viewerHasCollectionShare).not.toHaveBeenCalled();
+    // Anonymous viewer → no comprehension computed.
+    const json = await res.json();
+    expect(json.collection.comprehensionPct).toBeNull();
+    expect(bookComprehensionPct).not.toHaveBeenCalled();
   });
 });

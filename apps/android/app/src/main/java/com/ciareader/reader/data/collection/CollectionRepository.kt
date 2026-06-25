@@ -14,6 +14,8 @@ data class CollectionSummary(
     val textCount: Int,
     /** Chapter-text to open when tapped: last-read, else the first chapter. */
     val openTextId: String? = null,
+    /** Aggregate reading progress 0f–1f for the card's progress track. */
+    val progress: Float = 0f,
 )
 
 data class CollectionChapter(
@@ -30,11 +32,23 @@ data class CollectionDetail(
     val id: String,
     val title: String,
     val chapters: List<CollectionChapter>,
+    /** Viewer's reading comprehension 0–100, or null before the texts are processed. */
+    val comprehensionPct: Int? = null,
 )
 
 interface CollectionRepository {
     suspend fun myCollections(): Outcome<List<CollectionSummary>>
     suspend fun detail(collectionId: String): Outcome<CollectionDetail>
+
+    /** Edit a book's title and/or description (PATCH). Returns the new title. */
+    suspend fun update(
+        collectionId: String,
+        title: String? = null,
+        description: String? = null,
+    ): Outcome<String>
+
+    /** Delete a book (DELETE). The caller re-lists on success. */
+    suspend fun delete(collectionId: String): Outcome<Unit>
 
     /** Last-cached collections, without touching the network — for instant launch. */
     suspend fun cachedCollections(): List<CollectionSummary>
@@ -60,6 +74,7 @@ class CollectionRepositoryImpl @Inject constructor(
                         kind = it.collection.kind,
                         textCount = it.textCount,
                         openTextId = it.openTextId,
+                        progress = (it.progressPct / 100.0).toFloat().coerceIn(0f, 1f),
                     )
                 }
             }
@@ -88,6 +103,7 @@ class CollectionRepositoryImpl @Inject constructor(
                             wordCount = it.text.wordCount,
                         )
                     },
+                    comprehensionPct = dto.collection.comprehensionPct,
                 )
             }
         ) {
@@ -97,6 +113,25 @@ class CollectionRepositoryImpl @Inject constructor(
             }
             is Outcome.Failure -> cache.detail(collectionId)?.let { Outcome.Success(it) } ?: net
         }
+
+    // Edit/delete go straight to the network. The caller re-fetches the list on
+    // success (myCollections clears + repopulates the cache wholesale), so a
+    // renamed/removed book reflects in both the live list and the offline cache.
+    override suspend fun update(
+        collectionId: String,
+        title: String?,
+        description: String?,
+    ): Outcome<String> = apiCall {
+        api.update(
+            collectionId,
+            UpdateCollectionRequest(title = title, description = description),
+        ).collection.title
+    }
+
+    override suspend fun delete(collectionId: String): Outcome<Unit> = apiCall {
+        api.delete(collectionId)
+        Unit
+    }
 
     override suspend fun cachedCollections(): List<CollectionSummary> = cache.collections()
 }

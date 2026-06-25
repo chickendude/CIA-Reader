@@ -1,21 +1,50 @@
 package com.ciareader.reader.data.dictionary
 
+import android.app.Application
+import androidx.room.Room
 import com.ciareader.reader.core.network.Outcome
+import com.ciareader.reader.data.local.AppDatabase
+import com.ciareader.reader.data.local.ReaderCacheDao
 import com.ciareader.reader.data.reader.KnownStatus
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.ResponseBody.Companion.toResponseBody
+import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Before
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.RuntimeEnvironment
+import org.robolectric.annotation.Config
 import retrofit2.HttpException
 import retrofit2.Response
 
+@RunWith(RobolectricTestRunner::class)
+@Config(application = Application::class)
 class DictionaryRepositoryTest {
 
     private val json = Json { ignoreUnknownKeys = true; explicitNulls = false }
+    private lateinit var db: AppDatabase
+    private lateinit var dao: ReaderCacheDao
+
+    @Before
+    fun setUp() {
+        db = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), AppDatabase::class.java)
+            .allowMainThreadQueries()
+            .build()
+        dao = db.readerCacheDao()
+    }
+
+    @After
+    fun tearDown() = db.close()
+
+    private fun repo(api: DictionaryApi) = DictionaryRepositoryImpl(api, dao, json)
 
     @Test
     fun mapsTranslationsGroupedBySource() = runTest {
@@ -28,9 +57,8 @@ class DictionaryRepositoryTest {
                 ),
             ),
         )
-        val repo = DictionaryRepositoryImpl(api)
 
-        val result = repo.translations("l1")
+        val result = repo(api).translations("l1")
 
         assertTrue(result is Outcome.Success)
         val t = (result as Outcome.Success).data
@@ -43,11 +71,95 @@ class DictionaryRepositoryTest {
     }
 
     @Test
+    fun translationsAreCacheFirstAcrossReTaps() = runTest {
+        val api = FakeDictionaryApi(
+            translations = LemmaTranslationsDto(lemma = LemmaDto("l1", "नमस्ते", "INTJ", "hello")),
+        )
+        val repo = repo(api)
+
+        val first = repo.translations("l1")
+        val second = repo.translations("l1") // served from Room, no second network hit
+
+        assertTrue(first is Outcome.Success)
+        assertEquals("नमस्ते", (second as Outcome.Success).data.headword)
+        assertEquals(1, api.translationCalls)
+    }
+
+    @Test
+    fun translationsPersistRawDtoToRoom() = runTest {
+        val api = FakeDictionaryApi(
+            translations = LemmaTranslationsDto(lemma = LemmaDto("l1", "नमस्ते", "INTJ", "hello")),
+        )
+
+        repo(api).translations("l1")
+
+        val row = dao.lemma("l1")
+        assertNotNull(row)
+        val decoded = json.decodeFromString<LemmaTranslationsDto>(row!!.json)
+        assertEquals("नमस्ते", decoded.lemma.headword)
+    }
+
+    @Test
+    fun translationsServeOfflineFromCacheWhenNetworkLaterFails() = runTest {
+        val warm = FakeDictionaryApi(
+            translations = LemmaTranslationsDto(lemma = LemmaDto("l1", "नमस्ते", "INTJ", "hello")),
+        )
+        repo(warm).translations("l1") // warm the cache
+
+        // A fresh repo over a dead network still serves the cached copy.
+        val result = repo(FakeDictionaryApi(error = http(503))).translations("l1")
+
+        assertEquals("नमस्ते", (result as Outcome.Success).data.headword)
+    }
+
+    @Test
+    fun refreshForcesReFetchAndRePersists() = runTest {
+        val api = FakeDictionaryApi(
+            translations = LemmaTranslationsDto(
+                lemma = LemmaDto("l1", "नमस्ते", "INTJ", "hello"),
+                translations = TranslationGroupsDto(community = listOf(TranslationDto("c1", "old"))),
+            ),
+        )
+        val repo = repo(api)
+        repo.translations("l1") // 1 call, now cached
+
+        // New community suggestion lands on the server.
+        api.translations = api.translations!!.copy(
+            translations = TranslationGroupsDto(community = listOf(TranslationDto("c2", "newer"))),
+        )
+        val refreshed = repo.refreshTranslations("l1")
+
+        assertEquals(2, api.translationCalls) // bypassed the cache
+        assertEquals(listOf("newer"), (refreshed as Outcome.Success).data.community.map { it.body })
+        // Re-persisted: a subsequent cache-first read sees the newer copy.
+        assertEquals("newer", (repo.translations("l1") as Outcome.Success).data.community[0].body)
+        assertEquals(2, api.translationCalls)
+    }
+
+    @Test
+    fun refreshFallsBackToCacheOnNetworkFailure() = runTest {
+        val warm = FakeDictionaryApi(
+            translations = LemmaTranslationsDto(lemma = LemmaDto("l1", "नमस्ते", "INTJ", "hello")),
+        )
+        repo(warm).translations("l1") // warm the cache
+
+        val result = repo(FakeDictionaryApi(error = http(500))).refreshTranslations("l1")
+
+        assertEquals("नमस्ते", (result as Outcome.Success).data.headword)
+    }
+
+    @Test
+    fun refreshFailsWhenNoCacheToFallBackOn() = runTest {
+        val result = repo(FakeDictionaryApi(error = http(500))).refreshTranslations("missing")
+        assertTrue(result is Outcome.Failure)
+        assertNull(dao.lemma("missing"))
+    }
+
+    @Test
     fun setStatusSendsWireValueAndReturnsConfirmedStatus() = runTest {
         val api = FakeDictionaryApi(known = KnownLemmaResponseDto(KnownLemmaDto("l1", "known")))
-        val repo = DictionaryRepositoryImpl(api)
 
-        val result = repo.setStatus("l1", KnownStatus.KNOWN)
+        val result = repo(api).setStatus("l1", KnownStatus.KNOWN)
 
         assertTrue(result is Outcome.Success)
         assertEquals(KnownStatus.KNOWN, (result as Outcome.Success).data)
@@ -57,7 +169,7 @@ class DictionaryRepositoryTest {
     @Test
     fun addDefinitionPostsLemmaAndBody() = runTest {
         val api = FakeDictionaryApi()
-        val result = DictionaryRepositoryImpl(api).addDefinition("l1", "my own definition")
+        val result = repo(api).addDefinition("l1", "my own definition")
         assertTrue(result is Outcome.Success)
         assertEquals("l1", api.lastAdded?.lemmaId)
         assertEquals("my own definition", api.lastAdded?.body)
@@ -76,7 +188,7 @@ class DictionaryRepositoryTest {
                 ),
             ),
         )
-        val result = DictionaryRepositoryImpl(api).basqueReference("etxe")
+        val result = repo(api).basqueReference("etxe")
         assertTrue(result is Outcome.Success)
         val r = (result as Outcome.Success).data.single()
         assertEquals("Elhuyar eu-es", r.label)
@@ -89,7 +201,7 @@ class DictionaryRepositoryTest {
         val api = FakeDictionaryApi(
             basque = BasqueReferenceResponseDto("etxe", listOf(BasqueRefDto(source = "elhuyar_es", definition = "casa"))),
         )
-        val repo = DictionaryRepositoryImpl(api)
+        val repo = repo(api)
         repo.basqueReference("etxe")
         repo.basqueReference("ETXE") // case-insensitive key -> served from cache
         assertEquals(1, api.basqueCalls)
@@ -97,13 +209,13 @@ class DictionaryRepositoryTest {
 
     @Test
     fun basqueReferenceForbiddenMapsToFailure() = runTest {
-        val result = DictionaryRepositoryImpl(FakeDictionaryApi(error = http(403))).basqueReference("etxe")
+        val result = repo(FakeDictionaryApi(error = http(403))).basqueReference("etxe")
         assertTrue(result is Outcome.Failure)
     }
 
     @Test
     fun httpErrorMapsToFailure() = runTest {
-        val repo = DictionaryRepositoryImpl(FakeDictionaryApi(error = http(404)))
+        val repo = repo(FakeDictionaryApi(error = http(404)))
         assertTrue(repo.translations("missing") is Outcome.Failure)
     }
 
@@ -133,15 +245,18 @@ class DictionaryRepositoryTest {
 }
 
 private class FakeDictionaryApi(
-    private val translations: LemmaTranslationsDto? = null,
+    var translations: LemmaTranslationsDto? = null,
     private val known: KnownLemmaResponseDto? = null,
     private val basque: BasqueReferenceResponseDto? = null,
     private val error: Throwable? = null,
 ) : DictionaryApi {
     var lastSet: Pair<String, String>? = null
     var lastAdded: CreateTranslationRequest? = null
-    override suspend fun translations(lemmaId: String): LemmaTranslationsDto =
-        error?.let { throw it } ?: translations!!
+    var translationCalls = 0
+    override suspend fun translations(lemmaId: String): LemmaTranslationsDto {
+        translationCalls++
+        return error?.let { throw it } ?: translations!!
+    }
 
     override suspend fun addTranslation(body: CreateTranslationRequest): CreateTranslationResponseDto {
         lastAdded = body

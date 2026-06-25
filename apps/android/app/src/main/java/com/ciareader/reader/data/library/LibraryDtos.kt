@@ -20,4 +20,23 @@ data class TextCardDto(
     val status: String,
     val visibility: String,
     val createdAt: String,
+    /** Viewer's reading progress, 0–100 (0 when unread/anonymous). Double so a
+     *  raw float pct_read decodes even if the server doesn't round it. */
+    val progressPct: Double = 0.0,
 )
+
+// --- PATCH /api/v1/texts/:id (rename) ---
+
+@Serializable
+data class UpdateTextRequest(val title: String)
+
+@Serializable
+data class UpdateTextResponseDto(val text: UpdatedTextDto)
+
+@Serializable
+data class UpdatedTextDto(val title: String)
+
+// --- DELETE /api/v1/texts/:id ---
+
+@Serializable
+data class DeleteTextResponseDto(val ok: Boolean = false)

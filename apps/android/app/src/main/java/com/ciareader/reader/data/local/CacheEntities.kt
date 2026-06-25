@@ -39,6 +39,22 @@ data class CachedChapterEntity(
     val chapterIdx: Int,
     val tokensJson: String,
     val cachedAt: Long,
+    /** The chapter's server id (UUID); kept so sentence translation works
+     *  offline-cached too. Nullable for rows written before this column. */
+    val chapterId: String? = null,
+)
+
+/**
+ * A looked-up lemma's definitions, stored as the raw server JSON in [json] so a
+ * tapped word stays fast on re-tap and readable offline. Keyed by lemmaId; like
+ * the other content tables it's a disposable server mirror carrying a [cachedAt]
+ * stamp for a future staleness/refresh policy.
+ */
+@Entity(tableName = "cached_lemma")
+data class CachedLemmaEntity(
+    @PrimaryKey val lemmaId: String,
+    val json: String,
+    val cachedAt: Long,
 )
 
 /**

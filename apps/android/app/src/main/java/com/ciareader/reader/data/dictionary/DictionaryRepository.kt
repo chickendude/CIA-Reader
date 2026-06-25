@@ -2,7 +2,12 @@ package com.ciareader.reader.data.dictionary
 
 import com.ciareader.reader.core.network.Outcome
 import com.ciareader.reader.core.network.apiCall
+import com.ciareader.reader.data.local.CachedLemmaEntity
+import com.ciareader.reader.data.local.ReaderCacheDao
 import com.ciareader.reader.data.reader.KnownStatus
+import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -33,7 +38,13 @@ data class BasqueReference(
 )
 
 interface DictionaryRepository {
+    /** Cache-first: returns the persisted copy instantly if present, else fetches
+     *  it, persists, and returns — so re-taps and offline reads are fast. */
     suspend fun translations(lemmaId: String): Outcome<LemmaTranslations>
+
+    /** Force-fetches the latest definitions (e.g. new community suggestions),
+     *  re-persisting on success; on failure falls back to the cached copy. */
+    suspend fun refreshTranslations(lemmaId: String): Outcome<LemmaTranslations>
 
     /** Persists the viewer's status for a lemma; returns the confirmed status. */
     suspend fun setStatus(lemmaId: String, status: KnownStatus): Outcome<KnownStatus>
@@ -48,10 +59,38 @@ interface DictionaryRepository {
 @Singleton
 class DictionaryRepositoryImpl @Inject constructor(
     private val api: DictionaryApi,
+    private val cache: ReaderCacheDao,
+    private val json: Json,
 ) : DictionaryRepository {
 
-    override suspend fun translations(lemmaId: String): Outcome<LemmaTranslations> =
-        apiCall { api.translations(lemmaId).toDomain() }
+    override suspend fun translations(lemmaId: String): Outcome<LemmaTranslations> {
+        cachedTranslations(lemmaId)?.let { return Outcome.Success(it.toDomain()) }
+        return fetchAndPersist(lemmaId)
+    }
+
+    override suspend fun refreshTranslations(lemmaId: String): Outcome<LemmaTranslations> {
+        val fresh = fetchAndPersist(lemmaId)
+        if (fresh is Outcome.Failure) {
+            cachedTranslations(lemmaId)?.let { return Outcome.Success(it.toDomain()) }
+        }
+        return fresh
+    }
+
+    /** Fetch from the network and, on success, persist the raw DTO json. */
+    private suspend fun fetchAndPersist(lemmaId: String): Outcome<LemmaTranslations> =
+        apiCall {
+            val dto = api.translations(lemmaId)
+            cache.upsertLemma(
+                CachedLemmaEntity(lemmaId, json.encodeToString(dto), System.currentTimeMillis()),
+            )
+            dto.toDomain()
+        }
+
+    /** The cached DTO for a lemma, or null on a miss or undecodable blob. */
+    private suspend fun cachedTranslations(lemmaId: String): LemmaTranslationsDto? {
+        val row = cache.lemma(lemmaId) ?: return null
+        return runCatching { json.decodeFromString<LemmaTranslationsDto>(row.json) }.getOrNull()
+    }
 
     override suspend fun setStatus(lemmaId: String, status: KnownStatus): Outcome<KnownStatus> =
         apiCall {

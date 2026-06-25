@@ -1,49 +1,68 @@
 package com.ciareader.reader.ui.library
 
 import androidx.annotation.DrawableRes
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.ListItem
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.ui.res.painterResource
 import com.ciareader.reader.R
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
@@ -90,6 +109,14 @@ fun LibraryScreen(
         } else {
             null
         },
+        onEditCollection = viewModel::editCollection,
+        onDeleteCollection = viewModel::deleteCollection,
+        onDeleteText = viewModel::deleteText,
+        onShowStats = viewModel::showStats,
+        onDismissStats = viewModel::dismissStats,
+        onClearActionError = viewModel::clearActionError,
+        onEditText = viewModel::editText,
+        onShowTextStats = viewModel::showTextStats,
     )
 
     val language = state.currentLanguage
@@ -121,8 +148,25 @@ internal fun LibraryScreenContent(
     onOpenSettings: () -> Unit,
     onRefresh: () -> Unit = {},
     onImportClick: (() -> Unit)? = null,
+    onEditCollection: (String, String, String?) -> Unit = { _, _, _ -> },
+    onDeleteCollection: (String) -> Unit = {},
+    onDeleteText: (String) -> Unit = {},
+    onShowStats: (CollectionSummary) -> Unit = {},
+    onDismissStats: () -> Unit = {},
+    onClearActionError: () -> Unit = {},
+    onEditText: (String, String) -> Unit = { _, _ -> },
+    onShowTextStats: (TextCard) -> Unit = {},
 ) {
+    val snackbarHostState = remember { SnackbarHostState() }
+    // Surface an edit/delete failure as a transient banner, then clear it.
+    LaunchedEffect(state.actionError) {
+        state.actionError?.let {
+            snackbarHostState.showSnackbar(it)
+            onClearActionError()
+        }
+    }
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = { Text("Library") },
@@ -178,14 +222,24 @@ internal fun LibraryScreenContent(
 
                 else ->
                     ContentList(
+                        currentLanguage = state.languages.firstOrNull { it.code == state.currentLanguage },
                         collections = state.collections,
                         texts = state.texts,
                         onOpenCollection = onOpenCollection,
                         onOpenText = onOpenText,
+                        onEditCollection = onEditCollection,
+                        onDeleteCollection = onDeleteCollection,
+                        onDeleteText = onDeleteText,
+                        onShowStats = onShowStats,
+                        onEditText = onEditText,
+                        onShowTextStats = onShowTextStats,
                     )
             }
         }
     }
+
+    // The stats sheet floats above the list when a book's "Stats" is chosen.
+    state.stats?.let { StatsSheet(stats = it, onDismiss = onDismissStats) }
 }
 
 @Composable
@@ -201,38 +255,478 @@ private fun PullableCenter(content: @Composable () -> Unit) {
 
 @Composable
 private fun ContentList(
+    currentLanguage: Language?,
     collections: List<CollectionSummary>,
     texts: List<TextCard>,
     onOpenCollection: (CollectionSummary) -> Unit,
     onOpenText: (String) -> Unit,
+    onEditCollection: (String, String, String?) -> Unit,
+    onDeleteCollection: (String) -> Unit,
+    onDeleteText: (String) -> Unit,
+    onShowStats: (CollectionSummary) -> Unit,
+    onEditText: (String, String) -> Unit,
+    onShowTextStats: (TextCard) -> Unit,
 ) {
-    LazyColumn(modifier = Modifier.fillMaxSize()) {
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
         if (collections.isNotEmpty()) {
-            item { SectionHeader("Books") }
+            item(key = "h-books") { SectionHeader("Books") }
             items(collections, key = { "c-${it.id}" }) { c ->
-                ListItem(
-                    headlineContent = { Text(c.title) },
-                    supportingContent = {
-                        Text("${c.textCount} chapters", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    },
-                    modifier = Modifier.clickable { onOpenCollection(c) },
+                CollectionCard(
+                    collection = c,
+                    language = currentLanguage,
+                    onOpen = { onOpenCollection(c) },
+                    onEdit = { title, desc -> onEditCollection(c.id, title, desc) },
+                    onDelete = { onDeleteCollection(c.id) },
+                    onShowStats = { onShowStats(c) },
                 )
-                HorizontalDivider()
             }
         }
         if (texts.isNotEmpty()) {
-            item { SectionHeader("Texts") }
+            item(key = "h-texts") { SectionHeader("Texts") }
             items(texts, key = { "t-${it.id}" }) { card ->
-                ListItem(
-                    headlineContent = { Text(card.title) },
-                    supportingContent = {
-                        if (!card.isReady) Text(card.status, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    },
-                    modifier = Modifier.clickable(enabled = card.isReady) { onOpenText(card.id) },
+                TextCardItem(
+                    card = card,
+                    language = currentLanguage,
+                    onOpen = { onOpenText(card.id) },
+                    onEdit = { title -> onEditText(card.id, title) },
+                    onDelete = { onDeleteText(card.id) },
+                    onShowStats = { onShowTextStats(card) },
                 )
-                HorizontalDivider()
             }
         }
+    }
+}
+
+/** A book/collection row: a tinted cover with the title initial, the title, a
+ *  chapter count, and a thin progress track at the foot of the card. Leaves
+ *  room above the progress track for a sibling PR's comprehension/language
+ *  badges. */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun CollectionCard(
+    collection: CollectionSummary,
+    language: Language?,
+    onOpen: () -> Unit,
+    onEdit: (title: String, description: String?) -> Unit,
+    onDelete: () -> Unit,
+    onShowStats: () -> Unit,
+) {
+    var menuOpen by remember { mutableStateOf(false) }
+    var showEdit by remember { mutableStateOf(false) }
+    var showDeleteConfirm by remember { mutableStateOf(false) }
+
+    LibraryCard(onClick = onOpen, onLongClick = { menuOpen = true }) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            CoverArt(initial = coverInitial(collection.title, language), tinted = true)
+            Spacer(Modifier.width(16.dp))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    collection.title,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Spacer(Modifier.size(4.dp))
+                Text(
+                    chapterLabel(collection.textCount),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Box {
+                OverflowButton(
+                    contentDescription = "More actions for ${collection.title}",
+                    onClick = { menuOpen = true },
+                )
+                BookMenu(
+                    expanded = menuOpen,
+                    onDismiss = { menuOpen = false },
+                    onEdit = { menuOpen = false; showEdit = true },
+                    onStats = { menuOpen = false; onShowStats() },
+                    onDelete = { menuOpen = false; showDeleteConfirm = true },
+                )
+            }
+        }
+        // Aggregate reading progress across the book's chapters.
+        Spacer(Modifier.size(12.dp))
+        ItemProgress(fraction = collection.progress, label = "Reading progress")
+    }
+
+    if (showEdit) {
+        EditCollectionDialog(
+            initialTitle = collection.title,
+            onDismiss = { showEdit = false },
+            onConfirm = { title, desc ->
+                showEdit = false
+                onEdit(title, desc)
+            },
+        )
+    }
+    if (showDeleteConfirm) {
+        ConfirmDeleteDialog(
+            itemName = collection.title,
+            kind = "book",
+            onDismiss = { showDeleteConfirm = false },
+            onConfirm = {
+                showDeleteConfirm = false
+                onDelete()
+            },
+        )
+    }
+}
+
+/** A text row: a cover initial, the title, a status line for not-yet-ready
+ *  texts, and a progress track for ready ones. */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun TextCardItem(
+    card: TextCard,
+    language: Language?,
+    onOpen: () -> Unit,
+    onEdit: (title: String) -> Unit,
+    onDelete: () -> Unit,
+    onShowStats: () -> Unit,
+) {
+    var menuOpen by remember { mutableStateOf(false) }
+    var showEdit by remember { mutableStateOf(false) }
+    var showDeleteConfirm by remember { mutableStateOf(false) }
+
+    LibraryCard(
+        // Tapping a not-ready text does nothing, but long-press still offers Delete.
+        onClick = { if (card.isReady) onOpen() },
+        onLongClick = { menuOpen = true },
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            CoverArt(initial = coverInitial(card.title, language), tinted = false)
+            Spacer(Modifier.width(16.dp))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    card.title,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                if (!card.isReady) {
+                    Spacer(Modifier.size(4.dp))
+                    Text(
+                        card.status,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            Box {
+                OverflowButton(
+                    contentDescription = "More actions for ${card.title}",
+                    onClick = { menuOpen = true },
+                )
+                BookMenu(
+                    expanded = menuOpen,
+                    onDismiss = { menuOpen = false },
+                    onEdit = { menuOpen = false; showEdit = true },
+                    onStats = { menuOpen = false; onShowStats() },
+                    onDelete = { menuOpen = false; showDeleteConfirm = true },
+                )
+            }
+        }
+        // Ready texts show their reading-progress track; not-yet-ready texts
+        // surface their status line instead.
+        if (card.isReady) {
+            Spacer(Modifier.size(12.dp))
+            ItemProgress(fraction = card.progress, label = "Reading progress")
+        }
+    }
+
+    if (showEdit) {
+        EditTitleDialog(
+            label = "Rename text",
+            initialTitle = card.title,
+            onDismiss = { showEdit = false },
+            onConfirm = { title ->
+                showEdit = false
+                onEdit(title)
+            },
+        )
+    }
+    if (showDeleteConfirm) {
+        ConfirmDeleteDialog(
+            itemName = card.title,
+            kind = "text",
+            onDismiss = { showDeleteConfirm = false },
+            onConfirm = {
+                showDeleteConfirm = false
+                onDelete()
+            },
+        )
+    }
+}
+
+/** Shared card surface: an elevated paper card with consistent inner padding and
+ *  click/disabled behavior. Children stack vertically. */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun LibraryCard(
+    onClick: () -> Unit,
+    onLongClick: () -> Unit,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    Card(
+        // combinedClickable (not Card's onClick) so a long-press can open the
+        // per-item actions menu while a tap still opens the item.
+        modifier = Modifier
+            .fillMaxWidth()
+            .combinedClickable(onClick = onClick, onLongClick = onLongClick),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerLowest,
+            contentColor = MaterialTheme.colorScheme.onSurface,
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+    ) {
+        Column(modifier = Modifier.padding(16.dp), content = content)
+    }
+}
+
+/** A square cover placeholder: a tinted block carrying the item's initial (or
+ *  language script glyph). Books get a saffron tint; texts a calmer surface. */
+@Composable
+private fun CoverArt(initial: String, tinted: Boolean) {
+    val container = if (tinted) {
+        MaterialTheme.colorScheme.primaryContainer
+    } else {
+        MaterialTheme.colorScheme.secondaryContainer
+    }
+    val onContainer = if (tinted) {
+        MaterialTheme.colorScheme.onPrimaryContainer
+    } else {
+        MaterialTheme.colorScheme.onSecondaryContainer
+    }
+    Surface(
+        shape = RoundedCornerShape(12.dp),
+        color = container,
+        contentColor = onContainer,
+        modifier = Modifier.size(56.dp),
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Text(
+                initial,
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.SemiBold,
+            )
+        }
+    }
+}
+
+/** A thin reading-progress track plus a trailing percentage. Labelled as one
+ *  unit for screen readers ("Reading progress, 0 percent"). */
+@Composable
+private fun ItemProgress(fraction: Float, label: String) {
+    val clamped = fraction.coerceIn(0f, 1f)
+    val pct = (clamped * 100).toInt()
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.semantics(mergeDescendants = true) {
+            contentDescription = "$label, $pct percent"
+        },
+    ) {
+        LinearProgressIndicator(
+            progress = { clamped },
+            modifier = Modifier
+                .weight(1f)
+                .height(6.dp)
+                .clip(RoundedCornerShape(3.dp)),
+            color = MaterialTheme.colorScheme.primary,
+            trackColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+        )
+        Spacer(Modifier.width(12.dp))
+        Text(
+            "$pct%",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+/** The kebab (⋮) overflow trigger, labelled for screen readers. */
+@Composable
+private fun OverflowButton(contentDescription: String, onClick: () -> Unit) {
+    IconButton(
+        onClick = onClick,
+        modifier = Modifier.semantics { this.contentDescription = contentDescription },
+    ) {
+        Text("⋮", style = MaterialTheme.typography.titleLarge)
+    }
+}
+
+/** Edit / Stats / Delete menu shared by the overflow button and long-press. */
+@Composable
+private fun BookMenu(
+    expanded: Boolean,
+    onDismiss: () -> Unit,
+    onEdit: () -> Unit,
+    onStats: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    DropdownMenu(expanded = expanded, onDismissRequest = onDismiss) {
+        DropdownMenuItem(text = { Text("Edit") }, onClick = onEdit)
+        DropdownMenuItem(text = { Text("Stats") }, onClick = onStats)
+        DropdownMenuItem(text = { Text("Delete") }, onClick = onDelete)
+    }
+}
+
+/** Title (required) + optional description editor for a book. */
+@Composable
+private fun EditCollectionDialog(
+    initialTitle: String,
+    onDismiss: () -> Unit,
+    onConfirm: (title: String, description: String?) -> Unit,
+) {
+    var title by rememberSaveable { mutableStateOf(initialTitle) }
+    var description by rememberSaveable { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Edit book") },
+        text = {
+            Column {
+                OutlinedTextField(
+                    value = title,
+                    onValueChange = { title = it },
+                    label = { Text("Title") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Spacer(Modifier.size(12.dp))
+                OutlinedTextField(
+                    value = description,
+                    onValueChange = { description = it },
+                    label = { Text("Description (optional)") },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { onConfirm(title.trim(), description.trim().ifBlank { null }) },
+                // Title is required by the endpoint (min length 1).
+                enabled = title.isNotBlank(),
+            ) { Text("Save") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+}
+
+/** Title-only rename dialog (texts have no description field). */
+@Composable
+private fun EditTitleDialog(
+    label: String,
+    initialTitle: String,
+    onDismiss: () -> Unit,
+    onConfirm: (title: String) -> Unit,
+) {
+    var title by rememberSaveable { mutableStateOf(initialTitle) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(label) },
+        text = {
+            OutlinedTextField(
+                value = title,
+                onValueChange = { title = it },
+                label = { Text("Title") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { onConfirm(title.trim()) },
+                enabled = title.isNotBlank(),
+            ) { Text("Save") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+}
+
+/** Generic destructive confirm for a book or text. */
+@Composable
+private fun ConfirmDeleteDialog(
+    itemName: String,
+    kind: String,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Delete $kind?") },
+        text = { Text("\"$itemName\" will be permanently deleted. This can't be undone.") },
+        confirmButton = {
+            TextButton(
+                onClick = onConfirm,
+                colors = androidx.compose.material3.ButtonDefaults.textButtonColors(
+                    contentColor = MaterialTheme.colorScheme.error,
+                ),
+            ) { Text("Delete") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+}
+
+/** A bottom sheet of per-book figures (comprehension, words, chapters, progress). */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun StatsSheet(stats: StatsUiState, onDismiss: () -> Unit) {
+    val sheetState = rememberModalBottomSheetState()
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 24.dp, end = 24.dp, bottom = 32.dp),
+        ) {
+            Text(
+                stats.title,
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Spacer(Modifier.size(16.dp))
+            when {
+                stats.isLoading ->
+                    CircularProgressIndicator(Modifier.align(Alignment.CenterHorizontally))
+
+                stats.errorMessage != null ->
+                    Text(stats.errorMessage, color = MaterialTheme.colorScheme.error)
+
+                stats.stats != null -> {
+                    val s = stats.stats
+                    // "—" until the NLP worker has tokenized the book (no known/total yet).
+                    StatRow("Comprehension", s.comprehensionPct?.let { "$it%" } ?: "—")
+                    StatRow("Total words", s.totalWords.toString())
+                    // A standalone text is one chapter — the row only matters for books.
+                    if (s.chapterCount > 1) StatRow("Chapters", s.chapterCount.toString())
+                    StatRow("Reading progress", "${s.progressPct}%")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun StatRow(label: String, value: String) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 8.dp)
+            .semantics(mergeDescendants = true) { contentDescription = "$label: $value" },
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        Text(label, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(value, fontWeight = FontWeight.SemiBold)
     }
 }
 
@@ -241,9 +735,25 @@ private fun SectionHeader(text: String) {
     Text(
         text,
         style = MaterialTheme.typography.titleSmall,
+        fontWeight = FontWeight.SemiBold,
         color = MaterialTheme.colorScheme.primary,
-        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+        modifier = Modifier.padding(top = 4.dp, bottom = 2.dp),
     )
+}
+
+/** "12 chapters" / "1 chapter" — never a bare "0". */
+private fun chapterLabel(count: Int): String =
+    if (count == 1) "1 chapter" else "$count chapters"
+
+/** Cover glyph: the title's first letter/digit, falling back to the language
+ *  script glyph for a title that starts with whitespace/symbols. */
+private fun coverInitial(title: String, language: Language?): String {
+    val first = title.trim().firstOrNull { it.isLetterOrDigit() }
+    return when {
+        first != null -> first.uppercase()
+        language != null -> language.glyph()
+        else -> "?"
+    }
 }
 
 @Composable
@@ -268,7 +778,14 @@ private fun LanguageSwitcher(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         LanguageChip(lang)
                         Spacer(Modifier.width(12.dp))
-                        Text("${lang.displayName} · ${lang.nativeName}")
+                        Column {
+                            Text("${lang.displayName} · ${lang.nativeName}")
+                            Text(
+                                lang.knownWordsLabel(),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
                     }
                 },
                 onClick = {
@@ -312,6 +829,11 @@ private fun languageIconRes(code: String): Int? = when (code) {
     "eu" -> R.drawable.ic_lang_eu
     else -> null
 }
+
+/** Switcher subtitle: how many distinct words the user knows in this
+ *  language. Singular/plural so "1 word" reads naturally. */
+private fun Language.knownWordsLabel(): String =
+    if (knownLemmaCount == 1) "1 word" else "$knownLemmaCount words"
 
 /** The language's representative glyph: the first letter of its native name
  *  (its own script), falling back to the language code. */
