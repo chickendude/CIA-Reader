@@ -53,6 +53,11 @@ new SubtitleMirror((text) => {
 
 // Listening mode hides/reveals the caption as the line plays/pauses.
 playback.onBlind = (hidden) => overlay.setCaptionHidden(hidden);
+// On auto-pause/listening pause, force-show the line from the cue data.
+playback.onLinePause = (text) => {
+  overlay.setCaptionHidden(false);
+  overlay.setCue(text);
+};
 
 const toggleAutoPause = () => overlay.setAutoPause(playback.toggleAutoPause());
 const toggleListening = () => overlay.setListening(playback.toggleListening());

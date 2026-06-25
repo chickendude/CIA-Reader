@@ -44,7 +44,9 @@ export function buildManifest(browser) {
       {
         matches: ['https://primeran.eus/*', 'https://*.primeran.eus/*'],
         js: ['content.js'],
-        run_at: 'document_idle',
+        // document_start so our keyboard listener registers before the player's
+        // (otherwise the player eats the arrow keys).
+        run_at: 'document_start',
         // Top frame only — the player, <video>, and overlay all live in the top
         // document; all_frames would spawn a duplicate overlay in ad iframes.
         all_frames: false,

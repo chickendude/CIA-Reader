@@ -29,6 +29,9 @@ export class PlaybackController {
   /** Called while in listening mode with whether the caption should be hidden
    *  (hidden while the line plays, shown when it pauses at the end). */
   onBlind: ((hidden: boolean) => void) | null = null;
+  /** Called with the current line's text when auto-pause/listening pauses, so the
+   *  caption is shown from the cue data (not relying on the player's DOM). */
+  onLinePause: ((text: string) => void) | null = null;
 
   constructor(private video: VideoController) {
     setInterval(this.tick, 120);
@@ -36,7 +39,19 @@ export class PlaybackController {
 
   setCues(cues: SubtitleCue[]): void {
     this.cues = cues;
-    this.indexByText = new Map(cues.map((c, i) => [norm(c.text), i] as [string, number]));
+    // Only calibrate on lines whose text is UNIQUE — repeated short lines like
+    // "(Musika)" would otherwise map to the wrong (last) occurrence and throw the
+    // timeline offset off by minutes.
+    const counts = new Map<string, number>();
+    for (const c of cues) {
+      const k = norm(c.text);
+      counts.set(k, (counts.get(k) ?? 0) + 1);
+    }
+    this.indexByText = new Map();
+    cues.forEach((c, i) => {
+      const k = norm(c.text);
+      if (counts.get(k) === 1) this.indexByText.set(k, i);
+    });
   }
 
   /** The current on-screen subtitle (from the mirror) — used only to calibrate
@@ -113,6 +128,7 @@ export class PlaybackController {
     if (t >= this.toVideo(c.endMs - PAUSE_LEAD_MS) && this.pausedFor !== i) {
       this.pausedFor = i;
       this.video.pause();
+      this.onLinePause?.(c.text);
     }
   };
 }
