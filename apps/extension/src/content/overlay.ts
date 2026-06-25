@@ -49,12 +49,12 @@ const STYLE = `
 .popup h2 { margin: 0; font-size: 18px; }
 .popup .lemma { color: #8ab4ff; font-size: 13px; }
 .popup .x { margin-left: auto; cursor: pointer; color: #9aa; font-size: 18px; line-height: 1; }
-.popup .chips { display: flex; gap: 6px; margin: 8px 0 4px; }
-.popup .chip {
-  cursor: pointer; font-size: 12px; font-weight: 600; padding: 2px 9px; border-radius: 999px;
-  border: 1px solid #3a3d44; color: #aab; user-select: none;
+.popup .tabs { display: flex; gap: 2px; margin: 10px 0 2px; border-bottom: 1px solid #2e3138; }
+.popup .tab {
+  cursor: pointer; font-size: 12px; font-weight: 700; padding: 5px 13px; color: #9aa;
+  user-select: none; border-bottom: 2px solid transparent; margin-bottom: -1px;
 }
-.popup .chip.on { background: #2b6cb0; border-color: #2b6cb0; color: #fff; }
+.popup .tab.on { color: #fff; border-bottom-color: #4a90e2; }
 .popup .grp { margin-top: 8px; padding-top: 8px; border-top: 1px solid #2e3138; }
 .popup .grp-label { color: #9fb; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; margin-bottom: 3px; }
 .popup .head { font-weight: 600; }
@@ -88,7 +88,7 @@ export class Overlay {
   private closeTimer: ReturnType<typeof setTimeout> | null = null;
   private anchor: HTMLElement | null = null;
   private state: PopupState | null = null;
-  private selected = new Set<DefinitionLang>(LANGS);
+  private selectedLang: DefinitionLang = 'en';
 
   constructor(private deps: Deps) {
     this.host = el('div');
@@ -206,41 +206,45 @@ export class Overlay {
     hd.append(close);
     content.append(hd);
 
-    const chips = el('div', 'chips');
+    const tabs = el('div', 'tabs');
     for (const lang of LANGS) {
-      const chip = el('span', `chip${this.selected.has(lang) ? ' on' : ''}`, lang.toUpperCase());
-      chip.addEventListener('click', () => {
-        if (this.selected.has(lang)) this.selected.delete(lang);
-        else this.selected.add(lang);
+      const tab = el('span', `tab${this.selectedLang === lang ? ' on' : ''}`, lang.toUpperCase());
+      tab.addEventListener('click', () => {
+        this.selectedLang = lang;
         this.render();
       });
-      chips.append(chip);
+      tabs.append(tab);
     }
-    content.append(chips);
+    content.append(tabs);
 
     if (s.error) {
       content.append(el('div', 'muted', `Lookup failed: ${s.error}`));
     }
 
-    // Internal dictionary
+    let shown = 0;
+    const lang = this.selectedLang;
+
+    // Internal dictionary entries that have a definition in the selected language.
     for (const entry of s.lookup?.entries ?? []) {
-      const defs = this.entryDefs(entry).filter((d) => this.selected.has(d.lang));
-      if (defs.length === 0 && (s.lookup?.entries.length ?? 0) > 1) continue; // hide empty extras
+      const defs = this.entryDefs(entry).filter((d) => d.lang === lang);
+      if (defs.length === 0) continue;
       const grp = el('div', 'grp');
       const head = el('div');
       head.append(el('span', 'head', entry.headword));
       if (entry.pos) head.append(el('span', 'pos', entry.pos.toLowerCase()));
       grp.append(head);
-      if (defs.length === 0) grp.append(el('div', 'muted', '(no built-in translation)'));
       for (const d of defs) grp.append(el('div', 'def', d.body));
       content.append(grp);
+      shown += 1;
     }
 
-    // External reference dictionaries, grouped by label
+    // External reference dictionaries for the selected language, grouped by label.
     const refByLabel = new Map<string, ReferenceEntry[]>();
     for (const r of s.reference) {
-      if (!this.selected.has(referenceSourceLang(r.source))) continue;
-      (refByLabel.get(r.label) ?? refByLabel.set(r.label, []).get(r.label)!).push(r);
+      if (referenceSourceLang(r.source) !== lang) continue;
+      const list = refByLabel.get(r.label);
+      if (list) list.push(r);
+      else refByLabel.set(r.label, [r]);
     }
     for (const [label, entries] of refByLabel) {
       const grp = el('div', 'grp');
@@ -250,10 +254,12 @@ export class Overlay {
         for (const ex of r.examples.slice(0, 2)) grp.append(el('div', 'ex', ex));
       }
       content.append(grp);
+      shown += 1;
     }
 
     if (s.refState === 'loading') content.append(el('div', 'muted', 'Loading dictionaries…'));
     else if (s.refState === 'error') content.append(el('div', 'muted', 'External dictionaries unavailable.'));
+    else if (shown === 0) content.append(el('div', 'muted', `No ${lang.toUpperCase()} definitions found.`));
 
     this.paint(content);
   }

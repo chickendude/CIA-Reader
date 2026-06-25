@@ -23,6 +23,7 @@ export type Requests = {
   FETCH_SUBTITLES: { req: { url: string }; res: { cues: SubtitleCue[] } };
   LOOKUP: { req: { language: string; surface: string }; res: LookupResult };
   REFERENCE: { req: { language: string; word: string }; res: { results: ReferenceEntry[] } };
+  CUES_FOR_URL: { req: { url: string }; res: { cues: SubtitleCue[] | null } };
 };
 
 export type MessageType = keyof Requests;

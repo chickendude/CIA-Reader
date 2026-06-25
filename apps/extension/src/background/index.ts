@@ -10,9 +10,11 @@ import { ext } from '../shared/browser';
 import type { Message } from '../shared/messages';
 import { authStatus, login, logout } from './auth';
 import { localDictionary } from './dictionary-local';
+import { episodeKey } from '../shared/episode';
 import { lookupWord } from './lookup';
 import { referenceCache } from './reference';
 import { fetchSubtitles } from './subtitles';
+import { cuesCache } from './subtitles-cache';
 
 async function handle(msg: Message): Promise<unknown> {
   switch (msg.type) {
@@ -35,6 +37,8 @@ async function handle(msg: Message): Promise<unknown> {
       return lookupWord(msg.language, msg.surface);
     case 'REFERENCE':
       return { results: await referenceCache.lookup(msg.language, msg.word) };
+    case 'CUES_FOR_URL':
+      return { cues: await cuesCache.get(episodeKey(msg.url)) };
     default:
       throw new Error(`Unknown message type: ${(msg as { type: string }).type}`);
   }
@@ -53,6 +57,12 @@ ext.webRequest.onCompleted.addListener(
       try {
         const cues = await fetchSubtitles(details.url);
         sentByTab.set(details.tabId, details.url);
+        try {
+          const tab = await ext.tabs.get(details.tabId);
+          if (tab?.url) await cuesCache.set(episodeKey(tab.url), cues);
+        } catch {
+          /* tab gone / no url — caching is best-effort */
+        }
         await ext.tabs.sendMessage(details.tabId, {
           type: 'SUBTITLES_LOADED',
           url: details.url,
