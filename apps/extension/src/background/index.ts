@@ -11,6 +11,7 @@ import type { Message } from '../shared/messages';
 import { authStatus, login, logout } from './auth';
 import { localDictionary } from './dictionary-local';
 import { episodeKey } from '../shared/episode';
+import { addAnkiNote } from './anki';
 import { frequencyIndex } from './frequency';
 import { lookupWord } from './lookup';
 import { referenceCache } from './reference';
@@ -44,6 +45,8 @@ async function handle(msg: Message): Promise<unknown> {
       return {
         count: await frequencyIndex.count(msg.language, episodeKey(msg.url), msg.lemma, msg.surface),
       };
+    case 'ADD_ANKI':
+      return addAnkiNote({ front: msg.front, back: msg.back, tags: msg.tags });
     default:
       throw new Error(`Unknown message type: ${(msg as { type: string }).type}`);
   }

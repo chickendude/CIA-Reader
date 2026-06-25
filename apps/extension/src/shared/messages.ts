@@ -28,6 +28,10 @@ export type Requests = {
     req: { language: string; url: string; lemma: string; surface: string };
     res: { count: number };
   };
+  ADD_ANKI: {
+    req: { front: string; back: string; tags?: string[] };
+    res: { added: boolean; duplicate: boolean };
+  };
 };
 
 export type MessageType = keyof Requests;

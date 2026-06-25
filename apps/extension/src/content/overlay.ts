@@ -18,6 +18,11 @@ type Deps = {
   onClose?: () => void;
   /** Episode occurrence count for a word (resolves async; 0 if none/unknown). */
   frequency?: (lemma: string, surface: string) => Promise<number>;
+  /** Add a text card to Anki via AnkiConnect. */
+  addAnki?: (card: { front: string; back: string; tags?: string[] }) => Promise<{
+    added: boolean;
+    duplicate: boolean;
+  }>;
 };
 
 type RefState = 'idle' | 'loading' | 'done' | 'error';
@@ -86,6 +91,11 @@ const STYLE = `
   font: 13px/1.45 system-ui, -apple-system, sans-serif; box-shadow: 0 8px 26px rgba(0,0,0,0.6);
 }
 .tooltip .ex { font-style: italic; margin: 3px 0; color: #d2d2d2; }
+.popup .footer { margin-top: 10px; padding-top: 9px; border-top: 1px solid #2e3138; display: flex; align-items: center; gap: 10px; }
+.popup .anki { font: inherit; font-size: 13px; cursor: pointer; background: #2b6cb0; color: #fff; border: none; border-radius: 6px; padding: 5px 12px; }
+.popup .anki:hover { background: #3a7bc8; }
+.popup .anki:disabled { opacity: .6; cursor: default; }
+.popup .anki-status { color: #9a9a9a; font-size: 12px; }
 `;
 
 function el<K extends keyof HTMLElementTagNameMap>(
@@ -97,6 +107,10 @@ function el<K extends keyof HTMLElementTagNameMap>(
   if (className) node.className = className;
   if (text != null) node.textContent = text;
   return node;
+}
+
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
 const LANGS: DefinitionLang[] = ['en', 'es', 'eu'];
@@ -113,6 +127,8 @@ export class Overlay {
   private exTip: HTMLElement | null = null;
   private exTimer: ReturnType<typeof setTimeout> | null = null;
   private pendingCue: { text: string | null } | null = null;
+  /** The subtitle line currently shown — captured for Anki cards. */
+  private currentSentence: string | null = null;
   private anchor: HTMLElement | null = null;
   private state: PopupState | null = null;
   /** The tab the user last picked — the default for the next word. */
@@ -161,6 +177,7 @@ export class Overlay {
   }
 
   private renderCue(text: string | null): void {
+    this.currentSentence = text;
     this.cueEl.textContent = '';
     if (!text) {
       this.bar.style.display = 'none';
@@ -404,6 +421,15 @@ export class Overlay {
     else if (refByLabel.size === 0)
       content.append(el('div', 'muted', `No ${this.displayLang.toUpperCase()} dictionary entry.`));
 
+    if (this.deps.addAnki && s.lookup) {
+      const footer = el('div', 'footer');
+      const btn = el('button', 'anki', 'Add to Anki');
+      const status = el('span', 'anki-status');
+      btn.addEventListener('click', () => void this.addToAnki(btn, status));
+      footer.append(btn, status);
+      content.append(footer);
+    }
+
     this.paint(content);
   }
 
@@ -420,6 +446,60 @@ export class Overlay {
     }
     if (entry.gloss && !seen.has(entry.gloss)) out.push({ body: entry.gloss, lang: 'en' });
     return out;
+  }
+
+  // ---- Anki ----
+
+  private buildCard(): { front: string; back: string } | null {
+    const s = this.state;
+    if (!s) return null;
+    const front = s.lookup?.lemmas[0] ?? s.surface;
+
+    const lines: string[] = [];
+    const seen = new Set<string>();
+    for (const entry of s.lookup?.entries ?? []) {
+      for (const d of this.entryDefs(entry)) {
+        if (!seen.has(d.body)) {
+          seen.add(d.body);
+          lines.push(d.body);
+        }
+      }
+    }
+    for (const r of s.reference) {
+      if (referenceSourceLang(r.source) === this.displayLang && !seen.has(r.definition)) {
+        seen.add(r.definition);
+        lines.push(r.definition);
+      }
+    }
+
+    const parts = lines.map((l) => `<div>${escapeHtml(l)}</div>`);
+    if (this.currentSentence) {
+      parts.push(
+        `<div style="margin-top:10px;color:#555">${this.highlightSurface(this.currentSentence, s.surface)}</div>`,
+      );
+    }
+    return { front, back: parts.join('') };
+  }
+
+  private highlightSurface(sentence: string, surface: string): string {
+    const escaped = escapeHtml(sentence);
+    const safe = surface.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return escaped.replace(new RegExp(`(${safe})`, 'i'), '<b>$1</b>');
+  }
+
+  private async addToAnki(btn: HTMLButtonElement, status: HTMLElement): Promise<void> {
+    const card = this.buildCard();
+    if (!card || !this.deps.addAnki) return;
+    btn.disabled = true;
+    status.textContent = 'Adding…';
+    try {
+      const r = await this.deps.addAnki(card);
+      status.textContent = r.added ? 'Added ✓' : r.duplicate ? 'Already in deck' : 'Done';
+    } catch (e) {
+      status.textContent = e instanceof Error ? e.message : String(e);
+    } finally {
+      btn.disabled = false;
+    }
   }
 
   private paint(content: HTMLElement): void {

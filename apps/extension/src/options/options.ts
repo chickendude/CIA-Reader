@@ -36,6 +36,8 @@ async function render(): Promise<void> {
   set('apiBaseUrl', cfg.apiBaseUrl);
   set('deckName', cfg.deckName);
   set('ankiConnectUrl', cfg.ankiConnectUrl);
+  const origin = document.getElementById('ext-origin');
+  if (origin) origin.textContent = location.origin;
   await renderAuth();
   await renderDict(cfg.language);
 }

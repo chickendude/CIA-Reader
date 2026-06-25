@@ -26,6 +26,7 @@ const overlay = new Overlay({
     sendMessage('FREQUENCY', { language: LANGUAGE, url: location.href, lemma, surface }).then(
       (r) => r.count,
     ),
+  addAnki: (card) => sendMessage('ADD_ANKI', card),
 });
 
 new SubtitleMirror((text) => overlay.setCue(text));
