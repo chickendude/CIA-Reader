@@ -55,9 +55,14 @@ fun CiaReaderNavHost(onLogout: () -> Unit) {
                 onOpenCollection = { c ->
                     c.openTextId?.let { navController.navigate(Routes.reader(it, c.id)) }
                 },
-                // After an EPUB import resolves to a multi-chapter book, open the
-                // collection detail so the user can pick a chapter to start.
+                // Fallback when an imported book has no resolvable first chapter:
+                // open the collection detail so the user can pick a chapter.
                 onOpenCollectionById = { id -> navController.navigate(Routes.collection(id)) },
+                // After an EPUB import, open chapter 1 *with* the book id so the
+                // reader loads sibling chapters (prev/next + the TOC).
+                onOpenBookChapter = { textId, collectionId ->
+                    navController.navigate(Routes.reader(textId, collectionId))
+                },
                 onOpenSettings = { navController.navigate(Routes.SETTINGS) },
             )
         }

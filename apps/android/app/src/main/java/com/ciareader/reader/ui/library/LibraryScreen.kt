@@ -80,6 +80,9 @@ fun LibraryScreen(
     onOpenText: (String) -> Unit,
     onOpenCollection: (CollectionSummary) -> Unit,
     onOpenCollectionById: (String) -> Unit,
+    /** Open the reader on a specific chapter-text within a book, so chapter nav
+     *  (prev/next + the TOC) works — used after importing an EPUB. */
+    onOpenBookChapter: (textId: String, collectionId: String) -> Unit,
     onOpenSettings: () -> Unit,
     viewModel: LibraryViewModel = hiltViewModel(),
 ) {
@@ -130,12 +133,13 @@ fun LibraryScreen(
                 viewModel.refreshCurrentLanguage()
                 when (result) {
                     is ImportResult.Text -> onOpenText(result.textId)
-                    // Open the reader on chapter 1 (which carries book nav) rather
-                    // than the chapter-list page, whose chapters are still
-                    // "processing" with no live refresh. Fall back to the list only
-                    // if the server didn't surface a first chapter.
+                    // Open the reader on chapter 1 *with the book context* (so
+                    // prev/next + the chapter TOC work) rather than the chapter-list
+                    // page, whose chapters are still "processing" with no live
+                    // refresh. Fall back to the list if there's no first chapter.
                     is ImportResult.Collection ->
-                        result.firstTextId?.let(onOpenText)
+                        result.firstTextId
+                            ?.let { onOpenBookChapter(it, result.collectionId) }
                             ?: onOpenCollectionById(result.collectionId)
                 }
             },
