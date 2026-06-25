@@ -98,6 +98,15 @@ const STYLE = `
 .popup .anki:hover { background: #3a7bc8; }
 .popup .anki:disabled { opacity: .6; cursor: default; }
 .popup .anki-status { color: #9a9a9a; font-size: 12px; }
+.toolbar { position: fixed; left: 50%; bottom: 20%; transform: translateX(-50%);
+  z-index: 2147482999; display: flex; gap: 3px; background: rgba(0,0,0,.55); border-radius: 9px;
+  padding: 4px; pointer-events: auto; opacity: .4; transition: opacity .15s;
+  font-family: system-ui, -apple-system, sans-serif; }
+.toolbar:hover { opacity: 1; }
+.tbtn { cursor: pointer; color: #fff; background: transparent; border: none; font-size: 15px;
+  line-height: 1; padding: 5px 9px; border-radius: 6px; }
+.tbtn:hover { background: rgba(255,255,255,.18); }
+.tbtn.on { background: #1f9c57; }
 `;
 
 function el<K extends keyof HTMLElementTagNameMap>(
@@ -128,6 +137,8 @@ export class Overlay {
   private pendingCue: { text: string | null } | null = null;
   /** The subtitle line currently shown — captured for Anki cards. */
   private currentSentence: string | null = null;
+  private toolbar: HTMLElement | null = null;
+  private autoPauseBtn: HTMLButtonElement | null = null;
   private anchor: HTMLElement | null = null;
   private state: PopupState | null = null;
   /** The tab the user last picked — the default for the next word. */
@@ -162,6 +173,36 @@ export class Overlay {
       },
       true,
     );
+  }
+
+  /** Show the playback-controls toolbar (repeat / prev / next / auto-pause). */
+  enableControls(h: {
+    repeat: () => void;
+    prev: () => void;
+    next: () => void;
+    toggleAutoPause: () => void;
+  }): void {
+    if (this.toolbar) return;
+    const tb = el('div', 'toolbar');
+    const btn = (label: string, title: string, fn: () => void): HTMLButtonElement => {
+      const b = el('button', 'tbtn', label);
+      b.title = title;
+      b.addEventListener('click', fn);
+      return b;
+    };
+    tb.append(
+      btn('⏮', 'Previous line (S)', h.prev),
+      btn('↻', 'Repeat line (A)', h.repeat),
+      btn('⏭', 'Next line (D)', h.next),
+    );
+    this.autoPauseBtn = btn('⏸', 'Auto-pause at line end (W)', h.toggleAutoPause);
+    tb.append(this.autoPauseBtn);
+    this.toolbar = tb;
+    this.root.append(tb);
+  }
+
+  setAutoPause(on: boolean): void {
+    this.autoPauseBtn?.classList.toggle('on', on);
   }
 
   setCue(text: string | null): void {

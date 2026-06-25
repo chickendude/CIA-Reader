@@ -11,6 +11,22 @@ export class VideoController {
     return this.pickVideo();
   }
 
+  currentTime(): number | null {
+    return this.pickVideo()?.currentTime ?? null;
+  }
+
+  seek(seconds: number): void {
+    const v = this.pickVideo();
+    if (v) {
+      v.currentTime = Math.max(0, seconds);
+      void v.play();
+    }
+  }
+
+  pause(): void {
+    this.pickVideo()?.pause();
+  }
+
   /** Pause for a word lookup. Idempotent: while a lookup is already active
    *  (moving between words keeps the popup open) it's a no-op, so the original
    *  "was playing" state isn't lost. Respects a manual pause (won't auto-resume). */
