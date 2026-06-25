@@ -31,16 +31,18 @@ const STYLE = `
 :host { all: initial; }
 * { box-sizing: border-box; }
 .bar {
-  position: fixed; left: 50%; bottom: 9%; transform: translateX(-50%);
+  position: fixed; left: 50%; bottom: 13%; transform: translateX(-50%);
   max-width: 84vw; z-index: 2147483000; text-align: center; pointer-events: none;
   font-family: system-ui, -apple-system, sans-serif;
 }
 .cue {
   display: inline-block; background: rgba(0,0,0,0.8); color: #fff;
   padding: 6px 14px; border-radius: 10px; font-size: 26px; line-height: 1.4;
-  pointer-events: auto; white-space: pre-wrap;
+  /* none on the box so the seek bar / controls underneath stay clickable; only
+     the words re-enable pointer events. */
+  pointer-events: none; white-space: pre-wrap;
 }
-.w { cursor: pointer; border-radius: 4px; padding: 0 1px; transition: background 60ms; }
+.w { cursor: pointer; border-radius: 4px; padding: 0 1px; transition: background 60ms; pointer-events: auto; }
 .w:hover { background: #ffd54a; color: #000; }
 .popup {
   position: fixed; z-index: 2147483001; width: 380px; max-width: 92vw; max-height: 64vh;
