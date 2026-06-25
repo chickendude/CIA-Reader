@@ -33,18 +33,56 @@ const overlay = new Overlay({
   addAnki: (card) => sendMessage('ADD_ANKI', { language: LANGUAGE, ...card }),
 });
 
+let seenSubs = false;
 new SubtitleMirror((text) => {
+  if (text) seenSubs = true;
   overlay.setCue(text);
   playback.onText(text);
 });
 
+// Listening mode hides/reveals the caption as the line plays/pauses.
+playback.onBlind = (hidden) => overlay.setCaptionHidden(hidden);
+
 const toggleAutoPause = () => overlay.setAutoPause(playback.toggleAutoPause());
+const toggleListening = () => overlay.setListening(playback.toggleListening());
+
 overlay.enableControls({
   repeat: () => playback.repeat(),
   prev: () => playback.prev(),
   next: () => playback.next(),
   toggleAutoPause,
+  toggleListening,
+  enableSubtitles: () => void enableBasqueSubtitles(),
 });
+
+// --- Turn on Basque subtitles via the player UI (XPaths provided by Primeran) ---
+const SUBTITLE_BUTTON_XPATH =
+  '/html/body/div[1]/div/div/div/main/div/div/div[4]/footer/span[2]/div/div[1]/button[1]/div/img';
+const EUSKARA_BUTTON_XPATH =
+  '/html/body/div[1]/div/div/div/main/div/div/div[4]/footer/div[2]/div/span/div/div[1]/div[2]/div[2]/button/div/span';
+
+function byXPath(path: string): HTMLElement | null {
+  try {
+    const r = document.evaluate(path, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
+    return (r.singleNodeValue as HTMLElement) ?? null;
+  } catch {
+    return null;
+  }
+}
+const delay = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+async function enableBasqueSubtitles(): Promise<void> {
+  const subBtn = byXPath(SUBTITLE_BUTTON_XPATH);
+  (subBtn?.closest('button') ?? subBtn)?.click();
+  await delay(700);
+  const eu = byXPath(EUSKARA_BUTTON_XPATH);
+  (eu?.closest('button') ?? eu)?.click();
+}
+
+// If no subtitle has appeared shortly after load, try to turn them on.
+setTimeout(() => {
+  if (!seenSubs) void enableBasqueSubtitles();
+}, 6000);
 
 // Cues power the playback controls (timing). Load cached ones, and take pushes.
 async function loadCues(): Promise<void> {
@@ -77,21 +115,33 @@ document.addEventListener(
     const t = e.target as HTMLElement | null;
     if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
     let handled = true;
-    switch (e.key.toLowerCase()) {
-      case 'a':
-        playback.repeat();
-        break;
-      case 's':
-        playback.prev();
-        break;
-      case 'd':
+    switch (e.key) {
+      case 'ArrowRight':
         playback.next();
         break;
-      case 'w':
-        toggleAutoPause();
+      case 'ArrowLeft':
+        playback.prev();
         break;
       default:
-        handled = false;
+        switch (e.key.toLowerCase()) {
+          case 'a':
+            playback.repeat();
+            break;
+          case 's':
+            playback.prev();
+            break;
+          case 'd':
+            playback.next();
+            break;
+          case 'w':
+            toggleAutoPause();
+            break;
+          case 'e':
+            toggleListening();
+            break;
+          default:
+            handled = false;
+        }
     }
     if (handled) {
       e.preventDefault();

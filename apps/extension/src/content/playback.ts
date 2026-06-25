@@ -13,6 +13,10 @@ import type { VideoController } from './video';
 
 const norm = (s: string): string => s.replace(/\s+/g, ' ').trim();
 
+// Pause slightly before the cue's end so the subtitle is still on screen (so the
+// mirror still has its text to reveal) and the audio is essentially complete.
+const PAUSE_LEAD_MS = 120;
+
 export class PlaybackController {
   private cues: SubtitleCue[] = [];
   private indexByText = new Map<string, number>();
@@ -20,7 +24,12 @@ export class PlaybackController {
   private offsetMs = 0;
   private calibrated = false;
   private autoPause = false;
+  private listening = false;
   private pausedFor = -1;
+
+  /** Called while in listening mode with whether the caption should be hidden
+   *  (hidden while the line plays, shown when it pauses at the end). */
+  onBlind: ((hidden: boolean) => void) | null = null;
 
   constructor(private video: VideoController) {
     setInterval(this.tick, 120);
@@ -76,12 +85,23 @@ export class PlaybackController {
     return this.autoPause;
   }
 
+  /** Listening mode: hide the subtitle while the line plays, pause at its end,
+   *  and reveal the subtitle. */
+  toggleListening(): boolean {
+    this.listening = !this.listening;
+    this.pausedFor = -1;
+    if (!this.listening) this.onBlind?.(false); // un-hide the caption on exit
+    return this.listening;
+  }
+
   private tick = (): void => {
-    if (!this.autoPause || this.current < 0 || !this.calibrated) return;
+    if (this.listening) this.onBlind?.(!this.video.isPaused());
+
+    if ((!this.autoPause && !this.listening) || this.current < 0 || !this.calibrated) return;
     const c = this.cues[this.current];
     const t = this.video.currentTime();
     if (!c || t === null) return;
-    if (t >= this.toVideo(c.endMs) && this.pausedFor !== this.current) {
+    if (t >= this.toVideo(c.endMs - PAUSE_LEAD_MS) && this.pausedFor !== this.current) {
       this.pausedFor = this.current;
       this.video.pause();
     }

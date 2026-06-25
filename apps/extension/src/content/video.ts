@@ -15,6 +15,10 @@ export class VideoController {
     return this.pickVideo()?.currentTime ?? null;
   }
 
+  isPaused(): boolean {
+    return this.pickVideo()?.paused ?? true;
+  }
+
   seek(seconds: number): void {
     const v = this.pickVideo();
     if (v) {

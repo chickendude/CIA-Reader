@@ -139,6 +139,8 @@ export class Overlay {
   private currentSentence: string | null = null;
   private toolbar: HTMLElement | null = null;
   private autoPauseBtn: HTMLButtonElement | null = null;
+  private listeningBtn: HTMLButtonElement | null = null;
+  private captionHidden = false;
   private anchor: HTMLElement | null = null;
   private state: PopupState | null = null;
   /** The tab the user last picked — the default for the next word. */
@@ -181,6 +183,8 @@ export class Overlay {
     prev: () => void;
     next: () => void;
     toggleAutoPause: () => void;
+    toggleListening: () => void;
+    enableSubtitles: () => void;
   }): void {
     if (this.toolbar) return;
     const tb = el('div', 'toolbar');
@@ -191,18 +195,32 @@ export class Overlay {
       return b;
     };
     tb.append(
-      btn('⏮', 'Previous line (S)', h.prev),
+      btn('⏮', 'Previous line (← / S)', h.prev),
       btn('↻', 'Repeat line (A)', h.repeat),
-      btn('⏭', 'Next line (D)', h.next),
+      btn('⏭', 'Next line (→ / D)', h.next),
     );
     this.autoPauseBtn = btn('⏸', 'Auto-pause at line end (W)', h.toggleAutoPause);
-    tb.append(this.autoPauseBtn);
+    this.listeningBtn = btn('🎧', 'Listening mode: hide subtitle, pause + reveal at line end (E)', h.toggleListening);
+    tb.append(
+      this.autoPauseBtn,
+      this.listeningBtn,
+      btn('💬', 'Turn on Basque subtitles', h.enableSubtitles),
+    );
     this.toolbar = tb;
     this.root.append(tb);
   }
 
   setAutoPause(on: boolean): void {
     this.autoPauseBtn?.classList.toggle('on', on);
+  }
+
+  setListening(on: boolean): void {
+    this.listeningBtn?.classList.toggle('on', on);
+  }
+
+  setCaptionHidden(hidden: boolean): void {
+    this.captionHidden = hidden;
+    this.bar.style.display = this.currentSentence && !hidden ? '' : 'none';
   }
 
   setCue(text: string | null): void {
@@ -233,7 +251,7 @@ export class Overlay {
         this.cueEl.append(document.createTextNode(part.text));
       }
     }
-    this.bar.style.display = '';
+    this.bar.style.display = this.captionHidden ? 'none' : '';
   }
 
   private flushPending(): void {

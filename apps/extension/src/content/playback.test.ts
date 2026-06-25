@@ -56,18 +56,18 @@ describe('PlaybackController', () => {
     pb.setCues(cues);
 
     v.setTime(1.5);
-    pb.onText('one'); // offset = 1500 - 1000 = 500ms → line ends at 2.5s video time
+    pb.onText('one'); // offset 500ms; pauses ~120ms before end (2000) → ~2.38s video time
     expect(pb.toggleAutoPause()).toBe(true);
 
-    v.setTime(2.4);
+    v.setTime(2.3);
     vi.advanceTimersByTime(120);
     expect(v.pause).not.toHaveBeenCalled();
 
-    v.setTime(2.6);
+    v.setTime(2.45);
     vi.advanceTimersByTime(120);
     expect(v.pause).toHaveBeenCalledTimes(1);
 
-    v.setTime(2.7);
+    v.setTime(2.6);
     vi.advanceTimersByTime(120);
     expect(v.pause).toHaveBeenCalledTimes(1); // not again for the same line
   });
