@@ -24,7 +24,10 @@ export type Requests = {
   LOOKUP: { req: { language: string; surface: string }; res: LookupResult };
   REFERENCE: { req: { language: string; word: string }; res: { results: ReferenceEntry[] } };
   CUES_FOR_URL: { req: { url: string }; res: { cues: SubtitleCue[] | null } };
-  FREQUENCY: { req: { language: string; url: string; lemma: string }; res: { count: number } };
+  FREQUENCY: {
+    req: { language: string; url: string; lemma: string; surface: string };
+    res: { count: number };
+  };
 };
 
 export type MessageType = keyof Requests;

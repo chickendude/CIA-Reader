@@ -41,7 +41,9 @@ async function handle(msg: Message): Promise<unknown> {
     case 'CUES_FOR_URL':
       return { cues: await cuesCache.get(episodeKey(msg.url)) };
     case 'FREQUENCY':
-      return { count: await frequencyIndex.count(msg.language, episodeKey(msg.url), msg.lemma) };
+      return {
+        count: await frequencyIndex.count(msg.language, episodeKey(msg.url), msg.lemma, msg.surface),
+      };
     default:
       throw new Error(`Unknown message type: ${(msg as { type: string }).type}`);
   }

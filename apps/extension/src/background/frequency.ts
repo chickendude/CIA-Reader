@@ -42,7 +42,7 @@ export class FrequencyIndex {
   ) {}
 
   private key(episode: string): string {
-    return `freq:${episode}`;
+    return `freq2:${episode}`; // v2: indexed by lemma AND surface
   }
 
   async ensure(language: string, episode: string): Promise<Map<string, number>> {
@@ -74,11 +74,13 @@ export class FrequencyIndex {
         });
         for (const token of parse.tokens) {
           if (!token.is_word) continue;
+          // Index by lemma (rolls up inflections) AND surface (so a word whose
+          // single-word lemma differs from its in-sentence lemma still matches).
+          const keys = new Set<string>();
           const lemma = token.candidates[0]?.lemma;
-          if (lemma) {
-            const k = norm(lemma);
-            counts.set(k, (counts.get(k) ?? 0) + 1);
-          }
+          if (lemma) keys.add(norm(lemma));
+          if (token.surface) keys.add(norm(token.surface));
+          for (const k of keys) counts.set(k, (counts.get(k) ?? 0) + 1);
         }
       } catch {
         // Skip a failed chunk (NLP hiccup); don't cache a partial/empty result.
@@ -91,9 +93,10 @@ export class FrequencyIndex {
     return counts;
   }
 
-  async count(language: string, episode: string, lemma: string): Promise<number> {
+  async count(language: string, episode: string, lemma: string, surface: string): Promise<number> {
     const map = await this.ensure(language, episode);
-    return map.get(norm(lemma)) ?? 0;
+    const byLemma = map.get(norm(lemma)) ?? 0;
+    return byLemma > 0 ? byLemma : (map.get(norm(surface)) ?? 0);
   }
 }
 

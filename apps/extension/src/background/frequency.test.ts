@@ -33,9 +33,11 @@ describe('FrequencyIndex', () => {
     });
     const idx = new FrequencyIndex(memoryKvStore(), { postJson });
 
-    expect(await idx.count('eu', 'ep', 'Hasi')).toBe(2); // case-insensitive
-    expect(await idx.count('eu', 'ep', 'izan')).toBe(1);
-    expect(await idx.count('eu', 'ep', 'missing')).toBe(0);
+    expect(await idx.count('eu', 'ep', 'Hasi', 'hasi')).toBe(2); // case-insensitive, by lemma
+    expect(await idx.count('eu', 'ep', 'izan', 'da')).toBe(1); // lemma rollup of 'da'
+    // surface fallback: lemma not found, but the surface was seen
+    expect(await idx.count('eu', 'ep', 'egon', 'nahi')).toBe(1);
+    expect(await idx.count('eu', 'ep', 'missing', 'missing')).toBe(0);
     // computed once (single chunk), then served from cache
     expect(postJson).toHaveBeenCalledTimes(1);
   });
@@ -44,7 +46,7 @@ describe('FrequencyIndex', () => {
     getMock.mockResolvedValue(null);
     const postJson = vi.fn();
     const idx = new FrequencyIndex(memoryKvStore(), { postJson });
-    expect(await idx.count('eu', 'ep', 'hasi')).toBe(0);
+    expect(await idx.count('eu', 'ep', 'hasi', 'hasi')).toBe(0);
     expect(postJson).not.toHaveBeenCalled();
   });
 });

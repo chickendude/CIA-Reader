@@ -22,8 +22,10 @@ const overlay = new Overlay({
   // Pause the video while a word's definition is open, resume on leave.
   onOpen: () => video.pauseForLookup(),
   onClose: () => video.resumeAfterLookup(),
-  frequency: (lemma) =>
-    sendMessage('FREQUENCY', { language: LANGUAGE, url: location.href, lemma }).then((r) => r.count),
+  frequency: (lemma, surface) =>
+    sendMessage('FREQUENCY', { language: LANGUAGE, url: location.href, lemma, surface }).then(
+      (r) => r.count,
+    ),
 });
 
 new SubtitleMirror((text) => overlay.setCue(text));

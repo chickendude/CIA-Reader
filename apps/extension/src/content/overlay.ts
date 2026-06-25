@@ -16,8 +16,8 @@ type Deps = {
   /** Called when a word popup opens / fully closes (e.g. pause-on-lookup). */
   onOpen?: () => void;
   onClose?: () => void;
-  /** Episode occurrence count for a lemma (resolves async; 0 if none/unknown). */
-  frequency?: (lemma: string) => Promise<number>;
+  /** Episode occurrence count for a word (resolves async; 0 if none/unknown). */
+  frequency?: (lemma: string, surface: string) => Promise<number>;
 };
 
 type RefState = 'idle' | 'loading' | 'done' | 'error';
@@ -56,7 +56,7 @@ const STYLE = `
 .popup .hd { display: flex; align-items: baseline; gap: 8px; }
 .popup h2 { margin: 0; font-size: 18px; }
 .popup .lemma { color: #8ab4ff; font-size: 13px; }
-.popup .freq { color: #d6b25e; font-size: 12px; margin-top: 2px; }
+.popup .freq { color: #d6b25e; font-size: 13px; font-weight: 600; }
 .popup .x { margin-left: auto; cursor: pointer; color: #9aa; font-size: 18px; line-height: 1; }
 .popup .tabs { display: flex; gap: 2px; margin: 10px 0 2px; border-bottom: 1px solid #2e3138; }
 .popup .tab {
@@ -292,7 +292,7 @@ export class Overlay {
 
     if (this.deps.frequency) {
       void this.deps
-        .frequency(word)
+        .frequency(word, surface)
         .then((count) => {
           if (this.state?.surface === surface) {
             this.state.frequency = count;
@@ -326,14 +326,11 @@ export class Overlay {
     hd.append(el('h2', undefined, s.surface));
     const lemma = s.lookup?.lemmas[0];
     if (lemma && lemma !== s.surface) hd.append(el('span', 'lemma', `→ ${s.lookup!.lemmas.join(', ')}`));
+    if (s.frequency && s.frequency > 0) hd.append(el('span', 'freq', `${s.frequency}×`));
     const close = el('span', 'x', '×');
     close.addEventListener('click', () => this.close());
     hd.append(close);
     content.append(hd);
-
-    if (s.frequency && s.frequency > 0) {
-      content.append(el('div', 'freq', `${s.frequency}× in this episode`));
-    }
 
     if (s.error) {
       content.append(el('div', 'muted', `Lookup failed: ${s.error}`));
