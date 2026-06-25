@@ -20,7 +20,6 @@ const PAUSE_LEAD_MS = 120;
 export class PlaybackController {
   private cues: SubtitleCue[] = [];
   private indexByText = new Map<string, number>();
-  private current = -1;
   private offsetMs = 0;
   private calibrated = false;
   private autoPause = false;
@@ -40,13 +39,12 @@ export class PlaybackController {
     this.indexByText = new Map(cues.map((c, i) => [norm(c.text), i] as [string, number]));
   }
 
-  /** The current on-screen subtitle (from the mirror); pins the current cue and
-   *  recalibrates the timeline offset. */
+  /** The current on-screen subtitle (from the mirror) — used only to calibrate
+   *  the timeline offset; the current line itself is derived from playback time. */
   onText(text: string | null): void {
     if (!text) return;
     const i = this.indexByText.get(norm(text));
     if (i === undefined) return;
-    this.current = i;
     this.pausedFor = -1;
     const t = this.video.currentTime();
     const cue = this.cues[i];
@@ -60,23 +58,33 @@ export class PlaybackController {
     return (ms + this.offsetMs) / 1000;
   }
 
-  repeat(): void {
-    const c = this.cues[this.current];
+  /** Index of the cue the playhead is currently in (or last passed). */
+  private activeIndex(): number {
+    if (!this.calibrated) return -1;
+    const adj = (this.video.currentTime() ?? 0) * 1000 - this.offsetMs;
+    let idx = -1;
+    for (let i = 0; i < this.cues.length; i += 1) {
+      if (this.cues[i]!.startMs <= adj) idx = i;
+      else break;
+    }
+    return idx;
+  }
+
+  private seekTo(index: number): void {
+    const c = this.cues[index];
     if (c) this.video.seek(this.toVideo(c.startMs) + 0.02);
   }
 
+  repeat(): void {
+    this.seekTo(this.activeIndex());
+  }
+
   prev(): void {
-    if (this.current > 0) {
-      this.current -= 1;
-      this.repeat();
-    }
+    this.seekTo(this.activeIndex() - 1);
   }
 
   next(): void {
-    if (this.current >= 0 && this.current < this.cues.length - 1) {
-      this.current += 1;
-      this.repeat();
-    }
+    this.seekTo(this.activeIndex() + 1);
   }
 
   toggleAutoPause(): boolean {
@@ -97,12 +105,13 @@ export class PlaybackController {
   private tick = (): void => {
     if (this.listening) this.onBlind?.(!this.video.isPaused());
 
-    if ((!this.autoPause && !this.listening) || this.current < 0 || !this.calibrated) return;
-    const c = this.cues[this.current];
+    if ((!this.autoPause && !this.listening) || !this.calibrated) return;
+    const i = this.activeIndex();
+    const c = this.cues[i];
     const t = this.video.currentTime();
     if (!c || t === null) return;
-    if (t >= this.toVideo(c.endMs - PAUSE_LEAD_MS) && this.pausedFor !== this.current) {
-      this.pausedFor = this.current;
+    if (t >= this.toVideo(c.endMs - PAUSE_LEAD_MS) && this.pausedFor !== i) {
+      this.pausedFor = i;
       this.video.pause();
     }
   };

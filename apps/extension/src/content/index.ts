@@ -44,6 +44,8 @@ const overlay = new Overlay({
 
 let seenSubs = false;
 new SubtitleMirror((text) => {
+  // While paused, ignore the player clearing the line — keep it visible to read.
+  if (!text && video.isPaused()) return;
   if (text) seenSubs = true;
   overlay.setCue(text);
   playback.onText(text);
@@ -121,8 +123,9 @@ setInterval(() => {
   }
 }, 1000);
 
-// Keyboard shortcuts (captured so the player doesn't also act on them).
-document.addEventListener(
+// Keyboard shortcuts. Registered on window in the capture phase so they fire
+// before the player's own handlers (which otherwise eat the arrow keys).
+window.addEventListener(
   'keydown',
   (e) => {
     const t = e.target as HTMLElement | null;

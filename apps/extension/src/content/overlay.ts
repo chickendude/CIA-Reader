@@ -98,8 +98,8 @@ const STYLE = `
 .popup .anki:hover { background: #3a7bc8; }
 .popup .anki:disabled { opacity: .6; cursor: default; }
 .popup .anki-status { color: #9a9a9a; font-size: 12px; }
-.toolbar { position: fixed; left: 50%; bottom: 20%; transform: translateX(-50%);
-  z-index: 2147482999; display: flex; gap: 3px; background: rgba(0,0,0,.55); border-radius: 9px;
+.toolbar { position: fixed; left: 50%; top: 14px; transform: translateX(-50%);
+  z-index: 2147482999; display: flex; gap: 3px; background: rgba(0,0,0,.6); border-radius: 9px;
   padding: 4px; pointer-events: auto; opacity: .4; transition: opacity .15s;
   font-family: system-ui, -apple-system, sans-serif; }
 .toolbar:hover { opacity: 1; }
