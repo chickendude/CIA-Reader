@@ -88,7 +88,10 @@ export class Overlay {
   private closeTimer: ReturnType<typeof setTimeout> | null = null;
   private anchor: HTMLElement | null = null;
   private state: PopupState | null = null;
+  /** The tab the user last picked — the default for the next word. */
   private selectedLang: DefinitionLang = 'en';
+  /** The tab actually shown (falls back to the first with content). */
+  private displayLang: DefinitionLang = 'en';
 
   constructor(private deps: Deps) {
     this.host = el('div');
@@ -160,6 +163,7 @@ export class Overlay {
 
   private async openFor(surface: string, anchor: HTMLElement): Promise<void> {
     this.anchor = anchor;
+    this.displayLang = this.selectedLang; // start from the user's preferred tab
     this.state = { surface, lookup: null, reference: [], refState: 'idle', error: null };
     this.render();
 
@@ -206,42 +210,51 @@ export class Overlay {
     hd.append(close);
     content.append(hd);
 
-    const tabs = el('div', 'tabs');
-    for (const lang of LANGS) {
-      const tab = el('span', `tab${this.selectedLang === lang ? ' on' : ''}`, lang.toUpperCase());
-      tab.addEventListener('click', () => {
-        this.selectedLang = lang;
-        this.render();
-      });
-      tabs.append(tab);
-    }
-    content.append(tabs);
-
     if (s.error) {
       content.append(el('div', 'muted', `Lookup failed: ${s.error}`));
     }
 
-    let shown = 0;
-    const lang = this.selectedLang;
-
-    // Internal dictionary entries that have a definition in the selected language.
+    // --- Internal dictionary: always shown, all languages ---
     for (const entry of s.lookup?.entries ?? []) {
-      const defs = this.entryDefs(entry).filter((d) => d.lang === lang);
+      const defs = this.entryDefs(entry);
       if (defs.length === 0) continue;
       const grp = el('div', 'grp');
       const head = el('div');
       head.append(el('span', 'head', entry.headword));
       if (entry.pos) head.append(el('span', 'pos', entry.pos.toLowerCase()));
       grp.append(head);
-      for (const d of defs) grp.append(el('div', 'def', d.body));
+      for (const d of defs) {
+        const def = el('div', 'def', d.body);
+        def.append(el('span', 'src', d.lang.toUpperCase()));
+        grp.append(def);
+      }
       content.append(grp);
-      shown += 1;
     }
 
-    // External reference dictionaries for the selected language, grouped by label.
+    // --- External reference dictionaries: tabbed, one language at a time ---
+    // The shown tab defaults to the user's pick, but falls back to the first
+    // language that actually has results for this word.
+    const refLangs = new Set(s.reference.map((r) => referenceSourceLang(r.source)));
+    if (!refLangs.has(this.displayLang)) {
+      const first = LANGS.find((l) => refLangs.has(l));
+      if (first) this.displayLang = first;
+    }
+
+    const tabs = el('div', 'tabs');
+    for (const lang of LANGS) {
+      const tab = el('span', `tab${this.displayLang === lang ? ' on' : ''}`, lang.toUpperCase());
+      tab.addEventListener('click', () => {
+        this.selectedLang = lang;
+        this.displayLang = lang;
+        this.render();
+      });
+      tabs.append(tab);
+    }
+    content.append(tabs);
+
     const refByLabel = new Map<string, ReferenceEntry[]>();
     for (const r of s.reference) {
-      if (referenceSourceLang(r.source) !== lang) continue;
+      if (referenceSourceLang(r.source) !== this.displayLang) continue;
       const list = refByLabel.get(r.label);
       if (list) list.push(r);
       else refByLabel.set(r.label, [r]);
@@ -254,12 +267,11 @@ export class Overlay {
         for (const ex of r.examples.slice(0, 2)) grp.append(el('div', 'ex', ex));
       }
       content.append(grp);
-      shown += 1;
     }
 
     if (s.refState === 'loading') content.append(el('div', 'muted', 'Loading dictionaries…'));
-    else if (s.refState === 'error') content.append(el('div', 'muted', 'External dictionaries unavailable.'));
-    else if (shown === 0) content.append(el('div', 'muted', `No ${lang.toUpperCase()} definitions found.`));
+    else if (refByLabel.size === 0)
+      content.append(el('div', 'muted', `No ${this.displayLang.toUpperCase()} dictionary entry.`));
 
     this.paint(content);
   }
