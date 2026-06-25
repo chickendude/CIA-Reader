@@ -16,6 +16,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -50,24 +51,20 @@ data class StatsUiState(
 )
 
 /**
- * Per-book figures derived from the collection's chapter list (GET detail).
- * No new endpoint is needed: chapter count, summed word count, and the share of
- * chapters that have finished processing (a "ready" proxy for both comprehension
- * and reading progress). Token-level comprehension isn't exposed in the listing,
- * so it's reported as this processed ratio — see the PR note for the real figure.
+ * Per-book figures for the Stats sheet. Chapter count and summed word count come
+ * from the collection detail; `comprehensionPct` is the real reading
+ * comprehension (known word-token occurrences ÷ total, computed server-side and
+ * returned by GET detail); `progressPct` is the real reading progress carried
+ * from the library card's aggregate (`CollectionSummary.progress`).
  */
 data class BookStats(
     val chapterCount: Int,
     val totalWords: Int,
-    val readyChapters: Int,
-) {
-    /** 0..100 — share of chapters that have finished processing. */
-    val comprehensionPct: Int
-        get() = if (chapterCount == 0) 0 else (readyChapters * 100) / chapterCount
-
-    /** Same processed ratio, surfaced as reading progress for the sheet. */
-    val progressPct: Int get() = comprehensionPct
-}
+    /** 0..100 known word-tokens ÷ total; null until the NLP worker has run. */
+    val comprehensionPct: Int?,
+    /** 0..100 reading progress across the book's chapters. */
+    val progressPct: Int,
+)
 
 @HiltViewModel
 class LibraryViewModel @Inject constructor(
@@ -217,7 +214,8 @@ class LibraryViewModel @Inject constructor(
                         stats = BookStats(
                             chapterCount = chapters.size,
                             totalWords = chapters.sumOf { it.wordCount },
-                            readyChapters = chapters.count { it.isReady },
+                            comprehensionPct = r.data.comprehensionPct,
+                            progressPct = (collection.progress * 100).roundToInt(),
                         ),
                     )
                 }

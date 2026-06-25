@@ -21,7 +21,6 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
-import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 
@@ -315,6 +314,7 @@ class LibraryViewModelTest {
                 chapter("b", "ready", words = 50),
                 chapter("c", "processing", words = 30),
             ),
+            comprehensionPct = 72,
         )
         val collRepo = FakeCollectionRepository(all = listOf(collection("c1", "hi")), detail = detail)
         val vm = vm(
@@ -324,7 +324,7 @@ class LibraryViewModelTest {
         )
         advanceUntilIdle()
 
-        vm.showStats(collection("c1", "hi"))
+        vm.showStats(collection("c1", "hi", progress = 0.4f))
         advanceUntilIdle()
 
         val sheet = vm.state.value.stats
@@ -333,9 +333,8 @@ class LibraryViewModelTest {
         val s = sheet.stats!!
         assertEquals(3, s.chapterCount)
         assertEquals(180, s.totalWords)
-        assertEquals(2, s.readyChapters)
-        assertEquals(66, s.comprehensionPct) // 2 of 3 ready
-        assertEquals(66, s.progressPct)
+        assertEquals(72, s.comprehensionPct) // real, straight from the detail payload
+        assertEquals(40, s.progressPct) // collection.progress 0.4 → 40%
 
         vm.dismissStats()
         assertNull(vm.state.value.stats)
@@ -362,11 +361,10 @@ class LibraryViewModelTest {
     }
 
     @Test
-    fun bookStatsHandlesAnEmptyBookWithoutDividingByZero() {
-        val s = BookStats(chapterCount = 0, totalWords = 0, readyChapters = 0)
-        assertEquals(0, s.comprehensionPct)
+    fun bookStatsCarriesANullComprehensionForAnUnprocessedBook() {
+        val s = BookStats(chapterCount = 0, totalWords = 0, comprehensionPct = null, progressPct = 0)
+        assertNull(s.comprehensionPct)
         assertEquals(0, s.progressPct)
-        assertTrue(true)
     }
 
     private fun chapter(id: String, status: String, words: Int) =
@@ -377,7 +375,12 @@ class LibraryViewModelTest {
 
     private fun card(id: String) = TextCard(id = id, title = "Title $id", language = "hi", status = "ready")
 
-    private fun collection(id: String, language: String, openTextId: String? = null) =
+    private fun collection(
+        id: String,
+        language: String,
+        openTextId: String? = null,
+        progress: Float = 0f,
+    ) =
         CollectionSummary(
             id = id,
             title = "Book $id",
@@ -385,6 +388,7 @@ class LibraryViewModelTest {
             kind = "chapter_book",
             textCount = 1,
             openTextId = openTextId,
+            progress = progress,
         )
 }
 

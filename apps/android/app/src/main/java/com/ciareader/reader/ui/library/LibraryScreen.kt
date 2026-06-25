@@ -607,7 +607,8 @@ private fun StatsSheet(stats: StatsUiState, onDismiss: () -> Unit) {
 
                 stats.stats != null -> {
                     val s = stats.stats
-                    StatRow("Comprehension", "${s.comprehensionPct}%")
+                    // "—" until the NLP worker has tokenized the book (no known/total yet).
+                    StatRow("Comprehension", s.comprehensionPct?.let { "$it%" } ?: "—")
                     StatRow("Total words", s.totalWords.toString())
                     StatRow("Chapters", s.chapterCount.toString())
                     StatRow("Reading progress", "${s.progressPct}%")

@@ -231,11 +231,12 @@ class LibraryScreenTest {
                     collectionId = "c1",
                     title = "Afrika express",
                     isLoading = false,
-                    stats = BookStats(chapterCount = 3, totalWords = 180, readyChapters = 2),
+                    stats = BookStats(chapterCount = 3, totalWords = 180, comprehensionPct = 60, progressPct = 50),
                 ),
             ),
         )
         compose.onNodeWithText("Comprehension").assertIsDisplayed()
+        compose.onNodeWithText("60%").assertIsDisplayed() // real comprehension, not a proxy
         compose.onNodeWithText("Total words").assertIsDisplayed()
         compose.onNodeWithText("180").assertIsDisplayed()
         compose.onNodeWithText("Chapters").assertIsDisplayed()

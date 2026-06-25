@@ -23,6 +23,9 @@ data class CollectionDto(
     val title: String,
     val language: String,
     val kind: String,
+    /** Viewer's reading comprehension 0–100 (known word-tokens ÷ total). Only the
+     *  collection-detail endpoint populates it; null on the list/PATCH responses. */
+    val comprehensionPct: Int? = null,
 )
 
 // --- GET /api/v1/collections/:id ---

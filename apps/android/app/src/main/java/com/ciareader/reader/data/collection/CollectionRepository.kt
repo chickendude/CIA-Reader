@@ -32,6 +32,8 @@ data class CollectionDetail(
     val id: String,
     val title: String,
     val chapters: List<CollectionChapter>,
+    /** Viewer's reading comprehension 0–100, or null before the texts are processed. */
+    val comprehensionPct: Int? = null,
 )
 
 interface CollectionRepository {
@@ -101,6 +103,7 @@ class CollectionRepositoryImpl @Inject constructor(
                             wordCount = it.text.wordCount,
                         )
                     },
+                    comprehensionPct = dto.collection.comprehensionPct,
                 )
             }
         ) {

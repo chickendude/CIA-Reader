@@ -339,6 +339,42 @@ export async function estimatedComprehensionForTexts(
 }
 
 /**
+ * Book-level comprehension across a set of member texts: known word-token
+ * occurrences ÷ total word-token occurrences, summed over every text (so a
+ * longer chapter weighs more — the same occurrence-based definition as the
+ * per-text figure, just aggregated). Returns null when none of the texts have
+ * tokens yet (worker hasn't run), so the UI can show a dash rather than 0%.
+ */
+export async function bookComprehensionPct(
+  userId: string,
+  textIds: string[],
+): Promise<number | null> {
+  if (textIds.length === 0) return null;
+  const rows = unwrapRows<{ total: number; known: number }>(
+    await db.execute(sql`
+      SELECT
+        COUNT(*) FILTER (WHERE tt.is_word = true)::int AS total,
+        COUNT(*) FILTER (
+          WHERE tt.is_word = true
+            AND tt.lemma_id IS NOT NULL
+            AND ukl.status = 'known'
+        )::int AS known
+      FROM text_chapters ch
+      INNER JOIN text_tokens tt ON tt.chapter_id = ch.id
+      LEFT JOIN user_known_lemmas ukl
+        ON ukl.lemma_id = tt.lemma_id AND ukl.user_id = ${userId}
+      WHERE ch.text_id IN (${sql.join(
+        textIds.map((id) => sql`${id}`),
+        sql`, `,
+      )})
+    `),
+  );
+  const r = rows[0];
+  if (!r || r.total === 0) return null;
+  return Math.round((r.known / r.total) * 100);
+}
+
+/**
  * Single-text comprehension lookup for the library card badge
  * (T-10.2). Cheap — same shape as one row of listTextStats but
  * scoped to a single textId so the library grid can fan out one
