@@ -106,6 +106,7 @@ export class Overlay {
   private closeTimer: ReturnType<typeof setTimeout> | null = null;
   private exTip: HTMLElement | null = null;
   private exTimer: ReturnType<typeof setTimeout> | null = null;
+  private pendingCue: { text: string | null } | null = null;
   private anchor: HTMLElement | null = null;
   private state: PopupState | null = null;
   /** The tab the user last picked — the default for the next word. */
@@ -143,6 +144,17 @@ export class Overlay {
   }
 
   setCue(text: string | null): void {
+    // While a popup is open (or about to open) freeze the caption so the word
+    // under the cursor isn't rebuilt out from under the user; buffer the latest
+    // subtitle and apply it once the popup closes.
+    if (this.popup || this.openTimer) {
+      this.pendingCue = { text };
+      return;
+    }
+    this.renderCue(text);
+  }
+
+  private renderCue(text: string | null): void {
     this.cueEl.textContent = '';
     if (!text) {
       this.bar.style.display = 'none';
@@ -159,6 +171,14 @@ export class Overlay {
       }
     }
     this.bar.style.display = '';
+  }
+
+  private flushPending(): void {
+    if (this.pendingCue && !this.popup && !this.openTimer) {
+      const { text } = this.pendingCue;
+      this.pendingCue = null;
+      this.renderCue(text);
+    }
   }
 
   // ---- hover lifecycle ----
@@ -180,6 +200,7 @@ export class Overlay {
     }
     if (this.closeTimer) clearTimeout(this.closeTimer);
     this.closeTimer = setTimeout(() => this.close(), 250);
+    this.flushPending(); // a pending-open that never opened unfreezes the caption
   }
 
   private close(): void {
@@ -192,6 +213,7 @@ export class Overlay {
     this.state = null;
     this.anchor = null;
     this.deps.onClose?.();
+    this.flushPending(); // apply the most recent subtitle now that we're unfrozen
   }
 
   // ---- example-sentence tooltip (Elhuyar/Euskaltzaindia) ----
