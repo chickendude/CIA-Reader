@@ -11,6 +11,7 @@ import type { Message } from '../shared/messages';
 import { authStatus, login, logout } from './auth';
 import { localDictionary } from './dictionary-local';
 import { lookupWord } from './lookup';
+import { referenceCache } from './reference';
 import { fetchSubtitles } from './subtitles';
 
 async function handle(msg: Message): Promise<unknown> {
@@ -32,6 +33,8 @@ async function handle(msg: Message): Promise<unknown> {
       return { cues: await fetchSubtitles(msg.url) };
     case 'LOOKUP':
       return lookupWord(msg.language, msg.surface);
+    case 'REFERENCE':
+      return { results: await referenceCache.lookup(msg.language, msg.word) };
     default:
       throw new Error(`Unknown message type: ${(msg as { type: string }).type}`);
   }

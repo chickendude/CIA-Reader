@@ -1,13 +1,18 @@
 /**
- * Result of looking up a clicked word: the resolved dictionary-form lemma(s),
- * matching internal-dictionary entries (offline), external reference-dictionary
- * entries (Elhuyar / Euskaltzaindia — populated once the scrapers land), and
- * external-link fallbacks (Wiktionary / Glosbe).
+ * Look-up results for a clicked/hovered word.
+ *
+ * `LookupResult` is the fast, mostly-local part: the resolved dictionary-form
+ * lemma(s) and matching internal-dictionary entries (offline). External
+ * reference-dictionary entries (Elhuyar eu-es/eu-en + Euskaltzaindia) are fetched
+ * separately (backend scrapers, IndexedDB-cached) and represented by
+ * `ReferenceEntry`.
  */
 import type { ExportedLemma } from './api-types';
 
+export type ReferenceSource = 'elhuyar_es' | 'elhuyar_en' | 'euskaltzaindia';
+
 export type ReferenceEntry = {
-  source: string;
+  source: ReferenceSource;
   label: string;
   headword: string;
   pos: string;
@@ -16,12 +21,17 @@ export type ReferenceEntry = {
   url: string;
 };
 
-export type ExternalLink = { label: string; url: string };
-
 export type LookupResult = {
   surface: string;
   lemmas: string[];
   entries: ExportedLemma[];
-  reference: ReferenceEntry[];
-  links: ExternalLink[];
 };
+
+/** Definition language a source/translation belongs to (for the EN/ES/EU filter). */
+export type DefinitionLang = 'en' | 'es' | 'eu';
+
+export function referenceSourceLang(source: ReferenceSource): DefinitionLang {
+  if (source === 'elhuyar_en') return 'en';
+  if (source === 'elhuyar_es') return 'es';
+  return 'eu';
+}

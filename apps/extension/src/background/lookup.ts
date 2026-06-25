@@ -1,27 +1,13 @@
 /**
- * Look up a clicked surface word: resolve it to its dictionary form (cached
- * parse), gather offline internal-dictionary entries for the lemma(s), and add
- * external-dictionary links. Elhuyar/Euskaltzaindia inline content is added by
- * the reference scrapers (next step); for now they're links alongside
- * Wiktionary/Glosbe.
+ * Look up a clicked/hovered surface word: resolve it to its dictionary form
+ * (cached parse) and gather offline internal-dictionary entries for the lemma(s),
+ * collapsing duplicate rows. External reference dictionaries (Elhuyar /
+ * Euskaltzaindia) are fetched separately (see reference.ts).
  */
 import type { ExportedLemma } from '../shared/api-types';
-import type { ExternalLink, LookupResult } from '../shared/lookup';
+import type { LookupResult } from '../shared/lookup';
 import { localDictionary } from './dictionary-local';
 import { parseCache } from './parse-cache';
-
-export function externalLinks(word: string): ExternalLink[] {
-  const w = encodeURIComponent(word.toLocaleLowerCase());
-  return [
-    { label: 'Elhuyar', url: `https://hiztegiak.elhuyar.eus/eu/${w}` },
-    {
-      label: 'Euskaltzaindia',
-      url: `https://www.euskaltzaindia.eus/index.php?option=com_hiztegianbilatu&task=bilaketa&query=${w}`,
-    },
-    { label: 'Wiktionary', url: `https://en.wiktionary.org/wiki/${w}#Basque` },
-    { label: 'Glosbe', url: `https://glosbe.com/eu/en/${w}` },
-  ];
-}
 
 type LookupDeps = {
   resolveLemmas(language: string, surface: string): Promise<string[]>;
@@ -43,17 +29,37 @@ export async function lookupWord(
   // nothing (e.g. an OOV proper noun).
   const keys = lemmas.length > 0 ? lemmas : [surface];
 
-  const entries: ExportedLemma[] = [];
-  const seen = new Set<string>();
+  // The dictionary often holds several rows for the same headword+POS (from
+  // multiple import sources); collapse them into one entry and merge their
+  // translations so the popup shows a single clean entry per sense.
+  const byKey = new Map<string, ExportedLemma>();
   for (const key of keys) {
     for (const entry of await deps.dictLookup(language, key)) {
-      if (!seen.has(entry.id)) {
-        seen.add(entry.id);
-        entries.push(entry);
+      const k = `${entry.headword.toLocaleLowerCase()}|${entry.pos}`;
+      const existing = byKey.get(k);
+      if (!existing) {
+        byKey.set(k, { ...entry, translations: dedupeByBody(entry.translations) });
+      } else {
+        const bodies = new Set(existing.translations.map((t) => t.body));
+        for (const t of entry.translations) {
+          if (!bodies.has(t.body)) {
+            existing.translations.push(t);
+            bodies.add(t.body);
+          }
+        }
+        if (!existing.gloss && entry.gloss) existing.gloss = entry.gloss;
       }
     }
   }
 
-  const head = lemmas[0] ?? surface;
-  return { surface, lemmas, entries, reference: [], links: externalLinks(head) };
+  // Entries with an actual definition first.
+  const score = (e: ExportedLemma) => e.translations.length + (e.gloss ? 1 : 0);
+  const entries = [...byKey.values()].sort((a, b) => score(b) - score(a));
+
+  return { surface, lemmas, entries };
+}
+
+function dedupeByBody(translations: ExportedLemma['translations']): ExportedLemma['translations'] {
+  const seen = new Set<string>();
+  return translations.filter((t) => (seen.has(t.body) ? false : (seen.add(t.body), true)));
 }

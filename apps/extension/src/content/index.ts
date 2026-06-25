@@ -17,12 +17,10 @@ const LANGUAGE = 'eu';
 
 const seenUrls = new Set<string>();
 
-// `overlay` and `video` reference each other only inside callbacks that run
-// later (a word click / a timeupdate), so this declaration order is safe.
-const overlay = new Overlay(
-  (surface) => sendMessage('LOOKUP', { language: LANGUAGE, surface }),
-  { onOpen: () => video.pauseForLookup(), onClose: () => video.resumeAfterLookup() },
-);
+const overlay = new Overlay({
+  lookup: (surface) => sendMessage('LOOKUP', { language: LANGUAGE, surface }),
+  reference: (word) => sendMessage('REFERENCE', { language: LANGUAGE, word }).then((r) => r.results),
+});
 const video = new VideoController((cue) => overlay.setCue(cue?.text ?? null));
 
 function injectNetIntercept(): void {
