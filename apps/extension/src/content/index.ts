@@ -43,6 +43,7 @@ const overlay = new Overlay({
 });
 
 let seenSubs = false;
+let subAttempted = false;
 new SubtitleMirror((text) => {
   // While paused, ignore the player clearing the line — keep it visible to read.
   if (!text && video.isPaused()) return;
@@ -95,14 +96,22 @@ async function enableBasqueSubtitles(): Promise<void> {
   (eu?.closest('button') ?? eu)?.click();
 }
 
-// Apply initial config: optional auto-pause default + auto-enable subtitles.
+// Apply initial config (auto-pause default).
 void loadConfig().then((c) => {
   config = c;
   if (c.autoPauseAtLineEnd) toggleAutoPause();
-  setTimeout(() => {
-    if (!seenSubs && config.autoEnableSubtitles) void enableBasqueSubtitles();
-  }, 6000);
 });
+
+// Auto-enable Basque subtitles: once the player is up and if none are showing,
+// attempt once per page (re-armed on navigation). Waits for the player so the
+// menu buttons exist (unlike the old one-shot timer).
+setInterval(() => {
+  if (subAttempted || seenSubs || !config.autoEnableSubtitles || !video.element) return;
+  subAttempted = true;
+  setTimeout(() => {
+    if (!seenSubs) void enableBasqueSubtitles();
+  }, 1500);
+}, 1500);
 
 // Cues power the playback controls (timing). Load cached ones, and take pushes.
 async function loadCues(): Promise<void> {
@@ -119,11 +128,13 @@ ext.runtime.onMessage.addListener((message) => {
 });
 void loadCues();
 
-// Reload cues on SPA navigation.
+// Reload cues + re-arm the subtitle auto-enable on SPA navigation.
 let lastHref = location.href;
 setInterval(() => {
   if (location.href !== lastHref) {
     lastHref = location.href;
+    seenSubs = false;
+    subAttempted = false;
     void loadCues();
   }
 }, 1000);
