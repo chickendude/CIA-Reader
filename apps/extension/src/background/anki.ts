@@ -1,14 +1,14 @@
 /**
  * AnkiConnect client + card builder.
  *
- * Talks to the AnkiConnect add-on on http://127.0.0.1:8765. We send the body
- * without a JSON content-type (CORS-simple → no preflight); AnkiConnect parses
- * it as JSON regardless. The user must add this extension's origin to
- * AnkiConnect's `webCorsOriginList`.
+ * The extension owns a custom note type ("Primeran") with separate fields —
+ * Word, Definition, Sentence, Audio, Picture (the last two are placeholders for
+ * the Phase-2 media). The styling lives in the model CSS (a premium dark theme
+ * in darkened Basque-flag colours), so the field content stays clean data.
  *
- * The card back is built here so it can annotate the sentence: each word gets a
- * CSS-only hover tooltip with its gloss from the offline dictionary (works in
- * Anki without JS/network), and the target word is coloured.
+ * We send the request body without a JSON content-type (CORS-simple → no
+ * preflight); AnkiConnect parses it as JSON regardless. The user must add this
+ * extension's origin to AnkiConnect's `webCorsOriginList`.
  */
 import type { ParseResponse } from '../shared/api-types';
 import { loadConfig } from '../shared/config';
@@ -24,75 +24,48 @@ export type AnkiCardInput = {
   defs: { body: string; lang: string }[];
 };
 
+const MODEL_NAME = 'Primeran';
+const MODEL_FIELDS = ['Word', 'Definition', 'Sentence', 'Audio', 'Picture'];
+
 const norm = (s: string): string => s.toLocaleLowerCase();
+const escapeHtml = (s: string): string =>
+  s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+const escapeAttr = (s: string): string => escapeHtml(s).replace(/"/g, '&quot;');
 
-function escapeHtml(s: string): string {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-}
-function escapeAttr(s: string): string {
-  return escapeHtml(s).replace(/"/g, '&quot;');
-}
+// Darkened Ikurriña palette: deep maroon background, dark green + red accents.
+const MODEL_CSS = `
+.card{font-family:-apple-system,"Segoe UI",system-ui,sans-serif;
+  background:radial-gradient(130% 150% at 50% -10%,#2a1518 0%,#150f11 62%);
+  color:#ece6e7;padding:28px 22px}
+.pm-word{font-size:36px;font-weight:800;text-align:center;color:#fff;letter-spacing:.01em}
+.pm-sentence{margin:20px auto 0;max-width:620px;padding:15px 20px;
+  background:rgba(255,255,255,.045);border:1px solid rgba(255,255,255,.08);
+  border-left:4px solid #1f9c57;border-radius:9px;font-size:22px;line-height:1.75;color:#f1ebeb}
+.pm-target{color:#ff6b4a;font-weight:700}
+.pm-w[data-def]{border-bottom:1px dotted rgba(255,255,255,.35);cursor:help;position:relative}
+.pm-w[data-def]:hover::after{content:attr(data-def);position:absolute;left:0;bottom:140%;
+  background:#0c0809;color:#f3eded;border:1px solid rgba(255,255,255,.14);padding:7px 11px;
+  border-radius:7px;font-size:14px;font-weight:400;line-height:1.4;white-space:normal;
+  width:max-content;max-width:280px;box-shadow:0 10px 26px rgba(0,0,0,.6);z-index:5}
+hr#answer{border:0;height:1px;max-width:620px;margin:22px auto;
+  background:linear-gradient(90deg,transparent,#9b2b22,#1f9c57,transparent)}
+.pm-defs{max-width:620px;margin:0 auto}
+.pm-group{display:flex;gap:12px;margin:9px 0;align-items:baseline}
+.pm-lang{flex:0 0 auto;font-size:11px;font-weight:700;letter-spacing:.04em;color:#d79a93;
+  border:1px solid rgba(215,154,147,.4);border-radius:4px;padding:1px 6px}
+.pm-bodies{flex:1}
+.pm-def{margin:2px 0;font-size:18px;color:#e8e2e2}
+.pm-picture img{max-width:100%;border-radius:9px;margin-top:16px}
+`;
 
-const CARD_STYLE = `<style>
-.pm-card{text-align:left;max-width:560px;margin:0 auto;font-size:18px;line-height:1.5}
-.pm-defs .pm-def{margin:3px 0}
-.pm-def .pm-lang{font-size:10px;letter-spacing:.03em;border:1px solid currentColor;border-radius:3px;padding:0 4px;margin-right:7px;opacity:.55;vertical-align:middle}
-.pm-sentence{margin-top:16px;padding:12px 16px;border-left:4px solid #4a90e2;border-radius:4px;font-size:22px;line-height:1.75}
-.pm-w[data-def]{border-bottom:1px dotted #9aa;cursor:help;position:relative}
-.pm-w[data-def]:hover::after{content:attr(data-def);position:absolute;left:0;bottom:135%;background:#1d1f23;color:#eee;padding:6px 10px;border-radius:6px;font-size:14px;line-height:1.35;font-weight:400;white-space:normal;width:max-content;max-width:280px;box-shadow:0 6px 20px rgba(0,0,0,.45);z-index:5}
-.pm-target{color:#e0533d;font-weight:700}
-</style>`;
+const FRONT_TEMPLATE = `<div class="pm-word">{{Word}}</div>
+{{#Sentence}}<div class="pm-sentence">{{Sentence}}</div>{{/Sentence}}`;
 
-/** Map of normalized word → concise gloss, from one parse of the sentence. */
-async function glossSentence(language: string, sentence: string): Promise<Map<string, string>> {
-  const glosses = new Map<string, string>();
-  let tokens: ParseResponse['tokens'];
-  try {
-    tokens = (await api.postJson<ParseResponse>('/api/v1/parse', { language, text: sentence })).tokens;
-  } catch {
-    return glosses; // no annotation if parsing is unavailable
-  }
-  for (const t of tokens) {
-    if (!t.is_word) continue;
-    const key = norm(t.surface);
-    if (glosses.has(key)) continue;
-    const lemma = t.candidates[0]?.lemma ?? t.surface;
-    const entries = await localDictionary.lookup(language, lemma);
-    const gloss =
-      entries.flatMap((e) => e.translations.map((tr) => tr.body))[0] ??
-      entries.map((e) => e.gloss).find(Boolean) ??
-      undefined;
-    if (gloss) glosses.set(key, gloss);
-  }
-  return glosses;
-}
-
-async function buildBack(card: AnkiCardInput): Promise<string> {
-  const defsHtml = card.defs
-    .map(
-      (d) =>
-        `<div class="pm-def"><span class="pm-lang">${escapeHtml(d.lang.toUpperCase())}</span>${escapeHtml(d.body)}</div>`,
-    )
-    .join('');
-
-  let sentenceHtml = '';
-  if (card.sentence) {
-    const glosses = await glossSentence(card.language, card.sentence);
-    const target = norm(card.surface);
-    const parts = splitCueWords(card.sentence).map((p) => {
-      if (!p.word) return escapeHtml(p.text);
-      const key = norm(p.text);
-      const isTarget = key === target;
-      const gloss = glosses.get(key);
-      const cls = `pm-w${isTarget ? ' pm-target' : ''}`;
-      const attr = gloss ? ` data-def="${escapeAttr(gloss)}"` : '';
-      return isTarget || gloss ? `<span class="${cls}"${attr}>${escapeHtml(p.text)}</span>` : escapeHtml(p.text);
-    });
-    sentenceHtml = `<div class="pm-sentence">${parts.join('')}</div>`;
-  }
-
-  return `${CARD_STYLE}<div class="pm-card"><div class="pm-defs">${defsHtml}</div>${sentenceHtml}</div>`;
-}
+const BACK_TEMPLATE = `{{FrontSide}}
+<hr id="answer">
+<div class="pm-defs">{{Definition}}</div>
+{{#Picture}}<div class="pm-picture">{{Picture}}</div>{{/Picture}}
+{{Audio}}`;
 
 async function ankiConnect(action: string, params?: unknown): Promise<unknown> {
   const { ankiConnectUrl } = await loadConfig();
@@ -113,16 +86,101 @@ async function ankiConnect(action: string, params?: unknown): Promise<unknown> {
   return data.result;
 }
 
+let modelEnsured = false;
+async function ensureModel(): Promise<void> {
+  if (modelEnsured) return;
+  const names = (await ankiConnect('modelNames')) as string[];
+  const templates = [{ Name: 'Card 1', Front: FRONT_TEMPLATE, Back: BACK_TEMPLATE }];
+  if (names.includes(MODEL_NAME)) {
+    // Keep an existing model's look/template fresh across extension versions.
+    await ankiConnect('updateModelStyling', { model: { name: MODEL_NAME, css: MODEL_CSS } });
+    await ankiConnect('updateModelTemplates', {
+      model: { name: MODEL_NAME, templates: { 'Card 1': { Front: FRONT_TEMPLATE, Back: BACK_TEMPLATE } } },
+    });
+  } else {
+    await ankiConnect('createModel', {
+      modelName: MODEL_NAME,
+      inOrderFields: MODEL_FIELDS,
+      css: MODEL_CSS,
+      cardTemplates: templates,
+    });
+  }
+  modelEnsured = true;
+}
+
+/** Map of normalized word → concise gloss, from one parse of the sentence. */
+async function glossSentence(language: string, sentence: string): Promise<Map<string, string>> {
+  const glosses = new Map<string, string>();
+  let tokens: ParseResponse['tokens'];
+  try {
+    tokens = (await api.postJson<ParseResponse>('/api/v1/parse', { language, text: sentence })).tokens;
+  } catch {
+    return glosses;
+  }
+  for (const t of tokens) {
+    if (!t.is_word) continue;
+    const key = norm(t.surface);
+    if (glosses.has(key)) continue;
+    const lemma = t.candidates[0]?.lemma ?? t.surface;
+    const entries = await localDictionary.lookup(language, lemma);
+    const gloss =
+      entries.flatMap((e) => e.translations.map((tr) => tr.body))[0] ??
+      entries.map((e) => e.gloss).find(Boolean) ??
+      undefined;
+    if (gloss) glosses.set(key, gloss);
+  }
+  return glosses;
+}
+
+async function buildFields(card: AnkiCardInput): Promise<Record<string, string>> {
+  // Definitions grouped by language (one label per language).
+  const byLang = new Map<string, string[]>();
+  for (const d of card.defs) {
+    const lang = d.lang.toUpperCase();
+    const list = byLang.get(lang);
+    if (list) list.push(d.body);
+    else byLang.set(lang, [d.body]);
+  }
+  const definition = [...byLang]
+    .map(([lang, bodies]) => {
+      const items = bodies.map((b) => `<div class="pm-def">${escapeHtml(b)}</div>`).join('');
+      return `<div class="pm-group"><span class="pm-lang">${escapeHtml(lang)}</span><div class="pm-bodies">${items}</div></div>`;
+    })
+    .join('');
+
+  // Sentence with the target word coloured + per-word hover glosses.
+  let sentence = '';
+  if (card.sentence) {
+    const glosses = await glossSentence(card.language, card.sentence);
+    const target = norm(card.surface);
+    sentence = splitCueWords(card.sentence)
+      .map((p) => {
+        if (!p.word) return escapeHtml(p.text);
+        const key = norm(p.text);
+        const isTarget = key === target;
+        const gloss = glosses.get(key);
+        if (!isTarget && !gloss) return escapeHtml(p.text);
+        const cls = `pm-w${isTarget ? ' pm-target' : ''}`;
+        const attr = gloss ? ` data-def="${escapeAttr(gloss)}"` : '';
+        return `<span class="${cls}"${attr}>${escapeHtml(p.text)}</span>`;
+      })
+      .join('');
+  }
+
+  return { Word: card.front, Definition: definition, Sentence: sentence, Audio: '', Picture: '' };
+}
+
 export async function addAnkiNote(card: AnkiCardInput): Promise<{ added: boolean; duplicate: boolean }> {
-  const { deckName, modelName } = await loadConfig();
-  const back = await buildBack(card);
+  const { deckName } = await loadConfig();
   await ankiConnect('createDeck', { deck: deckName });
+  await ensureModel();
+  const fields = await buildFields(card);
   try {
     await ankiConnect('addNote', {
       note: {
         deckName,
-        modelName,
-        fields: { Front: card.front, Back: back },
+        modelName: MODEL_NAME,
+        fields,
         options: { allowDuplicate: false, duplicateScope: 'deck' },
         tags: ['primeran', card.language],
       },

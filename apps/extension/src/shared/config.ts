@@ -14,8 +14,6 @@ export type ExtensionConfig = {
   language: string;
   /** Anki deck new cards land in. */
   deckName: string;
-  /** Anki note model (must have Front/Back fields). */
-  modelName: string;
   /** AnkiConnect endpoint (local Anki + add-on). */
   ankiConnectUrl: string;
   /** Pause playback at the end of each subtitle line. */
@@ -30,7 +28,6 @@ export const DEFAULT_CONFIG: ExtensionConfig = {
   apiBaseUrl: 'http://127.0.0.1:5173',
   language: 'eu',
   deckName: 'Primeran',
-  modelName: 'Basic',
   ankiConnectUrl: 'http://127.0.0.1:8765',
   autoPauseAtLineEnd: false,
   pauseOnLookup: true,
