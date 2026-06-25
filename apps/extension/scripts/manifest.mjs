@@ -30,7 +30,7 @@ export function buildManifest(browser) {
     version: '0.0.1',
     description:
       'Migaku-style Basque subtitle mining for Primeran: clickable subtitles, dictionary look-ups, frequency, and Anki cards.',
-    permissions: ['storage', 'scripting', 'activeTab', 'tabs'],
+    permissions: ['storage', 'tabs', 'webRequest'],
     host_permissions: HOST_PERMISSIONS,
     action: {
       default_title: 'Primeran Subtitle Miner',
@@ -44,17 +44,10 @@ export function buildManifest(browser) {
       {
         matches: ['https://primeran.eus/*', 'https://*.primeran.eus/*'],
         js: ['content.js'],
-        run_at: 'document_start',
-        // Top frame only — the player, <video>, and subtitle fetch all live in
-        // the top document; all_frames would spawn a duplicate overlay in
-        // ad/analytics iframes.
+        run_at: 'document_idle',
+        // Top frame only — the player, <video>, and overlay all live in the top
+        // document; all_frames would spawn a duplicate overlay in ad iframes.
         all_frames: false,
-      },
-    ],
-    web_accessible_resources: [
-      {
-        resources: ['net-intercept.js'],
-        matches: ['https://primeran.eus/*', 'https://*.primeran.eus/*'],
       },
     ],
   };

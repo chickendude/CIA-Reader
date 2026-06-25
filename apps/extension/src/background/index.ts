@@ -40,6 +40,32 @@ async function handle(msg: Message): Promise<unknown> {
   }
 }
 
+// Discover the subtitle .vtt by observing network requests (never touches the
+// page's fetch/XHR — that would risk breaking the DRM media pipeline). When one
+// is seen, fetch + parse it and push the cues to that tab's content script.
+const sentByTab = new Map<number, string>();
+
+ext.webRequest.onCompleted.addListener(
+  (details) => {
+    if (details.tabId < 0 || !/\.vtt(\?|#|$)/i.test(details.url)) return;
+    if (sentByTab.get(details.tabId) === details.url) return;
+    void (async () => {
+      try {
+        const cues = await fetchSubtitles(details.url);
+        sentByTab.set(details.tabId, details.url);
+        await ext.tabs.sendMessage(details.tabId, {
+          type: 'SUBTITLES_LOADED',
+          url: details.url,
+          cues,
+        });
+      } catch (e) {
+        console.warn('[primeran-miner] subtitle fetch/push failed', e);
+      }
+    })();
+  },
+  { urls: ['https://*.primeran.eus/*'] },
+);
+
 ext.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   handle(message as Message).then(
     (result) => sendResponse(result),

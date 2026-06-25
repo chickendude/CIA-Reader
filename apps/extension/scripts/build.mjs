@@ -27,7 +27,6 @@ const browsers = arg === 'both' ? ['firefox', 'chrome'] : [arg];
 const ENTRY_POINTS = {
   background: 'src/background/index.ts',
   content: 'src/content/index.ts',
-  'net-intercept': 'src/page-inject/net-intercept.ts',
   popup: 'src/popup/popup.ts',
   options: 'src/options/options.ts',
 };
