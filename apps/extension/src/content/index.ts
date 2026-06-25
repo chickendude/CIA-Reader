@@ -9,13 +9,19 @@
 import { sendMessage } from '../shared/messages';
 import { SubtitleMirror } from './mirror';
 import { Overlay } from './overlay';
+import { VideoController } from './video';
 
 // Primeran is Basque.
 const LANGUAGE = 'eu';
 
+const video = new VideoController();
+
 const overlay = new Overlay({
   lookup: (surface) => sendMessage('LOOKUP', { language: LANGUAGE, surface }),
   reference: (word) => sendMessage('REFERENCE', { language: LANGUAGE, word }).then((r) => r.results),
+  // Pause the video while a word's definition is open, resume on leave.
+  onOpen: () => video.pauseForLookup(),
+  onClose: () => video.resumeAfterLookup(),
 });
 
 new SubtitleMirror((text) => overlay.setCue(text));

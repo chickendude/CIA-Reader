@@ -5,12 +5,18 @@
  */
 export class VideoController {
   private wasPlaying = false;
+  private active = false;
 
   get element(): HTMLVideoElement | null {
     return this.pickVideo();
   }
 
+  /** Pause for a word lookup. Idempotent: while a lookup is already active
+   *  (moving between words keeps the popup open) it's a no-op, so the original
+   *  "was playing" state isn't lost. Respects a manual pause (won't auto-resume). */
   pauseForLookup(): void {
+    if (this.active) return;
+    this.active = true;
     const v = this.pickVideo();
     if (v && !v.paused) {
       this.wasPlaying = true;
@@ -21,6 +27,8 @@ export class VideoController {
   }
 
   resumeAfterLookup(): void {
+    if (!this.active) return;
+    this.active = false;
     const v = this.pickVideo();
     if (v && this.wasPlaying) void v.play();
     this.wasPlaying = false;

@@ -13,6 +13,9 @@ import { splitCueWords } from './tokenize';
 type Deps = {
   lookup: (surface: string) => Promise<LookupResult>;
   reference: (word: string) => Promise<ReferenceEntry[]>;
+  /** Called when a word popup opens / fully closes (e.g. pause-on-lookup). */
+  onOpen?: () => void;
+  onClose?: () => void;
 };
 
 type RefState = 'idle' | 'loading' | 'done' | 'error';
@@ -177,6 +180,7 @@ export class Overlay {
     this.popup = null;
     this.state = null;
     this.anchor = null;
+    this.deps.onClose?.();
   }
 
   // ---- example-sentence tooltip (Elhuyar/Euskaltzaindia) ----
@@ -218,6 +222,7 @@ export class Overlay {
   }
 
   private async openFor(surface: string, anchor: HTMLElement): Promise<void> {
+    this.deps.onOpen?.();
     this.anchor = anchor;
     this.displayLang = this.selectedLang; // start from the user's preferred tab
     this.state = { surface, lookup: null, reference: [], refState: 'idle', error: null };
