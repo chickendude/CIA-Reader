@@ -60,8 +60,23 @@ const STYLE = `
 .popup .head { font-weight: 600; }
 .popup .pos { color: #8fce8f; font-size: 12px; margin-left: 6px; }
 .popup .def { margin: 2px 0; }
-.popup .ex { color: #b9b9b9; font-style: italic; font-size: 13px; margin: 1px 0 1px 8px; }
+.popup .pill {
+  display: inline-block; font-size: 10px; font-weight: 700; line-height: 1.5;
+  padding: 0 6px; border-radius: 999px; background: #2b6cb0; color: #fff;
+  margin-right: 7px; vertical-align: middle;
+}
+.popup .more {
+  display: inline-block; cursor: pointer; font-weight: 700; font-size: 12px; line-height: 1.3;
+  color: #7cc0ff; border: 1px solid #3a6ea5; border-radius: 999px; padding: 0 7px; margin-left: 8px;
+}
+.popup .more:hover { background: #2b6cb0; color: #fff; }
 .popup .muted { color: #9a9a9a; font-size: 13px; }
+.tooltip {
+  position: fixed; z-index: 2147483002; max-width: 340px; background: #15171a; color: #ddd;
+  border: 1px solid #444; border-radius: 8px; padding: 8px 11px; pointer-events: auto;
+  font: 13px/1.45 system-ui, -apple-system, sans-serif; box-shadow: 0 8px 26px rgba(0,0,0,0.6);
+}
+.tooltip .ex { font-style: italic; margin: 3px 0; color: #d2d2d2; }
 `;
 
 function el<K extends keyof HTMLElementTagNameMap>(
@@ -86,6 +101,8 @@ export class Overlay {
 
   private openTimer: ReturnType<typeof setTimeout> | null = null;
   private closeTimer: ReturnType<typeof setTimeout> | null = null;
+  private exTip: HTMLElement | null = null;
+  private exTimer: ReturnType<typeof setTimeout> | null = null;
   private anchor: HTMLElement | null = null;
   private state: PopupState | null = null;
   /** The tab the user last picked — the default for the next word. */
@@ -155,10 +172,49 @@ export class Overlay {
     if (this.openTimer) clearTimeout(this.openTimer);
     if (this.closeTimer) clearTimeout(this.closeTimer);
     this.openTimer = this.closeTimer = null;
+    this.hideExamples();
     this.popup?.remove();
     this.popup = null;
     this.state = null;
     this.anchor = null;
+  }
+
+  // ---- example-sentence tooltip (Elhuyar/Euskaltzaindia) ----
+
+  private showExamples(anchor: HTMLElement, examples: string[]): void {
+    if (this.exTimer) clearTimeout(this.exTimer);
+    this.hideExamples();
+    const tip = el('div', 'tooltip');
+    for (const ex of examples) tip.append(el('div', 'ex', ex));
+    tip.addEventListener('mouseenter', () => {
+      if (this.exTimer) clearTimeout(this.exTimer);
+      if (this.closeTimer) clearTimeout(this.closeTimer); // keep the popup open too
+    });
+    tip.addEventListener('mouseleave', () => {
+      this.scheduleHideExamples();
+      this.scheduleClose();
+    });
+    this.root.append(tip);
+    this.exTip = tip;
+
+    const a = anchor.getBoundingClientRect();
+    const left = Math.min(a.left, window.innerWidth - tip.offsetWidth - 8);
+    let top = a.bottom + 6;
+    if (top + tip.offsetHeight > window.innerHeight) top = a.top - tip.offsetHeight - 6;
+    tip.style.left = `${Math.max(8, left)}px`;
+    tip.style.top = `${top}px`;
+  }
+
+  private scheduleHideExamples(): void {
+    if (this.exTimer) clearTimeout(this.exTimer);
+    this.exTimer = setTimeout(() => this.hideExamples(), 200);
+  }
+
+  private hideExamples(): void {
+    if (this.exTimer) clearTimeout(this.exTimer);
+    this.exTimer = null;
+    this.exTip?.remove();
+    this.exTip = null;
   }
 
   private async openFor(surface: string, anchor: HTMLElement): Promise<void> {
@@ -198,6 +254,7 @@ export class Overlay {
 
   private render(): void {
     if (!this.state || !this.anchor) return;
+    this.hideExamples(); // drop any stale tooltip from a previous render
     const s = this.state;
     const content = el('div');
 
@@ -224,8 +281,9 @@ export class Overlay {
       if (entry.pos) head.append(el('span', 'pos', entry.pos.toLowerCase()));
       grp.append(head);
       for (const d of defs) {
-        const def = el('div', 'def', d.body);
-        def.append(el('span', 'src', d.lang.toUpperCase()));
+        const def = el('div', 'def');
+        def.append(el('span', 'pill', d.lang.toUpperCase()));
+        def.append(document.createTextNode(d.body));
         grp.append(def);
       }
       content.append(grp);
@@ -263,8 +321,16 @@ export class Overlay {
       const grp = el('div', 'grp');
       grp.append(el('div', 'grp-label', label));
       for (const r of entries) {
-        grp.append(el('div', 'def', r.definition));
-        for (const ex of r.examples.slice(0, 2)) grp.append(el('div', 'ex', ex));
+        const def = el('div', 'def');
+        def.append(document.createTextNode(r.definition));
+        if (r.examples.length > 0) {
+          const more = el('span', 'more', '+');
+          more.title = `${r.examples.length} example${r.examples.length > 1 ? 's' : ''}`;
+          more.addEventListener('mouseenter', () => this.showExamples(more, r.examples));
+          more.addEventListener('mouseleave', () => this.scheduleHideExamples());
+          def.append(more);
+        }
+        grp.append(def);
       }
       content.append(grp);
     }
