@@ -77,6 +77,23 @@ class ReaderCacheDaoTest {
     }
 
     @Test
+    fun lemmaRoundTripsAndMissingIsNull() = runTest {
+        val lemma = CachedLemmaEntity("l1", json = "{\"lemma\":{}}", cachedAt = 1000)
+        dao.upsertLemma(lemma)
+        assertEquals(lemma, dao.lemma("l1"))
+        assertNull(dao.lemma("nope"))
+    }
+
+    @Test
+    fun upsertReplacesExistingLemma() = runTest {
+        dao.upsertLemma(CachedLemmaEntity("l1", json = "{\"old\":1}", cachedAt = 1000))
+        dao.upsertLemma(CachedLemmaEntity("l1", json = "{\"new\":2}", cachedAt = 2000))
+        val row = dao.lemma("l1")
+        assertEquals("{\"new\":2}", row?.json)
+        assertEquals(2000L, row?.cachedAt)
+    }
+
+    @Test
     fun deleteRemovesAllRowsForAText() = runTest {
         dao.upsertText(CachedTextEntity("t1", "B", "hi", "ready", 1, cachedAt = 1000))
         dao.upsertChapterRefs(listOf(CachedChapterRefEntity("t1", 0, "One", 10)))

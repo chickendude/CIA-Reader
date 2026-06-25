@@ -20,6 +20,9 @@ data class TextCardDto(
     val status: String,
     val visibility: String,
     val createdAt: String,
+    /** Viewer's reading progress, 0–100 (0 when unread/anonymous). Double so a
+     *  raw float pct_read decodes even if the server doesn't round it. */
+    val progressPct: Double = 0.0,
 )
 
 // --- DELETE /api/v1/texts/:id ---

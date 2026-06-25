@@ -86,8 +86,81 @@ class LibraryScreenTest {
             onOpenCollection = { opened = it.id },
         )
         compose.onNodeWithText("Afrika express").assertIsDisplayed()
+        // The redesigned book card shows a chapter count alongside the title.
+        compose.onNodeWithText("12 chapters").assertIsDisplayed()
         compose.onNodeWithText("Afrika express").performClick()
         assertEquals("c1", opened)
+    }
+
+    @Test
+    fun showsSectionHeaders() {
+        setContent(
+            LibraryUiState(
+                isLoading = false,
+                languages = listOf(lang("hi", "Hindi")),
+                currentLanguage = "hi",
+                collections = listOf(CollectionSummary("c1", "Book", "hi", "chapter_book", 3)),
+                texts = listOf(TextCard("t1", "Story One", "hi", "ready")),
+            ),
+        )
+        compose.onNodeWithText("Books").assertIsDisplayed()
+        compose.onNodeWithText("Texts").assertIsDisplayed()
+    }
+
+    @Test
+    fun readyTextShowsProgress_pendingShowsStatus() {
+        setContent(
+            LibraryUiState(
+                isLoading = false,
+                languages = listOf(lang("hi", "Hindi")),
+                currentLanguage = "hi",
+                texts = listOf(
+                    TextCard("t1", "Ready Story", "hi", "ready"),
+                    TextCard("t2", "Pending Story", "hi", "processing"),
+                ),
+            ),
+        )
+        // Ready texts surface a progress track (labelled for a11y); pending texts
+        // surface their status line instead.
+        compose.onNodeWithContentDescription("Reading progress, 0 percent").assertIsDisplayed()
+        compose.onNodeWithText("processing").assertIsDisplayed()
+    }
+
+    @Test
+    fun showsEmptyState() {
+        setContent(
+            LibraryUiState(
+                isLoading = false,
+                languages = listOf(lang("hi", "Hindi")),
+                currentLanguage = "hi",
+            ),
+        )
+        compose.onNodeWithText("Nothing here yet").assertIsDisplayed()
+    }
+
+    @Test
+    fun showsCurrentLanguageChip() {
+        setContent(
+            LibraryUiState(
+                isLoading = false,
+                languages = listOf(lang("hi", "Hindi")),
+                currentLanguage = "hi",
+            ),
+        )
+        // Top bar shows a chip, not the full name; it's labelled for a11y.
+        compose.onNodeWithContentDescription("Language: Hindi").assertIsDisplayed()
+    }
+
+    @Test
+    fun showsErrorAndRetry() {
+        var retried = false
+        setContent(
+            LibraryUiState(isLoading = false, errorMessage = "Network error — check your connection and try again."),
+            onRetry = { retried = true },
+        )
+        compose.onNodeWithText("Retry").assertIsDisplayed()
+        compose.onNodeWithText("Retry").performClick()
+        assertEquals(true, retried)
     }
 
     @Test
@@ -186,43 +259,6 @@ class LibraryScreenTest {
         compose.onNodeWithText("Delete text?").assertIsDisplayed()
         compose.onNodeWithText("Delete").performClick()
         assertEquals("t1", deleted)
-    }
-
-    @Test
-    fun showsEmptyState() {
-        setContent(
-            LibraryUiState(
-                isLoading = false,
-                languages = listOf(lang("hi", "Hindi")),
-                currentLanguage = "hi",
-            ),
-        )
-        compose.onNodeWithText("Nothing here yet").assertIsDisplayed()
-    }
-
-    @Test
-    fun showsCurrentLanguageChip() {
-        setContent(
-            LibraryUiState(
-                isLoading = false,
-                languages = listOf(lang("hi", "Hindi")),
-                currentLanguage = "hi",
-            ),
-        )
-        // Top bar shows a chip, not the full name; it's labelled for a11y.
-        compose.onNodeWithContentDescription("Language: Hindi").assertIsDisplayed()
-    }
-
-    @Test
-    fun showsErrorAndRetry() {
-        var retried = false
-        setContent(
-            LibraryUiState(isLoading = false, errorMessage = "Network error — check your connection and try again."),
-            onRetry = { retried = true },
-        )
-        compose.onNodeWithText("Retry").assertIsDisplayed()
-        compose.onNodeWithText("Retry").performClick()
-        assertEquals(true, retried)
     }
 
     private fun lang(code: String, displayName: String) =
