@@ -16,6 +16,8 @@ type Deps = {
   /** Called when a word popup opens / fully closes (e.g. pause-on-lookup). */
   onOpen?: () => void;
   onClose?: () => void;
+  /** Episode occurrence count for a lemma (resolves async; 0 if none/unknown). */
+  frequency?: (lemma: string) => Promise<number>;
 };
 
 type RefState = 'idle' | 'loading' | 'done' | 'error';
@@ -25,6 +27,7 @@ type PopupState = {
   reference: ReferenceEntry[];
   refState: RefState;
   error: string | null;
+  frequency: number | null;
 };
 
 const STYLE = `
@@ -53,6 +56,7 @@ const STYLE = `
 .popup .hd { display: flex; align-items: baseline; gap: 8px; }
 .popup h2 { margin: 0; font-size: 18px; }
 .popup .lemma { color: #8ab4ff; font-size: 13px; }
+.popup .freq { color: #d6b25e; font-size: 12px; margin-top: 2px; }
 .popup .x { margin-left: auto; cursor: pointer; color: #9aa; font-size: 18px; line-height: 1; }
 .popup .tabs { display: flex; gap: 2px; margin: 10px 0 2px; border-bottom: 1px solid #2e3138; }
 .popup .tab {
@@ -260,7 +264,14 @@ export class Overlay {
     this.deps.onOpen?.();
     this.anchor = anchor;
     this.displayLang = this.selectedLang; // start from the user's preferred tab
-    this.state = { surface, lookup: null, reference: [], refState: 'idle', error: null };
+    this.state = {
+      surface,
+      lookup: null,
+      reference: [],
+      refState: 'idle',
+      error: null,
+      frequency: null,
+    };
     this.render();
 
     let result: LookupResult;
@@ -278,6 +289,19 @@ export class Overlay {
     this.render();
 
     const word = result.lemmas[0] ?? surface;
+
+    if (this.deps.frequency) {
+      void this.deps
+        .frequency(word)
+        .then((count) => {
+          if (this.state?.surface === surface) {
+            this.state.frequency = count;
+            this.render();
+          }
+        })
+        .catch(() => {});
+    }
+
     try {
       const reference = await this.deps.reference(word);
       if (this.state?.surface !== surface) return;
@@ -306,6 +330,10 @@ export class Overlay {
     close.addEventListener('click', () => this.close());
     hd.append(close);
     content.append(hd);
+
+    if (s.frequency && s.frequency > 0) {
+      content.append(el('div', 'freq', `${s.frequency}× in this episode`));
+    }
 
     if (s.error) {
       content.append(el('div', 'muted', `Lookup failed: ${s.error}`));

@@ -11,6 +11,7 @@ import type { Message } from '../shared/messages';
 import { authStatus, login, logout } from './auth';
 import { localDictionary } from './dictionary-local';
 import { episodeKey } from '../shared/episode';
+import { frequencyIndex } from './frequency';
 import { lookupWord } from './lookup';
 import { referenceCache } from './reference';
 import { fetchSubtitles } from './subtitles';
@@ -39,6 +40,8 @@ async function handle(msg: Message): Promise<unknown> {
       return { results: await referenceCache.lookup(msg.language, msg.word) };
     case 'CUES_FOR_URL':
       return { cues: await cuesCache.get(episodeKey(msg.url)) };
+    case 'FREQUENCY':
+      return { count: await frequencyIndex.count(msg.language, episodeKey(msg.url), msg.lemma) };
     default:
       throw new Error(`Unknown message type: ${(msg as { type: string }).type}`);
   }
@@ -59,7 +62,12 @@ ext.webRequest.onCompleted.addListener(
         sentByTab.set(details.tabId, details.url);
         try {
           const tab = await ext.tabs.get(details.tabId);
-          if (tab?.url) await cuesCache.set(episodeKey(tab.url), cues);
+          if (tab?.url) {
+            const episode = episodeKey(tab.url);
+            await cuesCache.set(episode, cues);
+            // Warm the per-episode frequency index in the background.
+            void frequencyIndex.ensure('eu', episode);
+          }
         } catch {
           /* tab gone / no url — caching is best-effort */
         }
