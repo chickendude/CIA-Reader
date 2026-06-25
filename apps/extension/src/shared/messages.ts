@@ -29,7 +29,13 @@ export type Requests = {
     res: { count: number };
   };
   ADD_ANKI: {
-    req: { front: string; back: string; tags?: string[] };
+    req: {
+      language: string;
+      front: string;
+      surface: string;
+      sentence: string | null;
+      defs: { body: string; lang: string }[];
+    };
     res: { added: boolean; duplicate: boolean };
   };
 };

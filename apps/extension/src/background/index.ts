@@ -46,7 +46,7 @@ async function handle(msg: Message): Promise<unknown> {
         count: await frequencyIndex.count(msg.language, episodeKey(msg.url), msg.lemma, msg.surface),
       };
     case 'ADD_ANKI':
-      return addAnkiNote({ front: msg.front, back: msg.back, tags: msg.tags });
+      return addAnkiNote(msg);
     default:
       throw new Error(`Unknown message type: ${(msg as { type: string }).type}`);
   }

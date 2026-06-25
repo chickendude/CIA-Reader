@@ -1,6 +1,6 @@
 /**
  * Split a subtitle line into clickable word runs and the separators between
- * them, so the overlay can make each word individually clickable while keeping
+ * them, so we can make each word individually interactive while keeping
  * punctuation/spacing intact. A "word" is a run of Unicode letters (plus
  * combining marks, apostrophes, and hyphens — enough for Basque).
  */

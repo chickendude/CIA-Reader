@@ -8,7 +8,7 @@
 import type { ExportedLemma } from '../shared/api-types';
 import type { DefinitionLang, LookupResult, ReferenceEntry } from '../shared/lookup';
 import { referenceSourceLang } from '../shared/lookup';
-import { splitCueWords } from './tokenize';
+import { splitCueWords } from '../shared/tokenize';
 
 type Deps = {
   lookup: (surface: string) => Promise<LookupResult>;
@@ -18,11 +18,13 @@ type Deps = {
   onClose?: () => void;
   /** Episode occurrence count for a word (resolves async; 0 if none/unknown). */
   frequency?: (lemma: string, surface: string) => Promise<number>;
-  /** Add a text card to Anki via AnkiConnect. */
-  addAnki?: (card: { front: string; back: string; tags?: string[] }) => Promise<{
-    added: boolean;
-    duplicate: boolean;
-  }>;
+  /** Add a card to Anki via AnkiConnect (the background builds the HTML). */
+  addAnki?: (card: {
+    front: string;
+    surface: string;
+    sentence: string | null;
+    defs: { body: string; lang: DefinitionLang }[];
+  }) => Promise<{ added: boolean; duplicate: boolean }>;
 };
 
 type RefState = 'idle' | 'loading' | 'done' | 'error';
@@ -109,9 +111,6 @@ function el<K extends keyof HTMLElementTagNameMap>(
   return node;
 }
 
-function escapeHtml(s: string): string {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-}
 
 const LANGS: DefinitionLang[] = ['en', 'es', 'eu'];
 
@@ -450,41 +449,34 @@ export class Overlay {
 
   // ---- Anki ----
 
-  private buildCard(): { front: string; back: string } | null {
+  private buildCard(): {
+    front: string;
+    surface: string;
+    sentence: string | null;
+    defs: { body: string; lang: DefinitionLang }[];
+  } | null {
     const s = this.state;
     if (!s) return null;
     const front = s.lookup?.lemmas[0] ?? s.surface;
 
-    const lines: string[] = [];
+    const defs: { body: string; lang: DefinitionLang }[] = [];
     const seen = new Set<string>();
     for (const entry of s.lookup?.entries ?? []) {
       for (const d of this.entryDefs(entry)) {
         if (!seen.has(d.body)) {
           seen.add(d.body);
-          lines.push(d.body);
+          defs.push(d);
         }
       }
     }
     for (const r of s.reference) {
       if (referenceSourceLang(r.source) === this.displayLang && !seen.has(r.definition)) {
         seen.add(r.definition);
-        lines.push(r.definition);
+        defs.push({ body: r.definition, lang: this.displayLang });
       }
     }
 
-    const parts = lines.map((l) => `<div>${escapeHtml(l)}</div>`);
-    if (this.currentSentence) {
-      parts.push(
-        `<div style="margin-top:10px;color:#555">${this.highlightSurface(this.currentSentence, s.surface)}</div>`,
-      );
-    }
-    return { front, back: parts.join('') };
-  }
-
-  private highlightSurface(sentence: string, surface: string): string {
-    const escaped = escapeHtml(sentence);
-    const safe = surface.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    return escaped.replace(new RegExp(`(${safe})`, 'i'), '<b>$1</b>');
+    return { front, surface: s.surface, sentence: this.currentSentence, defs };
   }
 
   private async addToAnki(btn: HTMLButtonElement, status: HTMLElement): Promise<void> {
