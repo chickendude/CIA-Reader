@@ -37,6 +37,7 @@ const TOGGLES: (keyof ExtensionConfig)[] = [
   'pauseOnLookup',
   'autoEnableSubtitles',
   'autoPauseAtLineEnd',
+  'captureMedia',
 ];
 
 async function renderOptions(): Promise<void> {

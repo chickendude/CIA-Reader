@@ -22,6 +22,8 @@ export type ExtensionConfig = {
   pauseOnLookup: boolean;
   /** Turn on Basque subtitles automatically if none are showing. */
   autoEnableSubtitles: boolean;
+  /** Capture a video-frame screenshot onto Anki cards. */
+  captureMedia: boolean;
 };
 
 export const DEFAULT_CONFIG: ExtensionConfig = {
@@ -34,6 +36,7 @@ export const DEFAULT_CONFIG: ExtensionConfig = {
   autoPauseAtLineEnd: false,
   pauseOnLookup: true,
   autoEnableSubtitles: true,
+  captureMedia: false,
 };
 
 const CONFIG_KEY = 'config';

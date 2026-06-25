@@ -22,6 +22,8 @@ export type AnkiCardInput = {
   surface: string;
   sentence: string | null;
   defs: { body: string; lang: string }[];
+  /** A `data:image/...;base64,` screenshot to attach (Picture field). */
+  screenshot?: string | null;
 };
 
 const MODEL_NAME = 'Primeran';
@@ -167,7 +169,15 @@ async function buildFields(card: AnkiCardInput): Promise<Record<string, string>>
       .join('');
   }
 
-  return { Word: card.front, Definition: definition, Sentence: sentence, Audio: '', Picture: '' };
+  let picture = '';
+  if (card.screenshot) {
+    const base64 = card.screenshot.replace(/^data:image\/\w+;base64,/, '');
+    const filename = `primeran-${Date.now()}-${Math.floor(Math.random() * 1e6)}.jpg`;
+    await ankiConnect('storeMediaFile', { filename, data: base64 });
+    picture = `<img src="${filename}">`;
+  }
+
+  return { Word: card.front, Definition: definition, Sentence: sentence, Audio: '', Picture: picture };
 }
 
 export async function addAnkiNote(card: AnkiCardInput): Promise<{ added: boolean; duplicate: boolean }> {

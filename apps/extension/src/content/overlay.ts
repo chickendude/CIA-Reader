@@ -214,6 +214,11 @@ export class Overlay {
     this.autoPauseBtn?.classList.toggle('on', on);
   }
 
+  /** Hide/show the whole overlay (used to keep it out of card screenshots). */
+  setVisible(visible: boolean): void {
+    this.host.style.visibility = visible ? '' : 'hidden';
+  }
+
   setListening(on: boolean): void {
     this.listeningBtn?.classList.toggle('on', on);
   }

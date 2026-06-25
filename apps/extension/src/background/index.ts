@@ -18,7 +18,7 @@ import { referenceCache } from './reference';
 import { fetchSubtitles } from './subtitles';
 import { cuesCache } from './subtitles-cache';
 
-async function handle(msg: Message): Promise<unknown> {
+async function handle(msg: Message, sender: browser.runtime.MessageSender): Promise<unknown> {
   switch (msg.type) {
     case 'PING':
       return { pong: true };
@@ -47,6 +47,19 @@ async function handle(msg: Message): Promise<unknown> {
       };
     case 'ADD_ANKI':
       return addAnkiNote(msg);
+    case 'CAPTURE_SCREENSHOT': {
+      try {
+        const opts = { format: 'jpeg', quality: 80 } as const;
+        const windowId = sender.tab?.windowId;
+        const dataUrl =
+          windowId === undefined
+            ? await ext.tabs.captureVisibleTab(opts)
+            : await ext.tabs.captureVisibleTab(windowId, opts);
+        return { dataUrl };
+      } catch {
+        return { dataUrl: null };
+      }
+    }
     default:
       throw new Error(`Unknown message type: ${(msg as { type: string }).type}`);
   }
@@ -89,8 +102,8 @@ ext.webRequest.onCompleted.addListener(
   { urls: ['https://*.primeran.eus/*'] },
 );
 
-ext.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-  handle(message as Message).then(
+ext.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  handle(message as Message, sender).then(
     (result) => sendResponse(result),
     // `__error` (not `error`) so a thrown handler is distinguishable from a
     // handler that legitimately returns an `error` field (e.g. login failure).

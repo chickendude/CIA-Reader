@@ -21,6 +21,8 @@ const HOST_PERMISSIONS = [
   'http://127.0.0.1:8765/*',
   'http://localhost:5173/*',
   'http://127.0.0.1:5173/*',
+  // Required by tabs.captureVisibleTab for the Anki-card screenshot.
+  '<all_urls>',
 ];
 
 export function buildManifest(browser) {

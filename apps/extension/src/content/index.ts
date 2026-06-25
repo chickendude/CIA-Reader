@@ -39,8 +39,57 @@ const overlay = new Overlay({
     sendMessage('FREQUENCY', { language: LANGUAGE, url: location.href, lemma, surface }).then(
       (r) => r.count,
     ),
-  addAnki: (card) => sendMessage('ADD_ANKI', { language: LANGUAGE, ...card }),
+  addAnki: async (card) => {
+    let screenshot: string | null = null;
+    if (config.captureMedia) {
+      // Hide our overlay so it isn't in the frame, capture, then crop to the video.
+      overlay.setVisible(false);
+      await delay(70);
+      const shot = await sendMessage('CAPTURE_SCREENSHOT', {})
+        .then((r) => r.dataUrl)
+        .catch(() => null);
+      overlay.setVisible(true);
+      screenshot = shot ? await cropToVideo(shot) : null;
+    }
+    return sendMessage('ADD_ANKI', { language: LANGUAGE, ...card, screenshot });
+  },
 });
+
+/** Crop a full-tab screenshot down to the video element's rectangle. */
+async function cropToVideo(dataUrl: string): Promise<string> {
+  const v = video.element;
+  if (!v) return dataUrl;
+  const rect = v.getBoundingClientRect();
+  if (rect.width < 2 || rect.height < 2) return dataUrl;
+  const dpr = window.devicePixelRatio || 1;
+  try {
+    const img = new Image();
+    await new Promise<void>((res, rej) => {
+      img.onload = () => res();
+      img.onerror = () => rej(new Error('image load failed'));
+      img.src = dataUrl;
+    });
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(rect.width * dpr);
+    canvas.height = Math.round(rect.height * dpr);
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return dataUrl;
+    ctx.drawImage(
+      img,
+      rect.x * dpr,
+      rect.y * dpr,
+      rect.width * dpr,
+      rect.height * dpr,
+      0,
+      0,
+      canvas.width,
+      canvas.height,
+    );
+    return canvas.toDataURL('image/jpeg', 0.82);
+  } catch {
+    return dataUrl;
+  }
+}
 
 let seenSubs = false;
 let subAttempted = false;

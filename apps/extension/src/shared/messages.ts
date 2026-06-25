@@ -35,9 +35,11 @@ export type Requests = {
       surface: string;
       sentence: string | null;
       defs: { body: string; lang: string }[];
+      screenshot?: string | null;
     };
     res: { added: boolean; duplicate: boolean };
   };
+  CAPTURE_SCREENSHOT: { req: Record<string, never>; res: { dataUrl: string | null } };
 };
 
 export type MessageType = keyof Requests;
