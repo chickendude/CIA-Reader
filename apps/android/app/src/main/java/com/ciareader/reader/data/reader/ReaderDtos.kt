@@ -9,6 +9,9 @@ data class TextMetaDto(
     val text: TextMetaTextDto,
     val chapterCount: Int = 0,
     val chapters: List<ChapterRefDto> = emptyList(),
+    /** Viewer's reading comprehension 0–100 (known word-tokens ÷ total), or null
+     *  for anonymous viewers / before the text is tokenized. */
+    val comprehensionPct: Int? = null,
 )
 
 @Serializable

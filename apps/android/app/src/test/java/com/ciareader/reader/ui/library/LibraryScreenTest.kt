@@ -31,6 +31,11 @@ class LibraryScreenTest {
         onSelectLanguage: (String) -> Unit = {},
         onRetry: () -> Unit = {},
         onOpenSettings: () -> Unit = {},
+        onEditCollection: (String, String, String?) -> Unit = { _, _, _ -> },
+        onDeleteCollection: (String) -> Unit = {},
+        onDeleteText: (String) -> Unit = {},
+        onShowStats: (CollectionSummary) -> Unit = {},
+        onEditText: (String, String) -> Unit = { _, _ -> },
     ) {
         compose.setContent {
             CiaReaderTheme {
@@ -41,6 +46,11 @@ class LibraryScreenTest {
                     onOpenCollection = onOpenCollection,
                     onRetry = onRetry,
                     onOpenSettings = onOpenSettings,
+                    onEditCollection = onEditCollection,
+                    onDeleteCollection = onDeleteCollection,
+                    onDeleteText = onDeleteText,
+                    onShowStats = onShowStats,
+                    onEditText = onEditText,
                 )
             }
         }
@@ -153,6 +163,139 @@ class LibraryScreenTest {
         compose.onNodeWithText("Retry").assertIsDisplayed()
         compose.onNodeWithText("Retry").performClick()
         assertEquals(true, retried)
+    }
+
+    @Test
+    fun overflowMenuOnABookShowsManagementActions() {
+        setContent(
+            LibraryUiState(
+                isLoading = false,
+                languages = listOf(lang("eu", "Basque")),
+                currentLanguage = "eu",
+                collections = listOf(CollectionSummary("c1", "Afrika express", "eu", "chapter_book", 12)),
+            ),
+        )
+        compose.onNodeWithContentDescription("More actions for Afrika express").performClick()
+        compose.onNodeWithText("Edit").assertIsDisplayed()
+        compose.onNodeWithText("Stats").assertIsDisplayed()
+        compose.onNodeWithText("Delete").assertIsDisplayed()
+    }
+
+    @Test
+    fun deletingABookConfirmsBeforeFiringTheCallback() {
+        var deleted: String? = null
+        setContent(
+            LibraryUiState(
+                isLoading = false,
+                languages = listOf(lang("eu", "Basque")),
+                currentLanguage = "eu",
+                collections = listOf(CollectionSummary("c1", "Afrika express", "eu", "chapter_book", 12)),
+            ),
+            onDeleteCollection = { deleted = it },
+        )
+        compose.onNodeWithContentDescription("More actions for Afrika express").performClick()
+        compose.onNodeWithText("Delete").performClick()
+        // The confirm dialog shows; nothing deleted until confirmed.
+        assertEquals(null, deleted)
+        compose.onNodeWithText("Delete book?").assertIsDisplayed()
+        compose.onNodeWithText("Delete").performClick()
+        assertEquals("c1", deleted)
+    }
+
+    @Test
+    fun editingABookSubmitsTheNewTitle() {
+        var edited: Triple<String, String, String?>? = null
+        setContent(
+            LibraryUiState(
+                isLoading = false,
+                languages = listOf(lang("eu", "Basque")),
+                currentLanguage = "eu",
+                collections = listOf(CollectionSummary("c1", "Afrika express", "eu", "chapter_book", 12)),
+            ),
+            onEditCollection = { id, title, desc -> edited = Triple(id, title, desc) },
+        )
+        compose.onNodeWithContentDescription("More actions for Afrika express").performClick()
+        compose.onNodeWithText("Edit").performClick()
+        compose.onNodeWithText("Save").performClick()
+        // Default title preserved when unchanged; description blank → null.
+        assertEquals(Triple("c1", "Afrika express", null), edited)
+    }
+
+    @Test
+    fun statsSheetRendersDerivedFigures() {
+        setContent(
+            LibraryUiState(
+                isLoading = false,
+                languages = listOf(lang("eu", "Basque")),
+                currentLanguage = "eu",
+                collections = listOf(CollectionSummary("c1", "Afrika express", "eu", "chapter_book", 3)),
+                stats = StatsUiState(
+                    collectionId = "c1",
+                    title = "Afrika express",
+                    isLoading = false,
+                    stats = BookStats(chapterCount = 3, totalWords = 180, comprehensionPct = 60, progressPct = 50),
+                ),
+            ),
+        )
+        compose.onNodeWithText("Comprehension").assertIsDisplayed()
+        compose.onNodeWithText("60%").assertIsDisplayed() // real comprehension, not a proxy
+        compose.onNodeWithText("Total words").assertIsDisplayed()
+        compose.onNodeWithText("180").assertIsDisplayed()
+        compose.onNodeWithText("Chapters").assertIsDisplayed()
+    }
+
+    @Test
+    fun deletingATextConfirmsBeforeFiringTheCallback() {
+        var deleted: String? = null
+        setContent(
+            LibraryUiState(
+                isLoading = false,
+                languages = listOf(lang("hi", "Hindi")),
+                currentLanguage = "hi",
+                texts = listOf(TextCard("t1", "Story One", "hi", "ready")),
+            ),
+            onDeleteText = { deleted = it },
+        )
+        compose.onNodeWithContentDescription("More actions for Story One").performClick()
+        compose.onNodeWithText("Delete").performClick()
+        assertEquals(null, deleted)
+        compose.onNodeWithText("Delete text?").assertIsDisplayed()
+        compose.onNodeWithText("Delete").performClick()
+        assertEquals("t1", deleted)
+    }
+
+    @Test
+    fun textOverflowMenuShowsEditStatsDelete() {
+        setContent(
+            LibraryUiState(
+                isLoading = false,
+                languages = listOf(lang("hi", "Hindi")),
+                currentLanguage = "hi",
+                texts = listOf(TextCard("t1", "Story One", "hi", "ready")),
+            ),
+        )
+        compose.onNodeWithContentDescription("More actions for Story One").performClick()
+        compose.onNodeWithText("Edit").assertIsDisplayed()
+        compose.onNodeWithText("Stats").assertIsDisplayed()
+        compose.onNodeWithText("Delete").assertIsDisplayed()
+    }
+
+    @Test
+    fun editingATextSubmitsTheNewTitle() {
+        var edited: Pair<String, String>? = null
+        setContent(
+            LibraryUiState(
+                isLoading = false,
+                languages = listOf(lang("hi", "Hindi")),
+                currentLanguage = "hi",
+                texts = listOf(TextCard("t1", "Story One", "hi", "ready")),
+            ),
+            onEditText = { id, title -> edited = id to title },
+        )
+        compose.onNodeWithContentDescription("More actions for Story One").performClick()
+        compose.onNodeWithText("Edit").performClick()
+        compose.onNodeWithText("Save").performClick()
+        assertEquals("t1" to "Story One", edited)
     }
 
     private fun lang(code: String, displayName: String) =

@@ -24,3 +24,19 @@ data class TextCardDto(
      *  raw float pct_read decodes even if the server doesn't round it. */
     val progressPct: Double = 0.0,
 )
+
+// --- PATCH /api/v1/texts/:id (rename) ---
+
+@Serializable
+data class UpdateTextRequest(val title: String)
+
+@Serializable
+data class UpdateTextResponseDto(val text: UpdatedTextDto)
+
+@Serializable
+data class UpdatedTextDto(val title: String)
+
+// --- DELETE /api/v1/texts/:id ---
+
+@Serializable
+data class DeleteTextResponseDto(val ok: Boolean = false)
