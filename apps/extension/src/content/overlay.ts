@@ -352,48 +352,54 @@ export class Overlay {
       content.append(el('div', 'muted', `Lookup failed: ${s.error}`));
     }
 
-    // --- Internal dictionary: always shown, all languages ---
+    // Languages that have any content (internal translations or reference). The
+    // shown tab defaults to the user's pick, falling back to the first language
+    // that actually has something for this word.
+    const langsWithContent = new Set<DefinitionLang>();
     for (const entry of s.lookup?.entries ?? []) {
-      const defs = this.entryDefs(entry);
-      if (defs.length === 0) continue;
-      const grp = el('div', 'grp');
-      const head = el('div');
-      head.append(el('span', 'head', entry.headword));
-      if (entry.pos) head.append(el('span', 'pos', entry.pos.toLowerCase()));
-      grp.append(head);
-      for (const d of defs) {
-        const def = el('div', 'def');
-        def.append(el('span', 'pill', d.lang.toUpperCase()));
-        def.append(document.createTextNode(d.body));
-        grp.append(def);
-      }
-      content.append(grp);
+      for (const d of this.entryDefs(entry)) langsWithContent.add(d.lang);
     }
-
-    // --- External reference dictionaries: tabbed, one language at a time ---
-    // The shown tab defaults to the user's pick, but falls back to the first
-    // language that actually has results for this word.
-    const refLangs = new Set(s.reference.map((r) => referenceSourceLang(r.source)));
-    if (!refLangs.has(this.displayLang)) {
-      const first = LANGS.find((l) => refLangs.has(l));
+    for (const r of s.reference) langsWithContent.add(referenceSourceLang(r.source));
+    if (!langsWithContent.has(this.displayLang)) {
+      const first = LANGS.find((l) => langsWithContent.has(l));
       if (first) this.displayLang = first;
     }
+    const lang = this.displayLang;
 
+    // Tabs drive BOTH internal and external definitions (the tab is the language
+    // label, so individual lines don't repeat it).
     const tabs = el('div', 'tabs');
-    for (const lang of LANGS) {
-      const tab = el('span', `tab${this.displayLang === lang ? ' on' : ''}`, lang.toUpperCase());
+    for (const l of LANGS) {
+      const tab = el('span', `tab${lang === l ? ' on' : ''}`, l.toUpperCase());
       tab.addEventListener('click', () => {
-        this.selectedLang = lang;
-        this.displayLang = lang;
+        this.selectedLang = l;
+        this.displayLang = l;
         this.render();
       });
       tabs.append(tab);
     }
     content.append(tabs);
 
+    let shown = 0;
+
+    // Internal dictionary, filtered to the selected language (no per-line pill).
+    for (const entry of s.lookup?.entries ?? []) {
+      const defs = this.entryDefs(entry).filter((d) => d.lang === lang);
+      if (defs.length === 0) continue;
+      const grp = el('div', 'grp');
+      const head = el('div');
+      head.append(el('span', 'head', entry.headword));
+      if (entry.pos) head.append(el('span', 'pos', entry.pos.toLowerCase()));
+      grp.append(head);
+      for (const d of defs) grp.append(el('div', 'def', d.body));
+      content.append(grp);
+      shown += 1;
+    }
+
+    // External reference dictionaries for the selected language.
     const refByLabel = new Map<string, ReferenceEntry[]>();
     for (const r of s.reference) {
-      if (referenceSourceLang(r.source) !== this.displayLang) continue;
+      if (referenceSourceLang(r.source) !== lang) continue;
       const list = refByLabel.get(r.label);
       if (list) list.push(r);
       else refByLabel.set(r.label, [r]);
@@ -414,11 +420,11 @@ export class Overlay {
         grp.append(def);
       }
       content.append(grp);
+      shown += 1;
     }
 
     if (s.refState === 'loading') content.append(el('div', 'muted', 'Loading dictionaries…'));
-    else if (refByLabel.size === 0)
-      content.append(el('div', 'muted', `No ${this.displayLang.toUpperCase()} dictionary entry.`));
+    else if (shown === 0) content.append(el('div', 'muted', `No ${lang.toUpperCase()} definitions.`));
 
     if (this.deps.addAnki && s.lookup) {
       const footer = el('div', 'footer');
