@@ -11,7 +11,7 @@ import type { Message } from '../shared/messages';
 import { authStatus, login, logout } from './auth';
 import { localDictionary } from './dictionary-local';
 import { episodeKey } from '../shared/episode';
-import { addAnkiNote } from './anki';
+import { addAnkiNote, ankiNoteExists } from './anki';
 import { frequencyIndex } from './frequency';
 import { lookupWord } from './lookup';
 import { referenceCache } from './reference';
@@ -47,6 +47,8 @@ async function handle(msg: Message, sender: browser.runtime.MessageSender): Prom
       };
     case 'ADD_ANKI':
       return addAnkiNote(msg);
+    case 'ANKI_HAS':
+      return { exists: await ankiNoteExists(msg.front) };
     case 'CAPTURE_SCREENSHOT': {
       try {
         const opts = { format: 'jpeg', quality: 80 } as const;

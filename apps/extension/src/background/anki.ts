@@ -180,6 +180,18 @@ async function buildFields(card: AnkiCardInput): Promise<Record<string, string>>
   return { Word: card.front, Definition: definition, Sentence: sentence, Audio: '', Picture: picture };
 }
 
+/** Whether a card with this Word already exists in Anki (any deck). */
+export async function ankiNoteExists(front: string): Promise<boolean> {
+  try {
+    const ids = await ankiConnect('findNotes', {
+      query: `"Word:${front.replace(/["]/g, '')}"`,
+    });
+    return Array.isArray(ids) && ids.length > 0;
+  } catch {
+    return false; // Anki not running / not configured — just don't show the badge
+  }
+}
+
 export async function addAnkiNote(card: AnkiCardInput): Promise<{ added: boolean; duplicate: boolean }> {
   const { deckName } = await loadConfig();
   await ankiConnect('createDeck', { deck: deckName });

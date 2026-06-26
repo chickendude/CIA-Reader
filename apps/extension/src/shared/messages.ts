@@ -43,6 +43,7 @@ export type Requests = {
     req: Record<string, never>;
     res: { dataUrl: string | null; error?: string };
   };
+  ANKI_HAS: { req: { front: string }; res: { exists: boolean } };
 };
 
 export type MessageType = keyof Requests;

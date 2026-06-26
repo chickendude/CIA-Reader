@@ -43,13 +43,16 @@ const overlay = new Overlay({
     let screenshot: string | null = null;
     let note: string | undefined;
     if (config.captureMedia) {
-      // Hide our overlay so it isn't in the frame, capture, then crop to the video.
+      // Hide our overlay AND the player's controls (the paused play/skip overlay)
+      // so they aren't in the frame, capture, then crop to the video.
       overlay.setVisible(false);
-      await delay(70);
+      setPlayerChromeHidden(true);
+      await delay(90);
       const res = await sendMessage('CAPTURE_SCREENSHOT', {}).catch(() => ({
         dataUrl: null,
         error: 'capture message failed',
       }));
+      setPlayerChromeHidden(false);
       overlay.setVisible(true);
       if (res.dataUrl) screenshot = await cropToVideo(res.dataUrl);
       else note = `no screenshot${res.error ? ` (${res.error})` : ''}`;
@@ -57,7 +60,22 @@ const overlay = new Overlay({
     const result = await sendMessage('ADD_ANKI', { language: LANGUAGE, ...card, screenshot });
     return { ...result, note };
   },
+  ankiHas: (front) => sendMessage('ANKI_HAS', { front }).then((r) => r.exists),
 });
+
+// Hide the Shaka player controls (paused play/skip overlay) during a capture.
+let chromeHideStyle: HTMLStyleElement | null = null;
+function setPlayerChromeHidden(hidden: boolean): void {
+  if (hidden && !chromeHideStyle) {
+    chromeHideStyle = document.createElement('style');
+    chromeHideStyle.textContent =
+      '.shaka-controls-container, .shaka-play-button-container { opacity: 0 !important; }';
+    (document.head ?? document.documentElement).append(chromeHideStyle);
+  } else if (!hidden && chromeHideStyle) {
+    chromeHideStyle.remove();
+    chromeHideStyle = null;
+  }
+}
 
 /** Crop a full-tab screenshot down to the video element's rectangle. */
 async function cropToVideo(dataUrl: string): Promise<string> {

@@ -25,6 +25,8 @@ type Deps = {
     sentence: string | null;
     defs: { body: string; lang: DefinitionLang }[];
   }) => Promise<{ added: boolean; duplicate: boolean; note?: string }>;
+  /** Whether a card for this word already exists in Anki. */
+  ankiHas?: (front: string) => Promise<boolean>;
 };
 
 type RefState = 'idle' | 'loading' | 'done' | 'error';
@@ -35,6 +37,7 @@ type PopupState = {
   refState: RefState;
   error: string | null;
   frequency: number | null;
+  inAnki: boolean;
 };
 
 const STYLE = `
@@ -64,6 +67,7 @@ const STYLE = `
 .popup h2 { margin: 0; font-size: 18px; }
 .popup .lemma { color: #8ab4ff; font-size: 13px; }
 .popup .freq { color: #d6b25e; font-size: 13px; font-weight: 600; }
+.popup .inanki { color: #4bbd7a; font-size: 12px; font-weight: 600; }
 .popup .x { margin-left: auto; cursor: pointer; color: #9aa; font-size: 18px; line-height: 1; }
 .popup .tabs { display: flex; gap: 2px; margin: 10px 0 2px; border-bottom: 1px solid #2e3138; }
 .popup .tab {
@@ -351,6 +355,7 @@ export class Overlay {
       refState: 'idle',
       error: null,
       frequency: null,
+      inAnki: false,
     };
     this.render();
 
@@ -382,6 +387,18 @@ export class Overlay {
         .catch(() => {});
     }
 
+    if (this.deps.ankiHas) {
+      void this.deps
+        .ankiHas(word)
+        .then((exists) => {
+          if (this.state?.surface === surface && exists) {
+            this.state.inAnki = true;
+            this.render();
+          }
+        })
+        .catch(() => {});
+    }
+
     try {
       const reference = await this.deps.reference(word);
       if (this.state?.surface !== surface) return;
@@ -407,6 +424,7 @@ export class Overlay {
     const lemma = s.lookup?.lemmas[0];
     if (lemma && lemma !== s.surface) hd.append(el('span', 'lemma', `→ ${s.lookup!.lemmas.join(', ')}`));
     if (s.frequency && s.frequency > 0) hd.append(el('span', 'freq', `${s.frequency}×`));
+    if (s.inAnki) hd.append(el('span', 'inanki', '✓ in Anki'));
     const close = el('span', 'x', '×');
     close.addEventListener('click', () => this.close());
     hd.append(close);
@@ -492,7 +510,7 @@ export class Overlay {
 
     if (this.deps.addAnki && s.lookup) {
       const footer = el('div', 'footer');
-      const btn = el('button', 'anki', 'Add to Anki');
+      const btn = el('button', 'anki', s.inAnki ? 'Add to Anki again' : 'Add to Anki');
       const status = el('span', 'anki-status');
       btn.addEventListener('click', () => void this.addToAnki(btn, status));
       footer.append(btn, status);
@@ -556,8 +574,11 @@ export class Overlay {
     status.textContent = 'Adding…';
     try {
       const r = await this.deps.addAnki(card);
-      const base = r.added ? 'Added ✓' : r.duplicate ? 'Already in deck' : 'Done';
-      status.textContent = r.note ? `${base} — ${r.note}` : base;
+      if (r.added || r.duplicate) {
+        btn.textContent = r.added ? 'Added ✓' : 'Already in deck';
+        if (this.state) this.state.inAnki = true;
+      }
+      status.textContent = r.note ?? '';
     } catch (e) {
       status.textContent = e instanceof Error ? e.message : String(e);
     } finally {
