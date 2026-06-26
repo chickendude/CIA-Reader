@@ -54,9 +54,11 @@ const MODEL_CSS = `
   background:radial-gradient(130% 150% at 50% -10%,#2a1518 0%,#150f11 62%);
   color:#ece6e7;padding:28px 22px}
 .pm-word{font-size:36px;font-weight:800;text-align:center;color:#fff;letter-spacing:.01em}
-.pm-sentence{margin:20px auto 0;max-width:620px;padding:15px 20px;
+/* One passage box: the line before, the main sentence, the line after. */
+.pm-sentence{margin:20px auto 0;max-width:620px;padding:15px 20px;text-align:center;
   background:rgba(255,255,255,.045);border:1px solid rgba(255,255,255,.08);
-  border-left:4px solid #1f9c57;border-radius:9px;font-size:22px;line-height:1.75;color:#f1ebeb}
+  border-left:4px solid #1f9c57;border-radius:9px;line-height:1.7}
+.pm-main{font-size:22px;color:#f1ebeb;margin:5px 0}
 .pm-target{color:#ff6b4a;font-weight:700}
 .pm-w[data-def]{border-bottom:1px dotted rgba(255,255,255,.35);cursor:help;position:relative}
 .pm-w[data-def]:hover::after{content:attr(data-def);position:absolute;left:0;bottom:140%;
@@ -72,16 +74,14 @@ hr#answer{border:0;height:1px;max-width:620px;margin:22px auto;
 .pm-bodies{flex:1}
 .pm-def{margin:2px 0;font-size:18px;color:#e8e2e2}
 .pm-picture img{max-width:100%;border-radius:9px;margin-top:16px}
-.pm-ctx{max-width:620px;margin:7px auto;font-size:16px;line-height:1.55;color:#998e90;text-align:center}
+.pm-ctx{font-size:16px;line-height:1.5;color:#988d8f;margin:4px 0}
 .pm-ctx-prev::before{content:"… ";opacity:.55}
 .pm-ctx-next::after{content:" …";opacity:.55}
 .pm-trans{max-width:620px;margin:0 auto 14px;font-size:18px;font-style:italic;color:#cfc7c8;text-align:center}
 `;
 
 const FRONT_TEMPLATE = `<div class="pm-word">{{Word}}</div>
-{{#ContextBefore}}<div class="pm-ctx pm-ctx-prev">{{ContextBefore}}</div>{{/ContextBefore}}
-{{#Sentence}}<div class="pm-sentence">{{Sentence}}</div>{{/Sentence}}
-{{#ContextAfter}}<div class="pm-ctx pm-ctx-next">{{ContextAfter}}</div>{{/ContextAfter}}`;
+{{#Sentence}}<div class="pm-sentence">{{#ContextBefore}}<div class="pm-ctx pm-ctx-prev">{{ContextBefore}}</div>{{/ContextBefore}}<div class="pm-main">{{Sentence}}</div>{{#ContextAfter}}<div class="pm-ctx pm-ctx-next">{{ContextAfter}}</div>{{/ContextAfter}}</div>{{/Sentence}}`;
 
 const BACK_TEMPLATE = `{{FrontSide}}
 <hr id="answer">
