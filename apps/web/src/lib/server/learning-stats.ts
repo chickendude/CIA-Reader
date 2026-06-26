@@ -177,6 +177,45 @@ export async function getLanguageStats(
 }
 
 /**
+ * Language-level estimated comprehension (Android stats screen).
+ *
+ * The fraction of word-token occurrences across every text the user
+ * owns in this language whose lemma they've marked 'known'. Same
+ * occurrence-weighted formula as `estimatedComprehensionForText`,
+ * just aggregated over all of the language's texts so the stats
+ * screen can show one headline "how much would I understand?" number.
+ *
+ * Returns null when the user has no processed tokens yet (so the UI
+ * can show a dash rather than 0%).
+ */
+export async function languageComprehensionPct(
+  userId: string,
+  language: LanguageCode,
+): Promise<number | null> {
+  const list = unwrapRows<{ total: number; known: number }>(
+    await db.execute(sql`
+      SELECT
+        COUNT(*) FILTER (WHERE tt.is_word = true)::int AS total,
+        COUNT(*) FILTER (
+          WHERE tt.is_word = true
+            AND tt.lemma_id IS NOT NULL
+            AND ukl.status = 'known'
+        )::int AS known
+      FROM texts tx
+      INNER JOIN text_chapters ch ON ch.text_id = tx.id
+      INNER JOIN text_tokens tt ON tt.chapter_id = ch.id
+      LEFT JOIN user_known_lemmas ukl
+        ON ukl.lemma_id = tt.lemma_id AND ukl.user_id = ${userId}
+      WHERE tx.owner_id = ${userId}
+        AND tx.language = ${language}
+    `),
+  );
+  const r = list[0];
+  if (!r || r.total === 0) return null;
+  return Math.round((r.known / r.total) * 100);
+}
+
+/**
  * Distinct known-lemma count per language for one user, in a single
  * grouped query. Powers the language switcher's "N words" badge
  * (GET /api/v1/me/languages) — a per-language `getLanguageStats`

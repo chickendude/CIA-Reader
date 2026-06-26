@@ -4,6 +4,7 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.ciareader.reader.core.network.Outcome
+import com.ciareader.reader.core.settings.ReadingTimeStore
 import com.ciareader.reader.core.settings.SettingsStore
 import com.ciareader.reader.data.collection.CollectionRepository
 import com.ciareader.reader.data.dictionary.BasqueReference
@@ -122,8 +123,17 @@ class ReaderViewModel @Inject constructor(
     private val dictionary: DictionaryRepository,
     private val settings: SettingsStore,
     private val collections: CollectionRepository,
+    private val readingTime: ReadingTimeStore,
     savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
+
+    /** Wall clock, overridable in tests. Reading time is wall-clock delta
+     *  between the screen becoming visible and being hidden. */
+    internal var clock: () -> Long = { System.currentTimeMillis() }
+
+    // When non-null the reader is on-screen; the value is the wall-clock
+    // millis at which it became visible. Flushed to [readingTime] on hide.
+    private var readingStartedAtMs: Long? = null
 
     private val textId: String =
         checkNotNull(savedStateHandle.get<String>("textId")) { "reader requires a textId arg" }
@@ -587,6 +597,37 @@ class ReaderViewModel @Inject constructor(
 
     fun retry() {
         if (_state.value.title.isEmpty()) loadInitial() else loadChapter(_state.value.chapterIdx)
+    }
+
+    /**
+     * The reader became visible (ON_START). Begins accruing reading time.
+     * Idempotent — a second call without an intervening [onScreenHidden]
+     * is ignored, so it's safe to attach to a lifecycle observer.
+     */
+    fun onScreenVisible() {
+        if (readingStartedAtMs == null) readingStartedAtMs = clock()
+    }
+
+    /**
+     * The reader was hidden/backgrounded (ON_STOP). Flushes the elapsed
+     * foreground duration to [readingTime] under this text's language.
+     * Reading time is LOCAL-ONLY (no server sync).
+     */
+    fun onScreenHidden() {
+        val startedAt = readingStartedAtMs ?: return
+        readingStartedAtMs = null
+        val elapsed = clock() - startedAt
+        if (elapsed <= 0L) return
+        val lang = language
+        if (lang.isEmpty()) return
+        viewModelScope.launch { readingTime.addReadingTime(lang, elapsed) }
+    }
+
+    override fun onCleared() {
+        // Flush any in-progress session if the screen leaves without an
+        // explicit ON_STOP (e.g. the VM is cleared on back-navigation).
+        onScreenHidden()
+        super.onCleared()
     }
 
     private companion object {

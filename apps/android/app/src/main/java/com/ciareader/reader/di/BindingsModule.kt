@@ -2,7 +2,9 @@ package com.ciareader.reader.di
 
 import com.ciareader.reader.core.auth.DataStoreTokenStore
 import com.ciareader.reader.core.auth.TokenStore
+import com.ciareader.reader.core.settings.DataStoreReadingTimeStore
 import com.ciareader.reader.core.settings.DataStoreSettingsStore
+import com.ciareader.reader.core.settings.ReadingTimeStore
 import com.ciareader.reader.core.settings.SettingsStore
 import com.ciareader.reader.data.auth.AuthRepository
 import com.ciareader.reader.data.auth.AuthRepositoryImpl
@@ -18,6 +20,8 @@ import com.ciareader.reader.data.local.OfflineCache
 import com.ciareader.reader.data.local.RoomOfflineCache
 import com.ciareader.reader.data.reader.ReaderRepository
 import com.ciareader.reader.data.reader.ReaderRepositoryImpl
+import com.ciareader.reader.data.stats.StatsRepository
+import com.ciareader.reader.data.stats.StatsRepositoryImpl
 import com.ciareader.reader.data.upload.ContentResolverDocumentReader
 import com.ciareader.reader.data.upload.DocumentReader
 import com.ciareader.reader.data.upload.PdfRasterizer
@@ -41,6 +45,10 @@ abstract class BindingsModule {
     @Binds
     @Singleton
     abstract fun bindSettingsStore(impl: DataStoreSettingsStore): SettingsStore
+
+    @Binds
+    @Singleton
+    abstract fun bindReadingTimeStore(impl: DataStoreReadingTimeStore): ReadingTimeStore
 
     @Binds
     @Singleton
@@ -69,6 +77,10 @@ abstract class BindingsModule {
     @Binds
     @Singleton
     abstract fun bindOfflineCache(impl: RoomOfflineCache): OfflineCache
+
+    @Binds
+    @Singleton
+    abstract fun bindStatsRepository(impl: StatsRepositoryImpl): StatsRepository
 
     @Binds
     @Singleton

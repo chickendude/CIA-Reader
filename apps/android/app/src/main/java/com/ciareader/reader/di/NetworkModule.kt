@@ -10,6 +10,7 @@ import com.ciareader.reader.data.library.LibraryApi
 import com.ciareader.reader.data.collection.CollectionsApi
 import com.ciareader.reader.data.dictionary.DictionaryApi
 import com.ciareader.reader.data.reader.ReaderApi
+import com.ciareader.reader.data.stats.StatsApi
 import com.ciareader.reader.data.upload.UploadApi
 import dagger.Module
 import dagger.Provides
@@ -132,6 +133,11 @@ object NetworkModule {
     @Singleton
     fun provideDictionaryApi(@Authenticated retrofit: Retrofit): DictionaryApi =
         retrofit.create(DictionaryApi::class.java)
+
+    @Provides
+    @Singleton
+    fun provideStatsApi(@Authenticated retrofit: Retrofit): StatsApi =
+        retrofit.create(StatsApi::class.java)
 
     @Provides
     @Singleton
