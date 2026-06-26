@@ -185,6 +185,7 @@ export class Overlay {
   private autoPauseBtn: HTMLButtonElement | null = null;
   private listeningBtn: HTMLButtonElement | null = null;
   private captionHidden = false;
+  private capturing = false;
   private anchor: HTMLElement | null = null;
   private state: PopupState | null = null;
   /** The tab the user last picked — the default for the next word. */
@@ -258,9 +259,20 @@ export class Overlay {
     this.autoPauseBtn?.classList.toggle('on', on);
   }
 
-  /** Hide/show the whole overlay (used to keep it out of card screenshots). */
-  setVisible(visible: boolean): void {
-    this.host.style.visibility = visible ? '' : 'hidden';
+  /** Hide the overlay for a screenshot and suppress the popup's auto-close, so
+   *  adding a card neither captures our UI nor dismisses the popup / resumes. */
+  beginCapture(): void {
+    this.capturing = true;
+    if (this.closeTimer) {
+      clearTimeout(this.closeTimer);
+      this.closeTimer = null;
+    }
+    this.host.style.visibility = 'hidden';
+  }
+
+  endCapture(): void {
+    this.host.style.visibility = '';
+    this.capturing = false;
   }
 
   setListening(on: boolean): void {
@@ -324,6 +336,7 @@ export class Overlay {
   }
 
   private scheduleClose(): void {
+    if (this.capturing) return; // don't close while taking a screenshot
     if (this.openTimer) {
       clearTimeout(this.openTimer);
       this.openTimer = null;

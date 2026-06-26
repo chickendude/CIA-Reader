@@ -43,24 +43,21 @@ const overlay = new Overlay({
     let screenshot: string | null = null;
     let note: string | undefined;
     if (config.captureMedia) {
-      // Prefer grabbing the frame straight from the <video> element: it has no
-      // player controls/overlay in it and needs no hiding (so the popup stays
-      // open and playback isn't disturbed). Fall back to a cropped tab capture
-      // only if the canvas is DRM-tainted.
-      screenshot = captureVideoFrame();
-      if (!screenshot) {
-        overlay.setVisible(false);
-        setPlayerChromeHidden(true);
-        await delay(90);
-        const res = await sendMessage('CAPTURE_SCREENSHOT', {}).catch(() => ({
-          dataUrl: null,
-          error: 'capture message failed',
-        }));
-        setPlayerChromeHidden(false);
-        overlay.setVisible(true);
-        if (res.dataUrl) screenshot = await cropToVideo(res.dataUrl);
-        else note = `no screenshot${res.error ? ` (${res.error})` : ''}`;
-      }
+      // The frame is DRM/HDCP-protected, so a <video>→canvas grab comes back
+      // black. captureVisibleTab (an OS-level tab grab) gets the real pixels;
+      // we just hide our overlay + the player's controls first, and suppress the
+      // popup's auto-close so adding a card doesn't dismiss it / resume playback.
+      overlay.beginCapture();
+      setPlayerChromeHidden(true);
+      await delay(120);
+      const res = await sendMessage('CAPTURE_SCREENSHOT', {}).catch(() => ({
+        dataUrl: null,
+        error: 'capture message failed',
+      }));
+      setPlayerChromeHidden(false);
+      overlay.endCapture();
+      if (res.dataUrl) screenshot = await cropToVideo(res.dataUrl);
+      else note = `no screenshot${res.error ? ` (${res.error})` : ''}`;
     }
     const { before, after } = playback.neighborsOf(card.sentence);
     const result = await sendMessage('ADD_ANKI', {
@@ -78,35 +75,32 @@ const overlay = new Overlay({
     sendMessage('DICT_SUGGEST', { language: LANGUAGE, prefix }).then((r) => r.headwords),
 });
 
-// Hide the Shaka player controls (paused play/skip overlay) during a capture.
-let chromeHideStyle: HTMLStyleElement | null = null;
+// Hide the player's control overlay during a capture WITHOUT touching the video
+// or its ancestors. We walk up from the <video> a few levels and hide each
+// sibling that isn't on the path to the video — that catches the play/skip
+// overlay, gradient scrims, etc. regardless of their (unknown) class names,
+// while the video itself (and so the captured frame) stays visible.
+let hiddenChrome: HTMLElement[] = [];
 function setPlayerChromeHidden(hidden: boolean): void {
-  if (hidden && !chromeHideStyle) {
-    chromeHideStyle = document.createElement('style');
-    chromeHideStyle.textContent =
-      '.shaka-controls-container, .shaka-play-button-container { opacity: 0 !important; }';
-    (document.head ?? document.documentElement).append(chromeHideStyle);
-  } else if (!hidden && chromeHideStyle) {
-    chromeHideStyle.remove();
-    chromeHideStyle = null;
-  }
-}
-
-/** Grab the current frame straight from the <video> element (no player controls
- *  or overlay in it). Returns null if the canvas is DRM-tainted (→ tab capture). */
-function captureVideoFrame(): string | null {
-  const v = video.element;
-  if (!v || !v.videoWidth || !v.videoHeight) return null;
-  try {
-    const canvas = document.createElement('canvas');
-    canvas.width = v.videoWidth;
-    canvas.height = v.videoHeight;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return null;
-    ctx.drawImage(v, 0, 0, canvas.width, canvas.height);
-    return canvas.toDataURL('image/jpeg', 0.85); // throws if EME-tainted
-  } catch {
-    return null;
+  if (hidden) {
+    hiddenChrome = [];
+    const v = video.element;
+    if (!v) return;
+    let node: HTMLElement = v;
+    for (let depth = 0; depth < 4; depth += 1) {
+      const parent: HTMLElement | null = node.parentElement;
+      if (!parent) break;
+      for (const child of Array.from(parent.children)) {
+        const elc = child as HTMLElement;
+        if (elc === node || elc.contains(v) || elc.style.visibility === 'hidden') continue;
+        elc.style.visibility = 'hidden';
+        hiddenChrome.push(elc);
+      }
+      node = parent;
+    }
+  } else {
+    for (const elc of hiddenChrome) elc.style.visibility = '';
+    hiddenChrome = [];
   }
 }
 

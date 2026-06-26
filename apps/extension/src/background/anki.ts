@@ -30,7 +30,15 @@ export type AnkiCardInput = {
 };
 
 const MODEL_NAME = 'Primeran';
-const MODEL_FIELDS = ['Word', 'Definition', 'Sentence', 'Context', 'Audio', 'Picture'];
+const MODEL_FIELDS = [
+  'Word',
+  'Definition',
+  'Sentence',
+  'ContextBefore',
+  'ContextAfter',
+  'Audio',
+  'Picture',
+];
 
 const norm = (s: string): string => s.toLocaleLowerCase();
 const escapeHtml = (s: string): string =>
@@ -61,19 +69,19 @@ hr#answer{border:0;height:1px;max-width:620px;margin:22px auto;
 .pm-bodies{flex:1}
 .pm-def{margin:2px 0;font-size:18px;color:#e8e2e2}
 .pm-picture img{max-width:100%;border-radius:9px;margin-top:16px}
-.pm-context{max-width:620px;margin:14px auto 0;font-size:15px;line-height:1.6;color:#9b9092}
-.pm-context .pm-ctx{margin:2px 0}
-.pm-context .pm-ctx-prev::before{content:"… ";opacity:.6}
-.pm-context .pm-ctx-next::after{content:" …";opacity:.6}
+.pm-ctx{max-width:620px;margin:7px auto;font-size:16px;line-height:1.55;color:#998e90;text-align:center}
+.pm-ctx-prev::before{content:"… ";opacity:.55}
+.pm-ctx-next::after{content:" …";opacity:.55}
 `;
 
 const FRONT_TEMPLATE = `<div class="pm-word">{{Word}}</div>
-{{#Sentence}}<div class="pm-sentence">{{Sentence}}</div>{{/Sentence}}`;
+{{#ContextBefore}}<div class="pm-ctx pm-ctx-prev">{{ContextBefore}}</div>{{/ContextBefore}}
+{{#Sentence}}<div class="pm-sentence">{{Sentence}}</div>{{/Sentence}}
+{{#ContextAfter}}<div class="pm-ctx pm-ctx-next">{{ContextAfter}}</div>{{/ContextAfter}}`;
 
 const BACK_TEMPLATE = `{{FrontSide}}
 <hr id="answer">
 <div class="pm-defs">{{Definition}}</div>
-{{#Context}}<div class="pm-context">{{Context}}</div>{{/Context}}
 {{#Picture}}<div class="pm-picture">{{Picture}}</div>{{/Picture}}
 {{Audio}}`;
 
@@ -189,13 +197,9 @@ async function buildFields(card: AnkiCardInput): Promise<Record<string, string>>
       .join('');
   }
 
-  // Surrounding subtitle lines (the line before / after this one) for context.
-  const ctxParts: string[] = [];
-  const before = card.contextBefore?.trim();
-  const after = card.contextAfter?.trim();
-  if (before) ctxParts.push(`<div class="pm-ctx pm-ctx-prev">${escapeHtml(before)}</div>`);
-  if (after) ctxParts.push(`<div class="pm-ctx pm-ctx-next">${escapeHtml(after)}</div>`);
-  const context = ctxParts.join('');
+  // Surrounding subtitle lines — rendered above/below the sentence on the front.
+  const contextBefore = card.contextBefore?.trim() ? escapeHtml(card.contextBefore.trim()) : '';
+  const contextAfter = card.contextAfter?.trim() ? escapeHtml(card.contextAfter.trim()) : '';
 
   let picture = '';
   if (card.screenshot) {
@@ -209,7 +213,8 @@ async function buildFields(card: AnkiCardInput): Promise<Record<string, string>>
     Word: card.front,
     Definition: definition,
     Sentence: sentence,
-    Context: context,
+    ContextBefore: contextBefore,
+    ContextAfter: contextAfter,
     Audio: '',
     Picture: picture,
   };
