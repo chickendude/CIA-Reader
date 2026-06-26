@@ -22,6 +22,7 @@ import type {
 import type { LanguageCode } from '@ciareader/shared-types';
 import { enqueueNlpJob } from './texts/jobs.js';
 import { prependTitleToBody, type ChapterDraft } from './texts/chunking.js';
+import { estimatedComprehensionForCollections } from './learning-stats.js';
 
 export class CollectionError extends Error {
   constructor(
@@ -505,8 +506,12 @@ export type CollectionListItem = {
   /** The chapter-text to open when the book is tapped: the one read most
    *  recently, else the first chapter. Null only for an empty book. */
   openTextId?: string | null;
-  /** Aggregate reading progress across the book's chapter-texts, 0–100
-   *  (equal-weighted average of each chapter's pct_read). */
+  /** Estimated comprehension for the owner (0–100 int) aggregated over
+   *  every text in the collection, or null when none of its texts have
+   *  tokens yet (worker hasn't run) so the UI shows a dash, not 0%. */
+  estimatedComprehensionPct?: number | null;
+  /** Aggregate reading progress across the book's chapter-texts, 0–100,
+   *  token-weighted to match the reader's bar. */
   progressPct: number;
 };
 
@@ -602,11 +607,20 @@ export async function listCollectionsForUser(
     chaptersByCollection.set(it.collectionId, arr);
   }
 
+  // Bulk comprehension for every collection in one round trip — the
+  // library card badge (web + Android) reads this directly so the grid
+  // stays cheap regardless of collection count.
+  const comprehension = await estimatedComprehensionForCollections(
+    userId,
+    rows.map((r) => r.collection.id),
+  );
+
   return rows.map((r) => {
     const lr = lastRead.get(r.collection.id);
     return {
       ...r,
       openTextId: lr?.textId ?? firstText.get(r.collection.id) ?? null,
+      estimatedComprehensionPct: comprehension.get(r.collection.id) ?? null,
       // Whole-book progress weighted by chapter token counts, matching the
       // reader's bar (chapters before the current count fully + the current
       // chapter's fraction). Even weighting when token counts aren't known.

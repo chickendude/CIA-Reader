@@ -14,6 +14,9 @@ data class CollectionSummary(
     val textCount: Int,
     /** Chapter-text to open when tapped: last-read, else the first chapter. */
     val openTextId: String? = null,
+    /** Estimated comprehension across the book (0–100), or null when not yet
+     *  computed; the library card renders a small "%" badge when present. */
+    val estimatedComprehensionPct: Int? = null,
     /** Aggregate reading progress 0f–1f for the card's progress track. */
     val progress: Float = 0f,
 )
@@ -74,6 +77,7 @@ class CollectionRepositoryImpl @Inject constructor(
                         kind = it.collection.kind,
                         textCount = it.textCount,
                         openTextId = it.openTextId,
+                        estimatedComprehensionPct = it.estimatedComprehensionPct,
                         progress = (it.progressPct / 100.0).toFloat().coerceIn(0f, 1f),
                     )
                 }

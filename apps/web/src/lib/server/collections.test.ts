@@ -78,6 +78,19 @@ vi.mock('./db/index.js', () => ({
   },
 }));
 
+// listCollectionsForUser bulk-decorates each row with the owner's
+// comprehension; stub it so these tests stay focused on the join/openTextId
+// logic and don't need to stage the comprehension query. The fake echoes a
+// deterministic pct per collection id so the threading can be asserted.
+const estimatedComprehensionForCollections = vi.fn(
+  async (_userId: string, ids: string[]) =>
+    new Map(ids.map((id, i) => [id, i === 0 ? 64 : null])),
+);
+vi.mock('./learning-stats.js', () => ({
+  estimatedComprehensionForCollections: (...a: unknown[]) =>
+    estimatedComprehensionForCollections(...(a as [string, string[]])),
+}));
+
 const {
   CollectionError,
   createCollection,
@@ -134,6 +147,7 @@ function resetAll() {
   fakeDb.update.mockClear();
   fakeDb.delete.mockClear();
   fakeDb.transaction.mockClear();
+  estimatedComprehensionForCollections.mockClear();
 }
 
 beforeEach(resetAll);
@@ -712,6 +726,13 @@ describe('listCollectionsForUser', () => {
     const out = await listCollectionsForUser(OWNER.id);
     expect(out).toHaveLength(2);
     expect(out[0]?.textCount).toBe(3);
+    // Comprehension is bulk-decorated onto each row (null when none of the
+    // book's texts have tokens yet).
+    expect(estimatedComprehensionForCollections).toHaveBeenCalledWith(OWNER.id, [
+      baseCollection.id,
+      'col-2',
+    ]);
+    expect(out.map((r) => r.estimatedComprehensionPct)).toEqual([64, null]);
   });
 
   it('openTextId resumes the most-recently-read chapter', async () => {

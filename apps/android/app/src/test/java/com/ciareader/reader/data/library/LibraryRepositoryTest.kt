@@ -49,8 +49,8 @@ class LibraryRepositoryTest {
         val api = FakeLibraryApi(
             page = LibraryPageDto(
                 cards = listOf(
-                    card("t1", status = "ready"),
-                    card("t2", status = "processing"),
+                    card("t1", status = "ready", comprehension = 85),
+                    card("t2", status = "processing", comprehension = null),
                 ),
                 totalCount = 2,
             ),
@@ -63,6 +63,8 @@ class LibraryRepositoryTest {
         assertEquals(listOf("t1", "t2"), cards.map { it.id })
         assertTrue(cards[0].isReady)
         assertFalse(cards[1].isReady)
+        // Comprehension threads through from the DTO (null left as-is).
+        assertEquals(listOf(85, null), cards.map { it.estimatedComprehensionPct })
         assertEquals("owned" to "hi", api.lastScope to api.lastLanguage)
     }
 
@@ -76,7 +78,13 @@ class LibraryRepositoryTest {
     @Test
     fun cachedCardsServeWhenOffline() = runTest {
         val api = FakeLibraryApi(
-            page = LibraryPageDto(cards = listOf(card("t1", "ready"), card("t2", "ready")), totalCount = 2),
+            page = LibraryPageDto(
+                cards = listOf(
+                    card("t1", "ready", comprehension = 60),
+                    card("t2", "ready", comprehension = null),
+                ),
+                totalCount = 2,
+            ),
         )
         val r = repo(api)
         assertTrue(r.listTexts(LibraryScope.OWNED, "hi") is Outcome.Success) // caches
@@ -84,7 +92,10 @@ class LibraryRepositoryTest {
         api.online = false
         val offline = r.listTexts(LibraryScope.OWNED, "hi")
         assertTrue(offline is Outcome.Success)
-        assertEquals(listOf("t1", "t2"), (offline as Outcome.Success).data.map { it.id })
+        val cards = (offline as Outcome.Success).data
+        assertEquals(listOf("t1", "t2"), cards.map { it.id })
+        // Comprehension survives the round-trip through the offline cache.
+        assertEquals(listOf(60, null), cards.map { it.estimatedComprehensionPct })
     }
 
     @Test
@@ -107,7 +118,7 @@ class LibraryRepositoryTest {
         assertTrue(result is Outcome.Failure)
     }
 
-    private fun card(id: String, status: String) = TextCardDto(
+    private fun card(id: String, status: String, comprehension: Int? = null) = TextCardDto(
         id = id,
         title = "Title $id",
         language = "hi",
@@ -115,6 +126,7 @@ class LibraryRepositoryTest {
         status = status,
         visibility = "private",
         createdAt = "2026-06-21T00:00:00Z",
+        estimatedComprehensionPct = comprehension,
     )
 
     private fun http(code: Int) =

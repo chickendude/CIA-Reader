@@ -18,6 +18,9 @@ data class TextCard(
     val title: String,
     val language: String,
     val status: String,
+    /** Estimated comprehension (0–100), or null when not yet computed; the
+     *  library card renders a small "%"" badge when present. */
+    val estimatedComprehensionPct: Int? = null,
     /** Reading progress 0f–1f for the card's progress track. */
     val progress: Float = 0f,
 ) {
@@ -101,5 +104,6 @@ private fun TextCardDto.toDomain() = TextCard(
     title = title,
     language = language,
     status = status,
+    estimatedComprehensionPct = estimatedComprehensionPct,
     progress = (progressPct / 100.0).toFloat().coerceIn(0f, 1f),
 )

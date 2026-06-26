@@ -12,6 +12,9 @@ data class CollectionListItemDto(
     val collection: CollectionDto,
     val textCount: Int = 0,
     val openTextId: String? = null,
+    /** Estimated comprehension for the caller across the book (0–100), or null
+     *  when none of its texts have tokens yet. Defaults null for older servers. */
+    val estimatedComprehensionPct: Int? = null,
     /** Aggregate reading progress across the book's chapters, 0–100. Double so a
      *  raw float decodes even if unrounded. */
     val progressPct: Double = 0.0,

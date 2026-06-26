@@ -358,6 +358,8 @@ private fun CollectionCard(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
+            ComprehensionBadge(collection.estimatedComprehensionPct)
+            Spacer(Modifier.width(4.dp))
             Box {
                 OverflowButton(
                     contentDescription = "More actions for ${collection.title}",
@@ -442,6 +444,8 @@ private fun TextCardItem(
                     )
                 }
             }
+            ComprehensionBadge(card.estimatedComprehensionPct)
+            Spacer(Modifier.width(4.dp))
             Box {
                 OverflowButton(
                     contentDescription = "More actions for ${card.title}",
@@ -758,6 +762,31 @@ private fun SectionHeader(text: String) {
         color = MaterialTheme.colorScheme.primary,
         modifier = Modifier.padding(top = 4.dp, bottom = 2.dp),
     )
+}
+
+/**
+ * A small "85%" pill on a library card showing the user's estimated
+ * comprehension. Hidden entirely when [pct] is null (text not processed yet)
+ * so we never imply "0% understood" for an unprocessed import. Colours use the
+ * secondary-container role pair, which meets WCAG-AA contrast in both themes.
+ */
+@Composable
+private fun ComprehensionBadge(pct: Int?) {
+    if (pct == null) return
+    val clamped = pct.coerceIn(0, 100)
+    Surface(
+        shape = MaterialTheme.shapes.small,
+        color = MaterialTheme.colorScheme.secondaryContainer,
+        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+        // Named for screen readers; the bare "85%" is ambiguous out of context.
+        modifier = Modifier.semantics { contentDescription = "Estimated comprehension $clamped percent" },
+    ) {
+        Text(
+            "$clamped%",
+            style = MaterialTheme.typography.labelMedium,
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+        )
+    }
 }
 
 /** "12 chapters" / "1 chapter" — never a bare "0". */

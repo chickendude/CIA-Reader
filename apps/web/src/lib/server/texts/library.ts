@@ -21,6 +21,7 @@ import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import { db, schema } from '../db/index.js';
 import type { Text, User } from '../db/schema.js';
 import type { LanguageCode } from '@ciareader/shared-types';
+import { estimatedComprehensionForTexts } from '../learning-stats.js';
 
 export const DEFAULT_PAGE_SIZE = 20;
 export const MAX_PAGE_SIZE = 100;
@@ -36,6 +37,11 @@ export type LibraryCard = {
   status: string;
   visibility: string;
   createdAt: Date;
+  /** Estimated comprehension for `viewer` (0–100 int), or null when
+   *  the text has no tokens yet (worker hasn't run) so the UI can show
+   *  a dash rather than 0%. Always null for the unauthenticated
+   *  official listing — there's no viewer to score against. */
+  estimatedComprehensionPct: number | null;
   /** The viewer's reading progress through this text, 0–100. 0 when unread or
    *  for anonymous/official listings. */
   progressPct: number;
@@ -48,7 +54,11 @@ export type ListPage = {
   offset: number;
 };
 
-function projectCard(row: Text, progressPct = 0): LibraryCard {
+function projectCard(
+  row: Text,
+  estimatedComprehensionPct: number | null = null,
+  progressPct = 0,
+): LibraryCard {
   return {
     id: row.id,
     title: row.title,
@@ -57,6 +67,7 @@ function projectCard(row: Text, progressPct = 0): LibraryCard {
     status: row.status,
     visibility: row.visibility,
     createdAt: row.createdAt,
+    estimatedComprehensionPct,
     progressPct: Math.round(progressPct),
   };
 }
@@ -141,9 +152,15 @@ export async function listOwnedTexts(
     .limit(limit)
     .offset(offset)) as Text[];
 
-  const progress = await progressByText(viewer.id, rows.map((r) => r.id));
+  const pageIds = rows.map((r) => r.id);
+  const progress = await progressByText(viewer.id, pageIds);
+  const comprehension = pageIds.length
+    ? await estimatedComprehensionForTexts(viewer.id, pageIds)
+    : new Map<string, number | null>();
   return {
-    cards: rows.map((r) => projectCard(r, progress.get(r.id) ?? 0)),
+    cards: rows.map((r) =>
+      projectCard(r, comprehension.get(r.id) ?? null, progress.get(r.id) ?? 0),
+    ),
     totalCount: count,
     limit,
     offset,
@@ -211,9 +228,15 @@ export async function listSharedTexts(
     .limit(limit)
     .offset(offset)) as Text[];
 
-  const progress = await progressByText(viewer.id, rows.map((r) => r.id));
+  const pageIds = rows.map((r) => r.id);
+  const progress = await progressByText(viewer.id, pageIds);
+  const comprehension = pageIds.length
+    ? await estimatedComprehensionForTexts(viewer.id, pageIds)
+    : new Map<string, number | null>();
   return {
-    cards: rows.map((r) => projectCard(r, progress.get(r.id) ?? 0)),
+    cards: rows.map((r) =>
+      projectCard(r, comprehension.get(r.id) ?? null, progress.get(r.id) ?? 0),
+    ),
     totalCount: count,
     limit,
     offset,
@@ -250,8 +273,10 @@ export async function listOfficialTexts(
     .limit(limit)
     .offset(offset)) as Text[];
 
+  // Official listing is unauthenticated — no viewer to score against, so
+  // comprehension stays null and progress 0.
   return {
-    cards: rows.map(projectCard),
+    cards: rows.map((r) => projectCard(r)),
     totalCount: count,
     limit,
     offset,
