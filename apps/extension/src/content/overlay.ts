@@ -12,6 +12,8 @@ import { splitCueWords } from '../shared/tokenize';
 
 type Deps = {
   lookup: (surface: string) => Promise<LookupResult>;
+  /** Look up a specific dictionary form the user picked/typed (no parsing). */
+  lookupLemma?: (lemma: string) => Promise<LookupResult>;
   reference: (word: string) => Promise<ReferenceEntry[]>;
   /** Called when a word popup opens / fully closes (e.g. pause-on-lookup). */
   onOpen?: () => void;
@@ -33,6 +35,11 @@ type RefState = 'idle' | 'loading' | 'done' | 'error';
 type PopupState = {
   surface: string;
   lookup: LookupResult | null;
+  /** Dictionary-form candidates the user can switch between (lemmas + surface +
+   *  any typed override). The active one drives the definitions and the card. */
+  candidates: string[];
+  activeLemma: string;
+  editing: boolean;
   reference: ReferenceEntry[];
   refState: RefState;
   error: string | null;
@@ -66,6 +73,23 @@ const STYLE = `
 .popup .hd { display: flex; align-items: baseline; gap: 8px; }
 .popup h2 { margin: 0; font-size: 18px; }
 .popup .lemma { color: #8ab4ff; font-size: 13px; }
+.popup .forms { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; margin-top: 7px; }
+.popup .forms-label { color: #9aa; font-size: 13px; }
+.popup .form {
+  cursor: pointer; font-size: 12px; font-weight: 600; padding: 2px 9px; border-radius: 999px;
+  color: #8ab4ff; border: 1px solid #3a4d6b; background: #20262f; user-select: none;
+}
+.popup .form:hover { border-color: #4a90e2; }
+.popup .form.on { background: #2b6cb0; color: #fff; border-color: #2b6cb0; }
+.popup .form-edit {
+  cursor: pointer; font-size: 12px; color: #9aa; border: 1px dashed #4a4d55; border-radius: 999px;
+  padding: 2px 8px; user-select: none;
+}
+.popup .form-edit:hover { color: #fff; border-color: #6a6d75; }
+.popup .form-input {
+  font: inherit; font-size: 12px; width: 110px; padding: 2px 8px; border-radius: 6px;
+  background: #15171a; color: #fff; border: 1px solid #4a90e2; outline: none;
+}
 .popup .freq { color: #d6b25e; font-size: 13px; font-weight: 600; }
 .popup .inanki { color: #4bbd7a; font-size: 12px; font-weight: 600; }
 .popup .x { margin-left: auto; cursor: pointer; color: #9aa; font-size: 18px; line-height: 1; }
@@ -124,6 +148,9 @@ function el<K extends keyof HTMLElementTagNameMap>(
   return node;
 }
 
+
+/** Case-insensitive form equality. */
+const eqf = (a: string, b: string): boolean => a.toLocaleLowerCase() === b.toLocaleLowerCase();
 
 const LANGS: DefinitionLang[] = ['en', 'es', 'eu'];
 
@@ -351,6 +378,9 @@ export class Overlay {
     this.state = {
       surface,
       lookup: null,
+      candidates: [surface],
+      activeLemma: surface,
+      editing: false,
       reference: [],
       refState: 'idle',
       error: null,
@@ -370,16 +400,31 @@ export class Overlay {
     }
     if (this.state?.surface !== surface) return; // hovered elsewhere meanwhile
     this.state.lookup = result;
+    // Selectable forms: the parse candidates plus the raw surface as a fallback.
+    const candidates = [...result.lemmas];
+    if (!candidates.some((c) => eqf(c, surface))) candidates.push(surface);
+    this.state.candidates = candidates;
+    this.state.activeLemma = result.lemmas[0] ?? surface;
+    this.render();
+
+    void this.loadAux(surface, this.state.activeLemma);
+  }
+
+  /** Load the per-form data (frequency, Anki status, reference dictionaries) for
+   *  the active dictionary form. Re-invoked when the user switches forms. */
+  private async loadAux(surface: string, lemma: string): Promise<void> {
+    if (!this.state || this.state.surface !== surface) return;
+    this.state.frequency = null;
+    this.state.inAnki = false;
+    this.state.reference = [];
     this.state.refState = 'loading';
     this.render();
 
-    const word = result.lemmas[0] ?? surface;
-
     if (this.deps.frequency) {
       void this.deps
-        .frequency(word, surface)
+        .frequency(lemma, surface)
         .then((count) => {
-          if (this.state?.surface === surface) {
+          if (this.state?.surface === surface && this.state.activeLemma === lemma) {
             this.state.frequency = count;
             this.render();
           }
@@ -389,9 +434,9 @@ export class Overlay {
 
     if (this.deps.ankiHas) {
       void this.deps
-        .ankiHas(word)
+        .ankiHas(lemma)
         .then((exists) => {
-          if (this.state?.surface === surface && exists) {
+          if (this.state?.surface === surface && this.state.activeLemma === lemma && exists) {
             this.state.inAnki = true;
             this.render();
           }
@@ -400,15 +445,45 @@ export class Overlay {
     }
 
     try {
-      const reference = await this.deps.reference(word);
-      if (this.state?.surface !== surface) return;
+      const reference = await this.deps.reference(lemma);
+      if (this.state?.surface !== surface || this.state.activeLemma !== lemma) return;
       this.state.reference = reference;
       this.state.refState = 'done';
     } catch {
-      if (this.state?.surface !== surface) return;
+      if (this.state?.surface !== surface || this.state.activeLemma !== lemma) return;
       this.state.refState = 'error';
     }
     this.render();
+  }
+
+  /** Switch the active dictionary form (a chip click or a typed override). */
+  private async selectForm(lemma: string): Promise<void> {
+    const s = this.state;
+    if (!s || eqf(s.activeLemma, lemma)) {
+      if (s) s.editing = false;
+      this.render();
+      return;
+    }
+    const surface = s.surface;
+    s.activeLemma = lemma;
+    s.editing = false;
+    if (!s.candidates.some((c) => eqf(c, lemma))) s.candidates.push(lemma);
+
+    // If the dictionary entries for this form aren't already loaded, fetch them.
+    const haveEntries = s.lookup?.entries.some((e) => eqf(e.headword, lemma));
+    if (!haveEntries && this.deps.lookupLemma) {
+      try {
+        const r = await this.deps.lookupLemma(lemma);
+        if (this.state?.surface !== surface || this.state.activeLemma !== lemma) return;
+        const merged = [...(s.lookup?.entries ?? [])];
+        for (const e of r.entries) merged.push(e);
+        s.lookup = { surface, lemmas: s.lookup?.lemmas ?? [], entries: merged };
+      } catch {
+        /* keep whatever we had */
+      }
+    }
+    this.render();
+    void this.loadAux(surface, lemma);
   }
 
   // ---- rendering ----
@@ -421,8 +496,6 @@ export class Overlay {
 
     const hd = el('div', 'hd');
     hd.append(el('h2', undefined, s.surface));
-    const lemma = s.lookup?.lemmas[0];
-    if (lemma && lemma !== s.surface) hd.append(el('span', 'lemma', `→ ${s.lookup!.lemmas.join(', ')}`));
     if (s.frequency && s.frequency > 0) hd.append(el('span', 'freq', `${s.frequency}×`));
     if (s.inAnki) hd.append(el('span', 'inanki', '✓ in Anki'));
     const close = el('span', 'x', '×');
@@ -430,15 +503,21 @@ export class Overlay {
     hd.append(close);
     content.append(hd);
 
+    // Dictionary-form selector: pick which lemma drives the definitions + card.
+    if (s.lookup) content.append(this.renderForms(s));
+
     if (s.error) {
       content.append(el('div', 'muted', `Lookup failed: ${s.error}`));
     }
+
+    // Definitions are scoped to the active dictionary form.
+    const entries = (s.lookup?.entries ?? []).filter((e) => eqf(e.headword, s.activeLemma));
 
     // Languages that have any content (internal translations or reference). The
     // shown tab defaults to the user's pick, falling back to the first language
     // that actually has something for this word.
     const langsWithContent = new Set<DefinitionLang>();
-    for (const entry of s.lookup?.entries ?? []) {
+    for (const entry of entries) {
       for (const d of this.entryDefs(entry)) langsWithContent.add(d.lang);
     }
     for (const r of s.reference) langsWithContent.add(referenceSourceLang(r.source));
@@ -465,7 +544,7 @@ export class Overlay {
     let shown = 0;
 
     // Internal dictionary, filtered to the selected language (no per-line pill).
-    for (const entry of s.lookup?.entries ?? []) {
+    for (const entry of entries) {
       const defs = this.entryDefs(entry).filter((d) => d.lang === lang);
       if (defs.length === 0) continue;
       const grp = el('div', 'grp');
@@ -520,6 +599,43 @@ export class Overlay {
     this.paint(content);
   }
 
+  /** The dictionary-form selector chips (+ a typed-override input). */
+  private renderForms(s: PopupState): HTMLElement {
+    const row = el('div', 'forms');
+    row.append(el('span', 'forms-label', '→'));
+    for (const form of s.candidates) {
+      const chip = el('span', `form${eqf(form, s.activeLemma) ? ' on' : ''}`, form);
+      chip.title = eqf(form, s.surface) ? 'Surface form (as written)' : 'Dictionary form';
+      chip.addEventListener('click', () => void this.selectForm(form));
+      row.append(chip);
+    }
+    if (s.editing) {
+      const input = el('input', 'form-input');
+      input.placeholder = 'type a form…';
+      input.addEventListener('keydown', (e) => {
+        e.stopPropagation();
+        if (e.key === 'Enter') {
+          const v = input.value.trim();
+          if (v) void this.selectForm(v);
+        } else if (e.key === 'Escape') {
+          s.editing = false;
+          this.render();
+        }
+      });
+      row.append(input);
+      setTimeout(() => input.focus(), 0);
+    } else {
+      const edit = el('span', 'form-edit', '✎');
+      edit.title = 'Look up another form';
+      edit.addEventListener('click', () => {
+        s.editing = true;
+        this.render();
+      });
+      row.append(edit);
+    }
+    return row;
+  }
+
   /** Displayable definitions for an internal entry, tagged with language. */
   private entryDefs(entry: ExportedLemma): { body: string; lang: DefinitionLang }[] {
     const out: { body: string; lang: DefinitionLang }[] = [];
@@ -545,11 +661,12 @@ export class Overlay {
   } | null {
     const s = this.state;
     if (!s) return null;
-    const front = s.lookup?.lemmas[0] ?? s.surface;
+    const front = s.activeLemma;
+    const entries = (s.lookup?.entries ?? []).filter((e) => eqf(e.headword, s.activeLemma));
 
     const defs: { body: string; lang: DefinitionLang }[] = [];
     const seen = new Set<string>();
-    for (const entry of s.lookup?.entries ?? []) {
+    for (const entry of entries) {
       for (const d of this.entryDefs(entry)) {
         if (!seen.has(d.body)) {
           seen.add(d.body);

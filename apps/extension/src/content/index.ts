@@ -62,10 +62,18 @@ const overlay = new Overlay({
         else note = `no screenshot${res.error ? ` (${res.error})` : ''}`;
       }
     }
-    const result = await sendMessage('ADD_ANKI', { language: LANGUAGE, ...card, screenshot });
+    const { before, after } = playback.neighborsOf(card.sentence);
+    const result = await sendMessage('ADD_ANKI', {
+      language: LANGUAGE,
+      ...card,
+      screenshot,
+      contextBefore: before,
+      contextAfter: after,
+    });
     return { ...result, note };
   },
   ankiHas: (front) => sendMessage('ANKI_HAS', { front }).then((r) => r.exists),
+  lookupLemma: (lemma) => sendMessage('LOOKUP', { language: LANGUAGE, surface: lemma, lemma }),
 });
 
 // Hide the Shaka player controls (paused play/skip overlay) during a capture.
@@ -238,7 +246,9 @@ setInterval(() => {
 window.addEventListener(
   'keydown',
   (e) => {
-    const t = e.target as HTMLElement | null;
+    // composedPath()[0] is the real focused element even inside our shadow root,
+    // so typing in the popup's form input isn't hijacked by playback shortcuts.
+    const t = (e.composedPath()[0] ?? e.target) as HTMLElement | null;
     if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
     let handled = true;
     switch (e.key) {

@@ -75,6 +75,17 @@ describe('PlaybackController', () => {
     expect(v.pause).toHaveBeenCalledTimes(1);
   });
 
+  it('returns the surrounding subtitle lines for card context', () => {
+    vi.useFakeTimers();
+    const v = fakeVideo();
+    const pb = new PlaybackController(v as unknown as VideoController);
+    pb.setCues(cues);
+
+    expect(pb.neighborsOf('two')).toEqual({ before: 'one', after: 'three' });
+    expect(pb.neighborsOf('one')).toEqual({ before: null, after: 'two' });
+    expect(pb.neighborsOf('three')).toEqual({ before: 'two', after: null });
+  });
+
   it('does not pause on the line change a seek causes', () => {
     vi.useFakeTimers();
     const v = fakeVideo();

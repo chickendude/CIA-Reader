@@ -24,10 +24,13 @@ export type AnkiCardInput = {
   defs: { body: string; lang: string }[];
   /** A `data:image/...;base64,` screenshot to attach (Picture field). */
   screenshot?: string | null;
+  /** Surrounding subtitle lines for context (Context field). */
+  contextBefore?: string | null;
+  contextAfter?: string | null;
 };
 
 const MODEL_NAME = 'Primeran';
-const MODEL_FIELDS = ['Word', 'Definition', 'Sentence', 'Audio', 'Picture'];
+const MODEL_FIELDS = ['Word', 'Definition', 'Sentence', 'Context', 'Audio', 'Picture'];
 
 const norm = (s: string): string => s.toLocaleLowerCase();
 const escapeHtml = (s: string): string =>
@@ -58,6 +61,10 @@ hr#answer{border:0;height:1px;max-width:620px;margin:22px auto;
 .pm-bodies{flex:1}
 .pm-def{margin:2px 0;font-size:18px;color:#e8e2e2}
 .pm-picture img{max-width:100%;border-radius:9px;margin-top:16px}
+.pm-context{max-width:620px;margin:14px auto 0;font-size:15px;line-height:1.6;color:#9b9092}
+.pm-context .pm-ctx{margin:2px 0}
+.pm-context .pm-ctx-prev::before{content:"… ";opacity:.6}
+.pm-context .pm-ctx-next::after{content:" …";opacity:.6}
 `;
 
 const FRONT_TEMPLATE = `<div class="pm-word">{{Word}}</div>
@@ -66,6 +73,7 @@ const FRONT_TEMPLATE = `<div class="pm-word">{{Word}}</div>
 const BACK_TEMPLATE = `{{FrontSide}}
 <hr id="answer">
 <div class="pm-defs">{{Definition}}</div>
+{{#Context}}<div class="pm-context">{{Context}}</div>{{/Context}}
 {{#Picture}}<div class="pm-picture">{{Picture}}</div>{{/Picture}}
 {{Audio}}`;
 
@@ -94,6 +102,18 @@ async function ensureModel(): Promise<void> {
   const names = (await ankiConnect('modelNames')) as string[];
   const templates = [{ Name: 'Card 1', Front: FRONT_TEMPLATE, Back: BACK_TEMPLATE }];
   if (names.includes(MODEL_NAME)) {
+    // Add any fields introduced by a newer extension version (e.g. Context) — a
+    // model's field set can't be replaced, only appended to.
+    try {
+      const existing = (await ankiConnect('modelFieldNames', { modelName: MODEL_NAME })) as string[];
+      for (const field of MODEL_FIELDS) {
+        if (!existing.includes(field)) {
+          await ankiConnect('modelFieldAdd', { modelName: MODEL_NAME, fieldName: field });
+        }
+      }
+    } catch {
+      /* older AnkiConnect without modelFieldAdd — template still renders blanks */
+    }
     // Keep an existing model's look/template fresh across extension versions.
     await ankiConnect('updateModelStyling', { model: { name: MODEL_NAME, css: MODEL_CSS } });
     await ankiConnect('updateModelTemplates', {
@@ -169,6 +189,14 @@ async function buildFields(card: AnkiCardInput): Promise<Record<string, string>>
       .join('');
   }
 
+  // Surrounding subtitle lines (the line before / after this one) for context.
+  const ctxParts: string[] = [];
+  const before = card.contextBefore?.trim();
+  const after = card.contextAfter?.trim();
+  if (before) ctxParts.push(`<div class="pm-ctx pm-ctx-prev">${escapeHtml(before)}</div>`);
+  if (after) ctxParts.push(`<div class="pm-ctx pm-ctx-next">${escapeHtml(after)}</div>`);
+  const context = ctxParts.join('');
+
   let picture = '';
   if (card.screenshot) {
     const base64 = card.screenshot.replace(/^data:image\/\w+;base64,/, '');
@@ -177,7 +205,14 @@ async function buildFields(card: AnkiCardInput): Promise<Record<string, string>>
     picture = `<img src="${filename}">`;
   }
 
-  return { Word: card.front, Definition: definition, Sentence: sentence, Audio: '', Picture: picture };
+  return {
+    Word: card.front,
+    Definition: definition,
+    Sentence: sentence,
+    Context: context,
+    Audio: '',
+    Picture: picture,
+  };
 }
 
 /** Whether a card with this Word already exists in Anki (any deck). */

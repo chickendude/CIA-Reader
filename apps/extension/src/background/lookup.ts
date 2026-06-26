@@ -23,8 +23,11 @@ export async function lookupWord(
   language: string,
   surface: string,
   deps: LookupDeps = defaultDeps,
+  forcedLemma?: string,
 ): Promise<LookupResult> {
-  const lemmas = await deps.resolveLemmas(language, surface);
+  // `forcedLemma` lets the popup look up a specific dictionary form the user
+  // picked/typed (skip parsing and use it verbatim).
+  const lemmas = forcedLemma ? [forcedLemma] : await deps.resolveLemmas(language, surface);
   // Look up each resolved lemma; fall back to the raw surface if parsing found
   // nothing (e.g. an OOV proper noun).
   const keys = lemmas.length > 0 ? lemmas : [surface];

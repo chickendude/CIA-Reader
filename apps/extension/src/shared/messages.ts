@@ -21,7 +21,7 @@ export type Requests = {
   DICT_STATUS: { req: { language: string }; res: { ready: boolean; count: number } };
   DICT_REFRESH: { req: { language: string }; res: { ready: true; count: number } };
   FETCH_SUBTITLES: { req: { url: string }; res: { cues: SubtitleCue[] } };
-  LOOKUP: { req: { language: string; surface: string }; res: LookupResult };
+  LOOKUP: { req: { language: string; surface: string; lemma?: string }; res: LookupResult };
   REFERENCE: { req: { language: string; word: string }; res: { results: ReferenceEntry[] } };
   CUES_FOR_URL: { req: { url: string }; res: { cues: SubtitleCue[] | null } };
   FREQUENCY: {
@@ -36,6 +36,8 @@ export type Requests = {
       sentence: string | null;
       defs: { body: string; lang: string }[];
       screenshot?: string | null;
+      contextBefore?: string | null;
+      contextAfter?: string | null;
     };
     res: { added: boolean; duplicate: boolean };
   };

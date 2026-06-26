@@ -43,6 +43,25 @@ describe('lookupWord', () => {
     expect(result.entries[0]!.headword).toBe('Xabi');
   });
 
+  it('uses a forced lemma verbatim and skips parsing', async () => {
+    let parsed = false;
+    const result = await lookupWord(
+      'eu',
+      'baratzera',
+      {
+        resolveLemmas: async () => {
+          parsed = true;
+          return ['baratu'];
+        },
+        dictLookup: async (_l, w) => (w === 'baratze' ? [lemma('g', { headword: 'baratze', pos: 'NOUN' })] : []),
+      },
+      'baratze',
+    );
+    expect(parsed).toBe(false);
+    expect(result.lemmas).toEqual(['baratze']);
+    expect(result.entries[0]!.headword).toBe('baratze');
+  });
+
   it('sorts entries with definitions ahead of empty ones', async () => {
     const result = await lookupWord('eu', 'x', {
       resolveLemmas: async () => ['x'],

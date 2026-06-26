@@ -36,7 +36,7 @@ async function handle(msg: Message, sender: browser.runtime.MessageSender): Prom
     case 'FETCH_SUBTITLES':
       return { cues: await fetchSubtitles(msg.url) };
     case 'LOOKUP':
-      return lookupWord(msg.language, msg.surface);
+      return lookupWord(msg.language, msg.surface, undefined, msg.lemma);
     case 'REFERENCE':
       return { results: await referenceCache.lookup(msg.language, msg.word) };
     case 'CUES_FOR_URL':

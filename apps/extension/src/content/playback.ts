@@ -81,6 +81,18 @@ export class PlaybackController {
     this.onLinePause?.(prev);
   }
 
+  /** The subtitle lines immediately before/after the given on-screen line, for
+   *  Anki card context. Matches by text, falling back to the calibrated index. */
+  neighborsOf(text: string | null): { before: string | null; after: string | null } {
+    let i = text ? this.cues.findIndex((c) => norm(c.text) === norm(text)) : -1;
+    if (i < 0) i = this.activeIndex();
+    if (i < 0) return { before: null, after: null };
+    return {
+      before: this.cues[i - 1]?.text ?? null,
+      after: this.cues[i + 1]?.text ?? null,
+    };
+  }
+
   private toVideo(ms: number): number {
     return (ms + this.offsetMs) / 1000;
   }
