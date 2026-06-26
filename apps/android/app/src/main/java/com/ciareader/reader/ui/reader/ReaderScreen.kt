@@ -104,6 +104,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.foundation.lazy.itemsIndexed
 import com.ciareader.reader.data.reader.ReaderToken
 import com.ciareader.reader.data.reader.SentenceTranslation
 import kotlin.math.roundToInt
@@ -668,7 +669,7 @@ internal fun ChapterListSheet(
                 modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp),
             )
         }
-        items(chapters) { ch ->
+        itemsIndexed(chapters) { index, ch ->
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -678,7 +679,8 @@ internal fun ChapterListSheet(
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        ch.title,
+                        // Numbered so duplicate/blank chapter titles stay distinguishable.
+                        "${index + 1}. ${ch.title}",
                         style = MaterialTheme.typography.bodyLarge,
                         color = if (ch.isCurrent) {
                             MaterialTheme.colorScheme.primary
