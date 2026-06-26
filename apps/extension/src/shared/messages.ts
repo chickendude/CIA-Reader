@@ -39,7 +39,10 @@ export type Requests = {
     };
     res: { added: boolean; duplicate: boolean };
   };
-  CAPTURE_SCREENSHOT: { req: Record<string, never>; res: { dataUrl: string | null } };
+  CAPTURE_SCREENSHOT: {
+    req: Record<string, never>;
+    res: { dataUrl: string | null; error?: string };
+  };
 };
 
 export type MessageType = keyof Requests;

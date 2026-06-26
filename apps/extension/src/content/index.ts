@@ -41,17 +41,21 @@ const overlay = new Overlay({
     ),
   addAnki: async (card) => {
     let screenshot: string | null = null;
+    let note: string | undefined;
     if (config.captureMedia) {
       // Hide our overlay so it isn't in the frame, capture, then crop to the video.
       overlay.setVisible(false);
       await delay(70);
-      const shot = await sendMessage('CAPTURE_SCREENSHOT', {})
-        .then((r) => r.dataUrl)
-        .catch(() => null);
+      const res = await sendMessage('CAPTURE_SCREENSHOT', {}).catch(() => ({
+        dataUrl: null,
+        error: 'capture message failed',
+      }));
       overlay.setVisible(true);
-      screenshot = shot ? await cropToVideo(shot) : null;
+      if (res.dataUrl) screenshot = await cropToVideo(res.dataUrl);
+      else note = `no screenshot${res.error ? ` (${res.error})` : ''}`;
     }
-    return sendMessage('ADD_ANKI', { language: LANGUAGE, ...card, screenshot });
+    const result = await sendMessage('ADD_ANKI', { language: LANGUAGE, ...card, screenshot });
+    return { ...result, note };
   },
 });
 

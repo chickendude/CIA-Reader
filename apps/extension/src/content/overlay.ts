@@ -24,7 +24,7 @@ type Deps = {
     surface: string;
     sentence: string | null;
     defs: { body: string; lang: DefinitionLang }[];
-  }) => Promise<{ added: boolean; duplicate: boolean }>;
+  }) => Promise<{ added: boolean; duplicate: boolean; note?: string }>;
 };
 
 type RefState = 'idle' | 'loading' | 'done' | 'error';
@@ -556,7 +556,8 @@ export class Overlay {
     status.textContent = 'Adding…';
     try {
       const r = await this.deps.addAnki(card);
-      status.textContent = r.added ? 'Added ✓' : r.duplicate ? 'Already in deck' : 'Done';
+      const base = r.added ? 'Added ✓' : r.duplicate ? 'Already in deck' : 'Done';
+      status.textContent = r.note ? `${base} — ${r.note}` : base;
     } catch (e) {
       status.textContent = e instanceof Error ? e.message : String(e);
     } finally {

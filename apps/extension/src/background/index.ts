@@ -56,8 +56,10 @@ async function handle(msg: Message, sender: browser.runtime.MessageSender): Prom
             ? await ext.tabs.captureVisibleTab(opts)
             : await ext.tabs.captureVisibleTab(windowId, opts);
         return { dataUrl };
-      } catch {
-        return { dataUrl: null };
+      } catch (e) {
+        const error = e instanceof Error ? e.message : String(e);
+        console.warn('[primeran-miner] captureVisibleTab failed:', error);
+        return { dataUrl: null, error };
       }
     }
     default:
