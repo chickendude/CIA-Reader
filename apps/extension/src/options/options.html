@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Primeran Subtitle Miner — Settings</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+      }
+      body {
+        font: 14px/1.5 system-ui, sans-serif;
+        margin: 0 auto;
+        padding: 24px;
+        max-width: 520px;
+      }
+      h1 {
+        font-size: 18px;
+      }
+      label {
+        display: block;
+        margin: 14px 0 4px;
+        font-weight: 600;
+      }
+      input {
+        font: inherit;
+        width: 100%;
+        padding: 6px 8px;
+        box-sizing: border-box;
+      }
+      button {
+        font: inherit;
+        margin-top: 16px;
+        padding: 7px 14px;
+        cursor: pointer;
+      }
+      #msg {
+        margin-left: 10px;
+        color: #2a7;
+      }
+      .hint {
+        color: #666;
+        font-size: 12px;
+        margin-top: 4px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Primeran Subtitle Miner — Settings</h1>
+
+    <fieldset>
+      <legend>Account</legend>
+      <p id="auth-status">Checking…</p>
+      <div id="login-form">
+        <label for="email">Email</label>
+        <input id="email" type="email" autocomplete="username" />
+        <label for="password">Password</label>
+        <input id="password" type="password" autocomplete="current-password" />
+        <button id="login" type="button">Log in</button>
+        <span id="login-msg"></span>
+      </div>
+      <button id="logout" type="button" hidden>Log out</button>
+    </fieldset>
+
+    <label for="apiBaseUrl">CIA Reader backend URL</label>
+    <input id="apiBaseUrl" type="url" placeholder="http://localhost:5173" />
+    <p class="hint">Used only for lemmatization and the one-time dictionary download.</p>
+
+    <label for="deckName">Anki deck</label>
+    <input id="deckName" type="text" placeholder="Primeran" />
+
+    <label for="ankiConnectUrl">AnkiConnect URL</label>
+    <input id="ankiConnectUrl" type="url" placeholder="http://127.0.0.1:8765" />
+    <p class="hint">
+      In Anki: Tools → Add-ons → AnkiConnect → Config, add this extension's origin
+      <code id="ext-origin">…</code> to <code>webCorsOriginList</code>, then restart Anki.
+    </p>
+
+    <div>
+      <button id="save" type="button">Save</button>
+      <span id="msg"></span>
+    </div>
+
+    <fieldset>
+      <legend>Dictionary</legend>
+      <p id="dict-status">…</p>
+      <button id="dict-refresh" type="button">Download / refresh dictionary</button>
+      <p class="hint">Cached locally so word look-ups work offline.</p>
+    </fieldset>
+
+    <script src="options.js"></script>
+  </body>
+</html>

@@ -1,4 +1,5 @@
 import { redirect, type Handle } from '@sveltejs/kit';
+import { dev } from '$app/environment';
 import { resolveUser } from '$lib/server/auth/require-user.js';
 import { shouldRedirectToOnboarding } from '$lib/server/onboarding.js';
 import {
@@ -45,12 +46,37 @@ export function resolveServerTheme(event: Parameters<Handle>[0]['event']): Resol
 }
 
 export const handle: Handle = async ({ event, resolve }) => {
+  // Dev-only CORS for the Primeran browser extension. Its background worker
+  // makes authenticated requests (Bearer header → CORS preflight), and SvelteKit
+  // otherwise answers the OPTIONS preflight with 405. Gated to `dev` + an
+  // extension origin so production and normal browser traffic are untouched.
+  const reqOrigin = event.request.headers.get('origin');
+  const corsForExtension =
+    dev &&
+    event.url.pathname.startsWith('/api/') &&
+    !!reqOrigin &&
+    /^(moz|chrome)-extension:\/\//.test(reqOrigin);
+
+  if (corsForExtension && event.request.method === 'OPTIONS') {
+    return new Response(null, {
+      status: 204,
+      headers: {
+        'access-control-allow-origin': reqOrigin!,
+        'access-control-allow-methods': 'GET, POST, PATCH, PUT, DELETE, OPTIONS',
+        'access-control-allow-headers': 'authorization, content-type, x-api-key',
+        'access-control-max-age': '86400',
+      },
+    });
+  }
+
   event.locals.user = await resolveUser(event);
   if (shouldRedirectToOnboarding(event.locals.user, event.url.pathname)) {
     throw redirect(303, '/onboarding');
   }
   const theme = resolveServerTheme(event);
-  return resolve(event, {
+  const response = await resolve(event, {
     transformPageChunk: ({ html }) => html.replace('%cia.theme%', theme),
   });
+  if (corsForExtension) response.headers.set('access-control-allow-origin', reqOrigin!);
+  return response;
 };
