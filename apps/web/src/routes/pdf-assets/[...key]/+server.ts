@@ -13,23 +13,25 @@ import { error } from '@sveltejs/kit';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 
+import { resolveUser } from '$lib/server/auth/require-user.js';
 import { getReadableText } from '$lib/server/texts/upload.js';
 import { MIME_BY_EXT, textIdFromPageKey } from '$lib/server/pdf/storage.js';
 import type { RequestHandler } from './$types';
 
 const LOCAL_ROOT = process.env.PDF_LOCAL_ROOT ?? '/tmp/ciareader-pdf';
 
-export const GET: RequestHandler = async ({ params, locals }) => {
-  const key = params.key;
+export const GET: RequestHandler = async (event) => {
+  const key = event.params.key;
   if (!key) throw error(400, 'missing key');
 
   // Only serve page images, and only to viewers allowed to read the
   // parent text. A malformed / non-page key is a 404 (don't leak which
-  // keys exist).
+  // keys exist). resolveUser (not locals.user) so a Bearer-authenticated
+  // app client is recognized, not just cookie sessions.
   const textId = textIdFromPageKey(key);
   if (!textId) throw error(404, 'not found');
-  const viewer = locals.user ? { id: locals.user.id } : null;
-  const readable = await getReadableText(viewer, textId);
+  const viewer = await resolveUser(event);
+  const readable = await getReadableText(viewer ? { id: viewer.id } : null, textId);
   if (!readable) throw error(404, 'not found');
 
   // Defense-in-depth against path traversal: refuse keys that resolve

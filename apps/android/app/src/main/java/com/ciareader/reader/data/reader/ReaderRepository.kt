@@ -53,6 +53,17 @@ data class ReaderToken(
     /** Alternate parsings beyond the parser's chosen lemma; empty when
      *  unambiguous. Drives the word sheet's parse switcher. */
     val candidates: List<ParseCandidate> = emptyList(),
+    /** PDF source only: normalized (0..1) bounding box for the image overlay. */
+    val bbox: Bbox? = null,
+)
+
+/** A word's normalized (0..1) box on the page image (image-reader overlay). */
+@Serializable
+data class Bbox(
+    val x: Float,
+    val y: Float,
+    val w: Float,
+    val h: Float,
 )
 
 data class Chapter(
@@ -62,6 +73,11 @@ data class Chapter(
      *  sentence around a token. Null for chapters cached before this column was
      *  added (the destructive-migration DB clears those on upgrade anyway). */
     val chapterId: String? = null,
+    /** PDF (image) chapters: the page image + its pixel size for the image
+     *  reader's tappable overlay. Null for text-source chapters. */
+    val pageImageUrl: String? = null,
+    val pageWidth: Int? = null,
+    val pageHeight: Int? = null,
 )
 
 /** A sentence and its translation, for the word sheet's "Translate sentence". */
@@ -249,6 +265,9 @@ private fun ChapterTokensDto.toDomain() = Chapter(
     chapterIdx = chapterIdx,
     tokens = tokens.orEmpty().map { it.toDomain() },
     chapterId = chapterId,
+    pageImageUrl = pageImageUrl,
+    pageWidth = pageWidth,
+    pageHeight = pageHeight,
 )
 
 private fun TokenDto.toDomain() = ReaderToken(
@@ -265,4 +284,5 @@ private fun TokenDto.toDomain() = ReaderToken(
     candidates = candidates.map {
         ParseCandidate(it.lemmaId, it.headword, it.pos, it.glossDefault)
     },
+    bbox = bbox?.let { Bbox(it.x, it.y, it.w, it.h) },
 )

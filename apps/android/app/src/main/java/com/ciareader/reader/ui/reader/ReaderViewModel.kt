@@ -71,6 +71,14 @@ data class ReaderUiState(
     val romanize: Boolean = false,
     val isRtl: Boolean = false,
     val pageMode: Boolean = false,
+    /** PDF (image) chapters: the page image (relative URL) + its pixel size for
+     *  the image reader's tappable overlay; null for text-source chapters. */
+    val pageImageUrl: String? = null,
+    val pageWidth: Int? = null,
+    val pageHeight: Int? = null,
+    /** Toggle between the page-image view and the reflowable OCR-text view for an
+     *  image chapter. Defaults to the image; ignored when there's no page image. */
+    val imageView: Boolean = true,
     val prevTextId: String? = null,
     val nextTextId: String? = null,
     val prevTitle: String? = null,
@@ -220,6 +228,9 @@ class ReaderViewModel @Inject constructor(
                 isLoading = true,
                 isProcessing = false,
                 errorMessage = null,
+                pageImageUrl = null,
+                pageWidth = null,
+                pageHeight = null,
                 selectedWord = null,
                 wordTranslations = null,
                 sentenceTranslation = null,
@@ -235,6 +246,9 @@ class ReaderViewModel @Inject constructor(
             fetchChapter(chapterIdx, restoreTokenIdx, atEnd, saveOnLoad, attempt = 0)
         }
     }
+
+    /** Flip between the page-image view and the OCR-text view (image chapters). */
+    fun toggleImageView() = _state.update { it.copy(imageView = !it.imageView) }
 
     /**
      * Load a chapter's tokens. A just-imported chapter comes back with no tokens
@@ -273,6 +287,9 @@ class ReaderViewModel @Inject constructor(
                         isProcessing = false,
                         chapterIdx = chapterIdx,
                         tokens = chapter.data.tokens,
+                        pageImageUrl = chapter.data.pageImageUrl,
+                        pageWidth = chapter.data.pageWidth,
+                        pageHeight = chapter.data.pageHeight,
                         restoreTokenIdx = anchor,
                         chapters = it.chapters.map { ref ->
                             if (ref.chapterIdx != null) ref.copy(isCurrent = ref.chapterIdx == chapterIdx) else ref

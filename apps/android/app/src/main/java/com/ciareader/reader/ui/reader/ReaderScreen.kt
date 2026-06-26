@@ -92,6 +92,17 @@ import com.ciareader.reader.data.dictionary.BasqueReference
 import com.ciareader.reader.data.dictionary.LemmaTranslations
 import com.ciareader.reader.data.dictionary.WordTranslation
 import com.ciareader.reader.data.reader.KnownStatus
+import com.ciareader.reader.BuildConfig
+import coil.compose.AsyncImage
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.gestures.rememberTransformableState
+import androidx.compose.foundation.gestures.transformable
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.material3.TextButton
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.ContentScale
 import com.ciareader.reader.data.reader.ReaderToken
 import com.ciareader.reader.data.reader.SentenceTranslation
 import kotlin.math.roundToInt
@@ -134,6 +145,7 @@ fun ReaderScreen(
         onRestoreConsumed = viewModel::onRestoreConsumed,
         onToggleRomanize = viewModel::toggleRomanization,
         onTogglePageMode = viewModel::togglePageMode,
+        onToggleImageView = viewModel::toggleImageView,
         onSetFontSize = viewModel::setFontSize,
         onSetLineSpacing = viewModel::setLineSpacing,
         onSelectChapter = { ref ->
@@ -168,6 +180,7 @@ internal fun ReaderScreenContent(
     onRestoreConsumed: () -> Unit,
     onToggleRomanize: () -> Unit,
     onTogglePageMode: () -> Unit,
+    onToggleImageView: () -> Unit = {},
     onSetFontSize: (Int) -> Unit = {},
     onSetLineSpacing: (Float) -> Unit = {},
     onSelectChapter: (ReaderChapterRef) -> Unit = {},
@@ -209,6 +222,13 @@ internal fun ReaderScreenContent(
                     }
                 },
                 actions = {
+                    // Image chapters (PDFs) toggle between the page image and the
+                    // reflowable OCR text; the label is the view you'll switch to.
+                    if (state.pageImageUrl != null) {
+                        TextButton(onClick = onToggleImageView) {
+                            Text(if (state.imageView) "Text" else "Page")
+                        }
+                    }
                     IconButton(onClick = { showSettings = true }) {
                         Icon(
                             painter = painterResource(R.drawable.ic_settings),
@@ -233,6 +253,16 @@ internal fun ReaderScreenContent(
 
                 state.isProcessing ->
                     ReaderProcessing(modifier = Modifier.align(Alignment.Center))
+
+                state.pageImageUrl != null && state.imageView ->
+                    ReaderImage(
+                        imageUrl = BuildConfig.API_BASE_URL.trimEnd('/') + state.pageImageUrl,
+                        pageWidth = state.pageWidth,
+                        pageHeight = state.pageHeight,
+                        tokens = state.tokens,
+                        onWordTap = onWordTap,
+                        modifier = Modifier.fillMaxSize(),
+                    )
 
                 state.pageMode ->
                     PagedChapter(
@@ -1206,6 +1236,87 @@ private fun ReaderProcessing(modifier: Modifier = Modifier) {
             textAlign = TextAlign.Center,
         )
     }
+}
+
+/**
+ * Page-image (PDF) reader: the rasterized page with each OCR word overlaid as a
+ * tappable region (from its normalized bbox). Pinch-zoom + pan; new/learning
+ * words get a faint tint so they stand out against the page.
+ */
+@Composable
+private fun ReaderImage(
+    imageUrl: String,
+    pageWidth: Int?,
+    pageHeight: Int?,
+    tokens: List<ReaderToken>,
+    onWordTap: (ReaderToken) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val scheme = MaterialTheme.colorScheme
+    val aspect = if (pageWidth != null && pageHeight != null && pageHeight > 0) {
+        pageWidth.toFloat() / pageHeight.toFloat()
+    } else {
+        1f
+    }
+    var scale by remember(imageUrl) { mutableStateOf(1f) }
+    var offset by remember(imageUrl) { mutableStateOf(Offset.Zero) }
+    val transformState = rememberTransformableState { zoomChange, panChange, _ ->
+        scale = (scale * zoomChange).coerceIn(1f, 5f)
+        offset = if (scale <= 1f) Offset.Zero else offset + panChange
+    }
+    Box(modifier, contentAlignment = Alignment.Center) {
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .aspectRatio(aspect)
+                .graphicsLayer(
+                    scaleX = scale,
+                    scaleY = scale,
+                    translationX = offset.x,
+                    translationY = offset.y,
+                )
+                .transformable(transformState)
+                .pointerInput(tokens) {
+                    detectTapGestures { tap ->
+                        val nx = tap.x / size.width
+                        val ny = tap.y / size.height
+                        tokens.firstOrNull { t ->
+                            val b = t.bbox
+                            t.isWord && b != null &&
+                                nx >= b.x && nx <= b.x + b.w &&
+                                ny >= b.y && ny <= b.y + b.h
+                        }?.let(onWordTap)
+                    }
+                },
+        ) {
+            AsyncImage(
+                model = imageUrl,
+                contentDescription = null,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.FillBounds,
+            )
+            Canvas(Modifier.fillMaxSize()) {
+                tokens.forEach { t ->
+                    val b = t.bbox ?: return@forEach
+                    if (!t.isWord) return@forEach
+                    val tint = overlayTint(t.status, scheme) ?: return@forEach
+                    drawRect(
+                        color = tint,
+                        topLeft = Offset(b.x * size.width, b.y * size.height),
+                        size = Size(b.w * size.width, b.h * size.height),
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** Faint highlight for words worth attention on the page image; null = no tint,
+ *  so known/ignored words read cleanly against the page. */
+private fun overlayTint(status: KnownStatus, scheme: ColorScheme): Color? = when (status) {
+    KnownStatus.UNKNOWN -> scheme.primary.copy(alpha = 0.20f)
+    KnownStatus.LEARNING -> scheme.primaryContainer.copy(alpha = 0.45f)
+    else -> null
 }
 
 private fun spanStyleFor(token: ReaderToken, scheme: ColorScheme): SpanStyle = when {
