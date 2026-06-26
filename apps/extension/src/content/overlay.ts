@@ -97,8 +97,9 @@ const STYLE = `
   background: #15171a; color: #fff; border: 1px solid #4a90e2; outline: none;
 }
 .popup .suggest {
-  margin-top: 4px; background: #15171a; border: 1px solid #3a3d44; border-radius: 7px;
-  overflow: hidden; min-width: 150px;
+  position: absolute; top: calc(100% + 4px); left: 0; z-index: 5;
+  background: #15171a; border: 1px solid #3a3d44; border-radius: 7px;
+  overflow: hidden; min-width: 160px; box-shadow: 0 8px 22px rgba(0,0,0,0.6);
 }
 .popup .suggest-item { padding: 4px 9px; font-size: 13px; color: #cfd3da; cursor: pointer; }
 .popup .suggest-item:hover { background: #2b6cb0; color: #fff; }
