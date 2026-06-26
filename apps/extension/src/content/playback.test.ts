@@ -5,12 +5,17 @@ import type { VideoController } from './video';
 
 function fakeVideo() {
   let t = 0;
+  let paused = false;
   return {
     currentTime: () => t,
+    isPaused: () => paused,
     seek: vi.fn((s: number) => {
       t = s;
+      paused = false;
     }),
-    pause: vi.fn(),
+    pause: vi.fn(() => {
+      paused = true;
+    }),
     setTime: (s: number) => {
       t = s;
     },
@@ -49,26 +54,42 @@ describe('PlaybackController', () => {
     expect(v.seek).toHaveBeenCalledTimes(4);
   });
 
-  it('auto-pauses once at the end of the current line when enabled', () => {
+  it('pauses on each line change and reveals the line that just ended', () => {
+    vi.useFakeTimers();
+    const v = fakeVideo();
+    const revealed: string[] = [];
+    const pb = new PlaybackController(v as unknown as VideoController);
+    pb.onLinePause = (text) => revealed.push(text);
+    pb.setCues(cues);
+    expect(pb.toggleAutoPause()).toBe(true);
+
+    pb.onText('one'); // first line appears — nothing has ended yet
+    expect(v.pause).not.toHaveBeenCalled();
+
+    pb.onText('two'); // 'one' just ended → pause + reveal it
+    expect(v.pause).toHaveBeenCalledTimes(1);
+    expect(revealed).toEqual(['one']);
+
+    // Adjacent cue with no gap still gets its own pause once the user resumes.
+    pb.onText('two'); // (resumed; same text re-asserted — no double pause)
+    expect(v.pause).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not pause on the line change a seek causes', () => {
     vi.useFakeTimers();
     const v = fakeVideo();
     const pb = new PlaybackController(v as unknown as VideoController);
     pb.setCues(cues);
 
-    v.setTime(1.5);
-    pb.onText('one'); // offset 500ms; pauses ~120ms before end (2000) → ~2.38s video time
-    expect(pb.toggleAutoPause()).toBe(true);
+    v.setTime(13);
+    pb.onText('two'); // calibrate (offset 10000ms), prevLine = 'two'
+    expect(pb.toggleListening()).toBe(true);
 
-    v.setTime(2.3);
-    vi.advanceTimersByTime(120);
+    pb.next(); // seek to 'three' — its appearance must not trigger a pause
+    pb.onText('three');
     expect(v.pause).not.toHaveBeenCalled();
 
-    v.setTime(2.45);
-    vi.advanceTimersByTime(120);
+    pb.onText('one'); // a real change — 'three' ended → pause
     expect(v.pause).toHaveBeenCalledTimes(1);
-
-    v.setTime(2.6);
-    vi.advanceTimersByTime(120);
-    expect(v.pause).toHaveBeenCalledTimes(1); // not again for the same line
   });
 });

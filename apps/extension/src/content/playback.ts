@@ -1,21 +1,19 @@
 /**
- * Subtitle-line playback controls: repeat / previous / next line + auto-pause at
- * line end.
+ * Subtitle-line playback controls: repeat / previous / next line + auto-pause /
+ * listening mode (pause at line end, reveal the line).
  *
- * Seeking needs cue timing (from the cached .vtt). The player's currentTime is
- * offset from the .vtt timeline, so we calibrate the offset continuously by
- * matching the on-screen subtitle text (fed from the Shaka mirror) to its cue —
- * giving an accurate cue-time → video-time mapping for seeks and the line-end
- * auto-pause.
+ * Seeking needs cue timing (from the cached .vtt); the player's currentTime is
+ * offset from the .vtt timeline, so we calibrate the offset by matching the
+ * on-screen subtitle (from the Shaka mirror) to its cue.
+ *
+ * Auto-pause/listening is driven by the on-screen subtitle *changing* (rather
+ * than a computed end-time window), so adjacent cues with no gap each get their
+ * own pause — what you see is what pauses.
  */
 import type { SubtitleCue } from '../shared/subtitles';
 import type { VideoController } from './video';
 
 const norm = (s: string): string => s.replace(/\s+/g, ' ').trim();
-
-// Pause slightly before the cue's end so the subtitle is still on screen (so the
-// mirror still has its text to reveal) and the audio is essentially complete.
-const PAUSE_LEAD_MS = 120;
 
 export class PlaybackController {
   private cues: SubtitleCue[] = [];
@@ -24,13 +22,13 @@ export class PlaybackController {
   private calibrated = false;
   private autoPause = false;
   private listening = false;
-  private pausedFor = -1;
+  private prevLine: string | null = null;
+  private justSeeked = false;
 
   /** Called while in listening mode with whether the caption should be hidden
-   *  (hidden while the line plays, shown when it pauses at the end). */
+   *  (hidden while the line plays, shown when it pauses). */
   onBlind: ((hidden: boolean) => void) | null = null;
-  /** Called with the current line's text when auto-pause/listening pauses, so the
-   *  caption is shown from the cue data (not relying on the player's DOM). */
+  /** Called with a line's text when we pause on it, to reveal it. */
   onLinePause: ((text: string) => void) | null = null;
 
   constructor(private video: VideoController) {
@@ -40,8 +38,7 @@ export class PlaybackController {
   setCues(cues: SubtitleCue[]): void {
     this.cues = cues;
     // Only calibrate on lines whose text is UNIQUE — repeated short lines like
-    // "(Musika)" would otherwise map to the wrong (last) occurrence and throw the
-    // timeline offset off by minutes.
+    // "(Musika)" would otherwise map to the wrong occurrence and skew the offset.
     const counts = new Map<string, number>();
     for (const c of cues) {
       const k = norm(c.text);
@@ -54,19 +51,34 @@ export class PlaybackController {
     });
   }
 
-  /** The current on-screen subtitle (from the mirror) — used only to calibrate
-   *  the timeline offset; the current line itself is derived from playback time. */
+  /** The current on-screen subtitle (from the mirror): calibrates the offset and
+   *  drives the pause-at-line-end. */
   onText(text: string | null): void {
-    if (!text) return;
-    const i = this.indexByText.get(norm(text));
-    if (i === undefined) return;
-    this.pausedFor = -1;
-    const t = this.video.currentTime();
-    const cue = this.cues[i];
-    if (t !== null && cue) {
-      this.offsetMs = t * 1000 - cue.startMs;
-      this.calibrated = true;
+    const current = text && text.trim() ? text : null;
+
+    // Calibrate the timeline offset on a recognized (unique) line.
+    if (current) {
+      const i = this.indexByText.get(norm(current));
+      const t = this.video.currentTime();
+      const cue = i !== undefined ? this.cues[i] : undefined;
+      if (i !== undefined && t !== null && cue) {
+        this.offsetMs = t * 1000 - cue.startMs;
+        this.calibrated = true;
+      }
     }
+
+    // Pause on the line CHANGE — the previous line just ended.
+    const prev = this.prevLine;
+    this.prevLine = current;
+    if (this.justSeeked) {
+      this.justSeeked = false; // the change a seek caused shouldn't pause
+      return;
+    }
+    if (!prev || current === prev) return;
+    if (!this.autoPause && !this.listening) return;
+    if (this.video.isPaused()) return;
+    this.video.pause();
+    this.onLinePause?.(prev);
   }
 
   private toVideo(ms: number): number {
@@ -87,7 +99,10 @@ export class PlaybackController {
 
   private seekTo(index: number): void {
     const c = this.cues[index];
-    if (c) this.video.seek(this.toVideo(c.startMs) + 0.02);
+    if (c) {
+      this.justSeeked = true;
+      this.video.seek(this.toVideo(c.startMs) + 0.02);
+    }
   }
 
   repeat(): void {
@@ -104,31 +119,16 @@ export class PlaybackController {
 
   toggleAutoPause(): boolean {
     this.autoPause = !this.autoPause;
-    this.pausedFor = -1;
     return this.autoPause;
   }
 
-  /** Listening mode: hide the subtitle while the line plays, pause at its end,
-   *  and reveal the subtitle. */
   toggleListening(): boolean {
     this.listening = !this.listening;
-    this.pausedFor = -1;
-    if (!this.listening) this.onBlind?.(false); // un-hide the caption on exit
+    if (!this.listening) this.onBlind?.(false);
     return this.listening;
   }
 
   private tick = (): void => {
     if (this.listening) this.onBlind?.(!this.video.isPaused());
-
-    if ((!this.autoPause && !this.listening) || !this.calibrated) return;
-    const i = this.activeIndex();
-    const c = this.cues[i];
-    const t = this.video.currentTime();
-    if (!c || t === null) return;
-    if (t >= this.toVideo(c.endMs - PAUSE_LEAD_MS) && this.pausedFor !== i) {
-      this.pausedFor = i;
-      this.video.pause();
-      this.onLinePause?.(c.text);
-    }
   };
 }
