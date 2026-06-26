@@ -3,8 +3,10 @@
 package com.ciareader.reader.ui.reader
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -16,34 +18,41 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.ScrollState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -52,6 +61,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
@@ -68,16 +83,34 @@ import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.ciareader.reader.R
 import com.ciareader.reader.data.dictionary.BasqueReference
 import com.ciareader.reader.data.dictionary.LemmaTranslations
 import com.ciareader.reader.data.dictionary.WordTranslation
 import com.ciareader.reader.data.reader.KnownStatus
+import com.ciareader.reader.BuildConfig
+import coil.compose.AsyncImage
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.gestures.rememberTransformableState
+import androidx.compose.foundation.gestures.transformable
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.material3.TextButton
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.foundation.lazy.itemsIndexed
 import com.ciareader.reader.data.reader.ReaderToken
+import com.ciareader.reader.data.reader.SentenceTranslation
 import kotlin.math.roundToInt
 
 @Composable
@@ -87,6 +120,26 @@ fun ReaderScreen(
     viewModel: ReaderViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+
+    // Local-only reading-time tracking: accrue active foreground time while
+    // the reader is on-screen (START..STOP), flushing on background/leave.
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner, viewModel) {
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_START -> viewModel.onScreenVisible()
+                Lifecycle.Event.ON_STOP -> viewModel.onScreenHidden()
+                else -> Unit
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+            // Leaving the reader without an ON_STOP (e.g. nav back) still flushes.
+            viewModel.onScreenHidden()
+        }
+    }
+
     ReaderScreenContent(
         state = state,
         onBack = onBack,
@@ -109,14 +162,18 @@ fun ReaderScreen(
         },
         onRetry = viewModel::retry,
         onSetStatus = viewModel::setStatus,
+        onSelectParse = viewModel::selectParse,
         onAddDefinition = viewModel::addDefinition,
         onEditDefinition = viewModel::editDefinition,
         onDeleteDefinition = viewModel::deleteDefinition,
+        onTranslateSentence = viewModel::translateSentence,
+        onRefreshWord = viewModel::refreshSelectedWord,
         onSetBasqueRefSource = viewModel::setBasqueRefSource,
         onRecordPosition = viewModel::recordPosition,
         onRestoreConsumed = viewModel::onRestoreConsumed,
         onToggleRomanize = viewModel::toggleRomanization,
         onTogglePageMode = viewModel::togglePageMode,
+        onToggleImageView = viewModel::toggleImageView,
         onSetFontSize = viewModel::setFontSize,
         onSetLineSpacing = viewModel::setLineSpacing,
         onSelectChapter = { ref ->
@@ -142,14 +199,18 @@ internal fun ReaderScreenContent(
     onSwipeToPrevChapter: () -> Unit = onPrevChapter,
     onRetry: () -> Unit,
     onSetStatus: (KnownStatus) -> Unit,
+    onSelectParse: (String) -> Unit = {},
     onAddDefinition: (String) -> Unit = {},
     onEditDefinition: (String, String) -> Unit = { _, _ -> },
     onDeleteDefinition: (String) -> Unit = {},
+    onTranslateSentence: () -> Unit = {},
+    onRefreshWord: () -> Unit = {},
     onSetBasqueRefSource: (String) -> Unit = {},
     onRecordPosition: (Int, Double) -> Unit,
     onRestoreConsumed: () -> Unit,
     onToggleRomanize: () -> Unit,
     onTogglePageMode: () -> Unit,
+    onToggleImageView: () -> Unit = {},
     onSetFontSize: (Int) -> Unit = {},
     onSetLineSpacing: (Float) -> Unit = {},
     onSelectChapter: (ReaderChapterRef) -> Unit = {},
@@ -191,6 +252,13 @@ internal fun ReaderScreenContent(
                     }
                 },
                 actions = {
+                    // Image chapters (PDFs) toggle between the page image and the
+                    // reflowable OCR text; the label is the view you'll switch to.
+                    if (state.pageImageUrl != null) {
+                        TextButton(onClick = onToggleImageView) {
+                            Text(if (state.imageView) "Text" else "Page")
+                        }
+                    }
                     IconButton(onClick = { showSettings = true }) {
                         Icon(
                             painter = painterResource(R.drawable.ic_settings),
@@ -212,6 +280,21 @@ internal fun ReaderScreenContent(
 
                 state.errorMessage != null ->
                     ReaderError(message = state.errorMessage, onRetry = onRetry)
+
+                state.isProcessing ->
+                    ReaderProcessing(modifier = Modifier.align(Alignment.Center))
+
+                state.pageImageUrl != null && state.imageView ->
+                    ReaderImage(
+                        imageUrl = BuildConfig.API_BASE_URL.trimEnd('/') + state.pageImageUrl,
+                        pageWidth = state.pageWidth,
+                        pageHeight = state.pageHeight,
+                        tokens = state.tokens,
+                        onWordTap = onWordTap,
+                        onPrevPage = onPrevChapter,
+                        onNextPage = onNextChapter,
+                        modifier = Modifier.fillMaxSize(),
+                    )
 
                 state.pageMode ->
                     PagedChapter(
@@ -286,10 +369,20 @@ internal fun ReaderScreenContent(
                 basqueReference = state.basqueReference,
                 basqueRefSource = state.basqueRefSource,
                 isLoading = state.isWordLoading,
+                sentenceTranslation = state.sentenceTranslation,
+                isSentenceTranslating = state.isSentenceTranslating,
+                sentenceTranslateError = state.sentenceTranslateError,
+                autoExpandSentence = state.autoExpandSentence,
                 onSetStatus = onSetStatus,
+                activeParseLemmaId = state.activeParseLemmaId,
+                primaryHeadword = state.primaryHeadword,
+                primaryPos = state.primaryPos,
+                onSelectParse = onSelectParse,
                 onAddDefinition = onAddDefinition,
                 onEditDefinition = onEditDefinition,
                 onDeleteDefinition = onDeleteDefinition,
+                onTranslateSentence = onTranslateSentence,
+                onRefresh = onRefreshWord,
                 onSelectBasqueSource = onSetBasqueRefSource,
             )
         }
@@ -606,7 +699,7 @@ internal fun ChapterListSheet(
                 modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp),
             )
         }
-        items(chapters) { ch ->
+        itemsIndexed(chapters) { index, ch ->
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -616,7 +709,8 @@ internal fun ChapterListSheet(
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        ch.title,
+                        // Numbered so duplicate/blank chapter titles stay distinguishable.
+                        "${index + 1}. ${ch.title}",
                         style = MaterialTheme.typography.bodyLarge,
                         color = if (ch.isCurrent) {
                             MaterialTheme.colorScheme.primary
@@ -733,11 +827,30 @@ internal fun WordDetails(
     onAddDefinition: (String) -> Unit = {},
     onEditDefinition: (String, String) -> Unit = { _, _ -> },
     onDeleteDefinition: (String) -> Unit = {},
+    sentenceTranslation: SentenceTranslation? = null,
+    isSentenceTranslating: Boolean = false,
+    sentenceTranslateError: String? = null,
+    autoExpandSentence: Boolean = false,
+    onTranslateSentence: () -> Unit = {},
+    onRefresh: () -> Unit = {},
     basqueReference: List<BasqueReference> = emptyList(),
     basqueRefSource: String? = null,
     onSelectBasqueSource: (String) -> Unit = {},
     modifier: Modifier = Modifier,
+    activeParseLemmaId: String? = token.lemmaId,
+    primaryHeadword: String? = null,
+    primaryPos: String? = null,
+    onSelectParse: (String) -> Unit = {},
 ) {
+    // The parser's chosen lemma plus any alternate candidates the parser scored.
+    // Two or more selectable parses surface the switcher so a reader can view the
+    // definition of a lemma the parser didn't pick.
+    val parses = remember(token, primaryHeadword, primaryPos) {
+        buildList {
+            token.lemmaId?.let { add(WordParse(it, primaryHeadword ?: token.surface, primaryPos)) }
+            token.candidates.forEach { add(WordParse(it.lemmaId, it.headword, it.pos)) }
+        }
+    }
     Column(
         modifier = modifier
             .fillMaxWidth()
@@ -746,10 +859,26 @@ internal fun WordDetails(
             .verticalScroll(rememberScrollState())
             .padding(24.dp),
     ) {
-        Text(translations?.headword ?: token.surface, style = MaterialTheme.typography.headlineSmall)
-        val subtitle = listOfNotNull(token.romanization, translations?.pos).joinToString("  ·  ")
-        if (subtitle.isNotEmpty()) {
-            Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        if (parses.size >= 2) {
+            ParseSwitcher(parses = parses, activeLemmaId = activeParseLemmaId, onSelect = onSelectParse)
+            Spacer(Modifier.height(12.dp))
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(translations?.headword ?: token.surface, style = MaterialTheme.typography.headlineSmall)
+                val subtitle = listOfNotNull(token.romanization, translations?.pos).joinToString("  ·  ")
+                if (subtitle.isNotEmpty()) {
+                    Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+            if (token.lemmaId != null) {
+                IconButton(
+                    onClick = onRefresh,
+                    modifier = Modifier.semantics { contentDescription = "Refresh definitions" },
+                ) {
+                    Text("↻", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.primary)
+                }
+            }
         }
         Spacer(Modifier.height(12.dp))
 
@@ -772,6 +901,20 @@ internal fun WordDetails(
             BrandChip("Ignored", token.status == KnownStatus.IGNORED) { onSetStatus(KnownStatus.IGNORED) }
         }
 
+        // Sentence translation (OpenAI, server-cached). Offered for any word in
+        // a chapter; the server reconstructs the sentence around this token.
+        if (token.isWord) {
+            Spacer(Modifier.height(16.dp))
+            SentenceTranslationSection(
+                translation = sentenceTranslation,
+                isTranslating = isSentenceTranslating,
+                error = sentenceTranslateError,
+                startExpanded = autoExpandSentence,
+                onTranslate = onTranslateSentence,
+            )
+        }
+
+        // Your own definition sits above the (admin) reference dictionaries.
         // Offer the add box only when there's no personal note yet — once one
         // exists it's shown (and editable) in "Your notes" above.
         val hasPersonalNote = translations?.personal?.isNotEmpty() == true
@@ -784,6 +927,89 @@ internal fun WordDetails(
         if (basqueReference.isNotEmpty()) {
             Spacer(Modifier.height(16.dp))
             BasqueReferenceSection(basqueReference, basqueRefSource, onSelectBasqueSource)
+        }
+    }
+}
+
+/**
+ * Sentence translation. Before translating, a subtle text action (not a big
+ * button). While in flight, a small spinner. Once a translation exists, a
+ * tappable "Sentence translation" header expands/collapses the sentence + its
+ * translation — collapsed by default on recall, expanded right after an explicit
+ * translate ([startExpanded]).
+ */
+@Composable
+private fun SentenceTranslationSection(
+    translation: SentenceTranslation?,
+    isTranslating: Boolean,
+    error: String?,
+    startExpanded: Boolean,
+    onTranslate: () -> Unit,
+) {
+    Column(modifier = Modifier.fillMaxWidth()) {
+        when {
+            translation != null -> {
+                var expanded by remember(translation) { mutableStateOf(startExpanded) }
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { expanded = !expanded },
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        "Sentence translation",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Text(
+                        if (expanded) "–" else "+",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
+                if (expanded) {
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        translation.sentence,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Text(translation.translation, style = MaterialTheme.typography.bodyLarge)
+                }
+            }
+
+            isTranslating ->
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                    Text(
+                        "Translating sentence…",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+
+            else -> {
+                // Outlined (not filled/full-width) — clearly a button so it's
+                // obvious it translates the sentence, without dominating the sheet.
+                OutlinedButton(
+                    onClick = onTranslate,
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                ) {
+                    Text("Translate sentence", color = MaterialTheme.colorScheme.onSurface)
+                }
+                if (error != null) {
+                    Text(
+                        error,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+            }
         }
     }
 }
@@ -910,6 +1136,94 @@ private fun BasqueRefEntry(entry: BasqueReference, showPos: Boolean) {
     }
 }
 
+/** One selectable parsing of the tapped word: a lemma plus a label. */
+private data class WordParse(val lemmaId: String, val headword: String, val pos: String?)
+
+/** Segmented control at the top of the word sheet for switching which parsing's
+ *  definition is shown. Scrolls horizontally so any number of candidates fits.
+ *  POS rides on the label so same-headword parses (e.g. a noun vs. a verb) stay
+ *  distinguishable. */
+@Composable
+private fun ParseSwitcher(
+    parses: List<WordParse>,
+    activeLemmaId: String?,
+    onSelect: (String) -> Unit,
+) {
+    // Folder tabs: a light base line flanks the tabs. The active tab is open at the
+    // bottom (3-sided outline) and paints over the line with the sheet colour, so
+    // the line is broken under it and the tab "opens" into the definition panel
+    // below — while still bordering the line to its left and right. Neutral colours
+    // (no bold accent). A plain clickable Box (not Surface) avoids the 48dp min
+    // touch target that would add a gap.
+    // One colour for the base line AND every tab border, so they read as a single
+    // continuous frame. onSurface (near-white in dark, near-black in light) so the
+    // frame stands out a bit more than the faint outline roles, theme-safely.
+    val lineColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+    val sheetColor = BottomSheetDefaults.ContainerColor
+    val tabShape = RoundedCornerShape(topStart = 10.dp, topEnd = 10.dp)
+    Box(modifier = Modifier.fillMaxWidth().semantics { contentDescription = "Word parsings" }) {
+        HorizontalDivider(
+            modifier = Modifier.align(Alignment.BottomStart),
+            thickness = 1.dp,
+            color = lineColor,
+        )
+        Row(
+            modifier = Modifier.horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            verticalAlignment = Alignment.Bottom,
+        ) {
+            parses.forEach { parse ->
+                val selected = parse.lemmaId == activeLemmaId
+                val label = parse.pos?.takeIf { it.isNotBlank() }?.let { "${parse.headword} · $it" } ?: parse.headword
+                val tabModifier =
+                    if (selected) {
+                        Modifier
+                            .background(sheetColor, tabShape) // break the line under the open mouth
+                            .openTopTabOutline(lineColor, 1.5.dp, 10.dp)
+                    } else {
+                        Modifier.border(1.dp, lineColor, tabShape)
+                    }
+                Box(
+                    modifier = Modifier
+                        .clip(tabShape)
+                        .then(tabModifier)
+                        .clickable { onSelect(parse.lemmaId) }
+                        .padding(horizontal = 14.dp, vertical = if (selected) 9.dp else 6.dp),
+                ) {
+                    Text(
+                        label,
+                        style = MaterialTheme.typography.labelLarge,
+                        color = if (selected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** A rounded-top, OPEN-bottom border (top + both sides only) so the active parse
+ *  tab reads like a folder tab opening into the content below. */
+private fun Modifier.openTopTabOutline(color: Color, stroke: Dp, radius: Dp): Modifier =
+    drawBehind {
+        val sw = stroke.toPx()
+        val r = radius.toPx()
+        val inset = sw / 2f
+        val left = inset
+        val right = size.width - inset
+        val top = inset
+        val bottom = size.height
+        val path = Path().apply {
+            moveTo(left, bottom)
+            lineTo(left, top + r)
+            arcTo(Rect(left, top, left + 2f * r, top + 2f * r), 180f, 90f, false)
+            lineTo(right - r, top)
+            arcTo(Rect(right - 2f * r, top, right, top + 2f * r), 270f, 90f, false)
+            lineTo(right, bottom)
+        }
+        drawPath(path, color, style = Stroke(width = sw))
+    }
+
 @Composable
 private fun TranslationGroups(
     translations: LemmaTranslations,
@@ -995,6 +1309,125 @@ private fun ReaderError(message: String, onRetry: () -> Unit) {
         Text(message, color = MaterialTheme.colorScheme.error, textAlign = TextAlign.Center)
         Button(onClick = onRetry, modifier = Modifier.padding(top = 16.dp)) { Text("Retry") }
     }
+}
+
+/** Shown while a freshly-imported chapter is still being tokenized server-side. */
+@Composable
+private fun ReaderProcessing(modifier: Modifier = Modifier) {
+    Column(
+        modifier = modifier.padding(32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        CircularProgressIndicator()
+        Spacer(Modifier.size(16.dp))
+        Text("Preparing this text…", style = MaterialTheme.typography.titleMedium)
+        Spacer(Modifier.size(4.dp))
+        Text(
+            "Words become tappable once it's ready.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+        )
+    }
+}
+
+/**
+ * Page-image (PDF) reader: the rasterized page with each OCR word overlaid as a
+ * tappable region (from its normalized bbox). Pinch-zoom + pan; new/learning
+ * words get a faint tint so they stand out against the page.
+ */
+@Composable
+private fun ReaderImage(
+    imageUrl: String,
+    pageWidth: Int?,
+    pageHeight: Int?,
+    tokens: List<ReaderToken>,
+    onWordTap: (ReaderToken) -> Unit,
+    onPrevPage: () -> Unit,
+    onNextPage: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val scheme = MaterialTheme.colorScheme
+    val aspect = if (pageWidth != null && pageHeight != null && pageHeight > 0) {
+        pageWidth.toFloat() / pageHeight.toFloat()
+    } else {
+        1f
+    }
+    var scale by remember(imageUrl) { mutableStateOf(1f) }
+    var offset by remember(imageUrl) { mutableStateOf(Offset.Zero) }
+    // Accumulated horizontal drag while at 1× → a page swipe (reset per page).
+    val swipeAccum = remember(imageUrl) { mutableStateOf(0f) }
+    val onPrev by rememberUpdatedState(onPrevPage)
+    val onNext by rememberUpdatedState(onNextPage)
+    BoxWithConstraints(modifier, contentAlignment = Alignment.Center) {
+        val swipeThreshold = constraints.maxWidth * 0.22f
+        val transformState = rememberTransformableState { zoomChange, panChange, _ ->
+            scale = (scale * zoomChange).coerceIn(1f, 5f)
+            if (scale > 1f) {
+                // Zoomed in: a drag pans the page.
+                offset += panChange
+            } else {
+                // At 1×: a sustained horizontal drag flips to the prev/next page.
+                offset = Offset.Zero
+                swipeAccum.value += panChange.x
+                when {
+                    swipeAccum.value <= -swipeThreshold -> { onNext(); swipeAccum.value = 0f }
+                    swipeAccum.value >= swipeThreshold -> { onPrev(); swipeAccum.value = 0f }
+                }
+            }
+        }
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .aspectRatio(aspect)
+                .graphicsLayer(
+                    scaleX = scale,
+                    scaleY = scale,
+                    translationX = offset.x,
+                    translationY = offset.y,
+                )
+                .transformable(transformState)
+                .pointerInput(tokens) {
+                    detectTapGestures { tap ->
+                        val nx = tap.x / size.width
+                        val ny = tap.y / size.height
+                        tokens.firstOrNull { t ->
+                            val b = t.bbox
+                            t.isWord && b != null &&
+                                nx >= b.x && nx <= b.x + b.w &&
+                                ny >= b.y && ny <= b.y + b.h
+                        }?.let(onWordTap)
+                    }
+                },
+        ) {
+            AsyncImage(
+                model = imageUrl,
+                contentDescription = null,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.FillBounds,
+            )
+            Canvas(Modifier.fillMaxSize()) {
+                tokens.forEach { t ->
+                    val b = t.bbox ?: return@forEach
+                    if (!t.isWord) return@forEach
+                    val tint = overlayTint(t.status, scheme) ?: return@forEach
+                    drawRect(
+                        color = tint,
+                        topLeft = Offset(b.x * size.width, b.y * size.height),
+                        size = Size(b.w * size.width, b.h * size.height),
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** Faint highlight for words worth attention on the page image; null = no tint,
+ *  so known/ignored words read cleanly against the page. */
+private fun overlayTint(status: KnownStatus, scheme: ColorScheme): Color? = when (status) {
+    KnownStatus.UNKNOWN -> scheme.primary.copy(alpha = 0.20f)
+    KnownStatus.LEARNING -> scheme.primaryContainer.copy(alpha = 0.45f)
+    else -> null
 }
 
 private fun spanStyleFor(token: ReaderToken, scheme: ColorScheme): SpanStyle = when {

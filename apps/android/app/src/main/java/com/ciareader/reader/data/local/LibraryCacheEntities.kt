@@ -16,6 +16,10 @@ data class CachedLibraryCardEntity(
     val title: String,
     val status: String,
     val position: Int,
+    /** Cached estimated comprehension (0–100), null when unknown. */
+    val estimatedComprehensionPct: Int? = null,
+    /** Cached reading progress 0f–1f so the bar isn't empty on offline launch. */
+    val progress: Float = 0f,
 )
 
 /**
@@ -30,6 +34,11 @@ data class CachedLanguageEntity(
     val script: String,
     val isDefault: Boolean,
     val position: Int,
+    /** Distinct known lemmas in this language; mirrors the server count
+     *  so the offline switcher can still show "N words". Defaults to 0
+     *  for rows written before the column existed (destructive migration
+     *  rebuilds the cache, so the default only matters in code paths). */
+    val knownLemmaCount: Int = 0,
 )
 
 @Entity(tableName = "cached_collection")
@@ -41,6 +50,10 @@ data class CachedCollectionEntity(
     val textCount: Int,
     val openTextId: String?,
     val position: Int,
+    /** Cached estimated comprehension (0–100), null when unknown. */
+    val estimatedComprehensionPct: Int? = null,
+    /** Cached aggregate reading progress 0f–1f so the bar isn't empty offline. */
+    val progress: Float = 0f,
 )
 
 /** A collection's title, kept so [detail] can be served offline on its own. */

@@ -9,7 +9,9 @@ import androidx.compose.ui.test.performClick
 import com.ciareader.reader.data.dictionary.LemmaTranslations
 import com.ciareader.reader.data.dictionary.WordTranslation
 import com.ciareader.reader.data.reader.KnownStatus
+import com.ciareader.reader.data.reader.ParseCandidate
 import com.ciareader.reader.data.reader.ReaderToken
+import com.ciareader.reader.data.reader.SentenceTranslation
 import com.ciareader.reader.ui.theme.CiaReaderTheme
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -127,10 +129,12 @@ class ReaderScreenTest {
                 )
             }
         }
-        compose.onNodeWithText("Intro").assertIsDisplayed()
+        // Chapters are numbered so duplicate/blank titles stay distinguishable.
+        compose.onNodeWithText("1. Intro").assertIsDisplayed()
+        compose.onNodeWithText("2. Two").assertIsDisplayed()
         compose.onNodeWithText("1200 words").assertIsDisplayed()
         compose.onNodeWithText("Current").assertIsDisplayed()
-        compose.onNodeWithText("Intro").performClick()
+        compose.onNodeWithText("1. Intro").performClick()
         assertEquals("t0", picked)
     }
 
@@ -249,6 +253,68 @@ class ReaderScreenTest {
     }
 
     @Test
+    fun wordDetailsShowsParseSwitcherAndSwitchesParse() {
+        var picked: String? = null
+        compose.setContent {
+            CiaReaderTheme {
+                WordDetails(
+                    token = ReaderToken(
+                        idx = 0,
+                        surface = "सोने",
+                        isWord = true,
+                        status = KnownStatus.UNKNOWN,
+                        lemmaId = "l-gold",
+                        romanization = null,
+                        glossDefault = null,
+                        isOov = false,
+                        isAmbiguous = true,
+                        hasDefinition = true,
+                        candidates = listOf(ParseCandidate("l-sleep", "सोना", "VERB", "to sleep")),
+                    ),
+                    translations = LemmaTranslations(
+                        headword = "सोना",
+                        pos = "NOUN",
+                        gloss = "gold",
+                        personal = emptyList(),
+                        official = listOf(WordTranslation("gold", null)),
+                        community = emptyList(),
+                    ),
+                    isLoading = false,
+                    onSetStatus = {},
+                    activeParseLemmaId = "l-gold",
+                    primaryHeadword = "सोना",
+                    primaryPos = "NOUN",
+                    onSelectParse = { picked = it },
+                )
+            }
+        }
+        // Both parses appear as chips (POS disambiguates the shared headword).
+        compose.onNodeWithText("सोना · NOUN").assertIsDisplayed()
+        compose.onNodeWithText("सोना · VERB").assertIsDisplayed()
+        compose.onNodeWithText("सोना · VERB").performClick()
+        assertEquals("l-sleep", picked)
+    }
+
+    @Test
+    fun wordDetailsHidesParseSwitcherWhenUnambiguous() {
+        compose.setContent {
+            CiaReaderTheme {
+                WordDetails(
+                    token = ReaderToken(0, "नमस्ते", true, KnownStatus.UNKNOWN, "l1", "namaste", "hello", false, false, true),
+                    translations = null,
+                    isLoading = false,
+                    onSetStatus = {},
+                    activeParseLemmaId = "l1",
+                    primaryHeadword = "नमस्ते",
+                    primaryPos = "INTJ",
+                )
+            }
+        }
+        // A single parse: no switcher chip pair, just the headword title.
+        compose.onNodeWithText("नमस्ते · INTJ").assertDoesNotExist()
+    }
+
+    @Test
     fun wordDetailsFallsBackToInlineGloss() {
         compose.setContent {
             CiaReaderTheme {
@@ -303,6 +369,62 @@ class ReaderScreenTest {
         compose.waitForIdle()
         // The first page starts at the first token, so that's the saved spot.
         assertEquals(0, recordedToken)
+    }
+
+    @Test
+    fun wordDetailsTranslateSentenceButtonFires() {
+        var translated = false
+        compose.setContent {
+            CiaReaderTheme {
+                WordDetails(
+                    token = ReaderToken(0, "नमस्ते", true, KnownStatus.UNKNOWN, "l1", null, null, false, false, true),
+                    translations = null,
+                    isLoading = false,
+                    onSetStatus = {},
+                    onTranslateSentence = { translated = true },
+                )
+            }
+        }
+        compose.onNodeWithText("Translate sentence").performClick()
+        assertTrue(translated)
+    }
+
+    @Test
+    fun wordDetailsShowsSentenceTranslationResultWhenAutoExpanded() {
+        compose.setContent {
+            CiaReaderTheme {
+                WordDetails(
+                    token = ReaderToken(0, "नमस्ते", true, KnownStatus.UNKNOWN, "l1", null, null, false, false, true),
+                    translations = null,
+                    isLoading = false,
+                    onSetStatus = {},
+                    sentenceTranslation = SentenceTranslation("नमस्ते दुनिया।", "Hello world."),
+                    autoExpandSentence = true, // expanded right after an explicit translate
+                )
+            }
+        }
+        compose.onNodeWithText("Hello world.").assertIsDisplayed()
+        compose.onNodeWithText("नमस्ते दुनिया।").assertIsDisplayed()
+    }
+
+    @Test
+    fun wordDetailsSentenceTranslationStartsCollapsedAndExpandsOnTap() {
+        compose.setContent {
+            CiaReaderTheme {
+                WordDetails(
+                    token = ReaderToken(0, "नमस्ते", true, KnownStatus.UNKNOWN, "l1", null, null, false, false, true),
+                    translations = null,
+                    isLoading = false,
+                    onSetStatus = {},
+                    sentenceTranslation = SentenceTranslation("नमस्ते दुनिया।", "Hello world."),
+                    // autoExpandSentence defaults false → collapsed (recall behaviour)
+                )
+            }
+        }
+        compose.onNodeWithText("Sentence translation", substring = true).assertIsDisplayed()
+        compose.onNodeWithText("Hello world.").assertDoesNotExist()
+        compose.onNodeWithText("Sentence translation", substring = true).performClick()
+        compose.onNodeWithText("Hello world.").assertIsDisplayed()
     }
 
     private fun token(surface: String, isWord: Boolean, status: KnownStatus = KnownStatus.UNKNOWN) =

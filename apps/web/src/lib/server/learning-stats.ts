@@ -176,6 +176,72 @@ export async function getLanguageStats(
   };
 }
 
+/**
+ * Language-level estimated comprehension (Android stats screen).
+ *
+ * The fraction of word-token occurrences across every text the user
+ * owns in this language whose lemma they've marked 'known'. Same
+ * occurrence-weighted formula as `estimatedComprehensionForText`,
+ * just aggregated over all of the language's texts so the stats
+ * screen can show one headline "how much would I understand?" number.
+ *
+ * Returns null when the user has no processed tokens yet (so the UI
+ * can show a dash rather than 0%).
+ */
+export async function languageComprehensionPct(
+  userId: string,
+  language: LanguageCode,
+): Promise<number | null> {
+  const list = unwrapRows<{ total: number; known: number }>(
+    await db.execute(sql`
+      SELECT
+        COUNT(*) FILTER (WHERE tt.is_word = true)::int AS total,
+        COUNT(*) FILTER (
+          WHERE tt.is_word = true
+            AND tt.lemma_id IS NOT NULL
+            AND ukl.status = 'known'
+        )::int AS known
+      FROM texts tx
+      INNER JOIN text_chapters ch ON ch.text_id = tx.id
+      INNER JOIN text_tokens tt ON tt.chapter_id = ch.id
+      LEFT JOIN user_known_lemmas ukl
+        ON ukl.lemma_id = tt.lemma_id AND ukl.user_id = ${userId}
+      WHERE tx.owner_id = ${userId}
+        AND tx.language = ${language}
+    `),
+  );
+  const r = list[0];
+  if (!r || r.total === 0) return null;
+  return Math.round((r.known / r.total) * 100);
+}
+
+/**
+ * Distinct known-lemma count per language for one user, in a single
+ * grouped query. Powers the language switcher's "N words" badge
+ * (GET /api/v1/me/languages) — a per-language `getLanguageStats`
+ * fan-out would be one round-trip per supported language, so we
+ * group once and let the caller fill 0 for languages absent from
+ * the map. Only `status = 'known'` rows count, matching
+ * `getLanguageStats().knownCount`.
+ */
+export async function knownLemmaCountsByLanguage(
+  userId: string,
+): Promise<Map<LanguageCode, number>> {
+  const rows = unwrapRows<{ language: LanguageCode; n: number }>(
+    await db.execute(sql`
+      SELECT l.language AS language, COUNT(*)::int AS n
+      FROM user_known_lemmas ukl
+      INNER JOIN lemmas l ON l.id = ukl.lemma_id
+      WHERE ukl.user_id = ${userId}
+        AND ukl.status = 'known'
+      GROUP BY l.language
+    `),
+  );
+  const out = new Map<LanguageCode, number>();
+  for (const r of rows) out.set(r.language, r.n ?? 0);
+  return out;
+}
+
 export type TextStats = {
   textId: string;
   title: string;
@@ -309,6 +375,42 @@ export async function estimatedComprehensionForTexts(
     if (!out.has(id)) out.set(id, null);
   }
   return out;
+}
+
+/**
+ * Book-level comprehension across a set of member texts: known word-token
+ * occurrences ÷ total word-token occurrences, summed over every text (so a
+ * longer chapter weighs more — the same occurrence-based definition as the
+ * per-text figure, just aggregated). Returns null when none of the texts have
+ * tokens yet (worker hasn't run), so the UI can show a dash rather than 0%.
+ */
+export async function bookComprehensionPct(
+  userId: string,
+  textIds: string[],
+): Promise<number | null> {
+  if (textIds.length === 0) return null;
+  const rows = unwrapRows<{ total: number; known: number }>(
+    await db.execute(sql`
+      SELECT
+        COUNT(*) FILTER (WHERE tt.is_word = true)::int AS total,
+        COUNT(*) FILTER (
+          WHERE tt.is_word = true
+            AND tt.lemma_id IS NOT NULL
+            AND ukl.status = 'known'
+        )::int AS known
+      FROM text_chapters ch
+      INNER JOIN text_tokens tt ON tt.chapter_id = ch.id
+      LEFT JOIN user_known_lemmas ukl
+        ON ukl.lemma_id = tt.lemma_id AND ukl.user_id = ${userId}
+      WHERE ch.text_id IN (${sql.join(
+        textIds.map((id) => sql`${id}`),
+        sql`, `,
+      )})
+    `),
+  );
+  const r = rows[0];
+  if (!r || r.total === 0) return null;
+  return Math.round((r.known / r.total) * 100);
 }
 
 /**

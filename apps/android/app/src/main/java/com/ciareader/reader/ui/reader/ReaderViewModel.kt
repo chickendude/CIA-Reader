@@ -4,6 +4,7 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.ciareader.reader.core.network.Outcome
+import com.ciareader.reader.core.settings.ReadingTimeStore
 import com.ciareader.reader.core.settings.SettingsStore
 import com.ciareader.reader.data.collection.CollectionRepository
 import com.ciareader.reader.data.dictionary.BasqueReference
@@ -12,6 +13,7 @@ import com.ciareader.reader.data.dictionary.LemmaTranslations
 import com.ciareader.reader.data.reader.KnownStatus
 import com.ciareader.reader.data.reader.ReaderRepository
 import com.ciareader.reader.data.reader.ReaderToken
+import com.ciareader.reader.data.reader.SentenceTranslation
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -31,8 +33,14 @@ data class ReaderChapterRef(
     val wordCount: Int = 0,
 )
 
+private const val PROCESSING_POLL_MS = 3_000L
+private const val MAX_PROCESSING_POLLS = 40 // ~2 min of auto-retry before pausing
+
 data class ReaderUiState(
     val isLoading: Boolean = true,
+    /** The chapter loaded but isn't tokenized yet (freshly imported / processing);
+     *  the reader shows a "preparing" state and polls until words are ready. */
+    val isProcessing: Boolean = false,
     val title: String = "",
     val chapterCount: Int = 1,
     val chapterIdx: Int = 0,
@@ -42,10 +50,36 @@ data class ReaderUiState(
     val basqueReference: List<BasqueReference> = emptyList(),
     val basqueRefSource: String? = null,
     val isWordLoading: Boolean = false,
+    /** Sentence translation for the selected word (word sheet action). */
+    val sentenceTranslation: SentenceTranslation? = null,
+    val isSentenceTranslating: Boolean = false,
+    val sentenceTranslateError: String? = null,
+    /** Expand the translation by default — true right after an explicit translate,
+     *  false on recall (so reopening words in a translated sentence stays compact). */
+    val autoExpandSentence: Boolean = false,
+    /** Which parse (lemma) the word sheet is currently showing a definition for.
+     *  Defaults to the tapped token's chosen lemma; the parse switcher flips it
+     *  among the token's alternate candidates. Null when the word has no
+     *  linkable lemma. */
+    val activeParseLemmaId: String? = null,
+    /** Headword/POS of the token's chosen (primary) parse, captured when its
+     *  translations load. Kept in state so the first switcher chip keeps a
+     *  stable label after the reader flips to an alternate parse — whose
+     *  translations then occupy [wordTranslations]. */
+    val primaryHeadword: String? = null,
+    val primaryPos: String? = null,
     val restoreTokenIdx: Int? = null,
     val romanize: Boolean = false,
     val isRtl: Boolean = false,
     val pageMode: Boolean = false,
+    /** PDF (image) chapters: the page image (relative URL) + its pixel size for
+     *  the image reader's tappable overlay; null for text-source chapters. */
+    val pageImageUrl: String? = null,
+    val pageWidth: Int? = null,
+    val pageHeight: Int? = null,
+    /** Toggle between the page-image view and the reflowable OCR-text view for an
+     *  image chapter. Defaults to the image; ignored when there's no page image. */
+    val imageView: Boolean = true,
     val prevTextId: String? = null,
     val nextTextId: String? = null,
     val prevTitle: String? = null,
@@ -89,8 +123,17 @@ class ReaderViewModel @Inject constructor(
     private val dictionary: DictionaryRepository,
     private val settings: SettingsStore,
     private val collections: CollectionRepository,
+    private val readingTime: ReadingTimeStore,
     savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
+
+    /** Wall clock, overridable in tests. Reading time is wall-clock delta
+     *  between the screen becoming visible and being hidden. */
+    internal var clock: () -> Long = { System.currentTimeMillis() }
+
+    // When non-null the reader is on-screen; the value is the wall-clock
+    // millis at which it became visible. Flushed to [readingTime] on hide.
+    private var readingStartedAtMs: Long? = null
 
     private val textId: String =
         checkNotNull(savedStateHandle.get<String>("textId")) { "reader requires a textId arg" }
@@ -102,7 +145,11 @@ class ReaderViewModel @Inject constructor(
     val state: StateFlow<ReaderUiState> = _state.asStateFlow()
 
     private var progressJob: Job? = null
+    private var pollJob: Job? = null
     private var currentTopToken = 0
+
+    // The loaded chapter's server id (UUID), needed for sentence translation.
+    private var currentChapterId: String? = null
 
     // This text's language, so reading prefs are read/written per-language.
     private var language: String = ""
@@ -185,33 +232,91 @@ class ReaderViewModel @Inject constructor(
         saveOnLoad: Boolean = false,
     ) {
         progressJob?.cancel()
-        _state.update { it.copy(isLoading = true, errorMessage = null, selectedWord = null, wordTranslations = null) }
-        viewModelScope.launch {
-            when (val chapter = repository.chapter(textId, chapterIdx)) {
-                is Outcome.Success -> {
-                    val anchor =
-                        if (atEnd) chapter.data.tokens.lastIndex.coerceAtLeast(0) else restoreTokenIdx
-                    _state.update {
-                        it.copy(
-                            isLoading = false,
-                            chapterIdx = chapterIdx,
-                            tokens = chapter.data.tokens,
-                            restoreTokenIdx = anchor,
-                            chapters = it.chapters.map { ref ->
-                                if (ref.chapterIdx != null) ref.copy(isCurrent = ref.chapterIdx == chapterIdx) else ref
-                            },
-                        )
-                    }
-                    if (saveOnLoad) {
-                        val tokenIdx = anchor ?: 0
-                        val pctRead = if (atEnd) 100.0 else 0.0
-                        repository.saveProgress(textId, chapterIdx, tokenIdx, pctRead)
-                    }
-                }
+        pollJob?.cancel()
+        _state.update {
+            it.copy(
+                isLoading = true,
+                isProcessing = false,
+                errorMessage = null,
+                pageImageUrl = null,
+                pageWidth = null,
+                pageHeight = null,
+                selectedWord = null,
+                wordTranslations = null,
+                sentenceTranslation = null,
+                isSentenceTranslating = false,
+                sentenceTranslateError = null,
+                autoExpandSentence = false,
+                activeParseLemmaId = null,
+                primaryHeadword = null,
+                primaryPos = null,
+            )
+        }
+        pollJob = viewModelScope.launch {
+            fetchChapter(chapterIdx, restoreTokenIdx, atEnd, saveOnLoad, attempt = 0)
+        }
+    }
 
-                is Outcome.Failure ->
-                    _state.update { it.copy(isLoading = false, errorMessage = chapter.message) }
+    /** Flip between the page-image view and the OCR-text view (image chapters). */
+    fun toggleImageView() = _state.update { it.copy(imageView = !it.imageView) }
+
+    /**
+     * Load a chapter's tokens. A just-imported chapter comes back with no tokens
+     * (the NLP worker hasn't run yet); surface a "processing" state and poll until
+     * the tokens land or we hit [MAX_PROCESSING_POLLS], so opening chapter 1 of a
+     * fresh import resolves to readable text on its own.
+     */
+    private suspend fun fetchChapter(
+        chapterIdx: Int,
+        restoreTokenIdx: Int?,
+        atEnd: Boolean,
+        saveOnLoad: Boolean,
+        attempt: Int,
+    ) {
+        when (val chapter = repository.chapter(textId, chapterIdx)) {
+            is Outcome.Success -> {
+                currentChapterId = chapter.data.chapterId
+                if (chapter.data.tokens.isEmpty()) {
+                    // Not tokenized yet — show the preparing state and keep polling.
+                    _state.update {
+                        it.copy(isLoading = false, isProcessing = true, chapterIdx = chapterIdx)
+                    }
+                    if (attempt < MAX_PROCESSING_POLLS) {
+                        delay(PROCESSING_POLL_MS)
+                        fetchChapter(chapterIdx, restoreTokenIdx, atEnd, saveOnLoad, attempt + 1)
+                    }
+                    // Past the cap we stop auto-retrying but keep the preparing UI;
+                    // re-entering the chapter restarts the poll.
+                    return
+                }
+                val anchor =
+                    if (atEnd) chapter.data.tokens.lastIndex.coerceAtLeast(0) else restoreTokenIdx
+                _state.update {
+                    it.copy(
+                        isLoading = false,
+                        isProcessing = false,
+                        chapterIdx = chapterIdx,
+                        tokens = chapter.data.tokens,
+                        pageImageUrl = chapter.data.pageImageUrl,
+                        pageWidth = chapter.data.pageWidth,
+                        pageHeight = chapter.data.pageHeight,
+                        restoreTokenIdx = anchor,
+                        chapters = it.chapters.map { ref ->
+                            if (ref.chapterIdx != null) ref.copy(isCurrent = ref.chapterIdx == chapterIdx) else ref
+                        },
+                    )
+                }
+                if (saveOnLoad) {
+                    val tokenIdx = anchor ?: 0
+                    val pctRead = if (atEnd) 100.0 else 0.0
+                    repository.saveProgress(textId, chapterIdx, tokenIdx, pctRead)
+                }
             }
+
+            is Outcome.Failure ->
+                _state.update {
+                    it.copy(isLoading = false, isProcessing = false, errorMessage = chapter.message)
+                }
         }
     }
 
@@ -224,23 +329,37 @@ class ReaderViewModel @Inject constructor(
                 wordTranslations = null,
                 basqueReference = emptyList(),
                 isWordLoading = lemmaId != null,
+                // Each word opens with a fresh sentence-translation slot.
+                sentenceTranslation = null,
+                isSentenceTranslating = false,
+                sentenceTranslateError = null,
+                autoExpandSentence = false,
+                activeParseLemmaId = lemmaId,
+                primaryHeadword = null,
+                primaryPos = null,
             )
         }
-        if (lemmaId != null) {
+        // Recall an already-saved translation for this word's sentence (cache-only,
+        // no model spend), so reopening any word in a translated sentence shows it.
+        val chapterId = currentChapterId
+        if (chapterId != null) {
             viewModelScope.launch {
-                val outcome = dictionary.translations(lemmaId)
-                _state.update { s ->
-                    // Ignore if the user has since tapped a different word.
-                    if (s.selectedWord?.lemmaId != lemmaId) return@update s
-                    when (outcome) {
-                        is Outcome.Success -> s.copy(isWordLoading = false, wordTranslations = outcome.data)
-                        is Outcome.Failure -> s.copy(isWordLoading = false)
+                val recalled = repository.cachedSentenceTranslation(chapterId, token.idx, language)
+                if (recalled is Outcome.Success) {
+                    _state.update { s ->
+                        // Only apply if still on this word and nothing's shown yet
+                        // (don't clobber a fresh manual translation).
+                        if (s.selectedWord == token && s.sentenceTranslation == null) {
+                            s.copy(sentenceTranslation = recalled.data)
+                        } else {
+                            s
+                        }
                     }
                 }
             }
         }
-        // Admin-only Basque reference dictionaries. The endpoint 403s non-admins,
-        // after which we stop asking for the rest of the session.
+        // Admin-only Basque reference dictionaries (per surface word). The endpoint
+        // 403s non-admins, after which we stop asking for the rest of the session.
         if (language == "eu" && !basqueRefDisabled) {
             viewModelScope.launch {
                 when (val ref = dictionary.basqueReference(token.surface)) {
@@ -251,20 +370,57 @@ class ReaderViewModel @Inject constructor(
                 }
             }
         }
+        if (lemmaId == null) return
+        loadParse(lemmaId, isPrimary = true)
     }
 
-    /** Save the viewer's own definition for the selected word, then refresh the
+    /** Switch the word sheet to a different parse of the selected word and load
+     *  that lemma's definition. The parse switcher (shown for ambiguous tokens)
+     *  drives this. No-op when nothing is selected or it's already the active
+     *  parse. */
+    fun selectParse(lemmaId: String) {
+        val current = _state.value
+        if (current.selectedWord == null || current.activeParseLemmaId == lemmaId) return
+        _state.update { it.copy(activeParseLemmaId = lemmaId, wordTranslations = null, isWordLoading = true) }
+        loadParse(lemmaId, isPrimary = lemmaId == current.selectedWord.lemmaId)
+    }
+
+    /** Fetch a lemma's translations into the word sheet, ignoring the result if
+     *  the user has since tapped another word or flipped to another parse. When
+     *  the parser's chosen lemma loads, its headword/POS are cached so the
+     *  primary switcher chip stays labelled after the reader views an
+     *  alternate. */
+    private fun loadParse(lemmaId: String, isPrimary: Boolean) {
+        viewModelScope.launch {
+            val outcome = dictionary.translations(lemmaId)
+            _state.update { s ->
+                if (s.activeParseLemmaId != lemmaId) return@update s
+                when (outcome) {
+                    is Outcome.Success -> s.copy(
+                        isWordLoading = false,
+                        wordTranslations = outcome.data,
+                        primaryHeadword = if (isPrimary) outcome.data.headword else s.primaryHeadword,
+                        primaryPos = if (isPrimary) outcome.data.pos else s.primaryPos,
+                    )
+                    is Outcome.Failure -> s.copy(isWordLoading = false)
+                }
+            }
+        }
+    }
+
+    /** Save the viewer's own definition for the active parse, then refresh the
      *  panel so it appears under "Your notes". */
     fun addDefinition(text: String) {
         val body = text.trim()
         if (body.isEmpty()) return
-        val lemmaId = _state.value.selectedWord?.lemmaId ?: return
+        val lemmaId = _state.value.activeParseLemmaId ?: return
         viewModelScope.launch {
             if (dictionary.addDefinition(lemmaId, body) is Outcome.Success) {
-                val refreshed = dictionary.translations(lemmaId)
+                // Force-refresh so the new note appears (the cache is now stale).
+                val refreshed = dictionary.refreshTranslations(lemmaId)
                 if (refreshed is Outcome.Success) {
                     _state.update { s ->
-                        if (s.selectedWord?.lemmaId == lemmaId) s.copy(wordTranslations = refreshed.data) else s
+                        if (s.activeParseLemmaId == lemmaId) s.copy(wordTranslations = refreshed.data) else s
                     }
                 }
             }
@@ -297,6 +453,22 @@ class ReaderViewModel @Inject constructor(
         }
     }
 
+    /** Pull the latest definitions/community suggestions for the active parse. */
+    fun refreshSelectedWord() {
+        val lemmaId = _state.value.activeParseLemmaId ?: return
+        _state.update { it.copy(isWordLoading = true) }
+        viewModelScope.launch {
+            val o = dictionary.refreshTranslations(lemmaId)
+            _state.update { s ->
+                if (s.activeParseLemmaId != lemmaId) return@update s
+                when (o) {
+                    is Outcome.Success -> s.copy(isWordLoading = false, wordTranslations = o.data)
+                    is Outcome.Failure -> s.copy(isWordLoading = false)
+                }
+            }
+        }
+    }
+
     /** Persist a status for the selected word's lemma and recolor every
      *  occurrence of that lemma in the current chapter. */
     fun setStatus(status: KnownStatus) {
@@ -318,7 +490,43 @@ class ReaderViewModel @Inject constructor(
         }
     }
 
-    fun dismissWord() = _state.update { it.copy(selectedWord = null, wordTranslations = null, isWordLoading = false) }
+    /** Translate the sentence the selected word sits in, via the server (which
+     *  reconstructs + caches it). No-op without a chapter id or selection. */
+    fun translateSentence() {
+        val token = _state.value.selectedWord ?: return
+        val chapterId = currentChapterId ?: return
+        // Don't re-fetch if we already have it or a request is in flight.
+        if (_state.value.sentenceTranslation != null || _state.value.isSentenceTranslating) return
+        _state.update { it.copy(isSentenceTranslating = true, sentenceTranslateError = null) }
+        viewModelScope.launch {
+            val outcome = repository.translateSentence(chapterId, token.idx, language)
+            _state.update { s ->
+                // Drop the result if the user has moved to a different word.
+                if (s.selectedWord != token) return@update s
+                when (outcome) {
+                    is Outcome.Success ->
+                        s.copy(isSentenceTranslating = false, sentenceTranslation = outcome.data, autoExpandSentence = true)
+                    is Outcome.Failure ->
+                        s.copy(isSentenceTranslating = false, sentenceTranslateError = outcome.message)
+                }
+            }
+        }
+    }
+
+    fun dismissWord() = _state.update {
+        it.copy(
+            selectedWord = null,
+            wordTranslations = null,
+            isWordLoading = false,
+            sentenceTranslation = null,
+            isSentenceTranslating = false,
+            sentenceTranslateError = null,
+            autoExpandSentence = false,
+            activeParseLemmaId = null,
+            primaryHeadword = null,
+            primaryPos = null,
+        )
+    }
 
     fun nextChapter() {
         if (_state.value.hasNext) loadChapter(_state.value.chapterIdx + 1, saveOnLoad = true)
@@ -415,6 +623,37 @@ class ReaderViewModel @Inject constructor(
 
     fun retry() {
         if (_state.value.title.isEmpty()) loadInitial() else loadChapter(_state.value.chapterIdx)
+    }
+
+    /**
+     * The reader became visible (ON_START). Begins accruing reading time.
+     * Idempotent — a second call without an intervening [onScreenHidden]
+     * is ignored, so it's safe to attach to a lifecycle observer.
+     */
+    fun onScreenVisible() {
+        if (readingStartedAtMs == null) readingStartedAtMs = clock()
+    }
+
+    /**
+     * The reader was hidden/backgrounded (ON_STOP). Flushes the elapsed
+     * foreground duration to [readingTime] under this text's language.
+     * Reading time is LOCAL-ONLY (no server sync).
+     */
+    fun onScreenHidden() {
+        val startedAt = readingStartedAtMs ?: return
+        readingStartedAtMs = null
+        val elapsed = clock() - startedAt
+        if (elapsed <= 0L) return
+        val lang = language
+        if (lang.isEmpty()) return
+        viewModelScope.launch { readingTime.addReadingTime(lang, elapsed) }
+    }
+
+    override fun onCleared() {
+        // Flush any in-progress session if the screen leaves without an
+        // explicit ON_STOP (e.g. the VM is cleared on back-navigation).
+        onScreenHidden()
+        super.onCleared()
     }
 
     private companion object {

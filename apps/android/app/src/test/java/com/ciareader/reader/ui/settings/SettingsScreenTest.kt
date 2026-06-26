@@ -29,6 +29,7 @@ class SettingsScreenTest {
         onSetRomanization: (Boolean) -> Unit = {},
         onSetFontSize: (Int) -> Unit = {},
         onClearCache: () -> Unit = {},
+        onOpenStats: () -> Unit = {},
         onLogout: () -> Unit = {},
     ) {
         compose.setContent {
@@ -43,6 +44,7 @@ class SettingsScreenTest {
                     onClearCache = onClearCache,
                     onCacheClearedShown = {},
                     onOpenDownloads = {},
+                    onOpenStats = onOpenStats,
                     onLogout = onLogout,
                 )
             }
@@ -84,6 +86,14 @@ class SettingsScreenTest {
         compose.onNodeWithText("Log out").performScrollTo().performClick()
         assertTrue(cleared)
         assertTrue(loggedOut)
+    }
+
+    @Test
+    fun readingStatsActionCallsBack() {
+        var opened = false
+        content(onOpenStats = { opened = true })
+        compose.onNodeWithText("Reading stats").performScrollTo().performClick()
+        assertTrue(opened)
     }
 
     @Test

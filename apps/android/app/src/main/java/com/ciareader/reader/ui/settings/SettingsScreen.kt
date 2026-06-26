@@ -46,6 +46,7 @@ fun SettingsScreen(
     onBack: () -> Unit,
     onLogout: () -> Unit,
     onOpenDownloads: () -> Unit,
+    onOpenStats: () -> Unit,
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -59,6 +60,7 @@ fun SettingsScreen(
         onClearCache = viewModel::clearOfflineCache,
         onCacheClearedShown = viewModel::onCacheClearedShown,
         onOpenDownloads = onOpenDownloads,
+        onOpenStats = onOpenStats,
         onLogout = onLogout,
     )
 }
@@ -75,6 +77,7 @@ fun SettingsScreenContent(
     onClearCache: () -> Unit,
     onCacheClearedShown: () -> Unit,
     onOpenDownloads: () -> Unit,
+    onOpenStats: () -> Unit,
     onLogout: () -> Unit,
 ) {
     val snackbar = remember { SnackbarHostState() }
@@ -133,6 +136,12 @@ fun SettingsScreenContent(
                 onDecrease = { onSetLineSpacing(state.lineSpacing - SettingsViewModel.LINE_SPACING_STEP) },
                 onIncrease = { onSetLineSpacing(state.lineSpacing + SettingsViewModel.LINE_SPACING_STEP) },
             )
+
+            Spacer(Modifier.height(24.dp))
+            SectionHeader("Progress")
+            OutlinedButton(onClick = onOpenStats, modifier = Modifier.fillMaxWidth()) {
+                Text("Reading stats")
+            }
 
             Spacer(Modifier.height(24.dp))
             SectionHeader("Storage")
