@@ -18,6 +18,7 @@ import { referenceCache } from './reference';
 import { fetchSubtitles } from './subtitles';
 import { cuesCache } from './subtitles-cache';
 import { translationCache } from './translation';
+import { userTranslations } from './user-translations';
 
 async function handle(msg: Message, sender: browser.runtime.MessageSender): Promise<unknown> {
   switch (msg.type) {
@@ -61,6 +62,16 @@ async function handle(msg: Message, sender: browser.runtime.MessageSender): Prom
           msg.cachedOnly,
         ),
       };
+    case 'USER_TRX_LIST':
+      return { translations: await userTranslations.list(msg.lemmaId) };
+    case 'USER_TRX_ADD':
+      return { translation: await userTranslations.add(msg.lemmaId, msg.body, msg.targetLanguage) };
+    case 'USER_TRX_EDIT':
+      await userTranslations.edit(msg.id, msg.body);
+      return { ok: true };
+    case 'USER_TRX_DELETE':
+      await userTranslations.remove(msg.id);
+      return { ok: true };
     case 'CAPTURE_SCREENSHOT': {
       try {
         const opts = { format: 'jpeg', quality: 80 } as const;

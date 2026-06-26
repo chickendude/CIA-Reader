@@ -27,6 +27,14 @@ export type LookupResult = {
   entries: ExportedLemma[];
 };
 
+/** A user-authored ("personal") dictionary translation. Synced to the account
+ *  (backend), so it also appears in the reader app + website. */
+export type PersonalTranslation = {
+  id: string;
+  body: string;
+  targetLanguage: string;
+};
+
 /** Definition language a source/translation belongs to (for the EN/ES/EU filter). */
 export type DefinitionLang = 'en' | 'es' | 'eu';
 

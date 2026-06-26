@@ -77,6 +77,13 @@ const overlay = new Overlay({
     sendMessage('TRANSLATE', { language: LANGUAGE, text, targetLanguage, cachedOnly }).then(
       (r) => r.translation,
     ),
+  userTrx: {
+    list: (lemmaId) => sendMessage('USER_TRX_LIST', { lemmaId }).then((r) => r.translations),
+    add: (lemmaId, body, targetLanguage) =>
+      sendMessage('USER_TRX_ADD', { lemmaId, body, targetLanguage }).then((r) => r.translation),
+    edit: (id, body) => sendMessage('USER_TRX_EDIT', { id, body }).then(() => undefined),
+    remove: (id) => sendMessage('USER_TRX_DELETE', { id }).then(() => undefined),
+  },
 });
 
 // Hide the player's control overlay during a capture WITHOUT touching the video

@@ -71,19 +71,43 @@ export function createApiClient(deps: ApiClientDeps) {
     return res;
   }
 
+  // Prefer the server's `{ message }` (SvelteKit `error(status, message)`) so
+  // callers can surface something actionable (validation, rate-limit, etc.).
+  async function failure(res: Response, method: string, path: string): Promise<Error> {
+    let message = `${method} ${path} failed: HTTP ${res.status}`;
+    try {
+      const data = (await res.json()) as { message?: unknown };
+      if (data && typeof data.message === 'string') message = data.message;
+    } catch {
+      /* non-JSON error body */
+    }
+    return new Error(message);
+  }
+
   async function getJson<T>(path: string): Promise<T> {
     const res = await request(path);
-    if (!res.ok) throw new Error(`GET ${path} failed: HTTP ${res.status}`);
+    if (!res.ok) throw await failure(res, 'GET', path);
     return (await res.json()) as T;
   }
 
   async function postJson<T>(path: string, body: unknown): Promise<T> {
     const res = await request(path, { method: 'POST', body: JSON.stringify(body) });
-    if (!res.ok) throw new Error(`POST ${path} failed: HTTP ${res.status}`);
+    if (!res.ok) throw await failure(res, 'POST', path);
     return (await res.json()) as T;
   }
 
-  return { request, getJson, postJson };
+  async function patchJson<T>(path: string, body: unknown): Promise<T> {
+    const res = await request(path, { method: 'PATCH', body: JSON.stringify(body) });
+    if (!res.ok) throw await failure(res, 'PATCH', path);
+    return (await res.json()) as T;
+  }
+
+  async function del(path: string): Promise<void> {
+    const res = await request(path, { method: 'DELETE' });
+    if (!res.ok) throw await failure(res, 'DELETE', path);
+  }
+
+  return { request, getJson, postJson, patchJson, del };
 }
 
 export type ApiClient = ReturnType<typeof createApiClient>;

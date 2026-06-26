@@ -8,7 +8,7 @@
  */
 import { ext } from './browser';
 import type { SubtitleCue } from './subtitles';
-import type { LookupResult, ReferenceEntry } from './lookup';
+import type { LookupResult, ReferenceEntry, PersonalTranslation } from './lookup';
 
 export type Requests = {
   PING: { req: Record<string, never>; res: { pong: true } };
@@ -55,6 +55,14 @@ export type Requests = {
     req: { language: string; text: string; targetLanguage: string; cachedOnly?: boolean };
     res: { translation: string | null };
   };
+  // Personal (user-authored) dictionary translations — sync to the app + website.
+  USER_TRX_LIST: { req: { lemmaId: string }; res: { translations: PersonalTranslation[] } };
+  USER_TRX_ADD: {
+    req: { lemmaId: string; body: string; targetLanguage: string };
+    res: { translation: PersonalTranslation };
+  };
+  USER_TRX_EDIT: { req: { id: string; body: string }; res: { ok: true } };
+  USER_TRX_DELETE: { req: { id: string }; res: { ok: true } };
 };
 
 export type MessageType = keyof Requests;

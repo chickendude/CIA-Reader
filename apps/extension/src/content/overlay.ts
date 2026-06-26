@@ -6,7 +6,12 @@
  * controls which definition languages are shown.
  */
 import type { ExportedLemma } from '../shared/api-types';
-import type { DefinitionLang, LookupResult, ReferenceEntry } from '../shared/lookup';
+import type {
+  DefinitionLang,
+  LookupResult,
+  PersonalTranslation,
+  ReferenceEntry,
+} from '../shared/lookup';
 import { referenceSourceLang } from '../shared/lookup';
 import { splitCueWords } from '../shared/tokenize';
 
@@ -40,6 +45,26 @@ type Deps = {
   ankiHas?: (front: string) => Promise<boolean>;
   /** Dictionary headword autocomplete for the form-search input. */
   suggest?: (prefix: string) => Promise<string[]>;
+  /** Personal (user-authored) dictionary translations — synced to the account. */
+  userTrx?: {
+    list: (lemmaId: string) => Promise<PersonalTranslation[]>;
+    add: (lemmaId: string, body: string, targetLanguage: string) => Promise<PersonalTranslation>;
+    edit: (id: string, body: string) => Promise<void>;
+    remove: (id: string) => Promise<void>;
+  };
+};
+
+/** Per-lemma personal-translation editor state (kept across re-renders). */
+type PersonalEditor = {
+  open: boolean;
+  loaded: boolean;
+  loading: boolean;
+  items: PersonalTranslation[];
+  error: string | null;
+  draft: string;
+  editingId: string | null;
+  editDraft: string;
+  busy: boolean;
 };
 
 type RefState = 'idle' | 'loading' | 'done' | 'error';
@@ -62,6 +87,8 @@ type PopupState = {
   translationError: string | null;
   /** Targets we've already attempted a cache-only auto-load for. */
   cachedTried: Set<string>;
+  /** Per-lemma personal-translation editors (lazy, keyed by lemma id). */
+  personal: Map<string, PersonalEditor>;
 };
 
 /** Sentence translations always go to English. */
@@ -152,6 +179,27 @@ const STYLE = `
   font: 13px/1.45 system-ui, -apple-system, sans-serif; box-shadow: 0 8px 26px rgba(0,0,0,0.6);
 }
 .tooltip .ex { font-style: italic; margin: 3px 0; color: #d2d2d2; }
+.popup .mine { margin-top: 8px; padding-top: 8px; border-top: 1px solid #2e3138; }
+.popup .mine-head { display: flex; align-items: center; }
+.popup .mine-toggle { cursor: pointer; user-select: none; color: #9fb; font-size: 11px;
+  text-transform: uppercase; letter-spacing: .04em; font-weight: 700; }
+.popup .mine-toggle:hover { color: #bfe; }
+.popup .mine-count { margin-left: 6px; background: #2a2d33; color: #9aa; border-radius: 999px;
+  padding: 0 6px; font-size: 10px; }
+.popup .mine-row { display: flex; align-items: center; gap: 6px; margin: 5px 0; }
+.popup .mine-body { flex: 1; color: #e8e2e2; }
+.popup .mine-lang { font-size: 9px; font-weight: 700; color: #d79a93;
+  border: 1px solid rgba(215,154,147,.4); border-radius: 3px; padding: 0 4px; }
+.popup .mine-act { cursor: pointer; opacity: .65; font-size: 13px; }
+.popup .mine-act:hover { opacity: 1; }
+.popup .mine-input { flex: 1; font: inherit; font-size: 13px; padding: 3px 8px; border-radius: 6px;
+  background: #15171a; color: #fff; border: 1px solid #3a3d44; outline: none; }
+.popup .mine-input:focus { border-color: #4a90e2; }
+.popup .mine-btn { font: inherit; font-size: 12px; cursor: pointer; background: #2b6cb0; color: #fff;
+  border: none; border-radius: 6px; padding: 3px 10px; }
+.popup .mine-btn:hover { background: #3a7bc8; }
+.popup .mine-btn:disabled { opacity: .6; cursor: default; }
+.popup .mine-err { color: #e0a0a0; font-size: 12px; margin-top: 4px; }
 .popup .translate { margin-top: 10px; padding-top: 9px; border-top: 1px solid #2e3138; }
 .popup .tr-btn { font: inherit; font-size: 12px; cursor: pointer; background: transparent; color: #7cc0ff;
   border: 1px solid #3a6ea5; border-radius: 6px; padding: 4px 10px; }
@@ -455,6 +503,7 @@ export class Overlay {
       translating: false,
       translationError: null,
       cachedTried: new Set(),
+      personal: new Map(),
     };
     this.render();
 
@@ -626,6 +675,12 @@ export class Overlay {
       shown += 1;
     }
 
+    // Personal translations (your own, synced to the account) for the active
+    // lemma. Attaches to the primary entry so it has a real lemma id to write to.
+    if (this.deps.userTrx && entries[0]) {
+      content.append(this.renderPersonalEditor(entries[0].id, lang));
+    }
+
     // External reference dictionaries for the selected language.
     const refByLabel = new Map<string, ReferenceEntry[]>();
     for (const r of s.reference) {
@@ -770,6 +825,183 @@ export class Overlay {
       row.append(edit);
     }
     return row;
+  }
+
+  // ---- personal (user-authored) translations ----
+
+  private editorFor(lemmaId: string): PersonalEditor {
+    const map = this.state!.personal;
+    let e = map.get(lemmaId);
+    if (!e) {
+      e = {
+        open: false,
+        loaded: false,
+        loading: false,
+        items: [],
+        error: null,
+        draft: '',
+        editingId: null,
+        editDraft: '',
+        busy: false,
+      };
+      map.set(lemmaId, e);
+    }
+    return e;
+  }
+
+  private async loadEditor(lemmaId: string): Promise<void> {
+    const e = this.editorFor(lemmaId);
+    if (!this.deps.userTrx || e.loading) return;
+    e.loading = true;
+    e.error = null;
+    this.render();
+    try {
+      e.items = await this.deps.userTrx.list(lemmaId);
+      e.loaded = true;
+    } catch (err) {
+      e.error = err instanceof Error ? err.message : String(err);
+    } finally {
+      e.loading = false;
+      this.render();
+    }
+  }
+
+  private async addPersonal(lemmaId: string, targetLang: string): Promise<void> {
+    const e = this.editorFor(lemmaId);
+    const body = e.draft.trim();
+    if (!this.deps.userTrx || !body || e.busy) return;
+    e.busy = true;
+    e.error = null;
+    this.render();
+    try {
+      const t = await this.deps.userTrx.add(lemmaId, body, targetLang);
+      e.items.push(t);
+      e.draft = '';
+    } catch (err) {
+      e.error = err instanceof Error ? err.message : String(err);
+    } finally {
+      e.busy = false;
+      this.render();
+    }
+  }
+
+  private async savePersonalEdit(lemmaId: string): Promise<void> {
+    const e = this.editorFor(lemmaId);
+    const id = e.editingId;
+    const body = e.editDraft.trim();
+    if (!this.deps.userTrx || !id || !body || e.busy) return;
+    e.busy = true;
+    e.error = null;
+    this.render();
+    try {
+      await this.deps.userTrx.edit(id, body);
+      const item = e.items.find((i) => i.id === id);
+      if (item) item.body = body;
+      e.editingId = null;
+    } catch (err) {
+      e.error = err instanceof Error ? err.message : String(err);
+    } finally {
+      e.busy = false;
+      this.render();
+    }
+  }
+
+  private async deletePersonal(lemmaId: string, id: string): Promise<void> {
+    const e = this.editorFor(lemmaId);
+    if (!this.deps.userTrx || e.busy) return;
+    e.busy = true;
+    e.error = null;
+    this.render();
+    try {
+      await this.deps.userTrx.remove(id);
+      e.items = e.items.filter((i) => i.id !== id);
+    } catch (err) {
+      e.error = err instanceof Error ? err.message : String(err);
+    } finally {
+      e.busy = false;
+      this.render();
+    }
+  }
+
+  private renderPersonalEditor(lemmaId: string, targetLang: DefinitionLang): HTMLElement {
+    const e = this.editorFor(lemmaId);
+    const box = el('div', 'mine');
+
+    const head = el('div', 'mine-head');
+    const toggle = el('span', 'mine-toggle', `${e.open ? '▾' : '▸'} Your translations`);
+    if (e.loaded && e.items.length > 0) toggle.append(el('span', 'mine-count', String(e.items.length)));
+    toggle.addEventListener('click', () => {
+      e.open = !e.open;
+      if (e.open && !e.loaded && !e.loading) void this.loadEditor(lemmaId);
+      else this.render();
+    });
+    head.append(toggle);
+    box.append(head);
+
+    if (!e.open) return box;
+
+    if (e.loading) box.append(el('div', 'muted', 'Loading…'));
+
+    for (const item of e.items) {
+      if (e.editingId === item.id) {
+        const row = el('div', 'mine-row');
+        const input = el('input', 'mine-input');
+        input.value = e.editDraft;
+        input.addEventListener('input', () => (e.editDraft = input.value));
+        input.addEventListener('keydown', (ev) => {
+          ev.stopPropagation();
+          if (ev.key === 'Enter') void this.savePersonalEdit(lemmaId);
+          else if (ev.key === 'Escape') {
+            e.editingId = null;
+            this.render();
+          }
+        });
+        const save = el('button', 'mine-btn', 'Save');
+        save.addEventListener('click', () => void this.savePersonalEdit(lemmaId));
+        row.append(input, save);
+        box.append(row);
+        setTimeout(() => input.focus(), 0);
+      } else {
+        const row = el('div', 'mine-row');
+        row.append(el('span', 'mine-body', item.body));
+        if (item.targetLanguage && item.targetLanguage !== targetLang) {
+          row.append(el('span', 'mine-lang', item.targetLanguage.toUpperCase()));
+        }
+        const edit = el('span', 'mine-act', '✎');
+        edit.title = 'Edit';
+        edit.addEventListener('click', () => {
+          e.editingId = item.id;
+          e.editDraft = item.body;
+          this.render();
+        });
+        const del = el('span', 'mine-act', '🗑');
+        del.title = 'Delete';
+        del.addEventListener('click', () => void this.deletePersonal(lemmaId, item.id));
+        row.append(edit, del);
+        box.append(row);
+      }
+    }
+
+    // Add a new one.
+    const addRow = el('div', 'mine-row');
+    const addInput = el('input', 'mine-input');
+    addInput.placeholder = `add a ${targetLang.toUpperCase()} translation…`;
+    addInput.value = e.draft;
+    addInput.disabled = e.busy;
+    addInput.addEventListener('input', () => (e.draft = addInput.value));
+    addInput.addEventListener('keydown', (ev) => {
+      ev.stopPropagation();
+      if (ev.key === 'Enter') void this.addPersonal(lemmaId, targetLang);
+    });
+    const add = el('button', 'mine-btn', '＋');
+    add.title = 'Add';
+    add.disabled = e.busy;
+    add.addEventListener('click', () => void this.addPersonal(lemmaId, targetLang));
+    addRow.append(addInput, add);
+    box.append(addRow);
+
+    if (e.error) box.append(el('div', 'mine-err', e.error));
+    return box;
   }
 
   /** Displayable definitions for an internal entry, tagged with language. */
