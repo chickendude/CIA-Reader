@@ -64,8 +64,8 @@ type PopupState = {
   cachedTried: Set<string>;
 };
 
-/** Sentence-translation target for a definition tab (Basque → en/es). */
-const targetForLang = (l: DefinitionLang): string => (l === 'es' ? 'es' : 'en');
+/** Sentence translations always go to English. */
+const TRANSLATE_TARGET = 'en';
 
 const STYLE = `
 :host { all: initial; }
@@ -659,7 +659,7 @@ export class Overlay {
     // Sentence translation (OpenAI-backed, cached). Target follows the active
     // definition tab: ES tab → Spanish, otherwise English.
     if (this.deps.translate && this.currentSentence) {
-      const target = targetForLang(lang);
+      const target = TRANSLATE_TARGET;
       // Auto-load a previously-saved translation for this target (cache-only, no
       // API spend) so re-opening a line you've translated shows it immediately.
       if (
@@ -684,7 +684,6 @@ export class Overlay {
       if (s.translationError) {
         tr.append(el('div', 'tr-err', s.translationError));
       } else if (s.translation && s.translationTarget === target) {
-        tr.append(el('span', 'tr-flag', target.toUpperCase()));
         tr.append(el('span', 'tr-text', s.translation));
       } else {
         const btn = el('button', 'tr-btn', s.translating ? 'Translating…' : '🌐 Translate sentence');
@@ -864,7 +863,7 @@ export class Overlay {
     // time (cache-only lookup — no API spend on a miss).
     if (!card.sentenceTranslation && this.deps.translate && card.sentence) {
       try {
-        const t = await this.deps.translate(card.sentence, targetForLang(this.displayLang), true);
+        const t = await this.deps.translate(card.sentence, TRANSLATE_TARGET, true);
         if (t) card.sentenceTranslation = t;
       } catch {
         /* best-effort */
