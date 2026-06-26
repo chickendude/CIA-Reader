@@ -43,19 +43,24 @@ const overlay = new Overlay({
     let screenshot: string | null = null;
     let note: string | undefined;
     if (config.captureMedia) {
-      // Hide our overlay AND the player's controls (the paused play/skip overlay)
-      // so they aren't in the frame, capture, then crop to the video.
-      overlay.setVisible(false);
-      setPlayerChromeHidden(true);
-      await delay(90);
-      const res = await sendMessage('CAPTURE_SCREENSHOT', {}).catch(() => ({
-        dataUrl: null,
-        error: 'capture message failed',
-      }));
-      setPlayerChromeHidden(false);
-      overlay.setVisible(true);
-      if (res.dataUrl) screenshot = await cropToVideo(res.dataUrl);
-      else note = `no screenshot${res.error ? ` (${res.error})` : ''}`;
+      // Prefer grabbing the frame straight from the <video> element: it has no
+      // player controls/overlay in it and needs no hiding (so the popup stays
+      // open and playback isn't disturbed). Fall back to a cropped tab capture
+      // only if the canvas is DRM-tainted.
+      screenshot = captureVideoFrame();
+      if (!screenshot) {
+        overlay.setVisible(false);
+        setPlayerChromeHidden(true);
+        await delay(90);
+        const res = await sendMessage('CAPTURE_SCREENSHOT', {}).catch(() => ({
+          dataUrl: null,
+          error: 'capture message failed',
+        }));
+        setPlayerChromeHidden(false);
+        overlay.setVisible(true);
+        if (res.dataUrl) screenshot = await cropToVideo(res.dataUrl);
+        else note = `no screenshot${res.error ? ` (${res.error})` : ''}`;
+      }
     }
     const result = await sendMessage('ADD_ANKI', { language: LANGUAGE, ...card, screenshot });
     return { ...result, note };
@@ -74,6 +79,24 @@ function setPlayerChromeHidden(hidden: boolean): void {
   } else if (!hidden && chromeHideStyle) {
     chromeHideStyle.remove();
     chromeHideStyle = null;
+  }
+}
+
+/** Grab the current frame straight from the <video> element (no player controls
+ *  or overlay in it). Returns null if the canvas is DRM-tainted (→ tab capture). */
+function captureVideoFrame(): string | null {
+  const v = video.element;
+  if (!v || !v.videoWidth || !v.videoHeight) return null;
+  try {
+    const canvas = document.createElement('canvas');
+    canvas.width = v.videoWidth;
+    canvas.height = v.videoHeight;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return null;
+    ctx.drawImage(v, 0, 0, canvas.width, canvas.height);
+    return canvas.toDataURL('image/jpeg', 0.85); // throws if EME-tainted
+  } catch {
+    return null;
   }
 }
 
