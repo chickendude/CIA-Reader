@@ -40,10 +40,10 @@ export const POST: RequestHandler = async (event) => {
   const parsed = bodySchema.safeParse(await event.request.json().catch(() => null));
   if (!parsed.success) throw error(400, 'Invalid body');
 
-  const { text, language } = parsed.data;
+  const { text, language, cachedOnly } = parsed.data;
   if (!isSupportedLanguage(language)) throw error(400, 'Unsupported language');
 
-  const targetLanguage = parsed.targetLanguage ?? 'en';
+  const targetLanguage = parsed.data.targetLanguage ?? 'en';
   const key = {
     language,
     targetLanguage,
@@ -54,7 +54,7 @@ export const POST: RequestHandler = async (event) => {
   const cached = await getCachedTranslation(key);
   if (cached) return json({ translation: cached, cached: true });
 
-  if (parsed.data.cachedOnly) return json({ translation: null, cached: false });
+  if (cachedOnly) return json({ translation: null, cached: false });
 
   try {
     const translation = await translateSentence(text, language, targetLanguage);
