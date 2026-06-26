@@ -15,9 +15,11 @@ import com.ciareader.reader.data.dictionary.WordTranslation
 import com.ciareader.reader.data.reader.Chapter
 import com.ciareader.reader.data.reader.ChapterRef
 import com.ciareader.reader.data.reader.KnownStatus
+import com.ciareader.reader.data.reader.ParseCandidate
 import com.ciareader.reader.data.reader.ReaderRepository
 import com.ciareader.reader.data.reader.ReaderToken
 import com.ciareader.reader.data.reader.ReadingProgress
+import com.ciareader.reader.data.reader.SentenceTranslation
 import com.ciareader.reader.data.reader.TextMeta
 import com.ciareader.reader.util.MainDispatcherRule
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -203,6 +205,71 @@ class ReaderViewModelTest {
         assertNotNull(v.state.value.wordTranslations)
         assertEquals("नमस्ते", v.state.value.wordTranslations?.headword)
         assertFalse(v.state.value.isWordLoading)
+    }
+
+    @Test
+    fun wordTapDefaultsActiveParseToChosenLemma() = runTest(mainRule.dispatcher) {
+        val w = ReaderToken(0, "सोने", true, KnownStatus.UNKNOWN, "l-gold", null, null, false, true, true)
+        val repo = FakeReaderRepository(meta = meta(1), chapters = mapOf(0 to Chapter(0, listOf(w))))
+        val dict = FakeDictionaryRepository(translations = translations("सोना", "gold"))
+        val v = vm(repo, dict)
+        advanceUntilIdle()
+
+        v.onWordTap(w)
+        advanceUntilIdle()
+
+        assertEquals("l-gold", v.state.value.activeParseLemmaId)
+        // The chosen lemma's headword/POS are captured for the primary chip label.
+        assertEquals("सोना", v.state.value.primaryHeadword)
+    }
+
+    @Test
+    fun selectParseLoadsAlternateDefinition() = runTest(mainRule.dispatcher) {
+        val w = ReaderToken(
+            idx = 0, surface = "सोने", isWord = true, status = KnownStatus.UNKNOWN,
+            lemmaId = "l-gold", romanization = null, glossDefault = null,
+            isOov = false, isAmbiguous = true, hasDefinition = true,
+            candidates = listOf(ParseCandidate("l-sleep", "सोना", "VERB", "to sleep")),
+        )
+        val repo = FakeReaderRepository(meta = meta(1), chapters = mapOf(0 to Chapter(0, listOf(w))))
+        val dict = FakeDictionaryRepository(
+            byLemma = mapOf(
+                "l-gold" to translations("सोना", "gold"),
+                "l-sleep" to translations("सोना", "to sleep"),
+            ),
+        )
+        val v = vm(repo, dict)
+        advanceUntilIdle()
+
+        v.onWordTap(w)
+        advanceUntilIdle()
+        assertEquals("gold", v.state.value.wordTranslations?.official?.first()?.body)
+
+        v.selectParse("l-sleep")
+        advanceUntilIdle()
+
+        assertEquals("l-sleep", v.state.value.activeParseLemmaId)
+        assertEquals("to sleep", v.state.value.wordTranslations?.official?.first()?.body)
+        // The primary chip label stays anchored to the parser's chosen lemma.
+        assertEquals("सोना", v.state.value.primaryHeadword)
+        assertEquals(listOf("l-gold", "l-sleep"), dict.requestedLemmaIds)
+    }
+
+    @Test
+    fun selectParseIsNoopForAlreadyActiveParse() = runTest(mainRule.dispatcher) {
+        val w = ReaderToken(0, "सोने", true, KnownStatus.UNKNOWN, "l-gold", null, null, false, true, true)
+        val repo = FakeReaderRepository(meta = meta(1), chapters = mapOf(0 to Chapter(0, listOf(w))))
+        val dict = FakeDictionaryRepository(translations = translations("सोना", "gold"))
+        val v = vm(repo, dict)
+        advanceUntilIdle()
+
+        v.onWordTap(w)
+        advanceUntilIdle()
+        v.selectParse("l-gold") // already the active parse
+        advanceUntilIdle()
+
+        // Only the initial tap fetched; the redundant select didn't refetch.
+        assertEquals(listOf("l-gold"), dict.requestedLemmaIds)
     }
 
     @Test
@@ -525,6 +592,135 @@ class ReaderViewModelTest {
     }
 
     @Test
+    fun translateSentenceLoadsAndSucceeds() = runTest(mainRule.dispatcher) {
+        val token = ReaderToken(0, "नमस्ते", true, KnownStatus.UNKNOWN, "l1", null, null, false, false, true)
+        val repo = FakeReaderRepository(
+            meta = meta(1),
+            chapters = mapOf(0 to Chapter(0, listOf(token), chapterId = "chap-1")),
+            sentenceTranslation = SentenceTranslation("नमस्ते दुनिया।", "Hello world."),
+        )
+        val v = vm(repo)
+        advanceUntilIdle()
+        v.onWordTap(token)
+        advanceUntilIdle()
+
+        v.translateSentence()
+        advanceUntilIdle()
+
+        val s = v.state.value
+        assertEquals("Hello world.", s.sentenceTranslation?.translation)
+        assertEquals("नमस्ते दुनिया।", s.sentenceTranslation?.sentence)
+        assertFalse(s.isSentenceTranslating)
+        assertNull(s.sentenceTranslateError)
+        // Sends the chapter id + tapped token idx + language.
+        assertEquals(Triple("chap-1", 0, "hi"), repo.lastTranslate)
+    }
+
+    @Test
+    fun openingWordRecallsSavedSentenceTranslation() = runTest(mainRule.dispatcher) {
+        val token = ReaderToken(0, "नमस्ते", true, KnownStatus.UNKNOWN, "l1", null, null, false, false, true)
+        val repo = FakeReaderRepository(
+            meta = meta(1),
+            chapters = mapOf(0 to Chapter(0, listOf(token), chapterId = "chap-1")),
+            // A previously-saved translation for this sentence is in the cache.
+            cachedSentence = SentenceTranslation("नमस्ते दुनिया।", "Hello world."),
+        )
+        val v = vm(repo)
+        advanceUntilIdle()
+
+        // Just opening the word recalls the saved translation — no translate tap.
+        v.onWordTap(token)
+        advanceUntilIdle()
+
+        assertEquals("Hello world.", v.state.value.sentenceTranslation?.translation)
+    }
+
+    @Test
+    fun translateSentenceSurfacesError() = runTest(mainRule.dispatcher) {
+        val token = ReaderToken(0, "नमस्ते", true, KnownStatus.UNKNOWN, "l1", null, null, false, false, true)
+        val repo = FakeReaderRepository(
+            meta = meta(1),
+            chapters = mapOf(0 to Chapter(0, listOf(token), chapterId = "chap-1")),
+            sentenceTranslateError = "Couldn't translate this sentence.",
+        )
+        val v = vm(repo)
+        advanceUntilIdle()
+        v.onWordTap(token)
+        advanceUntilIdle()
+
+        v.translateSentence()
+        advanceUntilIdle()
+
+        val s = v.state.value
+        assertNull(s.sentenceTranslation)
+        assertFalse(s.isSentenceTranslating)
+        assertEquals("Couldn't translate this sentence.", s.sentenceTranslateError)
+    }
+
+    @Test
+    fun translateSentenceIsNoOpWithoutChapterId() = runTest(mainRule.dispatcher) {
+        // A chapter cached before chapterId existed → no locator → no request.
+        val token = ReaderToken(0, "नमस्ते", true, KnownStatus.UNKNOWN, "l1", null, null, false, false, true)
+        val repo = FakeReaderRepository(
+            meta = meta(1),
+            chapters = mapOf(0 to Chapter(0, listOf(token), chapterId = null)),
+            sentenceTranslation = SentenceTranslation("s", "t"),
+        )
+        val v = vm(repo)
+        advanceUntilIdle()
+        v.onWordTap(token)
+        advanceUntilIdle()
+
+        v.translateSentence()
+        advanceUntilIdle()
+
+        assertEquals(0, repo.translateCalls)
+        assertNull(v.state.value.sentenceTranslation)
+    }
+
+    @Test
+    fun translateSentenceDoesNotRefetchOnceLoaded() = runTest(mainRule.dispatcher) {
+        val token = ReaderToken(0, "नमस्ते", true, KnownStatus.UNKNOWN, "l1", null, null, false, false, true)
+        val repo = FakeReaderRepository(
+            meta = meta(1),
+            chapters = mapOf(0 to Chapter(0, listOf(token), chapterId = "chap-1")),
+            sentenceTranslation = SentenceTranslation("s", "t"),
+        )
+        val v = vm(repo)
+        advanceUntilIdle()
+        v.onWordTap(token)
+        advanceUntilIdle()
+
+        v.translateSentence()
+        advanceUntilIdle()
+        v.translateSentence() // second tap is a no-op — result already shown
+        advanceUntilIdle()
+
+        assertEquals(1, repo.translateCalls)
+    }
+
+    @Test
+    fun tappingAnotherWordClearsSentenceTranslation() = runTest(mainRule.dispatcher) {
+        val a = ReaderToken(0, "एक", true, KnownStatus.UNKNOWN, "l1", null, null, false, false, true)
+        val b = ReaderToken(2, "दो", true, KnownStatus.UNKNOWN, "l2", null, null, false, false, true)
+        val repo = FakeReaderRepository(
+            meta = meta(1),
+            chapters = mapOf(0 to Chapter(0, listOf(a, b), chapterId = "chap-1")),
+            sentenceTranslation = SentenceTranslation("s", "t"),
+        )
+        val v = vm(repo)
+        advanceUntilIdle()
+        v.onWordTap(a)
+        advanceUntilIdle()
+        v.translateSentence()
+        advanceUntilIdle()
+        assertNotNull(v.state.value.sentenceTranslation)
+
+        v.onWordTap(b)
+        assertNull(v.state.value.sentenceTranslation)
+    }
+
+    @Test
     fun basqueWordTapLoadsReferenceDictionaries() = runTest(mainRule.dispatcher) {
         val dict = FakeDictionaryRepository(
             translations = LemmaTranslations("etxe", null, null, emptyList(), emptyList(), emptyList()),
@@ -561,6 +757,15 @@ class ReaderViewModelTest {
     private fun word(surface: String) =
         ReaderToken(0, surface, true, KnownStatus.UNKNOWN, null, null, null, false, false, false)
 
+    private fun translations(headword: String, gloss: String) = LemmaTranslations(
+        headword = headword,
+        pos = "NOUN",
+        gloss = gloss,
+        personal = emptyList(),
+        official = listOf(WordTranslation(gloss, null)),
+        community = emptyList(),
+    )
+
     private fun meta(chapterCount: Int, language: String = "hi") = TextMeta(
         id = "t1",
         title = "Book",
@@ -590,6 +795,18 @@ private class SavingReaderRepository(
         saved = ReadingProgress(chapterIdx, tokenIdx, pctRead)
         return Outcome.Success(Unit)
     }
+
+    override suspend fun translateSentence(
+        chapterId: String,
+        tokenIdx: Int,
+        language: String,
+    ): Outcome<SentenceTranslation> = Outcome.Failure("not used")
+
+    override suspend fun cachedSentenceTranslation(
+        chapterId: String,
+        tokenIdx: Int,
+        language: String,
+    ): Outcome<SentenceTranslation> = Outcome.Failure("not used")
 }
 
 private class FakeReaderRepository(
@@ -598,8 +815,13 @@ private class FakeReaderRepository(
     private val metaError: String? = null,
     private val chapterError: String? = null,
     private val savedProgress: ReadingProgress? = null,
+    private val sentenceTranslation: SentenceTranslation? = null,
+    private val sentenceTranslateError: String? = null,
+    private val cachedSentence: SentenceTranslation? = null,
 ) : ReaderRepository {
     var lastSaved: ReadingProgress? = null
+    var lastTranslate: Triple<String, Int, String>? = null
+    var translateCalls = 0
 
     override suspend fun textMeta(textId: String): Outcome<TextMeta> =
         metaError?.let { Outcome.Failure(it) } ?: Outcome.Success(meta!!)
@@ -620,14 +842,44 @@ private class FakeReaderRepository(
         lastSaved = ReadingProgress(chapterIdx, tokenIdx, pctRead)
         return Outcome.Success(Unit)
     }
+
+    override suspend fun translateSentence(
+        chapterId: String,
+        tokenIdx: Int,
+        language: String,
+    ): Outcome<SentenceTranslation> {
+        translateCalls += 1
+        lastTranslate = Triple(chapterId, tokenIdx, language)
+        return sentenceTranslateError?.let { Outcome.Failure(it) }
+            ?: sentenceTranslation?.let { Outcome.Success(it) }
+            ?: Outcome.Failure("no translation configured")
+    }
+
+    override suspend fun cachedSentenceTranslation(
+        chapterId: String,
+        tokenIdx: Int,
+        language: String,
+    ): Outcome<SentenceTranslation> =
+        cachedSentence?.let { Outcome.Success(it) } ?: Outcome.Failure("cache miss")
 }
 
 private class FakeDictionaryRepository(
     private var translations: LemmaTranslations? = null,
     private val basque: List<BasqueReference> = emptyList(),
+    /** Per-lemma overrides so a test can fetch distinct definitions for the
+     *  primary parse and its alternate candidates. */
+    private val byLemma: Map<String, LemmaTranslations> = emptyMap(),
 ) : DictionaryRepository {
     var lastAdded: Pair<String, String>? = null
-    override suspend fun translations(lemmaId: String): Outcome<LemmaTranslations> =
+    val requestedLemmaIds = mutableListOf<String>()
+
+    override suspend fun translations(lemmaId: String): Outcome<LemmaTranslations> {
+        requestedLemmaIds += lemmaId
+        val hit = byLemma[lemmaId] ?: translations
+        return hit?.let { Outcome.Success(it) } ?: Outcome.Failure("no translations")
+    }
+
+    override suspend fun refreshTranslations(lemmaId: String): Outcome<LemmaTranslations> =
         translations?.let { Outcome.Success(it) } ?: Outcome.Failure("no translations")
 
     override suspend fun setStatus(lemmaId: String, status: KnownStatus): Outcome<KnownStatus> =
@@ -687,6 +939,14 @@ private class FakeCollectionRepository(
     override suspend fun myCollections(): Outcome<List<CollectionSummary>> = Outcome.Success(emptyList())
     override suspend fun detail(collectionId: String): Outcome<CollectionDetail> =
         detail?.let { Outcome.Success(it) } ?: Outcome.Failure("no detail")
+
+    override suspend fun update(
+        collectionId: String,
+        title: String?,
+        description: String?,
+    ): Outcome<String> = Outcome.Success(title ?: "untitled")
+
+    override suspend fun delete(collectionId: String): Outcome<Unit> = Outcome.Success(Unit)
 
     override suspend fun cachedCollections(): List<CollectionSummary> = emptyList()
 }

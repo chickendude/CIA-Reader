@@ -18,6 +18,7 @@ import { resolveUser } from '$lib/server/auth/require-user.js';
 import { getReadableText } from '$lib/server/texts/upload.js';
 import { loadChapterTokens } from '$lib/server/texts/tokens.js';
 import { loadChapterPhraseSpans } from '$lib/server/texts/phrase-spans.js';
+import { getPdfStorage } from '$lib/server/pdf/storage.js';
 import type { RequestHandler } from './$types';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -46,11 +47,20 @@ export const GET: RequestHandler = async (event) => {
   const phraseSpans = tokens
     ? await loadChapterPhraseSpans(chapter.id, viewer?.id ?? null)
     : null;
+  // PDF (image) chapters carry a page image; the app renders it with the
+  // per-token bbox already on `tokens` as a tappable overlay. Null for
+  // text-source chapters.
+  const pageImageUrl = chapter.pageImageKey
+    ? getPdfStorage().urlFor(chapter.pageImageKey)
+    : null;
   return json({
     chapterId: chapter.id,
     chapterIdx: chapter.idx,
     body: chapter.body,
     tokens,
     phraseSpans,
+    pageImageUrl,
+    pageWidth: chapter.pageWidth ?? null,
+    pageHeight: chapter.pageHeight ?? null,
   });
 };

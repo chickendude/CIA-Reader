@@ -2233,7 +2233,7 @@
             {#each shownRefResults as r, i (r.source + i)}
               <li class="ext-row">
                 <div class="ext-def">
-                  {#if r.pos}<span class="ext-pos">{r.pos}</span>{/if}
+                  {#if r.pos && (i === 0 || shownRefResults[i - 1]?.pos !== r.pos)}<span class="ext-pos">{r.pos}</span>{/if}
                   <span>{r.definition}</span>
                   {#if r.examples.length > 0}
                     <button
@@ -2999,7 +2999,10 @@
   .ext-ex-pop {
     display: none;
     position: absolute;
-    left: 0;
+    /* Anchor to the icon's right edge so the popover opens leftward into
+       the panel. The ❝ trigger sits at the end of each definition, near
+       the panel's right edge, so a left-anchored popover ran off-screen. */
+    right: 0;
     top: 1.3em;
     z-index: 5;
     min-width: 12rem;

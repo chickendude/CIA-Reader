@@ -5,7 +5,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const getReadableText = vi.fn();
+const updateText = vi.fn();
 const resolveUser = vi.fn();
+const estimatedComprehensionForText = vi.fn();
 
 vi.mock('$lib/server/texts/upload.js', async () => {
   const actual = await vi.importActual<typeof import('$lib/server/texts/upload.js')>(
@@ -14,8 +16,13 @@ vi.mock('$lib/server/texts/upload.js', async () => {
   return {
     ...actual,
     getReadableText: (...a: unknown[]) => getReadableText(...a),
+    updateText: (...a: unknown[]) => updateText(...a),
   };
 });
+
+vi.mock('$lib/server/learning-stats.js', () => ({
+  estimatedComprehensionForText: (...a: unknown[]) => estimatedComprehensionForText(...a),
+}));
 
 vi.mock('$lib/server/auth/require-user.js', () => ({
   resolveUser: (...a: unknown[]) => resolveUser(...a),
@@ -41,9 +48,35 @@ async function callGet(id = ID, viewer: { id: string } | null = { id: 'u1' }) {
   }
 }
 
+async function callPatch(
+  body: unknown,
+  id = ID,
+  viewer: { id: string; role: 'user' | 'admin' } | null = { id: 'u1', role: 'user' },
+) {
+  resolveUser.mockResolvedValueOnce(viewer);
+  const { PATCH } = await import('./+server.js');
+  const event = {
+    params: { id },
+    request: new Request('http://x', {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+      headers: { 'content-type': 'application/json' },
+    }),
+    url: new URL('http://x'),
+  } as unknown as Parameters<typeof PATCH>[0];
+  try {
+    return await PATCH(event);
+  } catch (e) {
+    return e as { status: number };
+  }
+}
+
 beforeEach(() => {
   getReadableText.mockReset();
+  updateText.mockReset();
   resolveUser.mockReset();
+  estimatedComprehensionForText.mockReset();
+  estimatedComprehensionForText.mockResolvedValue(80);
 });
 
 afterEach(() => {
@@ -94,5 +127,47 @@ describe('GET /api/v1/texts/:id', () => {
     ]);
     // Chapter bodies are intentionally not included.
     expect(json.chapters[0].body).toBeUndefined();
+    // Viewer-specific comprehension is attached.
+    expect(json.comprehensionPct).toBe(80);
+    expect(estimatedComprehensionForText).toHaveBeenCalledWith('u1', ID);
+  });
+
+  it('attaches a null comprehension for an anonymous viewer', async () => {
+    getReadableText.mockResolvedValueOnce({
+      text: {
+        id: ID,
+        ownerId: null,
+        language: 'hi',
+        title: 'Official',
+        sourceType: 'epub',
+        status: 'ready',
+        visibility: 'official',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+      chapters: [],
+    });
+    const res = (await callGet(ID, null)) as Response;
+    const json = await res.json();
+    expect(json.comprehensionPct).toBeNull();
+    expect(estimatedComprehensionForText).not.toHaveBeenCalled();
+  });
+
+  it('PATCH renames the text and returns the updated row', async () => {
+    updateText.mockResolvedValueOnce({ id: ID, title: 'Renamed' });
+    const res = (await callPatch({ title: 'Renamed' })) as Response;
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.text.title).toBe('Renamed');
+    expect(updateText).toHaveBeenCalledWith(ID, { id: 'u1', role: 'user' }, { title: 'Renamed' });
+  });
+
+  it('PATCH maps a not-found / non-owner to 404', async () => {
+    const { TextValidationError } = await vi.importActual<
+      typeof import('$lib/server/texts/upload.js')
+    >('$lib/server/texts/upload.js');
+    updateText.mockRejectedValueOnce(new TextValidationError('Text not found', 404));
+    const res = (await callPatch({ title: 'x' })) as { status: number };
+    expect(res.status).toBe(404);
   });
 });

@@ -2,6 +2,7 @@ package com.ciareader.reader.ui.library
 
 import com.ciareader.reader.core.network.Outcome
 import com.ciareader.reader.core.settings.SettingsStore
+import com.ciareader.reader.data.collection.CollectionChapter
 import com.ciareader.reader.data.collection.CollectionDetail
 import com.ciareader.reader.data.collection.CollectionRepository
 import com.ciareader.reader.data.collection.CollectionSummary
@@ -10,6 +11,7 @@ import com.ciareader.reader.data.language.LanguageRepository
 import com.ciareader.reader.data.library.LibraryRepository
 import com.ciareader.reader.data.library.LibraryScope
 import com.ciareader.reader.data.library.TextCard
+import com.ciareader.reader.data.library.TextStats
 import com.ciareader.reader.util.MainDispatcherRule
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -18,6 +20,7 @@ import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Rule
 import org.junit.Test
@@ -213,12 +216,221 @@ class LibraryViewModelTest {
         assertEquals(listOf("fresh"), vm.state.value.texts.map { it.id })
     }
 
+    // --- Book/text management -------------------------------------------------
+
+    @Test
+    fun editCollectionPatchesAndReloadsTheList() = runTest(mainRule.dispatcher) {
+        val langRepo = FakeLanguageRepository(listOf(lang("hi")))
+        val collRepo = FakeCollectionRepository(all = listOf(collection("c1", "hi")))
+        val vm = vm(langRepo, FakeLibraryRepository(byLanguage = mapOf("hi" to emptyList())), collRepo)
+        advanceUntilIdle()
+
+        // The next list fetch returns the renamed book.
+        collRepo.all = listOf(collection("c1", "hi").copy(title = "New Name"))
+        vm.editCollection("c1", "New Name", "desc")
+        advanceUntilIdle()
+
+        assertEquals(Triple("c1", "New Name", "desc"), collRepo.lastUpdate)
+        assertEquals("New Name", vm.state.value.collections.single().title)
+        assertNull(vm.state.value.actionError)
+    }
+
+    @Test
+    fun editCollectionFailureSurfacesActionError() = runTest(mainRule.dispatcher) {
+        val collRepo = FakeCollectionRepository(
+            all = listOf(collection("c1", "hi")),
+            updateError = "nope",
+        )
+        val vm = vm(
+            FakeLanguageRepository(listOf(lang("hi"))),
+            FakeLibraryRepository(byLanguage = mapOf("hi" to emptyList())),
+            collRepo,
+        )
+        advanceUntilIdle()
+
+        vm.editCollection("c1", "x", null)
+        advanceUntilIdle()
+
+        assertEquals("nope", vm.state.value.actionError)
+        vm.clearActionError()
+        assertNull(vm.state.value.actionError)
+    }
+
+    @Test
+    fun deleteCollectionRemovesItFromTheList() = runTest(mainRule.dispatcher) {
+        val collRepo = FakeCollectionRepository(all = listOf(collection("c1", "hi"), collection("c2", "hi")))
+        val vm = vm(
+            FakeLanguageRepository(listOf(lang("hi"))),
+            FakeLibraryRepository(byLanguage = mapOf("hi" to emptyList())),
+            collRepo,
+        )
+        advanceUntilIdle()
+
+        collRepo.all = listOf(collection("c2", "hi"))
+        vm.deleteCollection("c1")
+        advanceUntilIdle()
+
+        assertEquals("c1", collRepo.lastDeletedId)
+        assertEquals(listOf("c2"), vm.state.value.collections.map { it.id })
+    }
+
+    @Test
+    fun deleteTextRemovesItFromTheList() = runTest(mainRule.dispatcher) {
+        val libRepo = FakeLibraryRepository(byLanguage = mapOf("hi" to listOf(card("t1"), card("t2"))))
+        val vm = vm(FakeLanguageRepository(listOf(lang("hi"))), libRepo)
+        advanceUntilIdle()
+
+        libRepo.byLanguage = mapOf("hi" to listOf(card("t2")))
+        vm.deleteText("t1")
+        advanceUntilIdle()
+
+        assertEquals("t1", libRepo.lastDeletedId)
+        assertEquals(listOf("t2"), vm.state.value.texts.map { it.id })
+    }
+
+    @Test
+    fun deleteTextFailureSurfacesActionError() = runTest(mainRule.dispatcher) {
+        val libRepo = FakeLibraryRepository(
+            byLanguage = mapOf("hi" to listOf(card("t1"))),
+            deleteError = "boom",
+        )
+        val vm = vm(FakeLanguageRepository(listOf(lang("hi"))), libRepo)
+        advanceUntilIdle()
+
+        vm.deleteText("t1")
+        advanceUntilIdle()
+
+        assertEquals("boom", vm.state.value.actionError)
+        // The list is untouched on a failed delete.
+        assertEquals(listOf("t1"), vm.state.value.texts.map { it.id })
+    }
+
+    @Test
+    fun showStatsDerivesFiguresFromChapters() = runTest(mainRule.dispatcher) {
+        val detail = CollectionDetail(
+            id = "c1",
+            title = "Book c1",
+            chapters = listOf(
+                chapter("a", "ready", words = 100),
+                chapter("b", "ready", words = 50),
+                chapter("c", "processing", words = 30),
+            ),
+            comprehensionPct = 72,
+        )
+        val collRepo = FakeCollectionRepository(all = listOf(collection("c1", "hi")), detail = detail)
+        val vm = vm(
+            FakeLanguageRepository(listOf(lang("hi"))),
+            FakeLibraryRepository(byLanguage = mapOf("hi" to emptyList())),
+            collRepo,
+        )
+        advanceUntilIdle()
+
+        vm.showStats(collection("c1", "hi", progress = 0.4f))
+        advanceUntilIdle()
+
+        val sheet = vm.state.value.stats
+        assertNotNull(sheet)
+        assertFalse(sheet!!.isLoading)
+        val s = sheet.stats!!
+        assertEquals(3, s.chapterCount)
+        assertEquals(180, s.totalWords)
+        assertEquals(72, s.comprehensionPct) // real, straight from the detail payload
+        assertEquals(40, s.progressPct) // collection.progress 0.4 → 40%
+
+        vm.dismissStats()
+        assertNull(vm.state.value.stats)
+    }
+
+    @Test
+    fun showStatsFailureFillsTheSheetWithAnError() = runTest(mainRule.dispatcher) {
+        val collRepo = FakeCollectionRepository(all = listOf(collection("c1", "hi")), detailError = "down")
+        val vm = vm(
+            FakeLanguageRepository(listOf(lang("hi"))),
+            FakeLibraryRepository(byLanguage = mapOf("hi" to emptyList())),
+            collRepo,
+        )
+        advanceUntilIdle()
+
+        vm.showStats(collection("c1", "hi"))
+        advanceUntilIdle()
+
+        val sheet = vm.state.value.stats
+        assertNotNull(sheet)
+        assertFalse(sheet!!.isLoading)
+        assertEquals("down", sheet.errorMessage)
+        assertNull(sheet.stats)
+    }
+
+    @Test
+    fun bookStatsCarriesANullComprehensionForAnUnprocessedBook() {
+        val s = BookStats(chapterCount = 0, totalWords = 0, comprehensionPct = null, progressPct = 0)
+        assertNull(s.comprehensionPct)
+        assertEquals(0, s.progressPct)
+    }
+
+    @Test
+    fun showTextStatsDerivesFiguresFromTheText() = runTest(mainRule.dispatcher) {
+        val libRepo = FakeLibraryRepository(
+            byLanguage = mapOf("hi" to listOf(card("t1"))),
+            stats = TextStats(chapterCount = 1, totalWords = 320, comprehensionPct = 47),
+        )
+        val vm = vm(FakeLanguageRepository(listOf(lang("hi"))), libRepo, FakeCollectionRepository())
+        advanceUntilIdle()
+
+        vm.showTextStats(card("t1", progress = 0.5f))
+        advanceUntilIdle()
+
+        val s = vm.state.value.stats?.stats
+        assertNotNull(s)
+        assertEquals(1, s!!.chapterCount)
+        assertEquals(320, s.totalWords)
+        assertEquals(47, s.comprehensionPct) // real, from the server
+        assertEquals(50, s.progressPct) // card.progress 0.5 → 50%
+    }
+
+    @Test
+    fun editTextRenamesAndReloadsTheList() = runTest(mainRule.dispatcher) {
+        val libRepo = FakeLibraryRepository(byLanguage = mapOf("hi" to listOf(card("t1"))))
+        val vm = vm(FakeLanguageRepository(listOf(lang("hi"))), libRepo, FakeCollectionRepository())
+        advanceUntilIdle()
+
+        vm.editText("t1", "Renamed")
+        advanceUntilIdle()
+
+        assertEquals("t1" to "Renamed", libRepo.lastEdited)
+        assertNull(vm.state.value.actionError)
+    }
+
+    @Test
+    fun editTextFailureSurfacesActionError() = runTest(mainRule.dispatcher) {
+        val libRepo = FakeLibraryRepository(
+            byLanguage = mapOf("hi" to listOf(card("t1"))),
+            updateError = "nope",
+        )
+        val vm = vm(FakeLanguageRepository(listOf(lang("hi"))), libRepo, FakeCollectionRepository())
+        advanceUntilIdle()
+
+        vm.editText("t1", "Renamed")
+        advanceUntilIdle()
+
+        assertEquals("nope", vm.state.value.actionError)
+    }
+
+    private fun chapter(id: String, status: String, words: Int) =
+        CollectionChapter(textId = id, title = "Ch $id", position = 0, status = status, wordCount = words)
+
     private fun lang(code: String, isDefault: Boolean = false) =
         Language(code = code, displayName = code.uppercase(), nativeName = code, script = "Deva", isDefault = isDefault)
 
-    private fun card(id: String) = TextCard(id = id, title = "Title $id", language = "hi", status = "ready")
+    private fun card(id: String, progress: Float = 0f) =
+        TextCard(id = id, title = "Title $id", language = "hi", status = "ready", progress = progress)
 
-    private fun collection(id: String, language: String, openTextId: String? = null) =
+    private fun collection(
+        id: String,
+        language: String,
+        openTextId: String? = null,
+        progress: Float = 0f,
+    ) =
         CollectionSummary(
             id = id,
             title = "Book $id",
@@ -226,6 +438,7 @@ class LibraryViewModelTest {
             kind = "chapter_book",
             textCount = 1,
             openTextId = openTextId,
+            progress = progress,
         )
 }
 
@@ -247,12 +460,33 @@ private class FakeLanguageRepository(
 }
 
 private class FakeLibraryRepository(
-    private val byLanguage: Map<String, List<TextCard>> = emptyMap(),
+    var byLanguage: Map<String, List<TextCard>> = emptyMap(),
     private val error: String? = null,
     private val cachedByLanguage: Map<String, List<TextCard>> = emptyMap(),
+    private val deleteError: String? = null,
+    private val stats: TextStats? = null,
+    private val statsError: String? = null,
+    private val updateError: String? = null,
 ) : LibraryRepository {
+    var lastDeletedId: String? = null
+    var lastEdited: Pair<String, String>? = null
+
     override suspend fun listTexts(scope: LibraryScope, language: String): Outcome<List<TextCard>> =
         error?.let { Outcome.Failure(it) } ?: Outcome.Success(byLanguage[language] ?: emptyList())
+
+    override suspend fun textStats(textId: String): Outcome<TextStats> =
+        statsError?.let { Outcome.Failure(it) }
+            ?: Outcome.Success(stats ?: TextStats(chapterCount = 1, totalWords = 0, comprehensionPct = null))
+
+    override suspend fun updateText(textId: String, title: String): Outcome<String> {
+        lastEdited = textId to title
+        return updateError?.let { Outcome.Failure(it) } ?: Outcome.Success(title)
+    }
+
+    override suspend fun deleteText(textId: String): Outcome<Unit> {
+        lastDeletedId = textId
+        return deleteError?.let { Outcome.Failure(it) } ?: Outcome.Success(Unit)
+    }
 
     override suspend fun cachedTexts(scope: LibraryScope, language: String): List<TextCard> =
         cachedByLanguage[language] ?: emptyList()
@@ -262,12 +496,35 @@ private class FakeCollectionRepository(
     var all: List<CollectionSummary> = emptyList(),
     private val error: String? = null,
     private val cached: List<CollectionSummary> = emptyList(),
+    private val detail: CollectionDetail? = null,
+    private val detailError: String? = null,
+    private val updateError: String? = null,
+    private val deleteError: String? = null,
 ) : CollectionRepository {
+    var lastUpdate: Triple<String, String?, String?>? = null
+    var lastDeletedId: String? = null
+
     override suspend fun myCollections(): Outcome<List<CollectionSummary>> =
         error?.let { Outcome.Failure(it) } ?: Outcome.Success(all)
 
     override suspend fun detail(collectionId: String): Outcome<CollectionDetail> =
-        Outcome.Failure("not used in these tests")
+        detailError?.let { Outcome.Failure(it) }
+            ?: detail?.let { Outcome.Success(it) }
+            ?: Outcome.Failure("not used in these tests")
+
+    override suspend fun update(
+        collectionId: String,
+        title: String?,
+        description: String?,
+    ): Outcome<String> {
+        lastUpdate = Triple(collectionId, title, description)
+        return updateError?.let { Outcome.Failure(it) } ?: Outcome.Success(title ?: "untitled")
+    }
+
+    override suspend fun delete(collectionId: String): Outcome<Unit> {
+        lastDeletedId = collectionId
+        return deleteError?.let { Outcome.Failure(it) } ?: Outcome.Success(Unit)
+    }
 
     override suspend fun cachedCollections(): List<CollectionSummary> = cached
 }

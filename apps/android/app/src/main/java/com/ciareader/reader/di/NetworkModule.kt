@@ -11,6 +11,7 @@ import com.ciareader.reader.data.collection.CollectionsApi
 import com.ciareader.reader.data.dictionary.DictionaryApi
 import com.ciareader.reader.data.reader.ReaderApi
 import com.ciareader.reader.data.stats.StatsApi
+import com.ciareader.reader.data.upload.UploadApi
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -137,6 +138,11 @@ object NetworkModule {
     @Singleton
     fun provideStatsApi(@Authenticated retrofit: Retrofit): StatsApi =
         retrofit.create(StatsApi::class.java)
+
+    @Provides
+    @Singleton
+    fun provideUploadApi(@Authenticated retrofit: Retrofit): UploadApi =
+        retrofit.create(UploadApi::class.java)
 
     private val JSON_MEDIA_TYPE = "application/json".toMediaType()
 }

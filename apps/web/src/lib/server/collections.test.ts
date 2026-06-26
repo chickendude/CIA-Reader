@@ -78,6 +78,19 @@ vi.mock('./db/index.js', () => ({
   },
 }));
 
+// listCollectionsForUser bulk-decorates each row with the owner's
+// comprehension; stub it so these tests stay focused on the join/openTextId
+// logic and don't need to stage the comprehension query. The fake echoes a
+// deterministic pct per collection id so the threading can be asserted.
+const estimatedComprehensionForCollections = vi.fn(
+  async (_userId: string, ids: string[]) =>
+    new Map(ids.map((id, i) => [id, i === 0 ? 64 : null])),
+);
+vi.mock('./learning-stats.js', () => ({
+  estimatedComprehensionForCollections: (...a: unknown[]) =>
+    estimatedComprehensionForCollections(...(a as [string, string[]])),
+}));
+
 const {
   CollectionError,
   createCollection,
@@ -95,7 +108,33 @@ const {
   revokeCollectionShare,
   listCollectionShares,
   viewerHasCollectionShareForText,
+  bookProgressPct,
 } = await import('./collections.js');
+
+describe('bookProgressPct', () => {
+  it('token-weights chapters before the current one + the current fraction', () => {
+    // ch0=100 tokens, ch1=300 tokens; on ch1 (index 1) at 50%.
+    const chapters = [
+      { position: 0, tokens: 100 },
+      { position: 1, tokens: 300 },
+    ];
+    // before=100, current=300*0.5=150 → 250/400 = 63% (NOT the equal-weight 75%).
+    expect(bookProgressPct(chapters, { position: 1, pctRead: 50 })).toBe(63);
+  });
+
+  it('falls back to even weighting when token counts are unknown', () => {
+    const chapters = [
+      { position: 0, tokens: 0 },
+      { position: 1, tokens: 0 },
+    ];
+    // (1 + 0.5) / 2 = 75%.
+    expect(bookProgressPct(chapters, { position: 1, pctRead: 50 })).toBe(75);
+  });
+
+  it('is 0 with no progress', () => {
+    expect(bookProgressPct([{ position: 0, tokens: 10 }], undefined)).toBe(0);
+  });
+});
 
 function resetAll() {
   queue.length = 0;
@@ -108,6 +147,7 @@ function resetAll() {
   fakeDb.update.mockClear();
   fakeDb.delete.mockClear();
   fakeDb.transaction.mockClear();
+  estimatedComprehensionForCollections.mockClear();
 }
 
 beforeEach(resetAll);
@@ -686,6 +726,13 @@ describe('listCollectionsForUser', () => {
     const out = await listCollectionsForUser(OWNER.id);
     expect(out).toHaveLength(2);
     expect(out[0]?.textCount).toBe(3);
+    // Comprehension is bulk-decorated onto each row (null when none of the
+    // book's texts have tokens yet).
+    expect(estimatedComprehensionForCollections).toHaveBeenCalledWith(OWNER.id, [
+      baseCollection.id,
+      'col-2',
+    ]);
+    expect(out.map((r) => r.estimatedComprehensionPct)).toEqual([64, null]);
   });
 
   it('openTextId resumes the most-recently-read chapter', async () => {

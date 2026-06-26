@@ -29,6 +29,7 @@ class CollectionRepositoryTest {
                     CollectionListItemDto(
                         collection = CollectionDto("c1", "Afrika express (20920)", "eu", "chapter_book"),
                         textCount = 12,
+                        estimatedComprehensionPct = 73,
                     ),
                 ),
             ),
@@ -41,6 +42,8 @@ class CollectionRepositoryTest {
         assertEquals("Afrika express (20920)", summaries[0].title)
         assertEquals("eu", summaries[0].language)
         assertEquals(12, summaries[0].textCount)
+        // Comprehension threads through from the DTO onto the summary.
+        assertEquals(73, summaries[0].estimatedComprehensionPct)
     }
 
     @Test
@@ -74,6 +77,7 @@ class CollectionRepositoryTest {
                         collection = CollectionDto("c1", "Book", "eu", "chapter_book"),
                         textCount = 3,
                         openTextId = "t1",
+                        estimatedComprehensionPct = 42,
                     ),
                 ),
             ),
@@ -87,6 +91,8 @@ class CollectionRepositoryTest {
         val first = (offline as Outcome.Success).data.first()
         assertEquals("Book", first.title)
         assertEquals("t1", first.openTextId)
+        // Comprehension survives the round-trip through the offline cache.
+        assertEquals(42, first.estimatedComprehensionPct)
     }
 
     @Test
@@ -119,6 +125,39 @@ class CollectionRepositoryTest {
     }
 
     @Test
+    fun updateSendsPatchAndReturnsNewTitle() = runTest {
+        val api = FakeCollectionsApi()
+        val result = repo(api).update("c1", title = "Renamed", description = "A note")
+
+        assertTrue(result is Outcome.Success)
+        assertEquals("Renamed", (result as Outcome.Success).data)
+        assertEquals("c1", api.lastUpdateId)
+        assertEquals("Renamed", api.lastUpdateBody?.title)
+        assertEquals("A note", api.lastUpdateBody?.description)
+    }
+
+    @Test
+    fun updateFailsWhenOffline() = runTest {
+        val result = repo(FakeCollectionsApi().apply { online = false }).update("c1", title = "x")
+        assertTrue(result is Outcome.Failure)
+    }
+
+    @Test
+    fun deleteSendsRequest() = runTest {
+        val api = FakeCollectionsApi()
+        val result = repo(api).delete("c9")
+
+        assertTrue(result is Outcome.Success)
+        assertEquals("c9", api.lastDeleteId)
+    }
+
+    @Test
+    fun deleteFailsWhenOffline() = runTest {
+        val result = repo(FakeCollectionsApi().apply { online = false }).delete("c1")
+        assertTrue(result is Outcome.Failure)
+    }
+
+    @Test
     fun decodesMyCollectionsShape() {
         val payload = """
             {
@@ -146,6 +185,10 @@ private class FakeCollectionsApi(
     private val detail: CollectionDetailDto? = null,
     var online: Boolean = true,
 ) : CollectionsApi {
+    var lastUpdateId: String? = null
+    var lastUpdateBody: UpdateCollectionRequest? = null
+    var lastDeleteId: String? = null
+
     override suspend fun myCollections(): MyCollectionsDto {
         if (!online) throw IOException("offline")
         return list!!
@@ -154,6 +197,24 @@ private class FakeCollectionsApi(
     override suspend fun detail(collectionId: String): CollectionDetailDto {
         if (!online) throw IOException("offline")
         return detail!!
+    }
+
+    override suspend fun update(
+        collectionId: String,
+        body: UpdateCollectionRequest,
+    ): UpdateCollectionResponseDto {
+        if (!online) throw IOException("offline")
+        lastUpdateId = collectionId
+        lastUpdateBody = body
+        return UpdateCollectionResponseDto(
+            CollectionDto(collectionId, body.title ?: "untitled", "eu", "chapter_book"),
+        )
+    }
+
+    override suspend fun delete(collectionId: String): OkResponseDto {
+        if (!online) throw IOException("offline")
+        lastDeleteId = collectionId
+        return OkResponseDto(ok = true)
     }
 }
 

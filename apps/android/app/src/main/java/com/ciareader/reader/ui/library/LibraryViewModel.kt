@@ -16,17 +16,25 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 data class LibraryUiState(
     val isLoading: Boolean = true,
     val isRefreshing: Boolean = false,
+    /** A book/text edit or delete is in flight (delete cascades server-side and
+     *  can take a few seconds) — the UI shows a progress bar. */
+    val isMutating: Boolean = false,
     val languages: List<Language> = emptyList(),
     val currentLanguage: String? = null,
     val collections: List<CollectionSummary> = emptyList(),
     val texts: List<TextCard> = emptyList(),
     val errorMessage: String? = null,
+    /** A transient banner for an edit/delete failure (the list itself stays put). */
+    val actionError: String? = null,
+    /** Per-book stats sheet; null when closed, loading/loaded/failed otherwise. */
+    val stats: StatsUiState? = null,
 ) {
     /** Human label for the active language (display name, falling back to code). */
     val currentLanguageLabel: String
@@ -35,6 +43,31 @@ data class LibraryUiState(
 
     val isEmpty: Boolean get() = collections.isEmpty() && texts.isEmpty()
 }
+
+/** Stats sheet state for a single book (collection). */
+data class StatsUiState(
+    val collectionId: String,
+    val title: String,
+    val isLoading: Boolean = true,
+    val stats: BookStats? = null,
+    val errorMessage: String? = null,
+)
+
+/**
+ * Per-book figures for the Stats sheet. Chapter count and summed word count come
+ * from the collection detail; `comprehensionPct` is the real reading
+ * comprehension (known word-token occurrences ÷ total, computed server-side and
+ * returned by GET detail); `progressPct` is the real reading progress carried
+ * from the library card's aggregate (`CollectionSummary.progress`).
+ */
+data class BookStats(
+    val chapterCount: Int,
+    val totalWords: Int,
+    /** 0..100 known word-tokens ÷ total; null until the NLP worker has run. */
+    val comprehensionPct: Int?,
+    /** 0..100 reading progress across the book's chapters. */
+    val progressPct: Int,
+)
 
 @HiltViewModel
 class LibraryViewModel @Inject constructor(
@@ -137,6 +170,95 @@ class LibraryViewModel @Inject constructor(
         if (_state.value.isLoading) return
         viewModelScope.launch { loadContent(language) }
     }
+
+    // --- Book/text management: edit, delete, stats -------------------------
+
+    /** Rename / re-describe a book, then reload the list so the new title shows. */
+    fun editCollection(collectionId: String, title: String, description: String?) =
+        mutate { collectionRepository.update(collectionId, title, description) }
+
+    /** Delete a book, then reload the list. */
+    fun deleteCollection(collectionId: String) =
+        mutate { collectionRepository.delete(collectionId) }
+
+    /** Delete a standalone text, then reload the list. */
+    fun deleteText(textId: String) =
+        mutate { libraryRepository.deleteText(textId) }
+
+    /** Rename a standalone text, then reload the list. */
+    fun editText(textId: String, title: String) =
+        mutate { libraryRepository.updateText(textId, title) }
+
+    /**
+     * Run a book/text mutation (edit/delete) with a busy flag so the UI can show
+     * progress — a book delete cascades server-side and can take a few seconds.
+     * On success reloads the list (awaited, so the flag spans the reload); on
+     * failure surfaces the message and leaves the list untouched.
+     */
+    private fun mutate(block: suspend () -> Outcome<*>) {
+        viewModelScope.launch {
+            _state.update { it.copy(isMutating = true) }
+            when (val r = block()) {
+                is Outcome.Success -> _state.value.currentLanguage?.let { loadContent(it) }
+                is Outcome.Failure -> _state.update { it.copy(actionError = r.message) }
+            }
+            _state.update { it.copy(isMutating = false) }
+        }
+    }
+
+    /** Open the stats sheet for a book and fetch its chapter list to fill it. */
+    fun showStats(collection: CollectionSummary) {
+        _state.update { it.copy(stats = StatsUiState(collection.id, collection.title, isLoading = true)) }
+        viewModelScope.launch {
+            val sheet = when (val r = collectionRepository.detail(collection.id)) {
+                is Outcome.Success -> {
+                    val chapters = r.data.chapters
+                    StatsUiState(
+                        collectionId = collection.id,
+                        title = collection.title,
+                        isLoading = false,
+                        stats = BookStats(
+                            chapterCount = chapters.size,
+                            totalWords = chapters.sumOf { it.wordCount },
+                            comprehensionPct = r.data.comprehensionPct,
+                            progressPct = (collection.progress * 100).roundToInt(),
+                        ),
+                    )
+                }
+                is Outcome.Failure ->
+                    StatsUiState(collection.id, collection.title, isLoading = false, errorMessage = r.message)
+            }
+            // Ignore a stale result if the sheet was dismissed meanwhile.
+            _state.update { if (it.stats?.collectionId == collection.id) it.copy(stats = sheet) else it }
+        }
+    }
+
+    /** Open the stats sheet for a standalone text and fetch its figures. */
+    fun showTextStats(card: TextCard) {
+        _state.update { it.copy(stats = StatsUiState(card.id, card.title, isLoading = true)) }
+        viewModelScope.launch {
+            val sheet = when (val r = libraryRepository.textStats(card.id)) {
+                is Outcome.Success -> StatsUiState(
+                    collectionId = card.id,
+                    title = card.title,
+                    isLoading = false,
+                    stats = BookStats(
+                        chapterCount = r.data.chapterCount,
+                        totalWords = r.data.totalWords,
+                        comprehensionPct = r.data.comprehensionPct,
+                        progressPct = (card.progress * 100).roundToInt(),
+                    ),
+                )
+                is Outcome.Failure ->
+                    StatsUiState(card.id, card.title, isLoading = false, errorMessage = r.message)
+            }
+            _state.update { if (it.stats?.collectionId == card.id) it.copy(stats = sheet) else it }
+        }
+    }
+
+    fun dismissStats() = _state.update { it.copy(stats = null) }
+
+    fun clearActionError() = _state.update { it.copy(actionError = null) }
 
     private suspend fun loadContent(language: String) {
         when (val textsRes = libraryRepository.listTexts(LibraryScope.OWNED, language)) {
