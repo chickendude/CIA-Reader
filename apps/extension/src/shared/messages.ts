@@ -38,6 +38,7 @@ export type Requests = {
       screenshot?: string | null;
       contextBefore?: string | null;
       contextAfter?: string | null;
+      sentenceTranslation?: string | null;
     };
     res: { added: boolean; duplicate: boolean };
   };
@@ -49,6 +50,10 @@ export type Requests = {
   DICT_SUGGEST: {
     req: { language: string; prefix: string };
     res: { headwords: string[] };
+  };
+  TRANSLATE: {
+    req: { language: string; text: string; targetLanguage: string };
+    res: { translation: string };
   };
 };
 

@@ -17,6 +17,7 @@ import { lookupWord } from './lookup';
 import { referenceCache } from './reference';
 import { fetchSubtitles } from './subtitles';
 import { cuesCache } from './subtitles-cache';
+import { translationCache } from './translation';
 
 async function handle(msg: Message, sender: browser.runtime.MessageSender): Promise<unknown> {
   switch (msg.type) {
@@ -51,6 +52,10 @@ async function handle(msg: Message, sender: browser.runtime.MessageSender): Prom
       return { exists: await ankiNoteExists(msg.front) };
     case 'DICT_SUGGEST':
       return { headwords: await localDictionary.suggest(msg.language, msg.prefix) };
+    case 'TRANSLATE':
+      return {
+        translation: await translationCache.translate(msg.language, msg.text, msg.targetLanguage),
+      };
     case 'CAPTURE_SCREENSHOT': {
       try {
         const opts = { format: 'jpeg', quality: 80 } as const;

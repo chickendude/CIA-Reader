@@ -25,8 +25,11 @@ type Deps = {
     front: string;
     surface: string;
     sentence: string | null;
+    sentenceTranslation: string | null;
     defs: { body: string; lang: DefinitionLang }[];
   }) => Promise<{ added: boolean; duplicate: boolean; note?: string }>;
+  /** Translate the current sentence into a target language (en/es). */
+  translate?: (text: string, targetLanguage: string) => Promise<string>;
   /** Whether a card for this word already exists in Anki. */
   ankiHas?: (front: string) => Promise<boolean>;
   /** Dictionary headword autocomplete for the form-search input. */
@@ -47,7 +50,14 @@ type PopupState = {
   error: string | null;
   frequency: number | null;
   inAnki: boolean;
+  translation: string | null;
+  translationTarget: string | null;
+  translating: boolean;
+  translationError: string | null;
 };
+
+/** Sentence-translation target for a definition tab (Basque → en/es). */
+const targetForLang = (l: DefinitionLang): string => (l === 'es' ? 'es' : 'en');
 
 const STYLE = `
 :host { all: initial; }
@@ -134,6 +144,15 @@ const STYLE = `
   font: 13px/1.45 system-ui, -apple-system, sans-serif; box-shadow: 0 8px 26px rgba(0,0,0,0.6);
 }
 .tooltip .ex { font-style: italic; margin: 3px 0; color: #d2d2d2; }
+.popup .translate { margin-top: 10px; padding-top: 9px; border-top: 1px solid #2e3138; }
+.popup .tr-btn { font: inherit; font-size: 12px; cursor: pointer; background: transparent; color: #7cc0ff;
+  border: 1px solid #3a6ea5; border-radius: 6px; padding: 4px 10px; }
+.popup .tr-btn:hover { background: #2b6cb0; color: #fff; }
+.popup .tr-btn:disabled { opacity: .6; cursor: default; }
+.popup .tr-flag { font-size: 10px; font-weight: 700; color: #d79a93; border: 1px solid rgba(215,154,147,.4);
+  border-radius: 4px; padding: 0 5px; margin-right: 7px; vertical-align: middle; }
+.popup .tr-text { font-size: 15px; color: #e8e2e2; font-style: italic; }
+.popup .tr-err { font-size: 12px; color: #e0a0a0; }
 .popup .footer { margin-top: 10px; padding-top: 9px; border-top: 1px solid #2e3138; display: flex; align-items: center; gap: 10px; }
 .popup .anki { font: inherit; font-size: 13px; cursor: pointer; background: #2b6cb0; color: #fff; border: none; border-radius: 6px; padding: 5px 12px; }
 .popup .anki:hover { background: #3a7bc8; }
@@ -423,6 +442,10 @@ export class Overlay {
       error: null,
       frequency: null,
       inAnki: false,
+      translation: null,
+      translationTarget: null,
+      translating: false,
+      translationError: null,
     };
     this.render();
 
@@ -624,6 +647,25 @@ export class Overlay {
     if (s.refState === 'loading') content.append(el('div', 'muted', 'Loading dictionaries…'));
     else if (shown === 0) content.append(el('div', 'muted', `No ${lang.toUpperCase()} definitions.`));
 
+    // Sentence translation (OpenAI-backed, cached). Target follows the active
+    // definition tab: ES tab → Spanish, otherwise English.
+    if (this.deps.translate && this.currentSentence) {
+      const target = targetForLang(lang);
+      const tr = el('div', 'translate');
+      if (s.translationError) {
+        tr.append(el('div', 'tr-err', s.translationError));
+      } else if (s.translation && s.translationTarget === target) {
+        tr.append(el('span', 'tr-flag', target.toUpperCase()));
+        tr.append(el('span', 'tr-text', s.translation));
+      } else {
+        const btn = el('button', 'tr-btn', s.translating ? 'Translating…' : '🌐 Translate sentence');
+        btn.disabled = s.translating;
+        btn.addEventListener('click', () => void this.translateSentence(target));
+        tr.append(btn);
+      }
+      content.append(tr);
+    }
+
     if (this.deps.addAnki && s.lookup) {
       const footer = el('div', 'footer');
       const btn = el('button', 'anki', s.inAnki ? 'Add to Anki again' : 'Add to Anki');
@@ -717,12 +759,36 @@ export class Overlay {
     return out;
   }
 
+  private async translateSentence(target: string): Promise<void> {
+    const s = this.state;
+    const text = this.currentSentence;
+    if (!s || !this.deps.translate || !text || s.translating) return;
+    s.translating = true;
+    s.translationError = null;
+    this.render();
+    try {
+      const t = await this.deps.translate(text, target);
+      if (this.state !== s) return;
+      s.translation = t;
+      s.translationTarget = target;
+    } catch (e) {
+      if (this.state !== s) return;
+      s.translationError = e instanceof Error ? e.message : String(e);
+    } finally {
+      if (this.state === s) {
+        s.translating = false;
+        this.render();
+      }
+    }
+  }
+
   // ---- Anki ----
 
   private buildCard(): {
     front: string;
     surface: string;
     sentence: string | null;
+    sentenceTranslation: string | null;
     defs: { body: string; lang: DefinitionLang }[];
   } | null {
     const s = this.state;
@@ -747,7 +813,13 @@ export class Overlay {
       }
     }
 
-    return { front, surface: s.surface, sentence: this.currentSentence, defs };
+    return {
+      front,
+      surface: s.surface,
+      sentence: this.currentSentence,
+      sentenceTranslation: s.translation,
+      defs,
+    };
   }
 
   private async addToAnki(btn: HTMLButtonElement, status: HTMLElement): Promise<void> {

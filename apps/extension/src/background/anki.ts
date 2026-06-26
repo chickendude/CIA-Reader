@@ -27,6 +27,8 @@ export type AnkiCardInput = {
   /** Surrounding subtitle lines for context (Context field). */
   contextBefore?: string | null;
   contextAfter?: string | null;
+  /** OpenAI sentence translation (SentenceTranslation field). */
+  sentenceTranslation?: string | null;
 };
 
 const MODEL_NAME = 'Primeran';
@@ -34,6 +36,7 @@ const MODEL_FIELDS = [
   'Word',
   'Definition',
   'Sentence',
+  'SentenceTranslation',
   'ContextBefore',
   'ContextAfter',
   'Audio',
@@ -72,6 +75,7 @@ hr#answer{border:0;height:1px;max-width:620px;margin:22px auto;
 .pm-ctx{max-width:620px;margin:7px auto;font-size:16px;line-height:1.55;color:#998e90;text-align:center}
 .pm-ctx-prev::before{content:"… ";opacity:.55}
 .pm-ctx-next::after{content:" …";opacity:.55}
+.pm-trans{max-width:620px;margin:0 auto 14px;font-size:18px;font-style:italic;color:#cfc7c8;text-align:center}
 `;
 
 const FRONT_TEMPLATE = `<div class="pm-word">{{Word}}</div>
@@ -81,6 +85,7 @@ const FRONT_TEMPLATE = `<div class="pm-word">{{Word}}</div>
 
 const BACK_TEMPLATE = `{{FrontSide}}
 <hr id="answer">
+{{#SentenceTranslation}}<div class="pm-trans">{{SentenceTranslation}}</div>{{/SentenceTranslation}}
 <div class="pm-defs">{{Definition}}</div>
 {{#Picture}}<div class="pm-picture">{{Picture}}</div>{{/Picture}}
 {{Audio}}`;
@@ -209,10 +214,15 @@ async function buildFields(card: AnkiCardInput): Promise<Record<string, string>>
     picture = `<img src="${filename}">`;
   }
 
+  const sentenceTranslation = card.sentenceTranslation?.trim()
+    ? escapeHtml(card.sentenceTranslation.trim())
+    : '';
+
   return {
     Word: card.front,
     Definition: definition,
     Sentence: sentence,
+    SentenceTranslation: sentenceTranslation,
     ContextBefore: contextBefore,
     ContextAfter: contextAfter,
     Audio: '',
