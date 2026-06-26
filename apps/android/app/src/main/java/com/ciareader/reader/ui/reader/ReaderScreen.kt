@@ -103,6 +103,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.runtime.rememberUpdatedState
 import com.ciareader.reader.data.reader.ReaderToken
 import com.ciareader.reader.data.reader.SentenceTranslation
 import kotlin.math.roundToInt
@@ -261,6 +262,8 @@ internal fun ReaderScreenContent(
                         pageHeight = state.pageHeight,
                         tokens = state.tokens,
                         onWordTap = onWordTap,
+                        onPrevPage = onPrevChapter,
+                        onNextPage = onNextChapter,
                         modifier = Modifier.fillMaxSize(),
                     )
 
@@ -1250,6 +1253,8 @@ private fun ReaderImage(
     pageHeight: Int?,
     tokens: List<ReaderToken>,
     onWordTap: (ReaderToken) -> Unit,
+    onPrevPage: () -> Unit,
+    onNextPage: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val scheme = MaterialTheme.colorScheme
@@ -1260,11 +1265,27 @@ private fun ReaderImage(
     }
     var scale by remember(imageUrl) { mutableStateOf(1f) }
     var offset by remember(imageUrl) { mutableStateOf(Offset.Zero) }
-    val transformState = rememberTransformableState { zoomChange, panChange, _ ->
-        scale = (scale * zoomChange).coerceIn(1f, 5f)
-        offset = if (scale <= 1f) Offset.Zero else offset + panChange
-    }
-    Box(modifier, contentAlignment = Alignment.Center) {
+    // Accumulated horizontal drag while at 1× → a page swipe (reset per page).
+    val swipeAccum = remember(imageUrl) { mutableStateOf(0f) }
+    val onPrev by rememberUpdatedState(onPrevPage)
+    val onNext by rememberUpdatedState(onNextPage)
+    BoxWithConstraints(modifier, contentAlignment = Alignment.Center) {
+        val swipeThreshold = constraints.maxWidth * 0.22f
+        val transformState = rememberTransformableState { zoomChange, panChange, _ ->
+            scale = (scale * zoomChange).coerceIn(1f, 5f)
+            if (scale > 1f) {
+                // Zoomed in: a drag pans the page.
+                offset += panChange
+            } else {
+                // At 1×: a sustained horizontal drag flips to the prev/next page.
+                offset = Offset.Zero
+                swipeAccum.value += panChange.x
+                when {
+                    swipeAccum.value <= -swipeThreshold -> { onNext(); swipeAccum.value = 0f }
+                    swipeAccum.value >= swipeThreshold -> { onPrev(); swipeAccum.value = 0f }
+                }
+            }
+        }
         Box(
             Modifier
                 .fillMaxWidth()
