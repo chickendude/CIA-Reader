@@ -20,18 +20,24 @@ export class TranslationCache {
     private client: TranslateClient = api,
   ) {}
 
-  async translate(language: string, text: string, targetLanguage: string): Promise<string> {
+  /** Translate a line. `cachedOnly` returns a saved translation if one exists
+   *  (local or server) but never spends on the API — null on a miss. */
+  async translate(
+    language: string,
+    text: string,
+    targetLanguage: string,
+    cachedOnly = false,
+  ): Promise<string | null> {
     const cacheKey = key(language, targetLanguage, text);
     const cached = await this.store.get<string>(cacheKey);
     if (cached) return cached;
 
-    const res = await this.client.postJson<{ translation: string }>('/api/v1/translate-text', {
-      language,
-      text,
-      targetLanguage,
-    });
+    const res = await this.client.postJson<{ translation: string | null }>(
+      '/api/v1/translate-text',
+      { language, text, targetLanguage, cachedOnly },
+    );
     if (res.translation) await this.store.set(cacheKey, res.translation);
-    return res.translation;
+    return res.translation ?? null;
   }
 }
 

@@ -31,6 +31,21 @@ describe('TranslationCache', () => {
       language: 'eu',
       text: 'Goazen baratzera.',
       targetLanguage: 'en',
+      cachedOnly: false,
+    });
+  });
+
+  it('passes cachedOnly through and returns null on a cache miss', async () => {
+    const postJson = vi.fn().mockResolvedValue({ translation: null });
+    const cache = new TranslationCache(memStore(), { postJson });
+
+    const result = await cache.translate('eu', 'Goazen baratzera.', 'en', true);
+    expect(result).toBeNull();
+    expect(postJson).toHaveBeenCalledWith('/api/v1/translate-text', {
+      language: 'eu',
+      text: 'Goazen baratzera.',
+      targetLanguage: 'en',
+      cachedOnly: true,
     });
   });
 

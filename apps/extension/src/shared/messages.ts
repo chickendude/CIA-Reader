@@ -52,8 +52,8 @@ export type Requests = {
     res: { headwords: string[] };
   };
   TRANSLATE: {
-    req: { language: string; text: string; targetLanguage: string };
-    res: { translation: string };
+    req: { language: string; text: string; targetLanguage: string; cachedOnly?: boolean };
+    res: { translation: string | null };
   };
 };
 

@@ -73,8 +73,10 @@ const overlay = new Overlay({
   lookupLemma: (lemma) => sendMessage('LOOKUP', { language: LANGUAGE, surface: lemma, lemma }),
   suggest: (prefix) =>
     sendMessage('DICT_SUGGEST', { language: LANGUAGE, prefix }).then((r) => r.headwords),
-  translate: (text, targetLanguage) =>
-    sendMessage('TRANSLATE', { language: LANGUAGE, text, targetLanguage }).then((r) => r.translation),
+  translate: (text, targetLanguage, cachedOnly) =>
+    sendMessage('TRANSLATE', { language: LANGUAGE, text, targetLanguage, cachedOnly }).then(
+      (r) => r.translation,
+    ),
 });
 
 // Hide the player's control overlay during a capture WITHOUT touching the video

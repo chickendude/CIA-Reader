@@ -54,7 +54,12 @@ async function handle(msg: Message, sender: browser.runtime.MessageSender): Prom
       return { headwords: await localDictionary.suggest(msg.language, msg.prefix) };
     case 'TRANSLATE':
       return {
-        translation: await translationCache.translate(msg.language, msg.text, msg.targetLanguage),
+        translation: await translationCache.translate(
+          msg.language,
+          msg.text,
+          msg.targetLanguage,
+          msg.cachedOnly,
+        ),
       };
     case 'CAPTURE_SCREENSHOT': {
       try {

@@ -28,8 +28,14 @@ type Deps = {
     sentenceTranslation: string | null;
     defs: { body: string; lang: DefinitionLang }[];
   }) => Promise<{ added: boolean; duplicate: boolean; note?: string }>;
-  /** Translate the current sentence into a target language (en/es). */
-  translate?: (text: string, targetLanguage: string) => Promise<string>;
+  /** Translate the current sentence into a target language (en/es). With
+   *  `cachedOnly`, returns a saved translation if one exists (else null) and
+   *  never spends on the API. */
+  translate?: (
+    text: string,
+    targetLanguage: string,
+    cachedOnly?: boolean,
+  ) => Promise<string | null>;
   /** Whether a card for this word already exists in Anki. */
   ankiHas?: (front: string) => Promise<boolean>;
   /** Dictionary headword autocomplete for the form-search input. */
@@ -54,6 +60,8 @@ type PopupState = {
   translationTarget: string | null;
   translating: boolean;
   translationError: string | null;
+  /** Targets we've already attempted a cache-only auto-load for. */
+  cachedTried: Set<string>;
 };
 
 /** Sentence-translation target for a definition tab (Basque → en/es). */
@@ -446,6 +454,7 @@ export class Overlay {
       translationTarget: null,
       translating: false,
       translationError: null,
+      cachedTried: new Set(),
     };
     this.render();
 
@@ -651,6 +660,26 @@ export class Overlay {
     // definition tab: ES tab → Spanish, otherwise English.
     if (this.deps.translate && this.currentSentence) {
       const target = targetForLang(lang);
+      // Auto-load a previously-saved translation for this target (cache-only, no
+      // API spend) so re-opening a line you've translated shows it immediately.
+      if (
+        !(s.translation && s.translationTarget === target) &&
+        !s.translating &&
+        !s.cachedTried.has(target)
+      ) {
+        s.cachedTried.add(target);
+        const sentence = this.currentSentence;
+        void this.deps
+          .translate(sentence, target, true)
+          .then((t) => {
+            if (this.state === s && t && s.translationTarget !== target) {
+              s.translation = t;
+              s.translationTarget = target;
+              this.render();
+            }
+          })
+          .catch(() => {});
+      }
       const tr = el('div', 'translate');
       if (s.translationError) {
         tr.append(el('div', 'tr-err', s.translationError));
@@ -767,10 +796,14 @@ export class Overlay {
     s.translationError = null;
     this.render();
     try {
-      const t = await this.deps.translate(text, target);
+      const t = await this.deps.translate(text, target, false);
       if (this.state !== s) return;
-      s.translation = t;
-      s.translationTarget = target;
+      if (t) {
+        s.translation = t;
+        s.translationTarget = target;
+      } else {
+        s.translationError = 'No translation';
+      }
     } catch (e) {
       if (this.state !== s) return;
       s.translationError = e instanceof Error ? e.message : String(e);
@@ -827,6 +860,16 @@ export class Overlay {
     if (!card || !this.deps.addAnki) return;
     btn.disabled = true;
     status.textContent = 'Adding…';
+    // Include a saved translation even if the user didn't click Translate this
+    // time (cache-only lookup — no API spend on a miss).
+    if (!card.sentenceTranslation && this.deps.translate && card.sentence) {
+      try {
+        const t = await this.deps.translate(card.sentence, targetForLang(this.displayLang), true);
+        if (t) card.sentenceTranslation = t;
+      } catch {
+        /* best-effort */
+      }
+    }
     try {
       const r = await this.deps.addAnki(card);
       if (r.added || r.duplicate) {
