@@ -46,6 +46,10 @@ export type Requests = {
     res: { dataUrl: string | null; error?: string };
   };
   ANKI_HAS: { req: { front: string }; res: { exists: boolean } };
+  DICT_SUGGEST: {
+    req: { language: string; prefix: string };
+    res: { headwords: string[] };
+  };
 };
 
 export type MessageType = keyof Requests;

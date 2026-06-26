@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
 import type { DictionaryExport } from '../shared/api-types';
-import { buildHeadwordIndex, lookupHeadword, normalizeHeadword } from './dictionary-index';
+import {
+  buildHeadwordIndex,
+  lookupHeadword,
+  normalizeHeadword,
+  suggestHeadwords,
+} from './dictionary-index';
 
 const exported: DictionaryExport = {
   language: 'eu',
@@ -34,5 +39,22 @@ describe('buildHeadwordIndex / lookupHeadword', () => {
 
   it('returns an empty list for an unknown word', () => {
     expect(lookupHeadword(index, 'zzz')).toEqual([]);
+  });
+});
+
+describe('suggestHeadwords', () => {
+  const index = buildHeadwordIndex(exported);
+
+  it('matches a prefix case-insensitively and returns the original headword', () => {
+    expect(suggestHeadwords(index, 'et')).toEqual(['Etxe']);
+    expect(suggestHeadwords(index, 'JA')).toEqual(['jan']);
+  });
+
+  it('falls back to substring matches', () => {
+    expect(suggestHeadwords(index, 'txe')).toEqual(['Etxe']);
+  });
+
+  it('returns nothing for a blank prefix', () => {
+    expect(suggestHeadwords(index, '  ')).toEqual([]);
   });
 });

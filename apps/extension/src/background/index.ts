@@ -49,6 +49,8 @@ async function handle(msg: Message, sender: browser.runtime.MessageSender): Prom
       return addAnkiNote(msg);
     case 'ANKI_HAS':
       return { exists: await ankiNoteExists(msg.front) };
+    case 'DICT_SUGGEST':
+      return { headwords: await localDictionary.suggest(msg.language, msg.prefix) };
     case 'CAPTURE_SCREENSHOT': {
       try {
         const opts = { format: 'jpeg', quality: 80 } as const;

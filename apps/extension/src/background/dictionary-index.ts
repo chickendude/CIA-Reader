@@ -25,3 +25,22 @@ export function buildHeadwordIndex(exported: DictionaryExport): HeadwordIndex {
 export function lookupHeadword(index: HeadwordIndex, word: string): ExportedLemma[] {
   return index.get(normalizeHeadword(word)) ?? [];
 }
+
+/** Headwords matching a prefix (then substring), shortest first, for the popup's
+ *  form-search autocomplete. Returns the original-cased headwords. */
+export function suggestHeadwords(index: HeadwordIndex, prefix: string, limit = 8): string[] {
+  const p = normalizeHeadword(prefix);
+  if (!p) return [];
+  const starts: string[] = [];
+  const contains: string[] = [];
+  for (const k of index.keys()) {
+    if (k.startsWith(p)) starts.push(k);
+    else if (k.includes(p)) contains.push(k);
+  }
+  const byLen = (a: string, b: string): number => a.length - b.length || a.localeCompare(b);
+  starts.sort(byLen);
+  contains.sort(byLen);
+  return [...starts, ...contains]
+    .slice(0, limit)
+    .map((k) => index.get(k)?.[0]?.headword ?? k);
+}

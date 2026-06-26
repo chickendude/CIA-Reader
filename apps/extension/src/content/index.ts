@@ -74,6 +74,8 @@ const overlay = new Overlay({
   },
   ankiHas: (front) => sendMessage('ANKI_HAS', { front }).then((r) => r.exists),
   lookupLemma: (lemma) => sendMessage('LOOKUP', { language: LANGUAGE, surface: lemma, lemma }),
+  suggest: (prefix) =>
+    sendMessage('DICT_SUGGEST', { language: LANGUAGE, prefix }).then((r) => r.headwords),
 });
 
 // Hide the Shaka player controls (paused play/skip overlay) during a capture.

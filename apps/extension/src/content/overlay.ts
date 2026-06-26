@@ -29,6 +29,8 @@ type Deps = {
   }) => Promise<{ added: boolean; duplicate: boolean; note?: string }>;
   /** Whether a card for this word already exists in Anki. */
   ankiHas?: (front: string) => Promise<boolean>;
+  /** Dictionary headword autocomplete for the form-search input. */
+  suggest?: (prefix: string) => Promise<string[]>;
 };
 
 type RefState = 'idle' | 'loading' | 'done' | 'error';
@@ -65,7 +67,10 @@ const STYLE = `
 .w { cursor: pointer; border-radius: 4px; padding: 0 1px; transition: background 60ms; pointer-events: auto; }
 .w:hover { background: #ffd54a; color: #000; }
 .popup {
-  position: fixed; z-index: 2147483001; width: 380px; max-width: 92vw; max-height: 64vh;
+  position: fixed; z-index: 2147483001; width: 380px; max-width: 92vw;
+  /* Fixed height so re-rendering (e.g. switching forms) never resizes the box
+     and slides it out from under the cursor. Content scrolls inside. */
+  height: 380px; max-height: 76vh;
   overflow: auto; background: #1d1f23; color: #e8e8e8; border: 1px solid #3a3d44;
   border-radius: 12px; padding: 12px 14px; box-shadow: 0 10px 34px rgba(0,0,0,0.55);
   font: 14px/1.45 system-ui, -apple-system, sans-serif; pointer-events: auto;
@@ -86,10 +91,17 @@ const STYLE = `
   padding: 2px 8px; user-select: none;
 }
 .popup .form-edit:hover { color: #fff; border-color: #6a6d75; }
+.popup .form-edit-wrap { position: relative; display: inline-block; }
 .popup .form-input {
-  font: inherit; font-size: 12px; width: 110px; padding: 2px 8px; border-radius: 6px;
+  font: inherit; font-size: 12px; width: 130px; padding: 2px 8px; border-radius: 6px;
   background: #15171a; color: #fff; border: 1px solid #4a90e2; outline: none;
 }
+.popup .suggest {
+  margin-top: 4px; background: #15171a; border: 1px solid #3a3d44; border-radius: 7px;
+  overflow: hidden; min-width: 150px;
+}
+.popup .suggest-item { padding: 4px 9px; font-size: 13px; color: #cfd3da; cursor: pointer; }
+.popup .suggest-item:hover { background: #2b6cb0; color: #fff; }
 .popup .freq { color: #d6b25e; font-size: 13px; font-weight: 600; }
 .popup .inanki { color: #4bbd7a; font-size: 12px; font-weight: 600; }
 .popup .x { margin-left: auto; cursor: pointer; color: #9aa; font-size: 18px; line-height: 1; }
@@ -316,8 +328,19 @@ export class Overlay {
       this.openTimer = null;
     }
     if (this.closeTimer) clearTimeout(this.closeTimer);
-    this.closeTimer = setTimeout(() => this.close(), 250);
+    this.closeTimer = setTimeout(() => {
+      // Keep the popup open while the user is typing in the form-search input,
+      // even if the cursor has drifted off the box.
+      if (this.isEditingFocused()) return;
+      this.close();
+    }, 250);
     this.flushPending(); // a pending-open that never opened unfreezes the caption
+  }
+
+  /** True while the form-search input holds focus (don't auto-close then). */
+  private isEditingFocused(): boolean {
+    const a = this.root.activeElement as HTMLElement | null;
+    return Boolean(this.state?.editing && a?.classList.contains('form-input'));
   }
 
   private close(): void {
@@ -610,8 +633,36 @@ export class Overlay {
       row.append(chip);
     }
     if (s.editing) {
+      const wrap = el('div', 'form-edit-wrap');
       const input = el('input', 'form-input');
-      input.placeholder = 'type a form…';
+      input.placeholder = 'search a form…';
+      const drop = el('div', 'suggest');
+      drop.style.display = 'none';
+      // Update the dropdown in place (no full re-render → input keeps focus).
+      const fill = (items: string[]): void => {
+        drop.replaceChildren();
+        for (const h of items) {
+          const opt = el('div', 'suggest-item', h);
+          // mousedown (not click) so selection fires before the input blurs.
+          opt.addEventListener('mousedown', (e) => {
+            e.preventDefault();
+            void this.selectForm(h);
+          });
+          drop.append(opt);
+        }
+        drop.style.display = items.length ? '' : 'none';
+      };
+      let debounce: ReturnType<typeof setTimeout> | null = null;
+      input.addEventListener('input', () => {
+        if (debounce) clearTimeout(debounce);
+        const v = input.value.trim();
+        if (!v || !this.deps.suggest) return fill([]);
+        debounce = setTimeout(() => {
+          void this.deps.suggest!(v).then((items) => {
+            if (this.state === s && s.editing) fill(items);
+          });
+        }, 130);
+      });
       input.addEventListener('keydown', (e) => {
         e.stopPropagation();
         if (e.key === 'Enter') {
@@ -622,7 +673,8 @@ export class Overlay {
           this.render();
         }
       });
-      row.append(input);
+      wrap.append(input, drop);
+      row.append(wrap);
       setTimeout(() => input.focus(), 0);
     } else {
       const edit = el('span', 'form-edit', '✎');

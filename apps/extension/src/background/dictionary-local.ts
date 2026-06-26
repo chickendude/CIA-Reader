@@ -12,6 +12,7 @@ import { api } from './api-client';
 import {
   buildHeadwordIndex,
   lookupHeadword,
+  suggestHeadwords,
   type HeadwordIndex,
 } from './dictionary-index';
 import { idbKvStore, type KvStore } from './idb';
@@ -56,6 +57,12 @@ export class LocalDictionary {
   async lookup(language: string, word: string): Promise<ExportedLemma[]> {
     await this.ensureLoaded(language);
     return this.index ? lookupHeadword(this.index, word) : [];
+  }
+
+  /** Headword autocomplete for the popup's form search. */
+  async suggest(language: string, prefix: string, limit = 8): Promise<string[]> {
+    await this.ensureLoaded(language);
+    return this.index ? suggestHeadwords(this.index, prefix, limit) : [];
   }
 
   async status(language: string): Promise<{ ready: boolean; count: number }> {
