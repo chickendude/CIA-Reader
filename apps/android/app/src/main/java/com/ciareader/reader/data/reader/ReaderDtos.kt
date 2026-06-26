@@ -36,8 +36,17 @@ data class ChapterTokensDto(
     val chapterId: String,
     val chapterIdx: Int,
     val body: String = "",
-    val tokens: List<TokenDto> = emptyList(),
-    val phraseSpans: List<PhraseSpanDto> = emptyList(),
+    // Nullable: the server returns `null` (not `[]`) for a chapter that hasn't
+    // been tokenized yet — a freshly imported / still-processing chapter. A
+    // default only covers an absent key, so a non-null type crashes on `null`.
+    val tokens: List<TokenDto>? = null,
+    val phraseSpans: List<PhraseSpanDto>? = null,
+    /** PDF (image) chapters only: the page image to render + its pixel size, so
+     *  the app can overlay the per-token [TokenDto.bbox] as tappable words.
+     *  Relative path (e.g. /pdf-assets/<key>); null for text-source chapters. */
+    val pageImageUrl: String? = null,
+    val pageWidth: Int? = null,
+    val pageHeight: Int? = null,
 )
 
 @Serializable
@@ -52,12 +61,24 @@ data class TokenDto(
     val isOov: Boolean = false,
     val isAmbiguous: Boolean = false,
     val hasDefinition: Boolean = false,
+    /** PDF source only: the word's normalized (0..1) bounding box on the page
+     *  image, for the image-reader overlay. Null for text-source tokens. */
+    val bbox: BboxDto? = null,
     /** Alternate lemmas the parser scored for this surface form (T-6.1 on the
      *  web). The server already excludes the chosen lemma, so this is the list of
      *  *other* parsings the word sheet's parse switcher offers. Empty when the
      *  parse is unambiguous. The wire entries also carry `score`/`features`,
      *  which we drop (ignoreUnknownKeys). */
     val candidates: List<CandidateDto> = emptyList(),
+)
+
+/** A word's normalized (0..1) bounding box on the page image. */
+@Serializable
+data class BboxDto(
+    val x: Float = 0f,
+    val y: Float = 0f,
+    val w: Float = 0f,
+    val h: Float = 0f,
 )
 
 @Serializable

@@ -26,6 +26,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -71,11 +72,17 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.ciareader.reader.data.collection.CollectionSummary
 import com.ciareader.reader.data.language.Language
 import com.ciareader.reader.data.library.TextCard
+import com.ciareader.reader.data.upload.ImportResult
+import com.ciareader.reader.ui.importer.ImportSheet
 
 @Composable
 fun LibraryScreen(
     onOpenText: (String) -> Unit,
     onOpenCollection: (CollectionSummary) -> Unit,
+    onOpenCollectionById: (String) -> Unit,
+    /** Open the reader on a specific chapter-text within a book, so chapter nav
+     *  (prev/next + the TOC) works — used after importing an EPUB. */
+    onOpenBookChapter: (textId: String, collectionId: String) -> Unit,
     onOpenSettings: () -> Unit,
     viewModel: LibraryViewModel = hiltViewModel(),
 ) {
@@ -88,6 +95,9 @@ fun LibraryScreen(
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
+
+    var showImport by remember { mutableStateOf(false) }
+
     LibraryScreenContent(
         state = state,
         onSelectLanguage = viewModel::selectLanguage,
@@ -96,6 +106,12 @@ fun LibraryScreen(
         onRetry = viewModel::load,
         onOpenSettings = onOpenSettings,
         onRefresh = viewModel::refresh,
+        // The FAB only makes sense once we know which language to file under.
+        onImportClick = if (state.currentLanguage != null) {
+            { showImport = true }
+        } else {
+            null
+        },
         onEditCollection = viewModel::editCollection,
         onDeleteCollection = viewModel::deleteCollection,
         onDeleteText = viewModel::deleteText,
@@ -105,6 +121,30 @@ fun LibraryScreen(
         onEditText = viewModel::editText,
         onShowTextStats = viewModel::showTextStats,
     )
+
+    val language = state.currentLanguage
+    if (showImport && language != null) {
+        ImportSheet(
+            language = language,
+            onDismiss = { showImport = false },
+            onImported = { result ->
+                showImport = false
+                // Refresh the library so the new text/book appears, then open it.
+                viewModel.refreshCurrentLanguage()
+                when (result) {
+                    is ImportResult.Text -> onOpenText(result.textId)
+                    // Open the reader on chapter 1 *with the book context* (so
+                    // prev/next + the chapter TOC work) rather than the chapter-list
+                    // page, whose chapters are still "processing" with no live
+                    // refresh. Fall back to the list if there's no first chapter.
+                    is ImportResult.Collection ->
+                        result.firstTextId
+                            ?.let { onOpenBookChapter(it, result.collectionId) }
+                            ?: onOpenCollectionById(result.collectionId)
+                }
+            },
+        )
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -117,6 +157,7 @@ internal fun LibraryScreenContent(
     onRetry: () -> Unit,
     onOpenSettings: () -> Unit,
     onRefresh: () -> Unit = {},
+    onImportClick: (() -> Unit)? = null,
     onEditCollection: (String, String, String?) -> Unit = { _, _, _ -> },
     onDeleteCollection: (String) -> Unit = {},
     onDeleteText: (String) -> Unit = {},
@@ -158,6 +199,16 @@ internal fun LibraryScreenContent(
                 },
             )
         },
+        floatingActionButton = {
+            onImportClick?.let {
+                FloatingActionButton(onClick = it) {
+                    Icon(
+                        painterResource(R.drawable.ic_add),
+                        contentDescription = "Import a text",
+                    )
+                }
+            }
+        },
     ) { padding ->
         PullToRefreshBox(
             isRefreshing = state.isRefreshing,
@@ -193,6 +244,15 @@ internal fun LibraryScreenContent(
                         onEditText = onEditText,
                         onShowTextStats = onShowTextStats,
                     )
+            }
+            // A book delete cascades server-side; show progress until it + the
+            // list reload finish.
+            if (state.isMutating) {
+                LinearProgressIndicator(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .align(Alignment.TopCenter),
+                )
             }
         }
     }
@@ -812,7 +872,7 @@ private fun EmptyState() {
     ) {
         Text("Nothing here yet", style = MaterialTheme.typography.titleMedium)
         Text(
-            "Add a text or book from the web app to start reading.",
+            "Tap + to import a text or book and start reading.",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center,

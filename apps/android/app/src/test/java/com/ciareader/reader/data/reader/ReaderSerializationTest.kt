@@ -4,6 +4,8 @@ import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -38,12 +40,12 @@ class ReaderSerializationTest {
         """.trimIndent()
 
         val dto = json.decodeFromString<ChapterTokensDto>(payload)
-        assertEquals(2, dto.tokens.size)
-        assertEquals("नमस्ते", dto.tokens[0].surface)
-        assertEquals("known", dto.tokens[0].status)
-        assertEquals("namaste", dto.tokens[0].romanization)
-        assertTrue(dto.tokens[0].isWord)
-        assertFalse(dto.tokens[1].isWord)
+        assertEquals(2, dto.tokens!!.size)
+        assertEquals("नमस्ते", dto.tokens!![0].surface)
+        assertEquals("known", dto.tokens!![0].status)
+        assertEquals("namaste", dto.tokens!![0].romanization)
+        assertTrue(dto.tokens!![0].isWord)
+        assertFalse(dto.tokens!![1].isWord)
     }
 
     @Test
@@ -75,7 +77,7 @@ class ReaderSerializationTest {
         """.trimIndent()
 
         val dto = json.decodeFromString<ChapterTokensDto>(payload)
-        val candidates = dto.tokens[0].candidates
+        val candidates = dto.tokens!![0].candidates
         assertEquals(2, candidates.size)
         assertEquals("l-sleep", candidates[0].lemmaId)
         assertEquals("सोना", candidates[0].headword)
@@ -84,6 +86,49 @@ class ReaderSerializationTest {
         // Null gloss + absent score/features still decode cleanly.
         assertEquals("चाँदी", candidates[1].headword)
         assertEquals(null, candidates[1].glossDefault)
+    }
+
+    @Test
+    fun decodesAProcessingChapterWithNullTokensWithoutThrowing() {
+        // A freshly-imported / still-processing chapter: the server sends `null`
+        // (not `[]`) for tokens + phraseSpans. This must decode rather than throw
+        // — the regression for the EPUB-import reader crash.
+        val payload = """
+            {
+              "chapterId": "c1", "chapterIdx": 0, "body": "raw page text",
+              "tokens": null, "phraseSpans": null
+            }
+        """.trimIndent()
+
+        val dto = json.decodeFromString<ChapterTokensDto>(payload)
+        assertNull(dto.tokens)
+        assertNull(dto.phraseSpans)
+        assertEquals("raw page text", dto.body)
+    }
+
+    @Test
+    fun decodesAPdfImageChapterWithPageImageAndTokenBboxes() {
+        val payload = """
+            {
+              "chapterId": "c1", "chapterIdx": 0, "body": "नमस्ते",
+              "tokens": [
+                { "idx": 0, "surface": "नमस्ते", "isWord": true, "status": "unknown",
+                  "bbox": { "x": 0.1, "y": 0.2, "w": 0.3, "h": 0.05 } }
+              ],
+              "phraseSpans": [],
+              "pageImageUrl": "/pdf-assets/texts/t1/pages/0.jpg",
+              "pageWidth": 1200, "pageHeight": 1600
+            }
+        """.trimIndent()
+
+        val dto = json.decodeFromString<ChapterTokensDto>(payload)
+        assertEquals("/pdf-assets/texts/t1/pages/0.jpg", dto.pageImageUrl)
+        assertEquals(1200, dto.pageWidth)
+        assertEquals(1600, dto.pageHeight)
+        val bbox = dto.tokens!![0].bbox
+        assertNotNull(bbox)
+        assertEquals(0.1f, bbox!!.x, 0.001f)
+        assertEquals(0.3f, bbox.w, 0.001f)
     }
 
     @Test

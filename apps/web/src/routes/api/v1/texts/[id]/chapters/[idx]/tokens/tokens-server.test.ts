@@ -134,6 +134,9 @@ describe('GET /api/v1/texts/:id/chapters/:idx/tokens', () => {
         "body": "string",
         "chapterId": "string",
         "chapterIdx": "number",
+        "pageHeight": "null",
+        "pageImageUrl": "null",
+        "pageWidth": "null",
         "phraseSpans": "array",
         "tokens": [
           {

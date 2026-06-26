@@ -129,10 +129,12 @@ class ReaderScreenTest {
                 )
             }
         }
-        compose.onNodeWithText("Intro").assertIsDisplayed()
+        // Chapters are numbered so duplicate/blank titles stay distinguishable.
+        compose.onNodeWithText("1. Intro").assertIsDisplayed()
+        compose.onNodeWithText("2. Two").assertIsDisplayed()
         compose.onNodeWithText("1200 words").assertIsDisplayed()
         compose.onNodeWithText("Current").assertIsDisplayed()
-        compose.onNodeWithText("Intro").performClick()
+        compose.onNodeWithText("1. Intro").performClick()
         assertEquals("t0", picked)
     }
 
