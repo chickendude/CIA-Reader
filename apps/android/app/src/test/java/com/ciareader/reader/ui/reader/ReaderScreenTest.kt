@@ -5,7 +5,10 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.test.click
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTouchInput
 import com.ciareader.reader.data.dictionary.LemmaTranslations
 import com.ciareader.reader.data.dictionary.WordTranslation
 import com.ciareader.reader.data.reader.KnownStatus
@@ -48,7 +51,7 @@ class ReaderScreenTest {
                     onPrevChapter = {},
                     onNextChapter = {},
                     onRetry = {},
-                    onSetStatus = {},
+                    onToggleStatus = {},
                     onRecordPosition = { _, _ -> },
                     onRestoreConsumed = {},
                     onToggleRomanize = {},
@@ -79,7 +82,7 @@ class ReaderScreenTest {
                     onPrevChapter = {},
                     onNextChapter = {},
                     onRetry = {},
-                    onSetStatus = {},
+                    onToggleStatus = {},
                     onRecordPosition = { _, _ -> },
                     onRestoreConsumed = {},
                     onToggleRomanize = {},
@@ -103,7 +106,7 @@ class ReaderScreenTest {
                     onPrevChapter = {},
                     onNextChapter = { next = true },
                     onRetry = {},
-                    onSetStatus = {},
+                    onToggleStatus = {},
                     onRecordPosition = { _, _ -> },
                     onRestoreConsumed = {},
                     onToggleRomanize = {},
@@ -150,7 +153,7 @@ class ReaderScreenTest {
                     onPrevChapter = {},
                     onNextChapter = {},
                     onRetry = {},
-                    onSetStatus = {},
+                    onToggleStatus = {},
                     onRecordPosition = { _, _ -> },
                     onRestoreConsumed = {},
                     onToggleRomanize = {},
@@ -199,7 +202,7 @@ class ReaderScreenTest {
                     onPrevChapter = {},
                     onNextChapter = {},
                     onRetry = { retried = true },
-                    onSetStatus = {},
+                    onToggleStatus = {},
                     onRecordPosition = { _, _ -> },
                     onRestoreConsumed = {},
                     onToggleRomanize = {},
@@ -213,8 +216,7 @@ class ReaderScreenTest {
     }
 
     @Test
-    fun wordDetailsShowsTranslationsAndStatusButtons() {
-        var chosen: KnownStatus? = null
+    fun wordDetailsShowsTranslations() {
         compose.setContent {
             CiaReaderTheme {
                 WordDetails(
@@ -239,17 +241,14 @@ class ReaderScreenTest {
                         community = emptyList(),
                     ),
                     isLoading = false,
-                    onSetStatus = { chosen = it },
                 )
             }
         }
-        compose.onNodeWithText("नमस्ते").assertIsDisplayed()
+        // The headword/status/translate live in the popup header now; the body
+        // shows the dictionary translations.
         compose.onNodeWithText("greeting").assertIsDisplayed()
         // Attribution is intentionally not surfaced in the reader (web parity).
         compose.onNodeWithText("Platts").assertDoesNotExist()
-        compose.onNodeWithText("Known").assertIsDisplayed()
-        compose.onNodeWithText("Known").performClick()
-        assertEquals(KnownStatus.KNOWN, chosen)
     }
 
     @Test
@@ -280,7 +279,6 @@ class ReaderScreenTest {
                         community = emptyList(),
                     ),
                     isLoading = false,
-                    onSetStatus = {},
                     activeParseLemmaId = "l-gold",
                     primaryHeadword = "सोना",
                     primaryPos = "NOUN",
@@ -303,7 +301,6 @@ class ReaderScreenTest {
                     token = ReaderToken(0, "नमस्ते", true, KnownStatus.UNKNOWN, "l1", "namaste", "hello", false, false, true),
                     translations = null,
                     isLoading = false,
-                    onSetStatus = {},
                     activeParseLemmaId = "l1",
                     primaryHeadword = "नमस्ते",
                     primaryPos = "INTJ",
@@ -322,11 +319,9 @@ class ReaderScreenTest {
                     token = ReaderToken(0, "नमस्ते", true, KnownStatus.UNKNOWN, "l1", "namaste", "hello", false, false, true),
                     translations = null,
                     isLoading = false,
-                    onSetStatus = {},
                 )
             }
         }
-        compose.onNodeWithText("namaste").assertIsDisplayed()
         compose.onNodeWithText("hello").assertIsDisplayed()
     }
 
@@ -358,7 +353,7 @@ class ReaderScreenTest {
                     onPrevChapter = {},
                     onNextChapter = {},
                     onRetry = {},
-                    onSetStatus = {},
+                    onToggleStatus = {},
                     onRecordPosition = { tokenIdx, _ -> recordedToken = tokenIdx },
                     onRestoreConsumed = {},
                     onToggleRomanize = {},
@@ -372,24 +367,6 @@ class ReaderScreenTest {
     }
 
     @Test
-    fun wordDetailsTranslateSentenceButtonFires() {
-        var translated = false
-        compose.setContent {
-            CiaReaderTheme {
-                WordDetails(
-                    token = ReaderToken(0, "नमस्ते", true, KnownStatus.UNKNOWN, "l1", null, null, false, false, true),
-                    translations = null,
-                    isLoading = false,
-                    onSetStatus = {},
-                    onTranslateSentence = { translated = true },
-                )
-            }
-        }
-        compose.onNodeWithText("Translate sentence").performClick()
-        assertTrue(translated)
-    }
-
-    @Test
     fun wordDetailsShowsSentenceTranslationResultWhenAutoExpanded() {
         compose.setContent {
             CiaReaderTheme {
@@ -397,7 +374,6 @@ class ReaderScreenTest {
                     token = ReaderToken(0, "नमस्ते", true, KnownStatus.UNKNOWN, "l1", null, null, false, false, true),
                     translations = null,
                     isLoading = false,
-                    onSetStatus = {},
                     sentenceTranslation = SentenceTranslation("नमस्ते दुनिया।", "Hello world."),
                     autoExpandSentence = true, // expanded right after an explicit translate
                 )
@@ -415,7 +391,6 @@ class ReaderScreenTest {
                     token = ReaderToken(0, "नमस्ते", true, KnownStatus.UNKNOWN, "l1", null, null, false, false, true),
                     translations = null,
                     isLoading = false,
-                    onSetStatus = {},
                     sentenceTranslation = SentenceTranslation("नमस्ते दुनिया।", "Hello world."),
                     // autoExpandSentence defaults false → collapsed (recall behaviour)
                 )
@@ -425,6 +400,97 @@ class ReaderScreenTest {
         compose.onNodeWithText("Hello world.").assertDoesNotExist()
         compose.onNodeWithText("Sentence translation", substring = true).performClick()
         compose.onNodeWithText("Hello world.").assertIsDisplayed()
+    }
+
+    @Test
+    fun compactWordDetailsHidesNoteEditing() {
+        compose.setContent {
+            CiaReaderTheme {
+                WordDetails(
+                    token = ReaderToken(0, "aldatu", true, KnownStatus.UNKNOWN, "l1", null, null, false, false, true),
+                    translations = LemmaTranslations(
+                        headword = "aldatu",
+                        pos = "VERB",
+                        gloss = null,
+                        personal = listOf(WordTranslation("my note", null, "p1")),
+                        official = emptyList(),
+                        community = emptyList(),
+                    ),
+                    isLoading = false,
+                    editable = false, // the compact popup
+                )
+            }
+        }
+        // The note still shows, but the keyboard-dependent editing affordances
+        // (inline "Edit", the add-a-definition field) are withheld in compact mode.
+        compose.onNodeWithText("my note").assertIsDisplayed()
+        compose.onNodeWithText("Edit").assertDoesNotExist()
+        compose.onNodeWithText("Add your own definition").assertDoesNotExist()
+    }
+
+    @Test
+    fun wordPopupHeaderShowsWordAndExpandToggles() {
+        var expandTapped = false
+        var closed = false
+        compose.setContent {
+            CiaReaderTheme {
+                WordPopupHeader(
+                    headword = "aldatu",
+                    pos = "VERB",
+                    romanization = null,
+                    showRadial = true,
+                    status = KnownStatus.UNKNOWN,
+                    onKnown = {},
+                    onRefresh = {},
+                    onLearn = {},
+                    onIgnore = {},
+                    onTranslate = {},
+                    expanded = false,
+                    onToggleExpand = { expandTapped = true },
+                    onClose = { closed = true },
+                )
+            }
+        }
+        // The word + POS live on the top row; expand sits left of the close X.
+        compose.onNodeWithText("aldatu").assertIsDisplayed()
+        compose.onNodeWithText("VERB").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Expand").performClick()
+        assertTrue(expandTapped)
+        compose.onNodeWithContentDescription("Close word").performClick()
+        assertTrue(closed)
+    }
+
+    @Test
+    fun radialButtonTapMarksKnown() {
+        var tapped = false
+        compose.setContent {
+            CiaReaderTheme {
+                RadialActionButton(
+                    status = KnownStatus.UNKNOWN,
+                    onKnown = { tapped = true },
+                    onRefresh = {},
+                    onLearn = {},
+                    onIgnore = {},
+                    onTranslate = {},
+                )
+            }
+        }
+        // A quick tap on the centre checkmark marks the word known.
+        compose.onNodeWithContentDescription("Known").performTouchInput { click() }
+        assertTrue(tapped)
+    }
+
+    @Test
+    fun radialSelectionMapsDirectionsToActions() {
+        val dz = 20f
+        // Centre / dead zone → null (means "known").
+        assertEquals(null, radialSelectionFor(Offset(0f, 0f), dz))
+        assertEquals(null, radialSelectionFor(Offset(5f, 5f), dz))
+        // Screen y is down: right=translate, down=ignore, left=learn, up=refresh.
+        assertEquals(RadialAction.TRANSLATE, radialSelectionFor(Offset(100f, 0f), dz))
+        assertEquals(RadialAction.IGNORE, radialSelectionFor(Offset(0f, 100f), dz))
+        assertEquals(RadialAction.LEARN, radialSelectionFor(Offset(-100f, 0f), dz))
+        assertEquals(RadialAction.REFRESH, radialSelectionFor(Offset(0f, -100f), dz))
     }
 
     private fun token(surface: String, isWord: Boolean, status: KnownStatus = KnownStatus.UNKNOWN) =

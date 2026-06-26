@@ -469,6 +469,14 @@ class ReaderViewModel @Inject constructor(
         }
     }
 
+    /** Apply [target] to the selected word, toggling it off (back to "new"/UNKNOWN)
+     *  when the word already has that status. Reads the live status, so repeated
+     *  toggles within one open word sheet work without reopening it. */
+    fun toggleStatus(target: KnownStatus) {
+        val current = _state.value.selectedWord?.status ?: return
+        setStatus(if (current == target) KnownStatus.UNKNOWN else target)
+    }
+
     /** Persist a status for the selected word's lemma and recolor every
      *  occurrence of that lemma in the current chapter. */
     fun setStatus(status: KnownStatus) {

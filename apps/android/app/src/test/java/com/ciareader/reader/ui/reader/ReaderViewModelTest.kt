@@ -804,6 +804,26 @@ class ReaderViewModelTest {
         community = emptyList(),
     )
 
+    @Test
+    fun toggleStatusTogglesActiveStatusBackToNew() = runTest(mainRule.dispatcher) {
+        val token = ReaderToken(0, "aldatu", true, KnownStatus.UNKNOWN, "l1", null, null, false, false, true)
+        val repo = FakeReaderRepository(meta = meta(1), chapters = mapOf(0 to Chapter(0, listOf(token))))
+        val v = vm(repo)
+        advanceUntilIdle()
+        v.onWordTap(token)
+        advanceUntilIdle()
+
+        v.toggleStatus(KnownStatus.KNOWN)
+        advanceUntilIdle()
+        assertEquals(KnownStatus.KNOWN, v.state.value.selectedWord?.status)
+
+        // Re-applying the active status clears it to "new" — reads the live status,
+        // so it works repeatedly within one open word sheet (no reopen needed).
+        v.toggleStatus(KnownStatus.KNOWN)
+        advanceUntilIdle()
+        assertEquals(KnownStatus.UNKNOWN, v.state.value.selectedWord?.status)
+    }
+
     private fun meta(chapterCount: Int, language: String = "hi") = TextMeta(
         id = "t1",
         title = "Book",

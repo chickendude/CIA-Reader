@@ -5,13 +5,15 @@ package com.ciareader.reader.ui.reader
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -20,7 +22,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.rememberScrollState
@@ -44,9 +45,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -111,7 +110,28 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.foundation.lazy.itemsIndexed
 import com.ciareader.reader.data.reader.ReaderToken
 import com.ciareader.reader.data.reader.SentenceTranslation
+import kotlin.math.atan2
+import kotlin.math.cos
+import kotlin.math.max
 import kotlin.math.roundToInt
+import kotlin.math.sin
+import kotlinx.coroutines.withTimeoutOrNull
+import androidx.activity.compose.BackHandler
+import androidx.compose.material3.Surface
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.foundation.layout.offset
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInWindow
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntRect
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupPositionProvider
+import androidx.compose.ui.window.PopupProperties
 
 @Composable
 fun ReaderScreen(
@@ -161,7 +181,7 @@ fun ReaderScreen(
             }
         },
         onRetry = viewModel::retry,
-        onSetStatus = viewModel::setStatus,
+        onToggleStatus = viewModel::toggleStatus,
         onSelectParse = viewModel::selectParse,
         onAddDefinition = viewModel::addDefinition,
         onEditDefinition = viewModel::editDefinition,
@@ -198,7 +218,7 @@ internal fun ReaderScreenContent(
     onNextChapter: () -> Unit,
     onSwipeToPrevChapter: () -> Unit = onPrevChapter,
     onRetry: () -> Unit,
-    onSetStatus: (KnownStatus) -> Unit,
+    onToggleStatus: (KnownStatus) -> Unit,
     onSelectParse: (String) -> Unit = {},
     onAddDefinition: (String) -> Unit = {},
     onEditDefinition: (String, String) -> Unit = { _, _ -> },
@@ -218,6 +238,20 @@ internal fun ReaderScreenContent(
 ) {
     var showSettings by remember { mutableStateOf(false) }
     var showChapters by remember { mutableStateOf(false) }
+    // Word popup: the tapped word's bounds in window px (anchors the popup) and
+    // whether it's expanded to the full-screen editor.
+    var wordAnchor by remember { mutableStateOf<Rect?>(null) }
+    var wordExpanded by remember { mutableStateOf(false) }
+    val closeWord = {
+        wordAnchor = null
+        wordExpanded = false
+        onDismissWord()
+    }
+    val handleWordTap = { token: ReaderToken, rect: Rect ->
+        wordAnchor = rect
+        wordExpanded = false
+        onWordTap(token)
+    }
     Scaffold(
         topBar = {
             TopAppBar(
@@ -290,7 +324,8 @@ internal fun ReaderScreenContent(
                         pageWidth = state.pageWidth,
                         pageHeight = state.pageHeight,
                         tokens = state.tokens,
-                        onWordTap = onWordTap,
+                        onWordTap = handleWordTap,
+                        onDismissWord = closeWord,
                         onPrevPage = onPrevChapter,
                         onNextPage = onNextChapter,
                         modifier = Modifier.fillMaxSize(),
@@ -309,7 +344,8 @@ internal fun ReaderScreenContent(
                         nextTitle = state.nextTitle,
                         onPrev = onSwipeToPrevChapter,
                         onNext = onNextChapter,
-                        onWordTap = onWordTap,
+                        onWordTap = handleWordTap,
+                        onDismissWord = closeWord,
                         onProgress = onProgress,
                         onRecordPosition = onRecordPosition,
                         restoreTokenIdx = state.restoreTokenIdx,
@@ -324,7 +360,9 @@ internal fun ReaderScreenContent(
                         rtl = state.isRtl,
                         fontSize = state.fontSize,
                         lineSpacing = state.lineSpacing,
-                        onWordTap = onWordTap,
+                        onWordTap = handleWordTap,
+                        onDismissWord = closeWord,
+                        onScrolled = closeWord,
                         restoreTokenIdx = state.restoreTokenIdx,
                         onRecordPosition = onRecordPosition,
                         onRestoreConsumed = onRestoreConsumed,
@@ -356,13 +394,12 @@ internal fun ReaderScreenContent(
     }
 
     val selected = state.selectedWord
-    if (selected != null) {
-        // skipPartiallyExpanded: with no partial anchor the sheet can't snap back
-        // down when its content changes (e.g. expanding examples) or on any tap.
-        ModalBottomSheet(
-            onDismissRequest = onDismissWord,
-            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-        ) {
+    val anchor = wordAnchor
+    if (selected != null && anchor != null) {
+        // Compact popup vs full-screen editor share one content block. Editing
+        // fields (add/edit a note) need an IME, which the focusable=false popup
+        // can't host — so they only render in the expanded (editable) view.
+        val details: @Composable (Boolean, Modifier) -> Unit = { editable, contentModifier ->
             WordDetails(
                 token = selected,
                 translations = state.wordTranslations,
@@ -373,7 +410,6 @@ internal fun ReaderScreenContent(
                 isSentenceTranslating = state.isSentenceTranslating,
                 sentenceTranslateError = state.sentenceTranslateError,
                 autoExpandSentence = state.autoExpandSentence,
-                onSetStatus = onSetStatus,
                 activeParseLemmaId = state.activeParseLemmaId,
                 primaryHeadword = state.primaryHeadword,
                 primaryPos = state.primaryPos,
@@ -381,10 +417,92 @@ internal fun ReaderScreenContent(
                 onAddDefinition = onAddDefinition,
                 onEditDefinition = onEditDefinition,
                 onDeleteDefinition = onDeleteDefinition,
-                onTranslateSentence = onTranslateSentence,
-                onRefresh = onRefreshWord,
                 onSelectBasqueSource = onSetBasqueRefSource,
+                editable = editable,
+                modifier = contentModifier,
             )
+        }
+        val headword = state.wordTranslations?.headword ?: selected.surface
+        val pos = state.wordTranslations?.pos
+        val romanization = selected.romanization
+        val hasLemma = selected.lemmaId != null
+        // The VM toggles against its live status (re-selecting the active status
+        // clears it to "new"), so repeated toggles in one open sheet work.
+        val onKnown = { onToggleStatus(KnownStatus.KNOWN) }
+        val onLearn = { onToggleStatus(KnownStatus.LEARNING) }
+        val onIgnore = { onToggleStatus(KnownStatus.IGNORED) }
+        if (wordExpanded) {
+            Dialog(
+                onDismissRequest = closeWord,
+                properties = DialogProperties(usePlatformDefaultWidth = false),
+            ) {
+                Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surface) {
+                    Column(Modifier.fillMaxSize()) {
+                        WordPopupHeader(
+                            headword = headword,
+                            pos = pos,
+                            romanization = romanization,
+                            showRadial = hasLemma,
+                            status = selected.status,
+                            onKnown = onKnown,
+                            onRefresh = onRefreshWord,
+                            onLearn = onLearn,
+                            onIgnore = onIgnore,
+                            onTranslate = onTranslateSentence,
+                            expanded = true,
+                            onToggleExpand = { wordExpanded = false },
+                            onClose = closeWord,
+                        )
+                        HorizontalDivider()
+                        details(true, Modifier.weight(1f))
+                    }
+                }
+            }
+        } else {
+            // Back closes the popup rather than leaving the reader. (The expanded
+            // Dialog handles its own back via onDismissRequest.)
+            BackHandler(onBack = closeWord)
+            val density = LocalDensity.current
+            val provider = remember(anchor, density) {
+                with(density) {
+                    WordAnchorPositionProvider(anchor, gapPx = 8.dp.roundToPx(), marginPx = 8.dp.roundToPx())
+                }
+            }
+            Popup(
+                popupPositionProvider = provider,
+                properties = PopupProperties(focusable = false),
+                onDismissRequest = closeWord,
+            ) {
+                Surface(
+                    modifier = Modifier
+                        .width(320.dp)
+                        .height(300.dp),
+                    shape = RoundedCornerShape(16.dp),
+                    color = MaterialTheme.colorScheme.surface,
+                    tonalElevation = 3.dp,
+                    shadowElevation = 12.dp,
+                ) {
+                    Column(Modifier.fillMaxSize()) {
+                        WordPopupHeader(
+                            headword = headword,
+                            pos = pos,
+                            romanization = romanization,
+                            showRadial = hasLemma,
+                            status = selected.status,
+                            onKnown = onKnown,
+                            onRefresh = onRefreshWord,
+                            onLearn = onLearn,
+                            onIgnore = onIgnore,
+                            onTranslate = onTranslateSentence,
+                            expanded = false,
+                            onToggleExpand = { wordExpanded = true },
+                            onClose = closeWord,
+                        )
+                        HorizontalDivider()
+                        details(false, Modifier.weight(1f))
+                    }
+                }
+            }
         }
     }
 
@@ -427,7 +545,9 @@ private fun ChapterText(
     rtl: Boolean,
     fontSize: Int,
     lineSpacing: Float,
-    onWordTap: (ReaderToken) -> Unit,
+    onWordTap: (ReaderToken, Rect) -> Unit,
+    onDismissWord: () -> Unit,
+    onScrolled: () -> Unit,
     restoreTokenIdx: Int?,
     onRecordPosition: (Int, Double) -> Unit,
     onRestoreConsumed: () -> Unit,
@@ -454,8 +574,15 @@ private fun ChapterText(
         }
     }
     var layout by remember { mutableStateOf<TextLayoutResult?>(null) }
+    var textCoords by remember { mutableStateOf<LayoutCoordinates?>(null) }
     // Fresh scroll position per chapter, so navigating starts at the top.
     val scrollState = remember(tokens) { ScrollState(0) }
+
+    // The word popup is anchored to a fixed window position, so any scroll would
+    // detach it from its word — close it as soon as the reader scrolls.
+    LaunchedEffect(scrollState) {
+        snapshotFlow { scrollState.isScrollInProgress }.collect { if (it) onScrolled() }
+    }
 
     // Restore the saved reading anchor once the chapter has laid out.
     LaunchedEffect(layout, restoreTokenIdx) {
@@ -497,12 +624,23 @@ private fun ChapterText(
         modifier = modifier
             .verticalScroll(scrollState)
             .padding(16.dp)
+            .onGloballyPositioned { textCoords = it }
             .pointerInput(tokens) {
                 detectTapGestures { pos ->
                     val result = layout ?: return@detectTapGestures
                     val charOffset = result.getOffsetForPosition(pos)
                     val tokenIndex = ranges.indexOfFirst { charOffset in it }
-                    tokens.getOrNull(tokenIndex)?.let { if (it.isWord) onWordTap(it) }
+                    val token = tokens.getOrNull(tokenIndex)
+                    val range = ranges.getOrNull(tokenIndex)
+                    val rect = if (token != null && token.isWord && range != null) {
+                        wordRectInWindow(textCoords, result, range.first, range.last + 1)
+                    } else {
+                        null
+                    }
+                    // Tap a word → (re)anchor the popup there; tap anything else
+                    // (gap, punctuation) → dismiss it.
+                    if (token != null && token.isWord && rect != null) onWordTap(token, rect)
+                    else onDismissWord()
                 }
             },
     )
@@ -521,7 +659,8 @@ private fun PagedChapter(
     nextTitle: String?,
     onPrev: () -> Unit,
     onNext: () -> Unit,
-    onWordTap: (ReaderToken) -> Unit,
+    onWordTap: (ReaderToken, Rect) -> Unit,
+    onDismissWord: () -> Unit,
     onProgress: (Float) -> Unit,
     onRecordPosition: (Int, Double) -> Unit,
     restoreTokenIdx: Int?,
@@ -628,6 +767,7 @@ private fun PagedChapter(
                         ranges = ranges,
                         tokens = tokens,
                         onWordTap = onWordTap,
+                        onDismissWord = onDismissWord,
                     )
                 }
             }
@@ -665,21 +805,33 @@ private fun PageText(
     style: TextStyle,
     ranges: List<IntRange>,
     tokens: List<ReaderToken>,
-    onWordTap: (ReaderToken) -> Unit,
+    onWordTap: (ReaderToken, Rect) -> Unit,
+    onDismissWord: () -> Unit,
 ) {
     var layout by remember(text) { mutableStateOf<TextLayoutResult?>(null) }
+    var textCoords by remember(text) { mutableStateOf<LayoutCoordinates?>(null) }
     Text(
         text = text,
         style = style,
         onTextLayout = { layout = it },
         modifier = Modifier
             .fillMaxSize()
+            .onGloballyPositioned { textCoords = it }
             .pointerInput(text) {
                 detectTapGestures { pos ->
                     val result = layout ?: return@detectTapGestures
-                    val global = baseOffset + result.getOffsetForPosition(pos)
+                    val localOffset = result.getOffsetForPosition(pos)
+                    val global = baseOffset + localOffset
                     val tokenIndex = ranges.indexOfFirst { global in it }
-                    tokens.getOrNull(tokenIndex)?.let { if (it.isWord) onWordTap(it) }
+                    val token = tokens.getOrNull(tokenIndex)
+                    val range = ranges.getOrNull(tokenIndex)
+                    val rect = if (token != null && token.isWord && range != null) {
+                        wordRectInWindow(textCoords, result, range.first - baseOffset, range.last + 1 - baseOffset)
+                    } else {
+                        null
+                    }
+                    if (token != null && token.isWord && rect != null) onWordTap(token, rect)
+                    else onDismissWord()
                 }
             },
     )
@@ -823,7 +975,6 @@ internal fun WordDetails(
     token: ReaderToken,
     translations: LemmaTranslations?,
     isLoading: Boolean,
-    onSetStatus: (KnownStatus) -> Unit,
     onAddDefinition: (String) -> Unit = {},
     onEditDefinition: (String, String) -> Unit = { _, _ -> },
     onDeleteDefinition: (String) -> Unit = {},
@@ -831,8 +982,6 @@ internal fun WordDetails(
     isSentenceTranslating: Boolean = false,
     sentenceTranslateError: String? = null,
     autoExpandSentence: Boolean = false,
-    onTranslateSentence: () -> Unit = {},
-    onRefresh: () -> Unit = {},
     basqueReference: List<BasqueReference> = emptyList(),
     basqueRefSource: String? = null,
     onSelectBasqueSource: (String) -> Unit = {},
@@ -841,6 +990,9 @@ internal fun WordDetails(
     primaryHeadword: String? = null,
     primaryPos: String? = null,
     onSelectParse: (String) -> Unit = {},
+    // When false (the compact popup), note editing/adding is hidden — those need
+    // a keyboard, so they live in the expanded full-screen editor instead.
+    editable: Boolean = true,
 ) {
     // The parser's chosen lemma plus any alternate candidates the parser scored.
     // Two or more selectable parses surface the switcher so a reader can view the
@@ -851,75 +1003,71 @@ internal fun WordDetails(
             token.candidates.forEach { add(WordParse(it.lemmaId, it.headword, it.pos)) }
         }
     }
+    // The dictionary definition as one flowable string: official defs (no label),
+    // then community (labelled), else the inline gloss. Personal notes render
+    // separately below so they can stay editable.
+    val labelColor = MaterialTheme.colorScheme.primary
+    val definition = remember(translations, token.glossDefault, isLoading, labelColor) {
+        buildAnnotatedString {
+            when {
+                isLoading -> append("Loading…")
+                translations != null && !translations.isEmpty -> {
+                    translations.official.forEachIndexed { i, t ->
+                        if (i > 0) append("\n")
+                        append(t.body)
+                    }
+                    if (translations.community.isNotEmpty()) {
+                        if (translations.official.isNotEmpty()) append("\n\n")
+                        withStyle(SpanStyle(color = labelColor)) { append("Community") }
+                        translations.community.forEach { append("\n"); append(it.body) }
+                    }
+                    if (translations.official.isEmpty() && translations.community.isEmpty()) {
+                        append(token.glossDefault ?: "")
+                    }
+                }
+                else -> append(token.glossDefault ?: "No definition yet.")
+            }
+        }
+    }
     Column(
         modifier = modifier
             .fillMaxWidth()
-            // Scrollable so revealing examples grows the content, not the sheet —
-            // otherwise the bottom sheet re-settles (snaps back down) on expand.
+            // Scrollable so revealing examples grows the content, not the popup.
             .verticalScroll(rememberScrollState())
-            .padding(24.dp),
+            .padding(horizontal = 16.dp, vertical = 8.dp),
     ) {
         if (parses.size >= 2) {
             ParseSwitcher(parses = parses, activeLemmaId = activeParseLemmaId, onSelect = onSelectParse)
             Spacer(Modifier.height(12.dp))
         }
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text(translations?.headword ?: token.surface, style = MaterialTheme.typography.headlineSmall)
-                val subtitle = listOfNotNull(token.romanization, translations?.pos).joinToString("  ·  ")
-                if (subtitle.isNotEmpty()) {
-                    Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-            }
-            if (token.lemmaId != null) {
-                IconButton(
-                    onClick = onRefresh,
-                    modifier = Modifier.semantics { contentDescription = "Refresh definitions" },
-                ) {
-                    Text("↻", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.primary)
-                }
-            }
-        }
-        Spacer(Modifier.height(12.dp))
 
-        when {
-            isLoading ->
-                Text("Loading…", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        // Status + translate live in the radial checkmark in the header now.
+        Text(
+            definition,
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
 
-            translations != null && !translations.isEmpty ->
-                TranslationGroups(translations, onEditDefinition, onDeleteDefinition)
-
-            else ->
-                Text(token.glossDefault ?: "No definition yet.", style = MaterialTheme.typography.bodyLarge)
+        val personal = translations?.personal.orEmpty()
+        if (personal.isNotEmpty()) {
+            Spacer(Modifier.height(12.dp))
+            PersonalNotes(personal, onEditDefinition, onDeleteDefinition, editable)
         }
 
-        Spacer(Modifier.height(16.dp))
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            BrandChip("New", token.status == KnownStatus.UNKNOWN) { onSetStatus(KnownStatus.UNKNOWN) }
-            BrandChip("Learning", token.status == KnownStatus.LEARNING) { onSetStatus(KnownStatus.LEARNING) }
-            BrandChip("Known", token.status == KnownStatus.KNOWN) { onSetStatus(KnownStatus.KNOWN) }
-            BrandChip("Ignored", token.status == KnownStatus.IGNORED) { onSetStatus(KnownStatus.IGNORED) }
-        }
-
-        // Sentence translation (OpenAI, server-cached). Offered for any word in
-        // a chapter; the server reconstructs the sentence around this token.
-        if (token.isWord) {
+        // Sentence translation result (the translate action is the icon up top).
+        if (token.isWord && (sentenceTranslation != null || isSentenceTranslating || sentenceTranslateError != null)) {
             Spacer(Modifier.height(16.dp))
             SentenceTranslationSection(
                 translation = sentenceTranslation,
                 isTranslating = isSentenceTranslating,
                 error = sentenceTranslateError,
                 startExpanded = autoExpandSentence,
-                onTranslate = onTranslateSentence,
             )
         }
 
-        // Your own definition sits above the (admin) reference dictionaries.
-        // Offer the add box only when there's no personal note yet — once one
-        // exists it's shown (and editable) in "Your notes" above.
-        val hasPersonalNote = translations?.personal?.isNotEmpty() == true
-        // Only words with a lemma can carry a user definition (OOV/punctuation can't).
-        if (token.lemmaId != null && !hasPersonalNote) {
+        // Add-a-note box — expanded view only (needs a keyboard), and only when
+        // the word can carry a definition and has none yet.
+        if (editable && token.lemmaId != null && personal.isEmpty()) {
             Spacer(Modifier.height(16.dp))
             AddDefinitionField(onAdd = onAddDefinition)
         }
@@ -931,12 +1079,204 @@ internal fun WordDetails(
     }
 }
 
+/** The hold-radial's four slide actions; a tap on the centre marks the word known. */
+internal enum class RadialAction { REFRESH, LEARN, IGNORE, TRANSLATE }
+
 /**
- * Sentence translation. Before translating, a subtle text action (not a big
- * button). While in flight, a small spinner. Once a translation exists, a
- * tappable "Sentence translation" header expands/collapses the sentence + its
- * translation — collapsed by default on recall, expanded right after an explicit
- * translate ([startExpanded]).
+ * Maps a finger offset from the radial centre to a menu action — or null (the
+ * centre / dead zone, meaning "known"). Sectors: right = translate, down =
+ * ignore, left = learn, up = refresh.
+ */
+internal fun radialSelectionFor(offset: Offset, deadzonePx: Float): RadialAction? {
+    if (offset.getDistance() < deadzonePx) return null
+    val deg = Math.toDegrees(atan2(offset.y.toDouble(), offset.x.toDouble()))
+    return when {
+        deg >= -45 && deg < 45 -> RadialAction.TRANSLATE
+        deg >= 45 && deg < 135 -> RadialAction.IGNORE
+        deg >= -135 && deg < -45 -> RadialAction.REFRESH
+        else -> RadialAction.LEARN
+    }
+}
+
+/**
+ * The header checkmark with a press-and-hold radial menu. A quick tap marks the
+ * word known (toggles); holding pops up a radial of refresh / learn / ignore /
+ * translate, and sliding toward one then releasing performs it. Releasing at the
+ * centre also marks known.
+ */
+@Composable
+internal fun RadialActionButton(
+    status: KnownStatus,
+    onKnown: () -> Unit,
+    onRefresh: () -> Unit,
+    onLearn: () -> Unit,
+    onIgnore: () -> Unit,
+    onTranslate: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var menuVisible by remember { mutableStateOf(false) }
+    var selection by remember { mutableStateOf<RadialAction?>(null) }
+    // The button's centre in absolute screen px — the ring popup is positioned
+    // there directly (anchorBounds is unreliable for a popup nested in the word popup).
+    var screenCenter by remember { mutableStateOf(Offset.Zero) }
+    val view = LocalView.current
+
+    Box(
+        modifier = modifier
+            .size(40.dp)
+            .onGloballyPositioned { coords ->
+                val loc = IntArray(2)
+                view.getLocationOnScreen(loc)
+                val p = coords.positionInWindow()
+                val s = coords.size
+                screenCenter = Offset(loc[0] + p.x + s.width / 2f, loc[1] + p.y + s.height / 2f)
+            }
+            .semantics { contentDescription = "Known" }
+            .pointerInput(Unit) {
+                val deadzone = 26.dp.toPx()
+                awaitEachGesture {
+                    awaitFirstDown(requireUnconsumed = false)
+                    selection = null
+                    val center = Offset(size.width / 2f, size.height / 2f)
+                    val releasedEarly = withTimeoutOrNull(viewConfiguration.longPressTimeoutMillis) {
+                        waitForUpOrCancellation()
+                    }
+                    if (releasedEarly != null) {
+                        onKnown()
+                        return@awaitEachGesture
+                    }
+                    menuVisible = true
+                    var current: RadialAction? = null
+                    while (true) {
+                        val event = awaitPointerEvent()
+                        val change = event.changes.first()
+                        current = radialSelectionFor(change.position - center, deadzone)
+                        selection = current
+                        if (event.changes.none { it.pressed }) break
+                    }
+                    menuVisible = false
+                    selection = null
+                    when (current) {
+                        null -> onKnown()
+                        RadialAction.REFRESH -> onRefresh()
+                        RadialAction.LEARN -> onLearn()
+                        RadialAction.IGNORE -> onIgnore()
+                        RadialAction.TRANSLATE -> onTranslate()
+                    }
+                }
+            },
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            painter = painterResource(R.drawable.ic_check),
+            contentDescription = null,
+            tint = if (status == KnownStatus.KNOWN) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        // The ring is centred on this button (the existing checkmark shows through
+        // its open centre).
+        if (menuVisible) {
+            RadialMenuOverlay(screenCenter = screenCenter, status = status, selection = selection)
+        }
+    }
+}
+
+/**
+ * Visual ring for [RadialActionButton], anchored to (and centred on) the button
+ * so it surrounds the existing checkmark — which shows through the ring's open
+ * centre. Purely visual; the gesture is tracked by the button itself.
+ */
+@Composable
+private fun RadialMenuOverlay(screenCenter: Offset, status: KnownStatus, selection: RadialAction?) {
+    val density = LocalDensity.current
+    val rOuter = with(density) { 100.dp.toPx() }
+    val rInner = with(density) { 44.dp.toPx() }
+    val ringR = (rOuter + rInner) / 2f
+    val thickness = rOuter - rInner
+    val iconHalf = with(density) { 12.dp.toPx() }
+    val boxDp = with(density) { (rOuter * 2f).toDp() }
+    // Place the ring's box so its centre sits on the button's screen centre. The
+    // returned offset is the popup window's screen position, so use screen px.
+    val provider = remember(screenCenter) {
+        object : PopupPositionProvider {
+            override fun calculatePosition(
+                anchorBounds: IntRect,
+                windowSize: IntSize,
+                layoutDirection: LayoutDirection,
+                popupContentSize: IntSize,
+            ) = IntOffset(
+                (screenCenter.x - popupContentSize.width / 2f).roundToInt(),
+                (screenCenter.y - popupContentSize.height / 2f).roundToInt(),
+            )
+        }
+    }
+    // The status that's currently set reads as "checked" (a faint band + tint).
+    val activeAction = when (status) {
+        KnownStatus.LEARNING -> RadialAction.LEARN
+        KnownStatus.IGNORED -> RadialAction.IGNORE
+        else -> null
+    }
+    Popup(popupPositionProvider = provider, properties = PopupProperties(focusable = false)) {
+        val scheme = MaterialTheme.colorScheme
+        val startFor = mapOf(
+            RadialAction.TRANSLATE to -45f,
+            RadialAction.IGNORE to 45f,
+            RadialAction.LEARN to 135f,
+            RadialAction.REFRESH to 225f,
+        )
+        Box(Modifier.size(boxDp)) {
+            Canvas(Modifier.fillMaxSize()) {
+                val c = Offset(size.width / 2f, size.height / 2f)
+                // Donut ring (open centre, so the real checkmark shows through).
+                drawCircle(
+                    color = scheme.surfaceVariant,
+                    radius = ringR,
+                    center = c,
+                    style = Stroke(width = thickness),
+                )
+                fun band(action: RadialAction, color: Color) = drawArc(
+                    color = color,
+                    startAngle = startFor.getValue(action),
+                    sweepAngle = 90f,
+                    useCenter = false,
+                    topLeft = Offset(c.x - ringR, c.y - ringR),
+                    size = Size(ringR * 2, ringR * 2),
+                    style = Stroke(width = thickness),
+                )
+                activeAction?.let { band(it, scheme.primary.copy(alpha = 0.3f)) }
+                selection?.let { band(it, scheme.primary) }
+            }
+            val items = listOf(
+                Triple(RadialAction.REFRESH, R.drawable.ic_refresh, 270.0),
+                Triple(RadialAction.TRANSLATE, R.drawable.ic_translate, 0.0),
+                Triple(RadialAction.IGNORE, R.drawable.ic_delete, 90.0),
+                Triple(RadialAction.LEARN, R.drawable.ic_add, 180.0),
+            )
+            items.forEach { (action, icon, deg) ->
+                val rad = Math.toRadians(deg)
+                val x = rOuter + (ringR * cos(rad)).toFloat()
+                val y = rOuter + (ringR * sin(rad)).toFloat()
+                Icon(
+                    painter = painterResource(icon),
+                    contentDescription = null,
+                    tint = when {
+                        selection == action -> scheme.onPrimary
+                        action == activeAction -> scheme.primary
+                        else -> scheme.onSurfaceVariant
+                    },
+                    modifier = Modifier.offset { IntOffset((x - iconHalf).roundToInt(), (y - iconHalf).roundToInt()) },
+                )
+            }
+        }
+    }
+}
+
+
+/**
+ * Sentence translation result. While in flight, a small spinner. Once a
+ * translation exists, a tappable "Sentence translation" header expands/collapses
+ * the sentence + its translation — collapsed by default on recall, expanded right
+ * after an explicit translate ([startExpanded]). The translate trigger itself is
+ * the translate icon in the action row, not here.
  */
 @Composable
 private fun SentenceTranslationSection(
@@ -944,7 +1284,6 @@ private fun SentenceTranslationSection(
     isTranslating: Boolean,
     error: String?,
     startExpanded: Boolean,
-    onTranslate: () -> Unit,
 ) {
     Column(modifier = Modifier.fillMaxWidth()) {
         when {
@@ -993,23 +1332,12 @@ private fun SentenceTranslationSection(
                     )
                 }
 
-            else -> {
-                // Outlined (not filled/full-width) — clearly a button so it's
-                // obvious it translates the sentence, without dominating the sheet.
-                OutlinedButton(
-                    onClick = onTranslate,
-                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
-                ) {
-                    Text("Translate sentence", color = MaterialTheme.colorScheme.onSurface)
-                }
-                if (error != null) {
-                    Text(
-                        error,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error,
-                    )
-                }
-            }
+            error != null ->
+                Text(
+                    error,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
         }
     }
 }
@@ -1224,27 +1552,17 @@ private fun Modifier.openTopTabOutline(color: Color, stroke: Dp, radius: Dp): Mo
         drawPath(path, color, style = Stroke(width = sw))
     }
 
-@Composable
-private fun TranslationGroups(
-    translations: LemmaTranslations,
-    onEditDefinition: (String, String) -> Unit,
-    onDeleteDefinition: (String) -> Unit,
-) {
-    PersonalNotes(translations.personal, onEditDefinition, onDeleteDefinition)
-    TranslationGroup("Dictionary", translations.official)
-    TranslationGroup("Community", translations.community)
-}
-
-/** The viewer's own notes — each editable in place (tap "Edit"). */
+/** The viewer's own notes — each editable in place (tap "Edit") when [editable]. */
 @Composable
 private fun PersonalNotes(
     items: List<WordTranslation>,
     onEdit: (String, String) -> Unit,
     onDelete: (String) -> Unit,
+    editable: Boolean = true,
 ) {
     if (items.isEmpty()) return
     Text("Your notes", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
-    items.forEach { item -> PersonalNote(item, onEdit, onDelete) }
+    items.forEach { item -> PersonalNote(item, onEdit, onDelete, editable) }
     Spacer(Modifier.height(8.dp))
 }
 
@@ -1253,14 +1571,16 @@ private fun PersonalNote(
     item: WordTranslation,
     onEdit: (String, String) -> Unit,
     onDelete: (String) -> Unit,
+    editable: Boolean = true,
 ) {
     // Reset to display mode whenever the underlying note changes (e.g. after a save).
     var editing by remember(item.id, item.body) { mutableStateOf(false) }
     if (!editing) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(item.body, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
-            // Only server-persisted notes (with an id) can be edited.
-            if (item.id != null) {
+            // Only server-persisted notes (with an id) can be edited, and only in
+            // the editable (expanded) view.
+            if (editable && item.id != null) {
                 TextButton(onClick = { editing = true }) { Text("Edit") }
             }
         }
@@ -1282,19 +1602,6 @@ private fun PersonalNote(
             }
         }
     }
-}
-
-@Composable
-private fun TranslationGroup(title: String, items: List<WordTranslation>) {
-    if (items.isEmpty()) return
-    Text(title, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
-    items.forEach { item ->
-        // Source attribution is intentionally not shown here — the web reader
-        // doesn't surface it either (it only appears in the admin dictionary
-        // editor). WordTranslation.attribution is kept for potential future use.
-        Text(item.body, style = MaterialTheme.typography.bodyLarge)
-    }
-    Spacer(Modifier.height(8.dp))
 }
 
 @Composable
@@ -1342,7 +1649,8 @@ private fun ReaderImage(
     pageWidth: Int?,
     pageHeight: Int?,
     tokens: List<ReaderToken>,
-    onWordTap: (ReaderToken) -> Unit,
+    onWordTap: (ReaderToken, Rect) -> Unit,
+    onDismissWord: () -> Unit,
     onPrevPage: () -> Unit,
     onNextPage: () -> Unit,
     modifier: Modifier = Modifier,
@@ -1357,6 +1665,7 @@ private fun ReaderImage(
     var offset by remember(imageUrl) { mutableStateOf(Offset.Zero) }
     // Accumulated horizontal drag while at 1× → a page swipe (reset per page).
     val swipeAccum = remember(imageUrl) { mutableStateOf(0f) }
+    var imageCoords by remember(imageUrl) { mutableStateOf<LayoutCoordinates?>(null) }
     val onPrev by rememberUpdatedState(onPrevPage)
     val onNext by rememberUpdatedState(onNextPage)
     BoxWithConstraints(modifier, contentAlignment = Alignment.Center) {
@@ -1387,16 +1696,30 @@ private fun ReaderImage(
                     translationY = offset.y,
                 )
                 .transformable(transformState)
+                .onGloballyPositioned { imageCoords = it }
                 .pointerInput(tokens) {
                     detectTapGestures { tap ->
                         val nx = tap.x / size.width
                         val ny = tap.y / size.height
-                        tokens.firstOrNull { t ->
+                        val token = tokens.firstOrNull { t ->
                             val b = t.bbox
                             t.isWord && b != null &&
                                 nx >= b.x && nx <= b.x + b.w &&
                                 ny >= b.y && ny <= b.y + b.h
-                        }?.let(onWordTap)
+                        }
+                        val b = token?.bbox
+                        val coords = imageCoords
+                        val rect = if (token != null && b != null && coords != null) {
+                            val w = coords.size.width.toFloat()
+                            val h = coords.size.height.toFloat()
+                            val tl = coords.localToWindow(Offset(b.x * w, b.y * h))
+                            val br = coords.localToWindow(Offset((b.x + b.w) * w, (b.y + b.h) * h))
+                            Rect(tl.x, tl.y, br.x, br.y)
+                        } else {
+                            null
+                        }
+                        if (token != null && rect != null) onWordTap(token, rect)
+                        else onDismissWord()
                     }
                 },
         ) {
@@ -1444,4 +1767,128 @@ private fun statusLabel(status: KnownStatus): String = when (status) {
     KnownStatus.LEARNING -> "Learning"
     KnownStatus.KNOWN -> "Known"
     KnownStatus.IGNORED -> "Ignored"
+}
+
+/**
+ * Places the word popup just below the tapped word, or above it when there
+ * isn't room below. Centred horizontally on the word and clamped to the screen.
+ * [anchor] is the word's bounds in window px; [anchorBounds] (the popup's
+ * parent) is intentionally ignored.
+ */
+private class WordAnchorPositionProvider(
+    private val anchor: Rect,
+    private val gapPx: Int,
+    private val marginPx: Int,
+) : PopupPositionProvider {
+    override fun calculatePosition(
+        anchorBounds: IntRect,
+        windowSize: IntSize,
+        layoutDirection: LayoutDirection,
+        popupContentSize: IntSize,
+    ): IntOffset {
+        val roomBelow = anchor.bottom + gapPx + popupContentSize.height <= windowSize.height
+        val roomAbove = anchor.top - gapPx - popupContentSize.height >= 0
+        val below = roomBelow || !roomAbove
+        val y = if (below) anchor.bottom + gapPx else anchor.top - gapPx - popupContentSize.height
+        val x = anchor.left + anchor.width / 2f - popupContentSize.width / 2f
+        val maxX = max(marginPx, windowSize.width - popupContentSize.width - marginPx)
+        val maxY = max(marginPx, windowSize.height - popupContentSize.height - marginPx)
+        return IntOffset(
+            x.roundToInt().coerceIn(marginPx, maxX),
+            y.roundToInt().coerceIn(marginPx, maxY),
+        )
+    }
+}
+
+/**
+ * Top row of the word popup / full-screen editor: the word itself on the left,
+ * then refresh, expand-or-collapse, and close. Kept outside the scrolling body
+ * so it stays put as the definition scrolls.
+ */
+@Composable
+internal fun WordPopupHeader(
+    headword: String,
+    pos: String?,
+    romanization: String?,
+    showRadial: Boolean,
+    status: KnownStatus,
+    onKnown: () -> Unit,
+    onRefresh: () -> Unit,
+    onLearn: () -> Unit,
+    onIgnore: () -> Unit,
+    onTranslate: () -> Unit,
+    expanded: Boolean,
+    onToggleExpand: () -> Unit,
+    onClose: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 16.dp, end = 4.dp, top = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Row(verticalAlignment = Alignment.Bottom) {
+                Text(headword, style = MaterialTheme.typography.titleLarge)
+                // POS sits small + muted just to the right of the word.
+                if (!pos.isNullOrBlank()) {
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        pos,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(bottom = 3.dp),
+                    )
+                }
+            }
+            if (!romanization.isNullOrBlank()) {
+                Text(
+                    romanization,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        if (showRadial) {
+            RadialActionButton(
+                status = status,
+                onKnown = onKnown,
+                onRefresh = onRefresh,
+                onLearn = onLearn,
+                onIgnore = onIgnore,
+                onTranslate = onTranslate,
+            )
+        }
+        IconButton(
+            onClick = onToggleExpand,
+            modifier = Modifier.size(40.dp).semantics { contentDescription = if (expanded) "Collapse" else "Expand" },
+        ) {
+            Icon(
+                painter = painterResource(if (expanded) R.drawable.ic_fullscreen_exit else R.drawable.ic_fullscreen),
+                contentDescription = null,
+            )
+        }
+        IconButton(onClick = onClose, modifier = Modifier.size(40.dp)) {
+            Icon(painter = painterResource(R.drawable.ic_close), contentDescription = "Close word")
+        }
+    }
+}
+
+/** Window-space bounds of a token from its (local) char range in a laid-out text. */
+private fun wordRectInWindow(
+    coords: LayoutCoordinates?,
+    layout: TextLayoutResult,
+    localStart: Int,
+    localEndExclusive: Int,
+): Rect? {
+    if (coords == null) return null
+    val len = layout.layoutInput.text.length
+    if (len == 0) return null
+    val start = localStart.coerceIn(0, len - 1)
+    val end = (localEndExclusive - 1).coerceIn(start, len - 1)
+    val a = layout.getBoundingBox(start)
+    val b = layout.getBoundingBox(end)
+    val topLeft = coords.localToWindow(Offset(minOf(a.left, b.left), minOf(a.top, b.top)))
+    val bottomRight = coords.localToWindow(Offset(maxOf(a.right, b.right), maxOf(a.bottom, b.bottom)))
+    return Rect(topLeft.x, topLeft.y, bottomRight.x, bottomRight.y)
 }
