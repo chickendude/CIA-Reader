@@ -25,6 +25,17 @@ enum class KnownStatus {
     }
 }
 
+/** An alternate parsing the parser scored for an ambiguous surface form. The
+ *  word sheet's parse switcher lists these so a reader can view the definition
+ *  of a lemma other than the one the parser chose. */
+@Serializable
+data class ParseCandidate(
+    val lemmaId: String,
+    val headword: String,
+    val pos: String?,
+    val glossDefault: String?,
+)
+
 /** A rendered token in a chapter (word or punctuation/whitespace).
  *  Serializable so a chapter's tokens can be cached as a JSON blob. */
 @Serializable
@@ -39,11 +50,40 @@ data class ReaderToken(
     val isOov: Boolean,
     val isAmbiguous: Boolean,
     val hasDefinition: Boolean,
+    /** Alternate parsings beyond the parser's chosen lemma; empty when
+     *  unambiguous. Drives the word sheet's parse switcher. */
+    val candidates: List<ParseCandidate> = emptyList(),
+    /** PDF source only: normalized (0..1) bounding box for the image overlay. */
+    val bbox: Bbox? = null,
+)
+
+/** A word's normalized (0..1) box on the page image (image-reader overlay). */
+@Serializable
+data class Bbox(
+    val x: Float,
+    val y: Float,
+    val w: Float,
+    val h: Float,
 )
 
 data class Chapter(
     val chapterIdx: Int,
     val tokens: List<ReaderToken>,
+    /** The chapter's server id (UUID), needed to ask the server to translate a
+     *  sentence around a token. Null for chapters cached before this column was
+     *  added (the destructive-migration DB clears those on upgrade anyway). */
+    val chapterId: String? = null,
+    /** PDF (image) chapters: the page image + its pixel size for the image
+     *  reader's tappable overlay. Null for text-source chapters. */
+    val pageImageUrl: String? = null,
+    val pageWidth: Int? = null,
+    val pageHeight: Int? = null,
+)
+
+/** A sentence and its translation, for the word sheet's "Translate sentence". */
+data class SentenceTranslation(
+    val sentence: String,
+    val translation: String,
 )
 
 data class ChapterRef(
@@ -78,6 +118,24 @@ interface ReaderRepository {
         tokenIdx: Int,
         pctRead: Double,
     ): Outcome<Unit>
+
+    /** Translate the sentence around [tokenIdx] in [chapterId] (server-side
+     *  reconstruction + cache). A blank translation maps to Failure so the UI
+     *  can show a "couldn't translate" message rather than an empty result. */
+    suspend fun translateSentence(
+        chapterId: String,
+        tokenIdx: Int,
+        language: String,
+    ): Outcome<SentenceTranslation>
+
+    /** Cache-only lookup for an already-saved sentence translation — never spends
+     *  on the model. Failure on a miss. Used to recall a saved translation the
+     *  moment a word in that sentence opens. */
+    suspend fun cachedSentenceTranslation(
+        chapterId: String,
+        tokenIdx: Int,
+        language: String,
+    ): Outcome<SentenceTranslation>
 }
 
 @Singleton
@@ -147,6 +205,40 @@ class ReaderRepositoryImpl @Inject constructor(
             }
         }
 
+    override suspend fun translateSentence(
+        chapterId: String,
+        tokenIdx: Int,
+        language: String,
+    ): Outcome<SentenceTranslation> =
+        sentenceTranslation(TranslateSentenceRequest(chapterId, tokenIdx, language), "Couldn't translate this sentence.")
+
+    override suspend fun cachedSentenceTranslation(
+        chapterId: String,
+        tokenIdx: Int,
+        language: String,
+    ): Outcome<SentenceTranslation> =
+        sentenceTranslation(
+            TranslateSentenceRequest(chapterId, tokenIdx, language, cachedOnly = true),
+            "No saved translation.",
+        )
+
+    private suspend fun sentenceTranslation(
+        request: TranslateSentenceRequest,
+        missMessage: String,
+    ): Outcome<SentenceTranslation> =
+        when (val net = apiCall { api.translateSentence(request) }) {
+            is Outcome.Success -> {
+                val body = net.data
+                val translation = body.translation?.takeIf { it.isNotBlank() }
+                if (translation != null) {
+                    Outcome.Success(SentenceTranslation(body.sentence, translation))
+                } else {
+                    Outcome.Failure(missMessage)
+                }
+            }
+            is Outcome.Failure -> net
+        }
+
     /** Upload queued offline positions; drop each as it succeeds. */
     private suspend fun flushPending() {
         for (w in cache.pendingWrites()) {
@@ -171,7 +263,11 @@ private fun TextMetaDto.toDomain() = TextMeta(
 
 private fun ChapterTokensDto.toDomain() = Chapter(
     chapterIdx = chapterIdx,
-    tokens = tokens.map { it.toDomain() },
+    tokens = tokens.orEmpty().map { it.toDomain() },
+    chapterId = chapterId,
+    pageImageUrl = pageImageUrl,
+    pageWidth = pageWidth,
+    pageHeight = pageHeight,
 )
 
 private fun TokenDto.toDomain() = ReaderToken(
@@ -185,4 +281,8 @@ private fun TokenDto.toDomain() = ReaderToken(
     isOov = isOov,
     isAmbiguous = isAmbiguous,
     hasDefinition = hasDefinition,
+    candidates = candidates.map {
+        ParseCandidate(it.lemmaId, it.headword, it.pos, it.glossDefault)
+    },
+    bbox = bbox?.let { Bbox(it.x, it.y, it.w, it.h) },
 )

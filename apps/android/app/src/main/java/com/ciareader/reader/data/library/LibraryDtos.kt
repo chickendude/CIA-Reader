@@ -23,4 +23,23 @@ data class TextCardDto(
     /** Estimated comprehension for the caller (0–100), or null when the text
      *  has no tokens yet (worker hasn't run). Defaults null for older servers. */
     val estimatedComprehensionPct: Int? = null,
+    /** Viewer's reading progress, 0–100 (0 when unread/anonymous). Double so a
+     *  raw float pct_read decodes even if the server doesn't round it. */
+    val progressPct: Double = 0.0,
 )
+
+// --- PATCH /api/v1/texts/:id (rename) ---
+
+@Serializable
+data class UpdateTextRequest(val title: String)
+
+@Serializable
+data class UpdateTextResponseDto(val text: UpdatedTextDto)
+
+@Serializable
+data class UpdatedTextDto(val title: String)
+
+// --- DELETE /api/v1/texts/:id ---
+
+@Serializable
+data class DeleteTextResponseDto(val ok: Boolean = false)

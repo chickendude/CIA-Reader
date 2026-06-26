@@ -108,7 +108,33 @@ const {
   revokeCollectionShare,
   listCollectionShares,
   viewerHasCollectionShareForText,
+  bookProgressPct,
 } = await import('./collections.js');
+
+describe('bookProgressPct', () => {
+  it('token-weights chapters before the current one + the current fraction', () => {
+    // ch0=100 tokens, ch1=300 tokens; on ch1 (index 1) at 50%.
+    const chapters = [
+      { position: 0, tokens: 100 },
+      { position: 1, tokens: 300 },
+    ];
+    // before=100, current=300*0.5=150 → 250/400 = 63% (NOT the equal-weight 75%).
+    expect(bookProgressPct(chapters, { position: 1, pctRead: 50 })).toBe(63);
+  });
+
+  it('falls back to even weighting when token counts are unknown', () => {
+    const chapters = [
+      { position: 0, tokens: 0 },
+      { position: 1, tokens: 0 },
+    ];
+    // (1 + 0.5) / 2 = 75%.
+    expect(bookProgressPct(chapters, { position: 1, pctRead: 50 })).toBe(75);
+  });
+
+  it('is 0 with no progress', () => {
+    expect(bookProgressPct([{ position: 0, tokens: 10 }], undefined)).toBe(0);
+  });
+});
 
 function resetAll() {
   queue.length = 0;

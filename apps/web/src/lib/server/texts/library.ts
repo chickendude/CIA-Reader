@@ -16,7 +16,7 @@
  * a future concern when individual users have thousands of imports —
  * for the first year of MVP a learner has a few dozen at most.
  */
-import { and, desc, eq, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 
 import { db, schema } from '../db/index.js';
 import type { Text, User } from '../db/schema.js';
@@ -42,6 +42,9 @@ export type LibraryCard = {
    *  a dash rather than 0%. Always null for the unauthenticated
    *  official listing — there's no viewer to score against. */
   estimatedComprehensionPct: number | null;
+  /** The viewer's reading progress through this text, 0–100. 0 when unread or
+   *  for anonymous/official listings. */
+  progressPct: number;
 };
 
 export type ListPage = {
@@ -54,6 +57,7 @@ export type ListPage = {
 function projectCard(
   row: Text,
   estimatedComprehensionPct: number | null = null,
+  progressPct = 0,
 ): LibraryCard {
   return {
     id: row.id,
@@ -64,27 +68,31 @@ function projectCard(
     visibility: row.visibility,
     createdAt: row.createdAt,
     estimatedComprehensionPct,
+    progressPct: Math.round(progressPct),
   };
 }
 
-/**
- * Decorate the page's rows with the viewer's estimated comprehension
- * in a single bulk query (one round-trip for the whole page, not one
- * per card). Returns plain projections with null comprehension when
- * there's no viewer (the unauthenticated official listing).
- */
-async function projectCardsWithComprehension(
-  rows: Text[],
-  viewerId: string | null,
-): Promise<LibraryCard[]> {
-  if (rows.length === 0 || !viewerId) {
-    return rows.map((r) => projectCard(r));
-  }
-  const byText = await estimatedComprehensionForTexts(
-    viewerId,
-    rows.map((r) => r.id),
-  );
-  return rows.map((r) => projectCard(r, byText.get(r.id) ?? null));
+/** The viewer's reading progress (pct_read, 0–100) for the given text ids. */
+async function progressByText(
+  userId: string,
+  textIds: string[],
+): Promise<Map<string, number>> {
+  if (textIds.length === 0) return new Map();
+  const rows = (await db
+    .select({
+      textId: schema.userTextProgress.textId,
+      pctRead: schema.userTextProgress.pctRead,
+    })
+    .from(schema.userTextProgress)
+    .where(
+      and(
+        eq(schema.userTextProgress.userId, userId),
+        inArray(schema.userTextProgress.textId, textIds),
+      ),
+    )) as Array<{ textId: string; pctRead: number }>;
+  const m = new Map<string, number>();
+  for (const r of rows) m.set(r.textId, r.pctRead);
+  return m;
 }
 
 function clampPage(opts: { limit?: number; offset?: number }): {
@@ -144,8 +152,15 @@ export async function listOwnedTexts(
     .limit(limit)
     .offset(offset)) as Text[];
 
+  const pageIds = rows.map((r) => r.id);
+  const progress = await progressByText(viewer.id, pageIds);
+  const comprehension = pageIds.length
+    ? await estimatedComprehensionForTexts(viewer.id, pageIds)
+    : new Map<string, number | null>();
   return {
-    cards: await projectCardsWithComprehension(rows, viewer.id),
+    cards: rows.map((r) =>
+      projectCard(r, comprehension.get(r.id) ?? null, progress.get(r.id) ?? 0),
+    ),
     totalCount: count,
     limit,
     offset,
@@ -213,8 +228,15 @@ export async function listSharedTexts(
     .limit(limit)
     .offset(offset)) as Text[];
 
+  const pageIds = rows.map((r) => r.id);
+  const progress = await progressByText(viewer.id, pageIds);
+  const comprehension = pageIds.length
+    ? await estimatedComprehensionForTexts(viewer.id, pageIds)
+    : new Map<string, number | null>();
   return {
-    cards: await projectCardsWithComprehension(rows, viewer.id),
+    cards: rows.map((r) =>
+      projectCard(r, comprehension.get(r.id) ?? null, progress.get(r.id) ?? 0),
+    ),
     totalCount: count,
     limit,
     offset,
@@ -251,10 +273,10 @@ export async function listOfficialTexts(
     .limit(limit)
     .offset(offset)) as Text[];
 
-  // Official listing is unauthenticated — no viewer to score against,
-  // so comprehension stays null.
+  // Official listing is unauthenticated — no viewer to score against, so
+  // comprehension stays null and progress 0.
   return {
-    cards: await projectCardsWithComprehension(rows, null),
+    cards: rows.map((r) => projectCard(r)),
     totalCount: count,
     limit,
     offset,

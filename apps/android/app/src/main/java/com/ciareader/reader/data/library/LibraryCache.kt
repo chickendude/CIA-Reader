@@ -13,7 +13,14 @@ class LibraryCache @Inject constructor(
 
     suspend fun cards(scope: LibraryScope, language: String): List<TextCard> =
         dao.cards(scope.wire, language).map {
-            TextCard(it.id, it.title, it.language, it.status, it.estimatedComprehensionPct)
+            TextCard(
+                it.id,
+                it.title,
+                it.language,
+                it.status,
+                estimatedComprehensionPct = it.estimatedComprehensionPct,
+                progress = it.progress,
+            )
         }
 
     suspend fun putCards(scope: LibraryScope, language: String, cards: List<TextCard>) {
@@ -29,6 +36,7 @@ class LibraryCache @Inject constructor(
                     c.status,
                     position = i,
                     estimatedComprehensionPct = c.estimatedComprehensionPct,
+                    progress = c.progress,
                 )
             },
         )

@@ -74,7 +74,7 @@ dev-native-db:
 	$(NATIVE_DOTENV) cd apps/web && $(NATIVE_ENV) pnpm exec drizzle-kit migrate
 
 dev-native-nlp:
-	cd services/nlp && PYTHONPATH=../../packages/shared-types/python:. .venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+	$(NATIVE_DOTENV) cd services/nlp && PYTHONPATH=../../packages/shared-types/python:. .venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
 dev-native-web:
 	$(NATIVE_DOTENV) cd apps/web && $(NATIVE_ENV) pnpm dev

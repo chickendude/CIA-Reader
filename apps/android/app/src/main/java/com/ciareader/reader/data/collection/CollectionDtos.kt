@@ -15,6 +15,9 @@ data class CollectionListItemDto(
     /** Estimated comprehension for the caller across the book (0–100), or null
      *  when none of its texts have tokens yet. Defaults null for older servers. */
     val estimatedComprehensionPct: Int? = null,
+    /** Aggregate reading progress across the book's chapters, 0–100. Double so a
+     *  raw float decodes even if unrounded. */
+    val progressPct: Double = 0.0,
 )
 
 @Serializable
@@ -23,6 +26,9 @@ data class CollectionDto(
     val title: String,
     val language: String,
     val kind: String,
+    /** Viewer's reading comprehension 0–100 (known word-tokens ÷ total). Only the
+     *  collection-detail endpoint populates it; null on the list/PATCH responses. */
+    val comprehensionPct: Int? = null,
 )
 
 // --- GET /api/v1/collections/:id ---
@@ -47,3 +53,20 @@ data class CollectionItemTextDto(
     val status: String,
     val wordCount: Int = 0,
 )
+
+// --- PATCH /api/v1/collections/:id ---
+
+/** Partial edit body; only non-null fields are sent (the endpoint is `.partial()`). */
+@Serializable
+data class UpdateCollectionRequest(
+    val title: String? = null,
+    val description: String? = null,
+)
+
+@Serializable
+data class UpdateCollectionResponseDto(val collection: CollectionDto)
+
+// --- DELETE /api/v1/collections/:id and /api/v1/texts/:id ---
+
+@Serializable
+data class OkResponseDto(val ok: Boolean = false)

@@ -18,10 +18,12 @@ import androidx.room.RoomDatabase
         CachedCollectionEntity::class,
         CachedCollectionDetailEntity::class,
         CachedCollectionChapterEntity::class,
+        CachedLemmaEntity::class,
         PendingProgressEntity::class,
     ],
-    // v5: + estimatedComprehensionPct on cached_library_card / cached_collection.
-    version = 5,
+    // v7: merges main's v6 (progress + cached_lemma) with
+    // estimatedComprehensionPct on cached_library_card / cached_collection.
+    version = 7,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {

@@ -12,6 +12,7 @@ import {
   updateCollection,
   viewerHasCollectionShare,
 } from '$lib/server/collections.js';
+import { bookComprehensionPct } from '$lib/server/learning-stats.js';
 import { parseJson } from '../../auth/_helpers.js';
 import type { RequestHandler } from './$types';
 
@@ -92,6 +93,16 @@ export const GET: RequestHandler = async (event) => {
     throw error(404, 'Collection not found');
   }
 
+  // Viewer-specific reading comprehension across the book's chapters
+  // (known word-token occurrences ÷ total). Null for anonymous viewers or
+  // before the NLP worker has tokenized the texts.
+  const comprehensionPct = viewer
+    ? await bookComprehensionPct(
+        viewer.id,
+        detail.items.map((item) => item.text.id),
+      )
+    : null;
+
   return json({
     collection: {
       id: c.id,
@@ -104,6 +115,7 @@ export const GET: RequestHandler = async (event) => {
       visibility: c.visibility,
       createdAt: c.createdAt,
       updatedAt: c.updatedAt,
+      comprehensionPct,
     },
     items: detail.items.map((item) => ({
       position: item.position,

@@ -11,7 +11,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 type Call =
   | { kind: 'select' }
-  | { kind: 'insert'; values?: unknown };
+  | { kind: 'insert'; values?: unknown }
+  | { kind: 'update'; values?: unknown };
 const calls: Call[] = [];
 
 const staged: Array<unknown[]> = [];
@@ -47,11 +48,27 @@ function makeInsertChain() {
   return chain;
 }
 
+// db.update(...).set(...).where(...).returning() — the rename path used by
+// `updateText`. Records the set() values and resolves returning() to staged.
+function makeUpdateChain() {
+  const entry: Call = { kind: 'update' };
+  calls.push(entry);
+  const chain: Record<string, unknown> = {};
+  chain.set = vi.fn((v: unknown) => {
+    entry.values = v;
+    return chain;
+  });
+  chain.where = vi.fn(() => chain);
+  chain.returning = vi.fn(() => nextStaged());
+  return chain;
+}
+
 const selectFn = vi.fn(() => {
   calls.push({ kind: 'select' });
   return makeSelectChain();
 });
 const insertFn = vi.fn(() => makeInsertChain());
+const updateFn = vi.fn(() => makeUpdateChain());
 
 // T-8.4: canReadText consults collections.js for collection-share
 // access. The chapter-book EPUB/ZIP path also delegates to
@@ -89,6 +106,7 @@ vi.mock('../db/index.js', () => ({
   db: {
     select: () => selectFn(),
     insert: () => insertFn(),
+    update: () => updateFn(),
     delete: (table: unknown) => deleteFn(table),
   },
   schema: {
@@ -135,6 +153,7 @@ const {
   createChapterBookFromEpub,
   createChapterBookFromZip,
   deleteText,
+  updateText,
   estimateTokenCount,
   getOwnedText,
   MAX_PASTE_BYTES,
@@ -266,6 +285,58 @@ afterEach(() => {
 // -----------------------------------------------------------------------
 // createPastedText
 // -----------------------------------------------------------------------
+
+describe('updateText', () => {
+  it('renames a text the user owns and returns the updated row', async () => {
+    stage([{ id: 'tx1', ownerId: 'owner-1' }]); // owner gate lookup
+    stage([{ id: 'tx1', title: 'New title' }]); // update ... returning()
+    const updated = await updateText(
+      'tx1',
+      { id: 'owner-1', role: 'user' },
+      { title: '  New title  ' },
+    );
+    expect(updated).toEqual({ id: 'tx1', title: 'New title' });
+    // The trimmed title is what got written.
+    const updateCall = calls.find((c) => c.kind === 'update') as
+      | { values?: { title?: string } }
+      | undefined;
+    expect(updateCall?.values?.title).toBe('New title');
+  });
+
+  it('lets an admin rename a text they do not own', async () => {
+    stage([{ id: 'tx1', ownerId: 'someone-else' }]);
+    stage([{ id: 'tx1', title: 'Admin renamed' }]);
+    const updated = await updateText(
+      'tx1',
+      { id: 'admin-1', role: 'admin' },
+      { title: 'Admin renamed' },
+    );
+    expect(updated.title).toBe('Admin renamed');
+  });
+
+  it('404s for a non-owner non-admin and never writes', async () => {
+    stage([{ id: 'tx1', ownerId: 'someone-else' }]);
+    await expect(
+      updateText('tx1', { id: 'intruder', role: 'user' }, { title: 'x' }),
+    ).rejects.toThrow(TextValidationError);
+    expect(calls.some((c) => c.kind === 'update')).toBe(false);
+  });
+
+  it('404s when the text does not exist', async () => {
+    stage([]); // gate lookup → no row
+    await expect(
+      updateText('missing', { id: 'owner-1', role: 'user' }, { title: 'x' }),
+    ).rejects.toThrow(TextValidationError);
+  });
+
+  it('rejects a blank title before writing', async () => {
+    stage([{ id: 'tx1', ownerId: 'owner-1' }]);
+    await expect(
+      updateText('tx1', { id: 'owner-1', role: 'user' }, { title: '   ' }),
+    ).rejects.toThrow('title is required');
+    expect(calls.some((c) => c.kind === 'update')).toBe(false);
+  });
+});
 
 describe('createPastedText', () => {
   it('inserts a text + first chapter + nlp_jobs row, returns text/chapters', async () => {

@@ -118,6 +118,8 @@ describe('POST /api/v1/texts/epub', () => {
     expect(json.collection.id).toBe('col-1');
     expect(json.collection.kind).toBe('chapter_book');
     expect(json.textCount).toBe(3);
+    // First chapter id so a client can open the reader on chapter 1.
+    expect(json.firstTextId).toBe('text-1');
   });
 
   it('returns 201 with a plain text on a single-chapter EPUB (fallback)', async () => {

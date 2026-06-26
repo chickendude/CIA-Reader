@@ -22,7 +22,8 @@ class CollectionCache @Inject constructor(
                 it.kind,
                 it.textCount,
                 it.openTextId,
-                it.estimatedComprehensionPct,
+                estimatedComprehensionPct = it.estimatedComprehensionPct,
+                progress = it.progress,
             )
         }
 
@@ -39,6 +40,7 @@ class CollectionCache @Inject constructor(
                     c.openTextId,
                     position = i,
                     estimatedComprehensionPct = c.estimatedComprehensionPct,
+                    progress = c.progress,
                 )
             },
         )

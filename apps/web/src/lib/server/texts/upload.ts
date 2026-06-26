@@ -756,3 +756,43 @@ export async function deleteText(
   }
   await db.delete(schema.texts).where(eq(schema.texts.id, textId));
 }
+
+/**
+ * Rename a text. Owner-or-admin only; a non-owner non-admin gets the same
+ * `TextValidationError(404)` as a missing text so existence never leaks. The
+ * title is trimmed and bounded like the upload paths (required, ≤ MAX_TITLE_LEN).
+ */
+export async function updateText(
+  textId: string,
+  actor: Pick<User, 'id' | 'role'>,
+  patch: { title?: string },
+): Promise<Text> {
+  const [row] = (await db
+    .select({ id: schema.texts.id, ownerId: schema.texts.ownerId })
+    .from(schema.texts)
+    .where(eq(schema.texts.id, textId))
+    .limit(1)) as Array<{ id: string; ownerId: string | null }>;
+  if (!row) throw new TextValidationError('Text not found', 404);
+  const isOwner = row.ownerId !== null && row.ownerId === actor.id;
+  if (!isOwner && actor.role !== 'admin') {
+    throw new TextValidationError('Text not found', 404);
+  }
+
+  const updates: { updatedAt: Date; title?: string } = { updatedAt: new Date() };
+  if (patch.title !== undefined) {
+    const title = patch.title.trim();
+    if (!title) throw new TextValidationError('title is required');
+    if (title.length > MAX_TITLE_LEN) {
+      throw new TextValidationError(`title exceeds ${MAX_TITLE_LEN} characters`);
+    }
+    updates.title = title;
+  }
+
+  const [updated] = (await db
+    .update(schema.texts)
+    .set(updates)
+    .where(eq(schema.texts.id, textId))
+    .returning()) as Text[];
+  if (!updated) throw new TextValidationError('Text not found', 404);
+  return updated;
+}

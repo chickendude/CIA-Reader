@@ -7,6 +7,9 @@ import com.ciareader.reader.data.local.CachedCollectionEntity
 import com.ciareader.reader.data.local.CachedLanguageEntity
 import com.ciareader.reader.data.local.CachedLibraryCardEntity
 import com.ciareader.reader.data.local.LibraryCacheDao
+import com.ciareader.reader.data.reader.ChapterRefDto
+import com.ciareader.reader.data.reader.TextMetaDto
+import com.ciareader.reader.data.reader.TextMetaTextDto
 import kotlinx.coroutines.test.runTest
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.ResponseBody.Companion.toResponseBody
@@ -21,6 +24,25 @@ import java.io.IOException
 class LibraryRepositoryTest {
 
     private fun repo(api: FakeLibraryApi) = LibraryRepositoryImpl(api, LibraryCache(FakeLibraryCacheDao()))
+
+    @Test
+    fun textStatsSumsTokenCountsAndCarriesComprehension() = runTest {
+        val result = repo(FakeLibraryApi()).textStats("t1")
+        assertTrue(result is Outcome.Success)
+        val stats = (result as Outcome.Success).data
+        assertEquals(2, stats.chapterCount)
+        assertEquals(150, stats.totalWords) // 100 + 50
+        assertEquals(60, stats.comprehensionPct)
+    }
+
+    @Test
+    fun updateTextSendsTheTitleAndReturnsIt() = runTest {
+        val api = FakeLibraryApi()
+        val result = repo(api).updateText("t1", "New title")
+        assertTrue(result is Outcome.Success)
+        assertEquals("New title", (result as Outcome.Success).data)
+        assertEquals("New title", api.lastEditedTitle)
+    }
 
     @Test
     fun mapsCardsToDomainAndFlagsReadiness() = runTest {
@@ -82,6 +104,20 @@ class LibraryRepositoryTest {
         assertTrue(result is Outcome.Failure)
     }
 
+    @Test
+    fun deleteTextSendsRequest() = runTest {
+        val api = FakeLibraryApi()
+        val result = repo(api).deleteText("t7")
+        assertTrue(result is Outcome.Success)
+        assertEquals("t7", api.lastDeletedId)
+    }
+
+    @Test
+    fun deleteTextFailsWhenOffline() = runTest {
+        val result = repo(FakeLibraryApi().apply { online = false }).deleteText("t7")
+        assertTrue(result is Outcome.Failure)
+    }
+
     private fun card(id: String, status: String, comprehension: Int? = null) = TextCardDto(
         id = id,
         title = "Title $id",
@@ -104,6 +140,8 @@ private class FakeLibraryApi(
 ) : LibraryApi {
     var lastScope: String? = null
     var lastLanguage: String? = null
+    var lastDeletedId: String? = null
+    var lastEditedTitle: String? = null
     override suspend fun listTexts(
         scope: String,
         language: String,
@@ -115,6 +153,35 @@ private class FakeLibraryApi(
         if (!online) throw IOException("offline")
         error?.let { throw it }
         return page!!
+    }
+
+    override suspend fun deleteText(textId: String): DeleteTextResponseDto {
+        if (!online) throw IOException("offline")
+        lastDeletedId = textId
+        return DeleteTextResponseDto(ok = true)
+    }
+
+    override suspend fun textDetail(textId: String): TextMetaDto {
+        if (!online) throw IOException("offline")
+        error?.let { throw it }
+        return TextMetaDto(
+            text = TextMetaTextDto(id = textId, title = "t", language = "hi", status = "ready"),
+            chapterCount = 2,
+            chapters = listOf(
+                ChapterRefDto(idx = 0, tokenCount = 100),
+                ChapterRefDto(idx = 1, tokenCount = 50),
+            ),
+            comprehensionPct = 60,
+        )
+    }
+
+    override suspend fun updateText(
+        textId: String,
+        body: UpdateTextRequest,
+    ): UpdateTextResponseDto {
+        if (!online) throw IOException("offline")
+        lastEditedTitle = body.title
+        return UpdateTextResponseDto(text = UpdatedTextDto(title = body.title))
     }
 }
 
