@@ -524,6 +524,47 @@ class ReaderScreenTest {
         assertEquals(RadialAction.REFRESH, radialSelectionFor(Offset(0f, -100f), dz))
     }
 
+    @Test
+    fun wordDetailsShowsReferenceSearchWhenAvailableEvenWithNoEntries() {
+        compose.setContent {
+            CiaReaderTheme {
+                WordDetails(
+                    token = ReaderToken(0, "etxea", true, KnownStatus.UNKNOWN, "l1", null, null, false, false, true),
+                    translations = null,
+                    isLoading = false,
+                    basqueReference = emptyList(),
+                    basqueRefAvailable = true,
+                )
+            }
+        }
+        // The panel and its search box appear so the user can recover the lemma.
+        // (Below the word sheet's fold, hence assertExists rather than isDisplayed.)
+        compose.onNodeWithText("Reference dictionaries").assertExists()
+        compose.onNodeWithText("Search reference dictionaries…").assertExists()
+        compose.onNodeWithText("No ES entries.").assertExists()
+    }
+
+    @Test
+    fun wordDetailsReferenceSuggestionTapFiresSearch() {
+        var searched: String? = null
+        compose.setContent {
+            CiaReaderTheme {
+                WordDetails(
+                    token = ReaderToken(0, "etxea", true, KnownStatus.UNKNOWN, "l1", null, null, false, false, true),
+                    translations = null,
+                    isLoading = false,
+                    basqueReference = emptyList(),
+                    basqueRefAvailable = true,
+                    basqueRefSearch = "etx",
+                    basqueRefSuggestions = listOf("etxe", "etxalde"),
+                    onBasqueRefSearch = { searched = it },
+                )
+            }
+        }
+        compose.onNodeWithText("etxe").performClick()
+        assertEquals("etxe", searched)
+    }
+
     private fun token(surface: String, isWord: Boolean, status: KnownStatus = KnownStatus.UNKNOWN) =
         ReaderToken(0, surface, isWord, status, null, null, null, false, false, false)
 }

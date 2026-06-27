@@ -77,6 +77,7 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -131,7 +132,6 @@ import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.foundation.layout.offset
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
-import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntRect
@@ -199,6 +199,8 @@ fun ReaderScreen(
         onTranslateSentence = viewModel::translateSentence,
         onRefreshWord = viewModel::refreshSelectedWord,
         onSetBasqueRefSource = viewModel::setBasqueRefSource,
+        onBasqueRefSearchInput = viewModel::onBasqueRefSearchInput,
+        onBasqueRefSearch = viewModel::searchBasqueReference,
         onRecordPosition = viewModel::recordPosition,
         onRestoreConsumed = viewModel::onRestoreConsumed,
         onToggleRomanize = viewModel::toggleRomanization,
@@ -236,6 +238,8 @@ internal fun ReaderScreenContent(
     onTranslateSentence: () -> Unit = {},
     onRefreshWord: () -> Unit = {},
     onSetBasqueRefSource: (String) -> Unit = {},
+    onBasqueRefSearchInput: (String) -> Unit = {},
+    onBasqueRefSearch: (String) -> Unit = {},
     onRecordPosition: (Int, Double) -> Unit,
     onRestoreConsumed: () -> Unit,
     onToggleRomanize: () -> Unit,
@@ -421,6 +425,10 @@ internal fun ReaderScreenContent(
                 translations = state.wordTranslations,
                 basqueReference = state.basqueReference,
                 basqueRefSource = state.basqueRefSource,
+                basqueRefAvailable = state.basqueRefAvailable,
+                basqueRefSearch = state.basqueRefSearch,
+                basqueRefSuggestions = state.basqueRefSuggestions,
+                isBasqueRefLoading = state.isBasqueRefLoading,
                 isLoading = state.isWordLoading,
                 sentenceTranslation = state.sentenceTranslation,
                 isSentenceTranslating = state.isSentenceTranslating,
@@ -434,6 +442,8 @@ internal fun ReaderScreenContent(
                 onEditDefinition = onEditDefinition,
                 onDeleteDefinition = onDeleteDefinition,
                 onSelectBasqueSource = onSetBasqueRefSource,
+                onBasqueRefSearchInput = onBasqueRefSearchInput,
+                onBasqueRefSearch = onBasqueRefSearch,
                 onEditingChange = { wordEditing = it },
                 modifier = contentModifier,
             )
@@ -1002,7 +1012,13 @@ internal fun WordDetails(
     autoExpandSentence: Boolean = false,
     basqueReference: List<BasqueReference> = emptyList(),
     basqueRefSource: String? = null,
+    basqueRefAvailable: Boolean = false,
+    basqueRefSearch: String = "",
+    basqueRefSuggestions: List<String> = emptyList(),
+    isBasqueRefLoading: Boolean = false,
     onSelectBasqueSource: (String) -> Unit = {},
+    onBasqueRefSearchInput: (String) -> Unit = {},
+    onBasqueRefSearch: (String) -> Unit = {},
     modifier: Modifier = Modifier,
     activeParseLemmaId: String? = token.lemmaId,
     primaryHeadword: String? = null,
@@ -1089,9 +1105,21 @@ internal fun WordDetails(
             )
         }
 
-        if (basqueReference.isNotEmpty()) {
+        // Admins see the reference panel whenever an eu lookup has confirmed
+        // access — even with zero entries — so the search box is there to recover
+        // an inflected/OOV surface form the auto-lookup missed.
+        if (basqueRefAvailable) {
             Spacer(Modifier.height(16.dp))
-            BasqueReferenceSection(basqueReference, basqueRefSource, onSelectBasqueSource)
+            BasqueReferenceSection(
+                entries = basqueReference,
+                selectedSource = basqueRefSource,
+                search = basqueRefSearch,
+                suggestions = basqueRefSuggestions,
+                isLoading = isBasqueRefLoading,
+                onSelectSource = onSelectBasqueSource,
+                onSearchInput = onBasqueRefSearchInput,
+                onSearch = onBasqueRefSearch,
+            )
         }
     }
 }
@@ -1496,11 +1524,15 @@ private fun basqueRefTabLabel(source: String): String = when (source) {
 private fun BasqueReferenceSection(
     entries: List<BasqueReference>,
     selectedSource: String?,
+    search: String,
+    suggestions: List<String>,
+    isLoading: Boolean,
     onSelectSource: (String) -> Unit,
+    onSearchInput: (String) -> Unit,
+    onSearch: (String) -> Unit,
 ) {
-    val available = BASQUE_REF_ORDER.filter { src -> entries.any { it.source == src } }
-    if (available.isEmpty()) return
-    val selected = selectedSource?.takeIf { it in available } ?: available.first()
+    val selected = selectedSource?.takeIf { it in BASQUE_REF_ORDER } ?: BASQUE_REF_ORDER.first()
+    val keyboard = LocalSoftwareKeyboardController.current
 
     Text(
         "Reference dictionaries",
@@ -1508,8 +1540,43 @@ private fun BasqueReferenceSection(
         color = MaterialTheme.colorScheme.primary,
     )
     Spacer(Modifier.height(8.dp))
+    // Search box — the recovery path when the tapped surface isn't itself an entry
+    // (Elhuyar wants the lemma; case + spelling matter, hence autocomplete).
+    OutlinedTextField(
+        value = search,
+        onValueChange = onSearchInput,
+        placeholder = { Text("Search reference dictionaries…") },
+        singleLine = true,
+        trailingIcon = {
+            Text(
+                "admin",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(end = 12.dp),
+            )
+        },
+        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+        keyboardActions = KeyboardActions(onSearch = { onSearch(search); keyboard?.hide() }),
+        modifier = Modifier.fillMaxWidth().semantics { contentDescription = "Search reference dictionaries" },
+    )
+    if (suggestions.isNotEmpty()) {
+        Spacer(Modifier.height(4.dp))
+        Column(Modifier.fillMaxWidth()) {
+            suggestions.forEach { s ->
+                Text(
+                    s,
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onSearch(s); keyboard?.hide() }
+                        .padding(vertical = 8.dp),
+                )
+            }
+        }
+    }
+    Spacer(Modifier.height(8.dp))
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        available.forEach { src ->
+        BASQUE_REF_ORDER.forEach { src ->
             BrandChip(
                 label = basqueRefTabLabel(src),
                 selected = src == selected,
@@ -1518,11 +1585,30 @@ private fun BasqueReferenceSection(
         }
     }
     Spacer(Modifier.height(8.dp))
-    val shown = entries.filter { it.source == selected }
-    // POS shows only when it changes from the previous entry (1,2,3 izond. → one label).
-    shown.forEachIndexed { i, e ->
-        BasqueRefEntry(e, showPos = i == 0 || shown[i - 1].pos != e.pos)
-        Spacer(Modifier.height(8.dp))
+    when {
+        isLoading ->
+            Text(
+                "Looking up…",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+
+        else -> {
+            val shown = entries.filter { it.source == selected }
+            if (shown.isEmpty()) {
+                Text(
+                    "No ${basqueRefTabLabel(selected)} entries.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            } else {
+                // POS shows only when it changes from the previous entry (1,2,3 izond. → one label).
+                shown.forEachIndexed { i, e ->
+                    BasqueRefEntry(e, showPos = i == 0 || shown[i - 1].pos != e.pos)
+                    Spacer(Modifier.height(8.dp))
+                }
+            }
+        }
     }
 }
 

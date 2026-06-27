@@ -50,6 +50,17 @@ data class ReaderUiState(
     val wordTranslations: LemmaTranslations? = null,
     val basqueReference: List<BasqueReference> = emptyList(),
     val basqueRefSource: String? = null,
+    /** Admin-confirmed: a reference lookup succeeded (even with no entries), so the
+     *  panel — and its search box — stays available to recover OOV/inflected
+     *  surface forms the auto-lookup missed. Non-admins (403) never see it. Sticky
+     *  across word taps once true, since admin status doesn't change mid-session. */
+    val basqueRefAvailable: Boolean = false,
+    /** Current text in the reference search box. */
+    val basqueRefSearch: String = "",
+    /** Elhuyar autocomplete suggestions for the current search term. */
+    val basqueRefSuggestions: List<String> = emptyList(),
+    /** A reference auto-lookup or manual search is in flight. */
+    val isBasqueRefLoading: Boolean = false,
     val isWordLoading: Boolean = false,
     /** Sentence translation for the selected word (word sheet action). */
     val sentenceTranslation: SentenceTranslation? = null,
@@ -157,6 +168,10 @@ class ReaderViewModel @Inject constructor(
 
     // Admin-only Basque reference lookups; after one denial (non-admin) we stop asking.
     private var basqueRefDisabled = false
+
+    // Debounces the reference search box's autocomplete so a new keystroke cancels
+    // the prior in-flight suggestion fetch.
+    private var basqueAutocompleteJob: Job? = null
 
     init {
         loadInitial()
@@ -324,11 +339,19 @@ class ReaderViewModel @Inject constructor(
     fun onWordTap(token: ReaderToken) {
         if (!token.isWord) return
         val lemmaId = token.lemmaId
+        // Auto-look-up the tapped surface in the reference dictionaries (admins only);
+        // the panel then shows a spinner until it resolves.
+        val loadingRef = language == "eu" && !basqueRefDisabled
+        basqueAutocompleteJob?.cancel()
         _state.update {
             it.copy(
                 selectedWord = token,
                 wordTranslations = null,
                 basqueReference = emptyList(),
+                // Reset the search box per word, but keep [basqueRefAvailable] sticky.
+                basqueRefSearch = "",
+                basqueRefSuggestions = emptyList(),
+                isBasqueRefLoading = loadingRef,
                 isWordLoading = lemmaId != null,
                 // Each word opens with a fresh sentence-translation slot.
                 sentenceTranslation = null,
@@ -361,13 +384,26 @@ class ReaderViewModel @Inject constructor(
         }
         // Admin-only Basque reference dictionaries (per surface word). The endpoint
         // 403s non-admins, after which we stop asking for the rest of the session.
-        if (language == "eu" && !basqueRefDisabled) {
+        // A success — even with no entries — confirms admin, so the panel (with its
+        // search box) stays available to look up the lemma the surface form missed.
+        if (loadingRef) {
             viewModelScope.launch {
                 when (val ref = dictionary.basqueReference(token.surface)) {
                     is Outcome.Success -> _state.update { s ->
-                        if (s.selectedWord == token) s.copy(basqueReference = ref.data) else s
+                        if (s.selectedWord == token) {
+                            s.copy(
+                                basqueReference = ref.data,
+                                basqueRefAvailable = true,
+                                isBasqueRefLoading = false,
+                            )
+                        } else {
+                            s
+                        }
                     }
-                    is Outcome.Failure -> basqueRefDisabled = true
+                    is Outcome.Failure -> {
+                        basqueRefDisabled = true
+                        _state.update { it.copy(basqueRefAvailable = false, isBasqueRefLoading = false) }
+                    }
                 }
             }
         }
@@ -617,6 +653,47 @@ class ReaderViewModel @Inject constructor(
     fun setBasqueRefSource(source: String) {
         _state.update { it.copy(basqueRefSource = source) }
         viewModelScope.launch { settings.setBasqueRefSource(source) }
+    }
+
+    /** Update the reference search box and, debounced, fetch Elhuyar suggestions. */
+    fun onBasqueRefSearchInput(text: String) {
+        _state.update { it.copy(basqueRefSearch = text) }
+        basqueAutocompleteJob?.cancel()
+        val term = text.trim()
+        if (term.isEmpty()) {
+            _state.update { it.copy(basqueRefSuggestions = emptyList()) }
+            return
+        }
+        basqueAutocompleteJob = viewModelScope.launch {
+            delay(250)
+            when (val res = dictionary.basqueReferenceAutocomplete(term)) {
+                is Outcome.Success -> _state.update { s ->
+                    // Drop stale results if the box has moved on to a newer term.
+                    if (s.basqueRefSearch.trim() == term) s.copy(basqueRefSuggestions = res.data) else s
+                }
+                // Autocomplete is a convenience — a flaky upstream shouldn't error.
+                is Outcome.Failure -> Unit
+            }
+        }
+    }
+
+    /** Search the reference dictionaries for an exact term (Enter or suggestion tap)
+     *  — the recovery path when the tapped surface form isn't itself an entry. */
+    fun searchBasqueReference(term: String) {
+        val query = term.trim()
+        if (query.isEmpty()) return
+        basqueAutocompleteJob?.cancel()
+        _state.update {
+            it.copy(basqueRefSearch = query, basqueRefSuggestions = emptyList(), isBasqueRefLoading = true)
+        }
+        viewModelScope.launch {
+            when (val ref = dictionary.basqueReference(query, exact = true)) {
+                is Outcome.Success ->
+                    _state.update { it.copy(basqueReference = ref.data, isBasqueRefLoading = false) }
+                // A search shouldn't 403 (admin already confirmed); treat as transient.
+                is Outcome.Failure -> _state.update { it.copy(isBasqueRefLoading = false) }
+            }
+        }
     }
 
     /** When reading a book, find the adjacent chapter-texts for Prev/Next. */
