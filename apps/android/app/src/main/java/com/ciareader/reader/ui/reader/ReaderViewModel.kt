@@ -57,6 +57,9 @@ data class ReaderUiState(
     val basqueRefAvailable: Boolean = false,
     /** Current text in the reference search box. */
     val basqueRefSearch: String = "",
+    /** The word the box was prefilled with — the parsed lemma (e.g. "hamar") once it
+     *  loads, else the tapped surface. Baseline for the reset (X) and the reset target. */
+    val basqueRefPrefill: String = "",
     /** Elhuyar autocomplete suggestions for the current search term. */
     val basqueRefSuggestions: List<String> = emptyList(),
     /** A reference auto-lookup or manual search is in flight. */
@@ -348,8 +351,12 @@ class ReaderViewModel @Inject constructor(
                 selectedWord = token,
                 wordTranslations = null,
                 basqueReference = emptyList(),
-                // Reset the search box per word, but keep [basqueRefAvailable] sticky.
-                basqueRefSearch = "",
+                // Prefill the search box with the tapped word so it's obviously a
+                // search for it; the user can edit to refine. The surface is just a
+                // placeholder — loadParse upgrades it to the parsed lemma once known.
+                // [basqueRefAvailable] stays sticky across taps.
+                basqueRefSearch = if (loadingRef) token.surface else "",
+                basqueRefPrefill = if (loadingRef) token.surface else "",
                 basqueRefSuggestions = emptyList(),
                 isBasqueRefLoading = loadingRef,
                 isWordLoading = lemmaId != null,
@@ -382,11 +389,13 @@ class ReaderViewModel @Inject constructor(
                 }
             }
         }
-        // Admin-only Basque reference dictionaries (per surface word). The endpoint
-        // 403s non-admins, after which we stop asking for the rest of the session.
-        // A success — even with no entries — confirms admin, so the panel (with its
-        // search box) stays available to look up the lemma the surface form missed.
-        if (loadingRef) {
+        // Admin-only Basque reference dictionaries. The endpoint 403s non-admins,
+        // after which we stop asking for the session; a success — even with no entries
+        // — confirms admin, keeping the panel (and its search box) available.
+        // Words with a lemma defer to loadParse so the lookup uses the parsed form
+        // ("orduak" → "ordu") instead of the inflected surface; OOV words have no
+        // lemma, so look the surface up here.
+        if (loadingRef && token.lemmaId == null) {
             viewModelScope.launch {
                 when (val ref = dictionary.basqueReference(token.surface)) {
                     is Outcome.Success -> _state.update { s ->
@@ -430,16 +439,48 @@ class ReaderViewModel @Inject constructor(
     private fun loadParse(lemmaId: String, isPrimary: Boolean) {
         viewModelScope.launch {
             val outcome = dictionary.translations(lemmaId)
+            var refLookupWord: String? = null
             _state.update { s ->
                 if (s.activeParseLemmaId != lemmaId) return@update s
                 when (outcome) {
-                    is Outcome.Success -> s.copy(
-                        isWordLoading = false,
-                        wordTranslations = outcome.data,
-                        primaryHeadword = if (isPrimary) outcome.data.headword else s.primaryHeadword,
-                        primaryPos = if (isPrimary) outcome.data.pos else s.primaryPos,
-                    )
-                    is Outcome.Failure -> s.copy(isWordLoading = false)
+                    is Outcome.Success -> {
+                        // Drive the reference search + lookup off the parsed lemma
+                        // ("hamarrak" → "hamar"), not the inflected surface — but only
+                        // while the box is the untouched prefill, so a manual search is
+                        // never clobbered.
+                        val headword = outcome.data.headword
+                        val useLemma = isPrimary && language == "eu" && !basqueRefDisabled &&
+                            headword.isNotBlank() && s.basqueRefSearch == s.basqueRefPrefill
+                        if (useLemma) refLookupWord = headword
+                        s.copy(
+                            isWordLoading = false,
+                            wordTranslations = outcome.data,
+                            primaryHeadword = if (isPrimary) headword else s.primaryHeadword,
+                            primaryPos = if (isPrimary) outcome.data.pos else s.primaryPos,
+                            basqueRefSearch = if (useLemma) headword else s.basqueRefSearch,
+                            basqueRefPrefill = if (useLemma) headword else s.basqueRefPrefill,
+                            // Keep the spinner up only while the lemma lookup is pending.
+                            isBasqueRefLoading = refLookupWord != null,
+                        )
+                    }
+                    is Outcome.Failure -> s.copy(isWordLoading = false, isBasqueRefLoading = false)
+                }
+            }
+            // Look up the reference entries by the parsed lemma so they match the box.
+            val word = refLookupWord
+            if (word != null) {
+                when (val ref = dictionary.basqueReference(word)) {
+                    is Outcome.Success -> _state.update { s ->
+                        if (s.activeParseLemmaId == lemmaId) {
+                            s.copy(basqueReference = ref.data, basqueRefAvailable = true, isBasqueRefLoading = false)
+                        } else {
+                            s
+                        }
+                    }
+                    is Outcome.Failure -> {
+                        basqueRefDisabled = true
+                        _state.update { it.copy(basqueRefAvailable = false, isBasqueRefLoading = false) }
+                    }
                 }
             }
         }

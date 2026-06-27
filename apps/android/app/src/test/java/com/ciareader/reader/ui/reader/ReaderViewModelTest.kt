@@ -812,6 +812,50 @@ class ReaderViewModelTest {
         assertTrue(s.basqueRefAvailable)
         assertTrue(s.basqueReference.isEmpty())
         assertFalse(s.isBasqueRefLoading)
+        // The search box is prefilled with the tapped word, ready to refine.
+        assertEquals("etxea", s.basqueRefSearch)
+    }
+
+    @Test
+    fun referenceSearchPrefillUpgradesToParsedLemma() = runTest(mainRule.dispatcher) {
+        // Tapped form is inflected ("hamarrak"); its lemma parses to "hamar".
+        val dict = FakeDictionaryRepository(
+            translations = LemmaTranslations("hamar", null, null, emptyList(), emptyList(), emptyList()),
+            basqueAdmin = true,
+        )
+        val token = ReaderToken(0, "hamarrak", true, KnownStatus.UNKNOWN, "l1", null, null, false, false, true)
+        val repo = FakeReaderRepository(meta = meta(1, "eu"), chapters = mapOf(0 to Chapter(0, listOf(token))))
+        val v = vm(repo, dict)
+        advanceUntilIdle()
+
+        v.onWordTap(token)
+        advanceUntilIdle()
+
+        val s = v.state.value
+        // Once the lemma loads, the box shows the parsed form, not the surface.
+        assertEquals("hamar", s.basqueRefSearch)
+        assertEquals("hamar", s.basqueRefPrefill)
+    }
+
+    @Test
+    fun referenceAutoLookupUsesParsedLemmaNotSurface() = runTest(mainRule.dispatcher) {
+        // Tapping inflected "orduak" (lemma "ordu") should fetch entries for "ordu".
+        val dict = FakeDictionaryRepository(
+            translations = LemmaTranslations("ordu", null, null, emptyList(), emptyList(), emptyList()),
+            basque = listOf(BasqueReference("elhuyar_es", "Elhuyar eu-es", "iz.", "hora", emptyList())),
+        )
+        val token = ReaderToken(0, "orduak", true, KnownStatus.UNKNOWN, "l1", null, null, false, false, true)
+        val repo = FakeReaderRepository(meta = meta(1, "eu"), chapters = mapOf(0 to Chapter(0, listOf(token))))
+        val v = vm(repo, dict)
+        advanceUntilIdle()
+
+        v.onWordTap(token)
+        advanceUntilIdle()
+
+        // The auto-lookup queried the lemma "ordu" (not the surface "orduak")…
+        assertEquals("ordu" to false, dict.lastBasqueQuery)
+        // …so its entries show up without the user having to search manually.
+        assertEquals(listOf("hora"), v.state.value.basqueReference.map { it.definition })
     }
 
     @Test

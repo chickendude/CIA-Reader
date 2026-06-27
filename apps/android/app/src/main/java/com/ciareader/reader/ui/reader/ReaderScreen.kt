@@ -29,6 +29,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.padding
@@ -76,8 +77,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -427,6 +430,7 @@ internal fun ReaderScreenContent(
                 basqueRefSource = state.basqueRefSource,
                 basqueRefAvailable = state.basqueRefAvailable,
                 basqueRefSearch = state.basqueRefSearch,
+                basqueRefPrefill = state.basqueRefPrefill,
                 basqueRefSuggestions = state.basqueRefSuggestions,
                 isBasqueRefLoading = state.isBasqueRefLoading,
                 isLoading = state.isWordLoading,
@@ -494,6 +498,10 @@ internal fun ReaderScreenContent(
                     WordAnchorPositionProvider(anchor, gapPx = 8.dp.roundToPx(), marginPx = 8.dp.roundToPx())
                 }
             }
+            // Fixed height (independent of content) so the popup doesn't jump as a
+            // note is added — the body scrolls instead. Capped to the screen so it
+            // never overflows on short/landscape displays.
+            val popupHeight = minOf(420.dp, (LocalConfiguration.current.screenHeightDp * 0.85f).dp)
             Popup(
                 popupPositionProvider = provider,
                 // Focusable only while editing a note, so the keyboard can show;
@@ -504,7 +512,7 @@ internal fun ReaderScreenContent(
                 Surface(
                     modifier = Modifier
                         .width(320.dp)
-                        .height(300.dp),
+                        .height(popupHeight),
                     shape = RoundedCornerShape(16.dp),
                     color = MaterialTheme.colorScheme.surface,
                     tonalElevation = 3.dp,
@@ -1014,6 +1022,7 @@ internal fun WordDetails(
     basqueRefSource: String? = null,
     basqueRefAvailable: Boolean = false,
     basqueRefSearch: String = "",
+    basqueRefPrefill: String = "",
     basqueRefSuggestions: List<String> = emptyList(),
     isBasqueRefLoading: Boolean = false,
     onSelectBasqueSource: (String) -> Unit = {},
@@ -1085,6 +1094,11 @@ internal fun WordDetails(
                 onEditingChange = onEditingChange,
             )
             Spacer(Modifier.height(12.dp))
+            // A rule separates your own note(s) from the dictionary definitions below.
+            if (translations?.personal?.isNotEmpty() == true) {
+                HorizontalDivider(Modifier.testTag("personalNoteDivider"))
+                Spacer(Modifier.height(12.dp))
+            }
         }
 
         // The dictionary definition (reference; status + translate are in the header).
@@ -1114,11 +1128,14 @@ internal fun WordDetails(
                 entries = basqueReference,
                 selectedSource = basqueRefSource,
                 search = basqueRefSearch,
+                prefill = basqueRefPrefill,
                 suggestions = basqueRefSuggestions,
                 isLoading = isBasqueRefLoading,
+                wordKey = token,
                 onSelectSource = onSelectBasqueSource,
                 onSearchInput = onBasqueRefSearchInput,
                 onSearch = onBasqueRefSearch,
+                onEditingChange = onEditingChange,
             )
         }
     }
@@ -1525,14 +1542,29 @@ private fun BasqueReferenceSection(
     entries: List<BasqueReference>,
     selectedSource: String?,
     search: String,
+    // The prefilled (parsed) word; the reset (X) appears once [search] differs from it.
+    prefill: String,
     suggestions: List<String>,
     isLoading: Boolean,
+    // Reset key — drops the focused field when the popup rebinds to another word
+    // (the host turns the popup non-focusable again on every word tap).
+    wordKey: Any?,
     onSelectSource: (String) -> Unit,
     onSearchInput: (String) -> Unit,
     onSearch: (String) -> Unit,
+    onEditingChange: (Boolean) -> Unit,
 ) {
     val selected = selectedSource?.takeIf { it in BASQUE_REF_ORDER } ?: BASQUE_REF_ORDER.first()
     val keyboard = LocalSoftwareKeyboardController.current
+    // The compact popup is non-focusable so a tap on another word switches in one
+    // go — but a non-focusable window can't raise the keyboard. So (like the note
+    // editor) tapping the box flips the popup focusable, then we focus the field.
+    var editing by remember(wordKey) { mutableStateOf(false) }
+    fun stopEditing() {
+        editing = false
+        onEditingChange(false)
+        keyboard?.hide()
+    }
 
     Text(
         "Reference dictionaries",
@@ -1542,37 +1574,92 @@ private fun BasqueReferenceSection(
     Spacer(Modifier.height(8.dp))
     // Search box — the recovery path when the tapped surface isn't itself an entry
     // (Elhuyar wants the lemma; case + spelling matter, hence autocomplete).
-    OutlinedTextField(
-        value = search,
-        onValueChange = onSearchInput,
-        placeholder = { Text("Search reference dictionaries…") },
-        singleLine = true,
-        trailingIcon = {
-            Text(
-                "admin",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(end = 12.dp),
+    if (editing) {
+        val focusRequester = remember { FocusRequester() }
+        val density = LocalDensity.current
+        // The field's bounds in window coordinates — a nested Popup can't trust the
+        // anchorBounds it's handed (wrong coordinate space), so we anchor explicitly,
+        // the same way the word popup itself does.
+        var fieldBounds by remember { mutableStateOf<Rect?>(null) }
+        Box(Modifier.fillMaxWidth()) {
+            OutlinedTextField(
+                value = search,
+                onValueChange = onSearchInput,
+                placeholder = { Text("Search…") },
+                singleLine = true,
+                // Once you've changed the prefilled word, an X resets it and closes.
+                trailingIcon = if (search != prefill) {
+                    {
+                        IconButton(onClick = { onSearchInput(prefill); stopEditing() }) {
+                            Icon(painter = painterResource(R.drawable.ic_close), contentDescription = "Reset search")
+                        }
+                    }
+                } else {
+                    null
+                },
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                keyboardActions = KeyboardActions(onSearch = { onSearch(search); stopEditing() }),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .onGloballyPositioned { coords ->
+                        // Absolute screen coords: the suggestion popup renders in a
+                        // full-screen window, so window-relative bounds (which differ
+                        // by the word popup's offset) would mis-place it.
+                        val pos = coords.localToScreen(Offset.Zero)
+                        fieldBounds = Rect(pos.x, pos.y, pos.x + coords.size.width, pos.y + coords.size.height)
+                    }
+                    .focusRequester(focusRequester)
+                    .semantics { contentDescription = "Search reference dictionaries" },
             )
-        },
-        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-        keyboardActions = KeyboardActions(onSearch = { onSearch(search); keyboard?.hide() }),
-        modifier = Modifier.fillMaxWidth().semantics { contentDescription = "Search reference dictionaries" },
-    )
-    if (suggestions.isNotEmpty()) {
-        Spacer(Modifier.height(4.dp))
-        Column(Modifier.fillMaxWidth()) {
-            suggestions.forEach { s ->
-                Text(
-                    s,
-                    style = MaterialTheme.typography.bodyMedium,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { onSearch(s); keyboard?.hide() }
-                        .padding(vertical = 8.dp),
-                )
+            // Suggestions float just above the field in their own window: a real
+            // dropdown that overlays the sheet (no reflow) and clears the IME below.
+            val bounds = fieldBounds
+            if (suggestions.isNotEmpty() && bounds != null) {
+                val gapPx = with(density) { 4.dp.roundToPx() }
+                val positionProvider = remember(bounds, gapPx) {
+                    SuggestionPopupPositionProvider(bounds, gapPx)
+                }
+                Popup(
+                    popupPositionProvider = positionProvider,
+                    // Non-focusable so the field keeps focus and the keyboard stays up.
+                    properties = PopupProperties(focusable = false),
+                    onDismissRequest = {},
+                ) {
+                    Surface(
+                        modifier = Modifier
+                            .width(with(density) { bounds.width.toDp() })
+                            .heightIn(max = 240.dp),
+                        shape = RoundedCornerShape(8.dp),
+                        color = MaterialTheme.colorScheme.surface,
+                        tonalElevation = 3.dp,
+                        shadowElevation = 8.dp,
+                    ) {
+                        Column(Modifier.verticalScroll(rememberScrollState())) {
+                            suggestions.forEach { s ->
+                                Text(
+                                    s,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable { onSearch(s); stopEditing() }
+                                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                                )
+                            }
+                        }
+                    }
+                }
             }
         }
+        LaunchedEffect(Unit) {
+            // The popup has just turned focusable — focus the field and raise the
+            // keyboard, which a freshly-focusable popup window won't always do itself.
+            focusRequester.requestFocus()
+            keyboard?.show()
+            // Surface suggestions for the prefilled word straight away.
+            onSearchInput(search)
+        }
+    } else {
+        ReferenceSearchBox(text = search, onClick = { editing = true; onEditingChange(true) })
     }
     Spacer(Modifier.height(8.dp))
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1609,6 +1696,34 @@ private fun BasqueReferenceSection(
                 }
             }
         }
+    }
+}
+
+/** The non-editing face of the reference search: looks like the text field but is
+ *  a plain tap target, so the first tap can flip the popup focusable before a real
+ *  field appears (a tap straight onto a field in a non-focusable popup does nothing). */
+@Composable
+private fun ReferenceSearchBox(text: String, onClick: () -> Unit) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(4.dp))
+            .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(4.dp))
+            .clickable(onClick = onClick)
+            .semantics { contentDescription = "Search reference dictionaries" }
+            .padding(horizontal = 16.dp, vertical = 16.dp),
+    ) {
+        Text(
+            text.ifEmpty { "Search…" },
+            style = MaterialTheme.typography.bodyLarge,
+            color = if (text.isEmpty()) {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            } else {
+                MaterialTheme.colorScheme.onSurface
+            },
+            modifier = Modifier.weight(1f),
+        )
     }
 }
 
@@ -1909,6 +2024,33 @@ private fun statusLabel(status: KnownStatus): String = when (status) {
  * [anchor] is the word's bounds in window px; [anchorBounds] (the popup's
  * parent) is intentionally ignored.
  */
+/**
+ * Positions the reference-search suggestions just above the field, left-aligned to
+ * it (the IME sits below the field, so opening upward keeps them visible). Falls
+ * back to just below the field only when there isn't room above.
+ *
+ * [anchor] is the field's bounds in absolute screen coordinates — the suggestion
+ * popup renders in a full-screen window, so the [anchorBounds] Compose hands in
+ * (relative to the nested word popup's window) can't be trusted.
+ */
+internal class SuggestionPopupPositionProvider(
+    private val anchor: Rect,
+    private val gapPx: Int,
+) : PopupPositionProvider {
+    override fun calculatePosition(
+        anchorBounds: IntRect,
+        windowSize: IntSize,
+        layoutDirection: LayoutDirection,
+        popupContentSize: IntSize,
+    ): IntOffset {
+        val above = anchor.top.roundToInt() - gapPx - popupContentSize.height
+        val below = anchor.bottom.roundToInt() + gapPx
+        // The field is on-screen and the popup matches its width, so its left edge
+        // needs no clamping; only flip below when the popup wouldn't fit above.
+        return IntOffset(anchor.left.roundToInt(), if (above >= 0) above else below)
+    }
+}
+
 private class WordAnchorPositionProvider(
     private val anchor: Rect,
     private val gapPx: Int,
