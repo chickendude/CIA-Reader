@@ -280,10 +280,12 @@ window.addEventListener(
     if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) {
       // The player's own keyboard shortcuts (Space = play/pause, etc.) can't see
       // that our shadow-root input is focused, so they'd hijack the keystroke.
-      // Shield typing (incl. Space) from them; let Enter/Escape reach the input's
-      // own handler. We run before the player since we bind at document_start.
+      // The player listens on window too, so stopPropagation isn't enough (it
+      // doesn't stop other listeners on the SAME element) — use
+      // stopImmediatePropagation. We're registered before the player (we bind at
+      // document_start), so ours fires first. Enter/Escape still reach the input.
       const ours = t.classList.contains('mine-input') || t.classList.contains('form-input');
-      if (ours && e.key !== 'Enter' && e.key !== 'Escape') e.stopPropagation();
+      if (ours && e.key !== 'Enter' && e.key !== 'Escape') e.stopImmediatePropagation();
       return;
     }
     let handled = true;
