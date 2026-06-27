@@ -86,6 +86,20 @@ describe('PlaybackController', () => {
     expect(pb.neighborsOf('three')).toEqual({ before: 'two', after: null });
   });
 
+  it('gives the mid-cue video time for a line (for card screenshots)', () => {
+    vi.useFakeTimers();
+    const v = fakeVideo();
+    const pb = new PlaybackController(v as unknown as VideoController);
+    pb.setCues(cues);
+    v.setTime(13);
+    pb.onText('two'); // offset 10000ms
+
+    // cue "two" 3000–4000 → mid 3500ms + 10000 offset = 13.5s
+    expect(pb.timeForLine('two')).toBeCloseTo(13.5, 5);
+    expect(pb.timeForLine('one')).toBeCloseTo(11.5, 5);
+    expect(pb.timeForLine('nope')).toBeCloseTo(13.5, 5); // unknown → active cue
+  });
+
   it('does not pause on the line change a seek causes', () => {
     vi.useFakeTimers();
     const v = fakeVideo();

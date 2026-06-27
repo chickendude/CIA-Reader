@@ -93,6 +93,17 @@ export class PlaybackController {
     };
   }
 
+  /** Video time (seconds) at the middle of the cue for a given on-screen line —
+   *  the representative frame to screenshot for that line. Null if uncalibrated
+   *  or the line isn't found. */
+  timeForLine(text: string | null): number | null {
+    if (!this.calibrated) return null;
+    let i = text ? this.cues.findIndex((c) => norm(c.text) === norm(text)) : -1;
+    if (i < 0) i = this.activeIndex();
+    const c = i >= 0 ? this.cues[i] : undefined;
+    return c ? this.toVideo((c.startMs + c.endMs) / 2) : null;
+  }
+
   private toVideo(ms: number): number {
     return (ms + this.offsetMs) / 1000;
   }

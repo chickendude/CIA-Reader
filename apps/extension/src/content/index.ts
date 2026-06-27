@@ -44,20 +44,39 @@ const overlay = new Overlay({
     let note: string | undefined;
     if (config.captureMedia) {
       // The frame is DRM/HDCP-protected, so a <video>→canvas grab comes back
-      // black. captureVisibleTab (an OS-level tab grab) gets the real pixels;
-      // we just hide our overlay + the player's controls first, and suppress the
-      // popup's auto-close so adding a card doesn't dismiss it / resume playback.
+      // black. captureVisibleTab (an OS-level tab grab) gets the real pixels.
+      // The playhead is often NOT on the mined line (listening mode pauses at
+      // the NEXT line; pause-on-lookup may be off) — so seek to the mined line's
+      // own frame, capture, then seek back. We hide our overlay + the player's
+      // controls and suppress the popup's auto-close throughout.
+      const targetT = playback.timeForLine(card.sentence);
+      const originT = video.currentTime();
+      const wasPaused = video.isPaused();
+      const reseek = video.element != null && targetT != null && originT != null;
       overlay.beginCapture();
       setPlayerChromeHidden(true);
-      await delay(120);
-      const res = await sendMessage('CAPTURE_SCREENSHOT', {}).catch(() => ({
-        dataUrl: null,
-        error: 'capture message failed',
-      }));
-      setPlayerChromeHidden(false);
-      overlay.endCapture();
-      if (res.dataUrl) screenshot = await cropToVideo(res.dataUrl);
-      else note = `no screenshot${res.error ? ` (${res.error})` : ''}`;
+      try {
+        if (reseek && Math.abs(targetT! - originT!) > 0.4) {
+          video.pause();
+          await video.seekSettle(targetT!);
+          await delay(60);
+        } else {
+          await delay(120);
+        }
+        const res = await sendMessage('CAPTURE_SCREENSHOT', {}).catch(() => ({
+          dataUrl: null,
+          error: 'capture message failed',
+        }));
+        if (res.dataUrl) screenshot = await cropToVideo(res.dataUrl);
+        else note = `no screenshot${res.error ? ` (${res.error})` : ''}`;
+      } finally {
+        if (reseek && Math.abs(targetT! - originT!) > 0.4) {
+          await video.seekSettle(originT!);
+          if (!wasPaused) video.play();
+        }
+        setPlayerChromeHidden(false);
+        overlay.endCapture();
+      }
     }
     const { before, after } = playback.neighborsOf(card.sentence);
     const result = await sendMessage('ADD_ANKI', {
