@@ -102,6 +102,8 @@ const overlay = new Overlay({
       sendMessage('USER_TRX_ADD', { lemmaId, body, targetLanguage }).then((r) => r.translation),
     edit: (id, body) => sendMessage('USER_TRX_EDIT', { id, body }).then(() => undefined),
     remove: (id) => sendMessage('USER_TRX_DELETE', { id }).then(() => undefined),
+    ensureLemma: (headword) =>
+      sendMessage('USER_LEMMA_ENSURE', { language: LANGUAGE, headword }).then((r) => r.lemmaId),
   },
 });
 

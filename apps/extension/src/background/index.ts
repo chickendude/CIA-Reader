@@ -72,6 +72,8 @@ async function handle(msg: Message, sender: browser.runtime.MessageSender): Prom
     case 'USER_TRX_DELETE':
       await userTranslations.remove(msg.id);
       return { ok: true };
+    case 'USER_LEMMA_ENSURE':
+      return { lemmaId: await userTranslations.ensureLemma(msg.language, msg.headword) };
     case 'CAPTURE_SCREENSHOT': {
       try {
         const opts = { format: 'jpeg', quality: 80 } as const;

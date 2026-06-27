@@ -19,6 +19,8 @@ type PersonalClient = {
   del(path: string): Promise<void>;
 };
 
+type Lemma = { id: string };
+
 type Pub = { id: string; body: string; targetLanguage: string };
 
 export class UserTranslations {
@@ -55,6 +57,16 @@ export class UserTranslations {
 
   async remove(id: string): Promise<void> {
     await this.client.del(`/api/v1/translations/${id}`);
+  }
+
+  /** Get-or-create a lemma for a word the dictionary lacks, so a personal
+   *  translation can attach to it. Returns the lemma id. */
+  async ensureLemma(language: string, headword: string): Promise<string> {
+    const r = await this.client.postJson<{ lemma: Lemma }>('/api/v1/me/lemmas', {
+      language,
+      headword,
+    });
+    return r.lemma.id;
   }
 }
 
