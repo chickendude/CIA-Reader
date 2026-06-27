@@ -273,9 +273,17 @@ window.addEventListener(
   'keydown',
   (e) => {
     // composedPath()[0] is the real focused element even inside our shadow root,
-    // so typing in the popup's form input isn't hijacked by playback shortcuts.
+    // so typing in the popup's inputs isn't hijacked by playback shortcuts.
     const t = (e.composedPath()[0] ?? e.target) as HTMLElement | null;
-    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) {
+      // The player's own keyboard shortcuts (Space = play/pause, etc.) can't see
+      // that our shadow-root input is focused, so they'd hijack the keystroke.
+      // Shield typing (incl. Space) from them; let Enter/Escape reach the input's
+      // own handler. We run before the player since we bind at document_start.
+      const ours = t.classList.contains('mine-input') || t.classList.contains('form-input');
+      if (ours && e.key !== 'Enter' && e.key !== 'Escape') e.stopPropagation();
+      return;
+    }
     let handled = true;
     switch (e.key) {
       case 'ArrowRight':
