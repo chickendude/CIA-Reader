@@ -1,19 +1,25 @@
 /**
- * Subtitle-line playback controls: repeat / previous / next line + auto-pause /
- * listening mode (pause at line end, reveal the line).
+ * Subtitle-line playback: repeat / prev / next line + auto-pause / listening
+ * mode, AND the on-screen caption — all driven from the loaded .vtt cues, not
+ * the player's own subtitle rendering.
  *
- * Seeking needs cue timing (from the cached .vtt); the player's currentTime is
- * offset from the .vtt timeline, so we calibrate the offset by matching the
- * on-screen subtitle (from the Shaka mirror) to its cue.
- *
- * Auto-pause/listening is driven by the on-screen subtitle *changing* (rather
- * than a computed end-time window), so adjacent cues with no gap each get their
- * own pause — what you see is what pauses.
+ * The player's currentTime is offset from the .vtt timeline, so we calibrate the
+ * offset by matching the player's (hidden) on-screen subtitle to its cue (only
+ * UNIQUE-text cues, so repeated lines like "(Musika)" can't skew it). Once
+ * calibrated, a per-animation-frame loop computes the active cue from
+ * currentTime and:
+ *   - paints the caption (so it's OUR subtitle, kept visible when paused),
+ *   - in listening mode hides it while the clip plays,
+ *   - pauses just BEFORE the active line ends (auto-pause / listening) so the
+ *     pause lands ON that line, not the next one.
  */
 import type { SubtitleCue } from '../shared/subtitles';
 import type { VideoController } from './video';
 
 const norm = (s: string): string => s.replace(/\s+/g, ' ').trim();
+// Pause this far before a line's end so we stay on it (rather than crossing into
+// the next cue). Small enough that you still hear ~all of the line.
+const PAUSE_LEAD_MS = 60;
 
 export class PlaybackController {
   private cues: SubtitleCue[] = [];
@@ -22,17 +28,18 @@ export class PlaybackController {
   private calibrated = false;
   private autoPause = false;
   private listening = false;
-  private prevLine: string | null = null;
-  private justSeeked = false;
+  private pausedFor = -1;
+  private raf: ReturnType<typeof requestAnimationFrame> | null = null;
 
-  /** Called while in listening mode with whether the caption should be hidden
-   *  (hidden while the line plays, shown when it pauses). */
-  onBlind: ((hidden: boolean) => void) | null = null;
-  /** Called with a line's text when we pause on it, to reveal it. */
-  onLinePause: ((text: string) => void) | null = null;
+  /** Paint the caption with a line's text (or null to clear). Driven from cues. */
+  onDisplay: ((text: string | null) => void) | null = null;
 
   constructor(private video: VideoController) {
-    setInterval(this.tick, 120);
+    if (typeof requestAnimationFrame === 'function') this.loop();
+  }
+
+  get isCalibrated(): boolean {
+    return this.calibrated;
   }
 
   setCues(cues: SubtitleCue[]): void {
@@ -51,38 +58,22 @@ export class PlaybackController {
     });
   }
 
-  /** The current on-screen subtitle (from the mirror): calibrates the offset and
-   *  drives the pause-at-line-end. */
+  /** The player's (hidden) on-screen subtitle — used ONLY to calibrate the
+   *  offset between the .vtt timeline and the video's currentTime. */
   onText(text: string | null): void {
     const current = text && text.trim() ? text : null;
-
-    // Calibrate the timeline offset on a recognized (unique) line.
-    if (current) {
-      const i = this.indexByText.get(norm(current));
-      const t = this.video.currentTime();
-      const cue = i !== undefined ? this.cues[i] : undefined;
-      if (i !== undefined && t !== null && cue) {
-        this.offsetMs = t * 1000 - cue.startMs;
-        this.calibrated = true;
-      }
+    if (!current) return;
+    const i = this.indexByText.get(norm(current));
+    const t = this.video.currentTime();
+    const cue = i !== undefined ? this.cues[i] : undefined;
+    if (i !== undefined && t !== null && cue) {
+      this.offsetMs = t * 1000 - cue.startMs;
+      this.calibrated = true;
     }
-
-    // Pause on the line CHANGE — the previous line just ended.
-    const prev = this.prevLine;
-    this.prevLine = current;
-    if (this.justSeeked) {
-      this.justSeeked = false; // the change a seek caused shouldn't pause
-      return;
-    }
-    if (!prev || current === prev) return;
-    if (!this.autoPause && !this.listening) return;
-    if (this.video.isPaused()) return;
-    this.video.pause();
-    this.onLinePause?.(prev);
   }
 
-  /** The subtitle lines immediately before/after the given on-screen line, for
-   *  Anki card context. Matches by text, falling back to the calibrated index. */
+  /** Surrounding subtitle lines for card context. Matches by text, falling back
+   *  to the calibrated index. */
   neighborsOf(text: string | null): { before: string | null; after: string | null } {
     let i = text ? this.cues.findIndex((c) => norm(c.text) === norm(text)) : -1;
     if (i < 0) i = this.activeIndex();
@@ -93,9 +84,8 @@ export class PlaybackController {
     };
   }
 
-  /** Video time (seconds) at the middle of the cue for a given on-screen line —
-   *  the representative frame to screenshot for that line. Null if uncalibrated
-   *  or the line isn't found. */
+  /** Video time (seconds) at the middle of the cue for a given line — the frame
+   *  to screenshot for that line. Null if uncalibrated / not found. */
   timeForLine(text: string | null): number | null {
     if (!this.calibrated) return null;
     let i = text ? this.cues.findIndex((c) => norm(c.text) === norm(text)) : -1;
@@ -108,7 +98,7 @@ export class PlaybackController {
     return (ms + this.offsetMs) / 1000;
   }
 
-  /** Index of the cue the playhead is currently in (or last passed). */
+  /** Index of the cue the playhead is in/last passed (for prev/next/repeat). */
   private activeIndex(): number {
     if (!this.calibrated) return -1;
     const adj = (this.video.currentTime() ?? 0) * 1000 - this.offsetMs;
@@ -120,10 +110,20 @@ export class PlaybackController {
     return idx;
   }
 
+  /** The cue currently on screen (containing adj), or -1 in a gap. */
+  private cueIndexAt(adj: number): number {
+    for (let i = 0; i < this.cues.length; i += 1) {
+      const c = this.cues[i]!;
+      if (c.startMs > adj) break;
+      if (adj < c.endMs) return i;
+    }
+    return -1;
+  }
+
   private seekTo(index: number): void {
     const c = this.cues[index];
     if (c) {
-      this.justSeeked = true;
+      this.pausedFor = -1;
       this.video.seek(this.toVideo(c.startMs) + 0.02);
     }
   }
@@ -142,16 +142,47 @@ export class PlaybackController {
 
   toggleAutoPause(): boolean {
     this.autoPause = !this.autoPause;
+    this.pausedFor = -1;
     return this.autoPause;
   }
 
   toggleListening(): boolean {
     this.listening = !this.listening;
-    if (!this.listening) this.onBlind?.(false);
+    this.pausedFor = -1;
     return this.listening;
   }
 
-  private tick = (): void => {
-    if (this.listening) this.onBlind?.(!this.video.isPaused());
+  private loop = (): void => {
+    this.raf = requestAnimationFrame(this.loop);
+    this.pump();
   };
+
+  /** One frame of cue-driven display + pause logic (public for tests). */
+  pump(): void {
+    if (!this.calibrated || this.cues.length === 0) return;
+    const t = this.video.currentTime();
+    if (t === null) return;
+    const adj = t * 1000 - this.offsetMs;
+    const idx = this.cueIndexAt(adj);
+    const cue = idx >= 0 ? this.cues[idx] : undefined;
+    const paused = this.video.isPaused();
+
+    // Pause just before the active line ends — so we land ON it, not the next.
+    if (
+      (this.listening || this.autoPause) &&
+      !paused &&
+      cue &&
+      this.pausedFor !== idx &&
+      adj >= cue.endMs - PAUSE_LEAD_MS
+    ) {
+      this.pausedFor = idx;
+      this.video.pause();
+      this.onDisplay?.(cue.text); // keep the line on screen while paused
+      return;
+    }
+
+    // Caption comes from the cues. Hidden while a clip plays in listening mode.
+    if (this.listening && !paused) this.onDisplay?.(null);
+    else this.onDisplay?.(cue?.text ?? null);
+  }
 }

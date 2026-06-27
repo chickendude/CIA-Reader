@@ -173,20 +173,20 @@ async function cropToVideo(dataUrl: string): Promise<string> {
 let seenSubs = false;
 let subAttempted = false;
 new SubtitleMirror((text) => {
-  // While paused, ignore the player clearing the line — keep it visible to read.
-  if (!text && video.isPaused()) return;
   if (text) seenSubs = true;
-  overlay.setCue(text);
+  // Calibrate the .vtt↔video offset from the player's (hidden) subtitle.
   playback.onText(text);
+  // Until calibrated, fall back to mirroring the player's subtitle directly.
+  // Once calibrated, the cue-driven loop (onDisplay) owns the caption.
+  if (!playback.isCalibrated) {
+    if (!text && video.isPaused()) return;
+    overlay.setCue(text);
+  }
 });
 
-// Listening mode hides/reveals the caption as the line plays/pauses.
-playback.onBlind = (hidden) => overlay.setCaptionHidden(hidden);
-// On auto-pause/listening pause, force-show the line from the cue data.
-playback.onLinePause = (text) => {
-  overlay.setCaptionHidden(false);
-  overlay.setCue(text);
-};
+// The caption is driven from the loaded cues (not the player's subtitle), so it
+// stays in sync and remains visible when paused.
+playback.onDisplay = (text) => overlay.setCue(text);
 
 const toggleAutoPause = () => overlay.setAutoPause(playback.toggleAutoPause());
 const toggleListening = () => overlay.setListening(playback.toggleListening());
