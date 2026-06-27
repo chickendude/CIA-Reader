@@ -7,7 +7,11 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.test.click
+import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performImeAction
+import androidx.compose.ui.test.performTextClearance
+import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTouchInput
 import com.ciareader.reader.data.dictionary.LemmaTranslations
 import com.ciareader.reader.data.dictionary.WordTranslation
@@ -403,7 +407,9 @@ class ReaderScreenTest {
     }
 
     @Test
-    fun compactWordDetailsHidesNoteEditing() {
+    fun editingDefinitionSavesAndClearingDeletesIt() {
+        var edited: Pair<String, String>? = null
+        var deleted: String? = null
         compose.setContent {
             CiaReaderTheme {
                 WordDetails(
@@ -417,15 +423,40 @@ class ReaderScreenTest {
                         community = emptyList(),
                     ),
                     isLoading = false,
-                    editable = false, // the compact popup
+                    onEditDefinition = { id, text -> edited = id to text },
+                    onDeleteDefinition = { deleted = it },
                 )
             }
         }
-        // The note still shows, but the keyboard-dependent editing affordances
-        // (inline "Edit", the add-a-definition field) are withheld in compact mode.
-        compose.onNodeWithText("my note").assertIsDisplayed()
-        compose.onNodeWithText("Edit").assertDoesNotExist()
-        compose.onNodeWithText("Add your own definition").assertDoesNotExist()
+        // Tap the definition → inline field; edit + Enter saves.
+        compose.onNodeWithText("my note").performClick()
+        compose.onNode(hasSetTextAction()).performTextClearance()
+        compose.onNode(hasSetTextAction()).performTextInput("changed")
+        compose.onNode(hasSetTextAction()).performImeAction()
+        assertEquals("p1" to "changed", edited)
+
+        // Reopen, clear it, and Enter on the empty field deletes the note.
+        compose.onNodeWithText("my note").performClick()
+        compose.onNode(hasSetTextAction()).performTextClearance()
+        compose.onNode(hasSetTextAction()).performImeAction()
+        assertEquals("p1", deleted)
+    }
+
+    @Test
+    fun tappingAddPlaceholderOpensInlineEditor() {
+        var editing = false
+        compose.setContent {
+            CiaReaderTheme {
+                WordDetails(
+                    token = ReaderToken(0, "aldatu", true, KnownStatus.UNKNOWN, "l1", null, null, false, false, true),
+                    translations = null,
+                    isLoading = false,
+                    onEditingChange = { editing = it },
+                )
+            }
+        }
+        compose.onNodeWithText("Add your own definition").performClick()
+        assertTrue(editing)
     }
 
     @Test

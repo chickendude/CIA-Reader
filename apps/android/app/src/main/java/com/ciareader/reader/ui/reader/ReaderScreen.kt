@@ -5,10 +5,19 @@ package com.ciareader.reader.ui.reader
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.LocalIndication
+import androidx.compose.foundation.indication
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.PressInteraction
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -122,6 +131,7 @@ import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.foundation.layout.offset
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntRect
@@ -242,14 +252,20 @@ internal fun ReaderScreenContent(
     // whether it's expanded to the full-screen editor.
     var wordAnchor by remember { mutableStateOf<Rect?>(null) }
     var wordExpanded by remember { mutableStateOf(false) }
+    // True while an inline note field is open — the compact popup must be focusable
+    // then so the keyboard can show (otherwise it stays non-focusable for one-tap
+    // word switching).
+    var wordEditing by remember { mutableStateOf(false) }
     val closeWord = {
         wordAnchor = null
         wordExpanded = false
+        wordEditing = false
         onDismissWord()
     }
     val handleWordTap = { token: ReaderToken, rect: Rect ->
         wordAnchor = rect
         wordExpanded = false
+        wordEditing = false
         onWordTap(token)
     }
     Scaffold(
@@ -396,10 +412,10 @@ internal fun ReaderScreenContent(
     val selected = state.selectedWord
     val anchor = wordAnchor
     if (selected != null && anchor != null) {
-        // Compact popup vs full-screen editor share one content block. Editing
-        // fields (add/edit a note) need an IME, which the focusable=false popup
-        // can't host — so they only render in the expanded (editable) view.
-        val details: @Composable (Boolean, Modifier) -> Unit = { editable, contentModifier ->
+        // The compact popup and full-screen editor share one content block; while a
+        // note field is open it sets wordEditing so the compact popup turns focusable
+        // (and can raise the keyboard).
+        val details: @Composable (Modifier) -> Unit = { contentModifier ->
             WordDetails(
                 token = selected,
                 translations = state.wordTranslations,
@@ -418,7 +434,7 @@ internal fun ReaderScreenContent(
                 onEditDefinition = onEditDefinition,
                 onDeleteDefinition = onDeleteDefinition,
                 onSelectBasqueSource = onSetBasqueRefSource,
-                editable = editable,
+                onEditingChange = { wordEditing = it },
                 modifier = contentModifier,
             )
         }
@@ -454,7 +470,7 @@ internal fun ReaderScreenContent(
                             onClose = closeWord,
                         )
                         HorizontalDivider()
-                        details(true, Modifier.weight(1f))
+                        details(Modifier.weight(1f))
                     }
                 }
             }
@@ -470,7 +486,9 @@ internal fun ReaderScreenContent(
             }
             Popup(
                 popupPositionProvider = provider,
-                properties = PopupProperties(focusable = false),
+                // Focusable only while editing a note, so the keyboard can show;
+                // otherwise non-focusable so a tap on another word switches in one go.
+                properties = PopupProperties(focusable = wordEditing),
                 onDismissRequest = closeWord,
             ) {
                 Surface(
@@ -499,7 +517,7 @@ internal fun ReaderScreenContent(
                             onClose = closeWord,
                         )
                         HorizontalDivider()
-                        details(false, Modifier.weight(1f))
+                        details(Modifier.weight(1f))
                     }
                 }
             }
@@ -990,9 +1008,9 @@ internal fun WordDetails(
     primaryHeadword: String? = null,
     primaryPos: String? = null,
     onSelectParse: (String) -> Unit = {},
-    // When false (the compact popup), note editing/adding is hidden — those need
-    // a keyboard, so they live in the expanded full-screen editor instead.
-    editable: Boolean = true,
+    // Fired when the inline note field opens/closes so the host can make the popup
+    // focusable while editing (a focusable=false popup can't show the keyboard).
+    onEditingChange: (Boolean) -> Unit = {},
 ) {
     // The parser's chosen lemma plus any alternate candidates the parser scored.
     // Two or more selectable parses surface the switcher so a reader can view the
@@ -1041,18 +1059,24 @@ internal fun WordDetails(
             Spacer(Modifier.height(12.dp))
         }
 
-        // Status + translate live in the radial checkmark in the header now.
+        // Your own definition first — tap to edit inline, Enter to save.
+        if (token.lemmaId != null) {
+            PersonalDefinitionEditor(
+                notes = translations?.personal.orEmpty(),
+                onAdd = onAddDefinition,
+                onEdit = onEditDefinition,
+                onDelete = onDeleteDefinition,
+                onEditingChange = onEditingChange,
+            )
+            Spacer(Modifier.height(12.dp))
+        }
+
+        // The dictionary definition (reference; status + translate are in the header).
         Text(
             definition,
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurface,
         )
-
-        val personal = translations?.personal.orEmpty()
-        if (personal.isNotEmpty()) {
-            Spacer(Modifier.height(12.dp))
-            PersonalNotes(personal, onEditDefinition, onDeleteDefinition, editable)
-        }
 
         // Sentence translation result (the translate action is the icon up top).
         if (token.isWord && (sentenceTranslation != null || isSentenceTranslating || sentenceTranslateError != null)) {
@@ -1063,13 +1087,6 @@ internal fun WordDetails(
                 error = sentenceTranslateError,
                 startExpanded = autoExpandSentence,
             )
-        }
-
-        // Add-a-note box — expanded view only (needs a keyboard), and only when
-        // the word can carry a definition and has none yet.
-        if (editable && token.lemmaId != null && personal.isEmpty()) {
-            Spacer(Modifier.height(16.dp))
-            AddDefinitionField(onAdd = onAddDefinition)
         }
 
         if (basqueReference.isNotEmpty()) {
@@ -1102,7 +1119,7 @@ internal fun radialSelectionFor(offset: Offset, deadzonePx: Float): RadialAction
  * The header checkmark with a press-and-hold radial menu. A quick tap marks the
  * word known (toggles); holding pops up a radial of refresh / learn / ignore /
  * translate, and sliding toward one then releasing performs it. Releasing at the
- * centre also marks known.
+ * centre cancels (escape) — only a quick tap marks the word known.
  */
 @Composable
 internal fun RadialActionButton(
@@ -1120,6 +1137,8 @@ internal fun RadialActionButton(
     // there directly (anchorBounds is unreliable for a popup nested in the word popup).
     var screenCenter by remember { mutableStateOf(Offset.Zero) }
     val view = LocalView.current
+    val interactionSource = remember { MutableInteractionSource() }
+    val indication = LocalIndication.current
 
     Box(
         modifier = modifier
@@ -1132,17 +1151,21 @@ internal fun RadialActionButton(
                 screenCenter = Offset(loc[0] + p.x + s.width / 2f, loc[1] + p.y + s.height / 2f)
             }
             .semantics { contentDescription = "Known" }
+            .indication(interactionSource, indication)
             .pointerInput(Unit) {
                 val deadzone = 26.dp.toPx()
                 awaitEachGesture {
-                    awaitFirstDown(requireUnconsumed = false)
+                    val down = awaitFirstDown(requireUnconsumed = false)
+                    val press = PressInteraction.Press(down.position)
+                    interactionSource.tryEmit(press) // ripple feedback
                     selection = null
                     val center = Offset(size.width / 2f, size.height / 2f)
                     val releasedEarly = withTimeoutOrNull(viewConfiguration.longPressTimeoutMillis) {
                         waitForUpOrCancellation()
                     }
                     if (releasedEarly != null) {
-                        onKnown()
+                        interactionSource.tryEmit(PressInteraction.Release(press))
+                        onKnown() // a tap (not a hold) is the only thing that marks known
                         return@awaitEachGesture
                     }
                     menuVisible = true
@@ -1156,8 +1179,9 @@ internal fun RadialActionButton(
                     }
                     menuVisible = false
                     selection = null
+                    interactionSource.tryEmit(PressInteraction.Release(press))
                     when (current) {
-                        null -> onKnown()
+                        null -> Unit // released at the centre = escape; no status change
                         RadialAction.REFRESH -> onRefresh()
                         RadialAction.LEARN -> onLearn()
                         RadialAction.IGNORE -> onIgnore()
@@ -1342,23 +1366,99 @@ private fun SentenceTranslationSection(
     }
 }
 
+/**
+ * The viewer's own definition, shown first and edited in place: tap the note (or
+ * the "Add your own definition" placeholder) to open an inline field, Enter to
+ * save. [onEditingChange] lets the host make the popup focusable while a field is
+ * open (a focusable=false popup can't raise the keyboard).
+ */
 @Composable
-private fun AddDefinitionField(onAdd: (String) -> Unit) {
-    var text by remember { mutableStateOf("") }
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        OutlinedTextField(
-            value = text,
-            onValueChange = { text = it },
-            placeholder = { Text("Add your own definition") },
-            singleLine = true,
-            modifier = Modifier.weight(1f),
-        )
-        Button(onClick = { onAdd(text); text = "" }, enabled = text.isNotBlank()) {
-            Text("Add")
+private fun PersonalDefinitionEditor(
+    notes: List<WordTranslation>,
+    onAdd: (String) -> Unit,
+    onEdit: (String, String) -> Unit,
+    onDelete: (String) -> Unit,
+    onEditingChange: (Boolean) -> Unit,
+) {
+    // The note id being edited, "" for the add field, or null for none.
+    var editingKey by remember(notes) { mutableStateOf<String?>(null) }
+    fun open(key: String) {
+        editingKey = key
+        onEditingChange(true)
+    }
+    fun close() {
+        editingKey = null
+        onEditingChange(false)
+    }
+
+    notes.forEach { note ->
+        val id = note.id
+        if (id != null && editingKey == id) {
+            // Enter with text → save; Enter with the field cleared → delete it.
+            NoteEditField(
+                initial = note.body,
+                onCommit = { t ->
+                    if (t.isBlank()) onDelete(id) else onEdit(id, t)
+                    close()
+                },
+            )
+        } else {
+            Text(
+                note.body,
+                style = MaterialTheme.typography.bodyLarge,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(enabled = id != null) { if (id != null) open(id) }
+                    .padding(vertical = 4.dp),
+            )
         }
+    }
+    if (notes.isEmpty()) {
+        if (editingKey == "") {
+            NoteEditField(
+                initial = "",
+                onCommit = { t ->
+                    if (t.isNotBlank()) onAdd(t)
+                    close()
+                },
+            )
+        } else {
+            Text(
+                "Add your own definition",
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { open("") }
+                    .padding(vertical = 4.dp),
+            )
+        }
+    }
+}
+
+/** Single-line inline editor: autofocuses; Enter (Done) commits the trimmed value
+ *  (the caller treats a blank value as a delete). */
+@Composable
+private fun NoteEditField(initial: String, onCommit: (String) -> Unit) {
+    var text by remember { mutableStateOf(initial) }
+    val focusRequester = remember { FocusRequester() }
+    val keyboard = LocalSoftwareKeyboardController.current
+    OutlinedTextField(
+        value = text,
+        onValueChange = { text = it },
+        singleLine = true,
+        modifier = Modifier
+            .fillMaxWidth()
+            .focusRequester(focusRequester),
+        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+        keyboardActions = KeyboardActions(onDone = { onCommit(text.trim()) }),
+    )
+    LaunchedEffect(Unit) {
+        // The popup has just turned focusable (onEditingChange) — focus the field
+        // and explicitly raise the keyboard, which a freshly-focusable popup window
+        // doesn't always do on its own.
+        focusRequester.requestFocus()
+        keyboard?.show()
     }
 }
 
@@ -1551,58 +1651,6 @@ private fun Modifier.openTopTabOutline(color: Color, stroke: Dp, radius: Dp): Mo
         }
         drawPath(path, color, style = Stroke(width = sw))
     }
-
-/** The viewer's own notes — each editable in place (tap "Edit") when [editable]. */
-@Composable
-private fun PersonalNotes(
-    items: List<WordTranslation>,
-    onEdit: (String, String) -> Unit,
-    onDelete: (String) -> Unit,
-    editable: Boolean = true,
-) {
-    if (items.isEmpty()) return
-    Text("Your notes", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
-    items.forEach { item -> PersonalNote(item, onEdit, onDelete, editable) }
-    Spacer(Modifier.height(8.dp))
-}
-
-@Composable
-private fun PersonalNote(
-    item: WordTranslation,
-    onEdit: (String, String) -> Unit,
-    onDelete: (String) -> Unit,
-    editable: Boolean = true,
-) {
-    // Reset to display mode whenever the underlying note changes (e.g. after a save).
-    var editing by remember(item.id, item.body) { mutableStateOf(false) }
-    if (!editing) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(item.body, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
-            // Only server-persisted notes (with an id) can be edited, and only in
-            // the editable (expanded) view.
-            if (editable && item.id != null) {
-                TextButton(onClick = { editing = true }) { Text("Edit") }
-            }
-        }
-    } else {
-        var text by remember(item.id) { mutableStateOf(item.body) }
-        OutlinedTextField(
-            value = text,
-            onValueChange = { text = it },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth(),
-        )
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(onClick = { onEdit(item.id!!, text); editing = false }, enabled = text.isNotBlank()) {
-                Text("Save")
-            }
-            TextButton(onClick = { editing = false }) { Text("Cancel") }
-            TextButton(onClick = { onDelete(item.id!!); editing = false }) {
-                Text("Delete", color = MaterialTheme.colorScheme.error)
-            }
-        }
-    }
-}
 
 @Composable
 private fun ReaderError(message: String, onRetry: () -> Unit) {
