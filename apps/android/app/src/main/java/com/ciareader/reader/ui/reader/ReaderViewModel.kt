@@ -10,6 +10,7 @@ import com.ciareader.reader.data.collection.CollectionRepository
 import com.ciareader.reader.data.dictionary.BasqueReference
 import com.ciareader.reader.data.dictionary.DictionaryRepository
 import com.ciareader.reader.data.dictionary.LemmaTranslations
+import com.ciareader.reader.data.dictionary.WordTranslation
 import com.ciareader.reader.data.reader.KnownStatus
 import com.ciareader.reader.data.reader.ReaderRepository
 import com.ciareader.reader.data.reader.ReaderToken
@@ -414,15 +415,63 @@ class ReaderViewModel @Inject constructor(
         val body = text.trim()
         if (body.isEmpty()) return
         val lemmaId = _state.value.activeParseLemmaId ?: return
+        // Show it immediately — we already have the text (id stays null until the
+        // server refresh assigns the real one).
+        _state.update { s ->
+            val lt = s.wordTranslations ?: LemmaTranslations(
+                headword = s.selectedWord?.surface ?: "",
+                pos = null,
+                gloss = null,
+                personal = emptyList(),
+                official = emptyList(),
+                community = emptyList(),
+            )
+            s.copy(wordTranslations = lt.copy(personal = lt.personal + WordTranslation(body, null)))
+        }
         viewModelScope.launch {
-            if (dictionary.addDefinition(lemmaId, body) is Outcome.Success) {
-                // Force-refresh so the new note appears (the cache is now stale).
-                val refreshed = dictionary.refreshTranslations(lemmaId)
-                if (refreshed is Outcome.Success) {
-                    _state.update { s ->
-                        if (s.activeParseLemmaId == lemmaId) s.copy(wordTranslations = refreshed.data) else s
-                    }
-                }
+            dictionary.addDefinition(lemmaId, body)
+            refreshSelectedTranslations()
+        }
+    }
+
+    /** Edit one of the viewer's own notes — reflected immediately, then reconciled. */
+    fun editDefinition(translationId: String, text: String) {
+        val body = text.trim()
+        if (body.isEmpty()) return
+        _state.update { s ->
+            val lt = s.wordTranslations ?: return@update s
+            s.copy(
+                wordTranslations = lt.copy(
+                    personal = lt.personal.map { if (it.id == translationId) it.copy(body = body) else it },
+                ),
+            )
+        }
+        viewModelScope.launch {
+            dictionary.editDefinition(translationId, body)
+            refreshSelectedTranslations()
+        }
+    }
+
+    /** Delete one of the viewer's own notes — removed immediately, then reconciled. */
+    fun deleteDefinition(translationId: String) {
+        _state.update { s ->
+            val lt = s.wordTranslations ?: return@update s
+            s.copy(wordTranslations = lt.copy(personal = lt.personal.filterNot { it.id == translationId }))
+        }
+        viewModelScope.launch {
+            dictionary.deleteDefinition(translationId)
+            refreshSelectedTranslations()
+        }
+    }
+
+    /** Reconcile the shown definitions with the server — a forced fetch, not the
+     *  cache (which is stale right after an add/edit/delete). */
+    private suspend fun refreshSelectedTranslations() {
+        val lemmaId = _state.value.activeParseLemmaId ?: return
+        val refreshed = dictionary.refreshTranslations(lemmaId)
+        if (refreshed is Outcome.Success) {
+            _state.update { s ->
+                if (s.activeParseLemmaId == lemmaId) s.copy(wordTranslations = refreshed.data) else s
             }
         }
     }
@@ -441,6 +490,14 @@ class ReaderViewModel @Inject constructor(
                 }
             }
         }
+    }
+
+    /** Apply [target] to the selected word, toggling it off (back to "new"/UNKNOWN)
+     *  when the word already has that status. Reads the live status, so repeated
+     *  toggles within one open word sheet work without reopening it. */
+    fun toggleStatus(target: KnownStatus) {
+        val current = _state.value.selectedWord?.status ?: return
+        setStatus(if (current == target) KnownStatus.UNKNOWN else target)
     }
 
     /** Persist a status for the selected word's lemma and recolor every

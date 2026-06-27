@@ -11,7 +11,7 @@ import kotlinx.serialization.json.Json
 import javax.inject.Inject
 import javax.inject.Singleton
 
-data class WordTranslation(val body: String, val attribution: String?)
+data class WordTranslation(val body: String, val attribution: String?, val id: String? = null)
 
 /** A lemma's definitions, grouped by source (for the reader's word sheet). */
 data class LemmaTranslations(
@@ -51,6 +51,12 @@ interface DictionaryRepository {
 
     /** Submit the viewer's own definition for a lemma. */
     suspend fun addDefinition(lemmaId: String, body: String): Outcome<Unit>
+
+    /** Edit one of the viewer's own definitions (by its translation id). */
+    suspend fun editDefinition(translationId: String, body: String): Outcome<Unit>
+
+    /** Delete one of the viewer's own definitions (by its translation id). */
+    suspend fun deleteDefinition(translationId: String): Outcome<Unit>
 
     /** Admin-only Basque reference dictionaries for a surface word (403 → Failure). */
     suspend fun basqueReference(word: String): Outcome<List<BasqueReference>>
@@ -101,6 +107,12 @@ class DictionaryRepositoryImpl @Inject constructor(
     override suspend fun addDefinition(lemmaId: String, body: String): Outcome<Unit> =
         apiCall { api.addTranslation(CreateTranslationRequest(lemmaId, body)); Unit }
 
+    override suspend fun editDefinition(translationId: String, body: String): Outcome<Unit> =
+        apiCall { api.editTranslation(translationId, UpdateTranslationRequest(body)); Unit }
+
+    override suspend fun deleteDefinition(translationId: String): Outcome<Unit> =
+        apiCall { api.deleteTranslation(translationId) }
+
     // Reference lookups are stable, so cache per word for the session — reopening
     // a word shows them instantly instead of re-hitting the network.
     private val basqueCache = mutableMapOf<String, List<BasqueReference>>()
@@ -129,7 +141,7 @@ private fun LemmaTranslationsDto.toDomain() = LemmaTranslations(
     headword = lemma.headword,
     pos = lemma.pos,
     gloss = lemma.glossDefault,
-    personal = translations.personal.map { WordTranslation(it.body, it.sourceAttribution) },
-    official = translations.official.map { WordTranslation(it.body, it.sourceAttribution) },
-    community = translations.community.map { WordTranslation(it.body, it.sourceAttribution) },
+    personal = translations.personal.map { WordTranslation(it.body, it.sourceAttribution, it.id) },
+    official = translations.official.map { WordTranslation(it.body, it.sourceAttribution, it.id) },
+    community = translations.community.map { WordTranslation(it.body, it.sourceAttribution, it.id) },
 )

@@ -592,6 +592,44 @@ class ReaderViewModelTest {
     }
 
     @Test
+    fun editDefinitionPatchesAndRefreshesPanel() = runTest(mainRule.dispatcher) {
+        val dict = FakeDictionaryRepository(
+            LemmaTranslations("aldatu", "VERB", null, listOf(WordTranslation("old note", null, "p1")), emptyList(), emptyList()),
+        )
+        val token = ReaderToken(0, "aldatu", true, KnownStatus.UNKNOWN, "l1", null, null, false, false, true)
+        val repo = FakeReaderRepository(meta = meta(1), chapters = mapOf(0 to Chapter(0, listOf(token))))
+        val v = vm(repo, dict)
+        advanceUntilIdle()
+        v.onWordTap(token)
+        advanceUntilIdle()
+
+        v.editDefinition("p1", "new note")
+        advanceUntilIdle()
+
+        assertEquals("p1" to "new note", dict.lastEdited)
+        assertEquals(listOf("new note"), v.state.value.wordTranslations?.personal?.map { it.body })
+    }
+
+    @Test
+    fun deleteDefinitionRemovesAndRefreshesPanel() = runTest(mainRule.dispatcher) {
+        val dict = FakeDictionaryRepository(
+            LemmaTranslations("aldatu", "VERB", null, listOf(WordTranslation("note", null, "p1")), emptyList(), emptyList()),
+        )
+        val token = ReaderToken(0, "aldatu", true, KnownStatus.UNKNOWN, "l1", null, null, false, false, true)
+        val repo = FakeReaderRepository(meta = meta(1), chapters = mapOf(0 to Chapter(0, listOf(token))))
+        val v = vm(repo, dict)
+        advanceUntilIdle()
+        v.onWordTap(token)
+        advanceUntilIdle()
+
+        v.deleteDefinition("p1")
+        advanceUntilIdle()
+
+        assertEquals("p1", dict.lastDeleted)
+        assertEquals(emptyList<String>(), v.state.value.wordTranslations?.personal?.map { it.body })
+    }
+
+    @Test
     fun translateSentenceLoadsAndSucceeds() = runTest(mainRule.dispatcher) {
         val token = ReaderToken(0, "नमस्ते", true, KnownStatus.UNKNOWN, "l1", null, null, false, false, true)
         val repo = FakeReaderRepository(
@@ -766,6 +804,26 @@ class ReaderViewModelTest {
         community = emptyList(),
     )
 
+    @Test
+    fun toggleStatusTogglesActiveStatusBackToNew() = runTest(mainRule.dispatcher) {
+        val token = ReaderToken(0, "aldatu", true, KnownStatus.UNKNOWN, "l1", null, null, false, false, true)
+        val repo = FakeReaderRepository(meta = meta(1), chapters = mapOf(0 to Chapter(0, listOf(token))))
+        val v = vm(repo)
+        advanceUntilIdle()
+        v.onWordTap(token)
+        advanceUntilIdle()
+
+        v.toggleStatus(KnownStatus.KNOWN)
+        advanceUntilIdle()
+        assertEquals(KnownStatus.KNOWN, v.state.value.selectedWord?.status)
+
+        // Re-applying the active status clears it to "new" — reads the live status,
+        // so it works repeatedly within one open word sheet (no reopen needed).
+        v.toggleStatus(KnownStatus.KNOWN)
+        advanceUntilIdle()
+        assertEquals(KnownStatus.UNKNOWN, v.state.value.selectedWord?.status)
+    }
+
     private fun meta(chapterCount: Int, language: String = "hi") = TextMeta(
         id = "t1",
         title = "Book",
@@ -887,7 +945,23 @@ private class FakeDictionaryRepository(
 
     override suspend fun addDefinition(lemmaId: String, body: String): Outcome<Unit> {
         lastAdded = lemmaId to body
-        translations = translations?.let { it.copy(personal = it.personal + WordTranslation(body, null)) }
+        translations = translations?.let { it.copy(personal = it.personal + WordTranslation(body, null, "p${it.personal.size + 1}")) }
+        return Outcome.Success(Unit)
+    }
+
+    var lastEdited: Pair<String, String>? = null
+    override suspend fun editDefinition(translationId: String, body: String): Outcome<Unit> {
+        lastEdited = translationId to body
+        translations = translations?.let {
+            it.copy(personal = it.personal.map { p -> if (p.id == translationId) p.copy(body = body) else p })
+        }
+        return Outcome.Success(Unit)
+    }
+
+    var lastDeleted: String? = null
+    override suspend fun deleteDefinition(translationId: String): Outcome<Unit> {
+        lastDeleted = translationId
+        translations = translations?.let { it.copy(personal = it.personal.filterNot { p -> p.id == translationId }) }
         return Outcome.Success(Unit)
     }
 

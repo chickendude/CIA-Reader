@@ -176,6 +176,34 @@ class DictionaryRepositoryTest {
     }
 
     @Test
+    fun editDefinitionPatchesBody() = runTest {
+        val api = FakeDictionaryApi()
+        val result = repo(api).editDefinition("t1", "updated note")
+        assertTrue(result is Outcome.Success)
+        assertEquals("t1" to "updated note", api.lastEdited)
+    }
+
+    @Test
+    fun deleteDefinitionDeletesById() = runTest {
+        val api = FakeDictionaryApi()
+        val result = repo(api).deleteDefinition("t1")
+        assertTrue(result is Outcome.Success)
+        assertEquals("t1", api.lastDeleted)
+    }
+
+    @Test
+    fun personalNotesCarryTheirId() = runTest {
+        val api = FakeDictionaryApi(
+            translations = LemmaTranslationsDto(
+                lemma = LemmaDto("l1", "aldatu"),
+                translations = TranslationGroupsDto(personal = listOf(TranslationDto("p1", "to change"))),
+            ),
+        )
+        val t = (repo(api).translations("l1") as Outcome.Success).data
+        assertEquals("p1", t.personal.single().id)
+    }
+
+    @Test
     fun basqueReferenceMapsResults() = runTest {
         val api = FakeDictionaryApi(
             basque = BasqueReferenceResponseDto(
@@ -261,6 +289,18 @@ private class FakeDictionaryApi(
     override suspend fun addTranslation(body: CreateTranslationRequest): CreateTranslationResponseDto {
         lastAdded = body
         return error?.let { throw it } ?: CreateTranslationResponseDto(TranslationDto("new", body.body))
+    }
+
+    var lastEdited: Pair<String, String>? = null
+    override suspend fun editTranslation(id: String, body: UpdateTranslationRequest): CreateTranslationResponseDto {
+        lastEdited = id to body.body
+        return error?.let { throw it } ?: CreateTranslationResponseDto(TranslationDto(id, body.body))
+    }
+
+    var lastDeleted: String? = null
+    override suspend fun deleteTranslation(id: String) {
+        lastDeleted = id
+        error?.let { throw it }
     }
 
     var basqueCalls = 0
