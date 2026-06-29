@@ -208,6 +208,60 @@ class ReaderViewModelTest {
     }
 
     @Test
+    fun wordTapFetchesBookFrequency() = runTest(mainRule.dispatcher) {
+        val w = ReaderToken(0, "नमस्ते", true, KnownStatus.UNKNOWN, "l1", null, null, false, false, true)
+        val repo = FakeReaderRepository(
+            meta = meta(1),
+            chapters = mapOf(0 to Chapter(0, listOf(w))),
+            lemmaFrequency = 7,
+        )
+        val v = vm(repo)
+        advanceUntilIdle()
+
+        v.onWordTap(w)
+        advanceUntilIdle()
+
+        assertEquals(7, v.state.value.wordFrequency)
+        assertEquals("l1", repo.lastFrequencyLemmaId)
+    }
+
+    @Test
+    fun wordWithoutLemmaSkipsFrequency() = runTest(mainRule.dispatcher) {
+        val w = ReaderToken(0, "नमस्ते", true, KnownStatus.UNKNOWN, null, null, null, false, false, false)
+        val repo = FakeReaderRepository(
+            meta = meta(1),
+            chapters = mapOf(0 to Chapter(0, listOf(w))),
+            lemmaFrequency = 7,
+        )
+        val v = vm(repo)
+        advanceUntilIdle()
+
+        v.onWordTap(w)
+        advanceUntilIdle()
+
+        assertNull(v.state.value.wordFrequency)
+        assertNull(repo.lastFrequencyLemmaId)
+    }
+
+    @Test
+    fun dismissingWordClearsFrequency() = runTest(mainRule.dispatcher) {
+        val w = ReaderToken(0, "नमस्ते", true, KnownStatus.UNKNOWN, "l1", null, null, false, false, true)
+        val repo = FakeReaderRepository(
+            meta = meta(1),
+            chapters = mapOf(0 to Chapter(0, listOf(w))),
+            lemmaFrequency = 7,
+        )
+        val v = vm(repo)
+        advanceUntilIdle()
+        v.onWordTap(w)
+        advanceUntilIdle()
+        assertEquals(7, v.state.value.wordFrequency)
+
+        v.dismissWord()
+        assertNull(v.state.value.wordFrequency)
+    }
+
+    @Test
     fun wordTapDefaultsActiveParseToChosenLemma() = runTest(mainRule.dispatcher) {
         val w = ReaderToken(0, "सोने", true, KnownStatus.UNKNOWN, "l-gold", null, null, false, true, true)
         val repo = FakeReaderRepository(meta = meta(1), chapters = mapOf(0 to Chapter(0, listOf(w))))
@@ -286,6 +340,38 @@ class ReaderViewModelTest {
 
         assertEquals(KnownStatus.KNOWN, v.state.value.tokens[0].status)
         assertEquals(KnownStatus.KNOWN, v.state.value.selectedWord?.status)
+    }
+
+    @Test
+    fun setStatusRecolorsImmediatelyBeforeNetwork() = runTest(mainRule.dispatcher) {
+        val w = ReaderToken(0, "नमस्ते", true, KnownStatus.UNKNOWN, "l1", null, null, false, false, true)
+        val repo = FakeReaderRepository(meta = meta(1), chapters = mapOf(0 to Chapter(0, listOf(w))))
+        val v = vm(repo)
+        advanceUntilIdle()
+
+        v.onWordTap(w)
+        advanceUntilIdle()
+        v.setStatus(KnownStatus.KNOWN)
+        // No advanceUntilIdle: the network coroutine hasn't run yet, but the
+        // optimistic recolor must already be visible so the popup can close.
+        assertEquals(KnownStatus.KNOWN, v.state.value.tokens[0].status)
+        assertEquals(KnownStatus.KNOWN, v.state.value.selectedWord?.status)
+    }
+
+    @Test
+    fun setStatusRollsBackWhenNetworkFails() = runTest(mainRule.dispatcher) {
+        val w = ReaderToken(0, "नमस्ते", true, KnownStatus.UNKNOWN, "l1", null, null, false, false, true)
+        val repo = FakeReaderRepository(meta = meta(1), chapters = mapOf(0 to Chapter(0, listOf(w))))
+        val v = vm(repo, dict = FakeDictionaryRepository(statusFails = true))
+        advanceUntilIdle()
+
+        v.onWordTap(w)
+        advanceUntilIdle()
+        v.setStatus(KnownStatus.KNOWN)
+        advanceUntilIdle()
+
+        // The failed call rolls the optimistic change back to the prior status.
+        assertEquals(KnownStatus.UNKNOWN, v.state.value.tokens[0].status)
     }
 
     @Test
@@ -839,6 +925,120 @@ class ReaderViewModelTest {
         assertEquals(emptyList<String>(), v.state.value.basqueReference.map { it.definition })
     }
 
+    @Test
+    fun basqueRefPanelStaysAvailableForAdminEvenWithNoEntries() = runTest(mainRule.dispatcher) {
+        // Admin, but the tapped (inflected) surface form has no reference entry.
+        val dict = FakeDictionaryRepository(
+            translations = LemmaTranslations("etxea", null, null, emptyList(), emptyList(), emptyList()),
+            basqueAdmin = true,
+        )
+        val token = ReaderToken(0, "etxea", true, KnownStatus.UNKNOWN, "l1", null, null, false, false, true)
+        val repo = FakeReaderRepository(meta = meta(1, "eu"), chapters = mapOf(0 to Chapter(0, listOf(token))))
+        val v = vm(repo, dict)
+        advanceUntilIdle()
+
+        v.onWordTap(token)
+        advanceUntilIdle()
+
+        val s = v.state.value
+        // No entries, but the panel (and its search box) stays available to recover.
+        assertTrue(s.basqueRefAvailable)
+        assertTrue(s.basqueReference.isEmpty())
+        assertFalse(s.isBasqueRefLoading)
+        // The search box is prefilled with the tapped word, ready to refine.
+        assertEquals("etxea", s.basqueRefSearch)
+    }
+
+    @Test
+    fun referenceSearchPrefillUpgradesToParsedLemma() = runTest(mainRule.dispatcher) {
+        // Tapped form is inflected ("hamarrak"); its lemma parses to "hamar".
+        val dict = FakeDictionaryRepository(
+            translations = LemmaTranslations("hamar", null, null, emptyList(), emptyList(), emptyList()),
+            basqueAdmin = true,
+        )
+        val token = ReaderToken(0, "hamarrak", true, KnownStatus.UNKNOWN, "l1", null, null, false, false, true)
+        val repo = FakeReaderRepository(meta = meta(1, "eu"), chapters = mapOf(0 to Chapter(0, listOf(token))))
+        val v = vm(repo, dict)
+        advanceUntilIdle()
+
+        v.onWordTap(token)
+        advanceUntilIdle()
+
+        val s = v.state.value
+        // Once the lemma loads, the box shows the parsed form, not the surface.
+        assertEquals("hamar", s.basqueRefSearch)
+        assertEquals("hamar", s.basqueRefPrefill)
+    }
+
+    @Test
+    fun referenceAutoLookupUsesParsedLemmaNotSurface() = runTest(mainRule.dispatcher) {
+        // Tapping inflected "orduak" (lemma "ordu") should fetch entries for "ordu".
+        val dict = FakeDictionaryRepository(
+            translations = LemmaTranslations("ordu", null, null, emptyList(), emptyList(), emptyList()),
+            basque = listOf(BasqueReference("elhuyar_es", "Elhuyar eu-es", "iz.", "hora", emptyList())),
+        )
+        val token = ReaderToken(0, "orduak", true, KnownStatus.UNKNOWN, "l1", null, null, false, false, true)
+        val repo = FakeReaderRepository(meta = meta(1, "eu"), chapters = mapOf(0 to Chapter(0, listOf(token))))
+        val v = vm(repo, dict)
+        advanceUntilIdle()
+
+        v.onWordTap(token)
+        advanceUntilIdle()
+
+        // The auto-lookup queried the lemma "ordu" (not the surface "orduak")…
+        assertEquals("ordu" to false, dict.lastBasqueQuery)
+        // …so its entries show up without the user having to search manually.
+        assertEquals(listOf("hora"), v.state.value.basqueReference.map { it.definition })
+    }
+
+    @Test
+    fun searchBasqueReferenceFetchesExactResults() = runTest(mainRule.dispatcher) {
+        val dict = FakeDictionaryRepository(
+            translations = LemmaTranslations("etxea", null, null, emptyList(), emptyList(), emptyList()),
+            basqueAdmin = true,
+            basqueSearchResults = listOf(BasqueReference("elhuyar_es", "Elhuyar eu-es", "iz.", "casa", emptyList())),
+        )
+        val token = ReaderToken(0, "etxea", true, KnownStatus.UNKNOWN, "l1", null, null, false, false, true)
+        val repo = FakeReaderRepository(meta = meta(1, "eu"), chapters = mapOf(0 to Chapter(0, listOf(token))))
+        val v = vm(repo, dict)
+        advanceUntilIdle()
+        v.onWordTap(token)
+        advanceUntilIdle()
+
+        v.searchBasqueReference("etxe")
+        advanceUntilIdle()
+
+        val s = v.state.value
+        assertEquals(listOf("casa"), s.basqueReference.map { it.definition })
+        assertEquals("etxe" to true, dict.lastBasqueQuery) // exact search
+        assertEquals("etxe", s.basqueRefSearch)
+        assertFalse(s.isBasqueRefLoading)
+    }
+
+    @Test
+    fun basqueRefSearchInputFetchesSuggestions() = runTest(mainRule.dispatcher) {
+        val dict = FakeDictionaryRepository(
+            translations = LemmaTranslations("etxea", null, null, emptyList(), emptyList(), emptyList()),
+            basqueAdmin = true,
+            basqueSuggestions = listOf("etxe", "etxalde"),
+        )
+        val token = ReaderToken(0, "etxea", true, KnownStatus.UNKNOWN, "l1", null, null, false, false, true)
+        val repo = FakeReaderRepository(meta = meta(1, "eu"), chapters = mapOf(0 to Chapter(0, listOf(token))))
+        val v = vm(repo, dict)
+        advanceUntilIdle()
+        v.onWordTap(token)
+        advanceUntilIdle()
+
+        v.onBasqueRefSearchInput("etx")
+        advanceUntilIdle() // lets the debounce delay elapse
+
+        assertEquals(listOf("etxe", "etxalde"), v.state.value.basqueRefSuggestions)
+        // Clearing the box drops the suggestions.
+        v.onBasqueRefSearchInput("")
+        advanceUntilIdle()
+        assertTrue(v.state.value.basqueRefSuggestions.isEmpty())
+    }
+
     private fun word(surface: String) =
         ReaderToken(0, surface, true, KnownStatus.UNKNOWN, null, null, null, false, false, false)
 
@@ -890,6 +1090,7 @@ private class SavingReaderRepository(
     override suspend fun textMeta(textId: String): Outcome<TextMeta> = Outcome.Success(meta)
     override suspend fun chapter(textId: String, chapterIdx: Int): Outcome<Chapter> =
         Outcome.Success(Chapter(chapterIdx, chapterTokens))
+    override suspend fun lemmaFrequency(textId: String, lemmaId: String): Int? = null
     override suspend fun progress(textId: String): Outcome<ReadingProgress?> = Outcome.Success(saved)
     override suspend fun saveProgress(
         textId: String,
@@ -923,8 +1124,10 @@ private class FakeReaderRepository(
     private val sentenceTranslation: SentenceTranslation? = null,
     private val sentenceTranslateError: String? = null,
     private val cachedSentence: SentenceTranslation? = null,
+    private val lemmaFrequency: Int? = null,
 ) : ReaderRepository {
     var lastSaved: ReadingProgress? = null
+    var lastFrequencyLemmaId: String? = null
     var lastTranslate: Triple<String, Int, String>? = null
     var translateCalls = 0
 
@@ -934,6 +1137,11 @@ private class FakeReaderRepository(
     override suspend fun chapter(textId: String, chapterIdx: Int): Outcome<Chapter> =
         chapterError?.let { Outcome.Failure(it) }
             ?: Outcome.Success(chapters[chapterIdx] ?: Chapter(chapterIdx, emptyList()))
+
+    override suspend fun lemmaFrequency(textId: String, lemmaId: String): Int? {
+        lastFrequencyLemmaId = lemmaId
+        return lemmaFrequency
+    }
 
     override suspend fun progress(textId: String): Outcome<ReadingProgress?> =
         Outcome.Success(savedProgress)
@@ -971,12 +1179,22 @@ private class FakeReaderRepository(
 private class FakeDictionaryRepository(
     private var translations: LemmaTranslations? = null,
     private val basque: List<BasqueReference> = emptyList(),
+    /** Whether reference lookups succeed (admin); else they 403 → Failure. Defaults
+     *  to admin when [basque] entries are supplied, so most tests need not set it. */
+    private val basqueAdmin: Boolean = basque.isNotEmpty(),
+    /** Exact-search results, distinct from the auto-lookup's [basque] entries. */
+    private val basqueSearchResults: List<BasqueReference> = basque,
+    /** Autocomplete suggestions returned for any search term. */
+    private val basqueSuggestions: List<String> = emptyList(),
     /** Per-lemma overrides so a test can fetch distinct definitions for the
      *  primary parse and its alternate candidates. */
     private val byLemma: Map<String, LemmaTranslations> = emptyMap(),
+    /** When true, [setStatus] returns Failure so tests can exercise rollback. */
+    private val statusFails: Boolean = false,
 ) : DictionaryRepository {
     var lastAdded: Pair<String, String>? = null
     var lastAddedParentId: String? = null
+    var lastBasqueQuery: Pair<String, Boolean>? = null
     val requestedLemmaIds = mutableListOf<String>()
 
     override suspend fun translations(lemmaId: String): Outcome<LemmaTranslations> {
@@ -989,7 +1207,7 @@ private class FakeDictionaryRepository(
         translations?.let { Outcome.Success(it) } ?: Outcome.Failure("no translations")
 
     override suspend fun setStatus(lemmaId: String, status: KnownStatus): Outcome<KnownStatus> =
-        Outcome.Success(status)
+        if (statusFails) Outcome.Failure("offline") else Outcome.Success(status)
 
     override suspend fun addDefinition(
         lemmaId: String,
@@ -1018,8 +1236,14 @@ private class FakeDictionaryRepository(
         return Outcome.Success(Unit)
     }
 
-    override suspend fun basqueReference(word: String): Outcome<List<BasqueReference>> =
-        if (basque.isNotEmpty()) Outcome.Success(basque) else Outcome.Failure("not admin")
+    override suspend fun basqueReference(word: String, exact: Boolean): Outcome<List<BasqueReference>> {
+        lastBasqueQuery = word to exact
+        if (!basqueAdmin) return Outcome.Failure("not admin")
+        return Outcome.Success(if (exact) basqueSearchResults else basque)
+    }
+
+    override suspend fun basqueReferenceAutocomplete(term: String): Outcome<List<String>> =
+        Outcome.Success(basqueSuggestions)
 }
 
 private class FakeSettingsStore(

@@ -251,6 +251,40 @@ class DictionaryRepositoryTest {
     }
 
     @Test
+    fun basqueReferenceExactSendsExactFlagAndCachesSeparately() = runTest {
+        val api = FakeDictionaryApi(
+            basque = BasqueReferenceResponseDto("Afrika", listOf(BasqueRefDto(source = "elhuyar_es", definition = "África"))),
+        )
+        val repo = repo(api)
+
+        // A lemma lookup and an exact search of the same word don't share a cache key.
+        repo.basqueReference("Afrika") // exact=false
+        assertNull(api.lastBasqueExact)
+        repo.basqueReference("Afrika", exact = true)
+        assertEquals("1", api.lastBasqueExact)
+        assertEquals(2, api.basqueCalls)
+
+        // Re-running the exact search is served from cache (no third hit).
+        repo.basqueReference("Afrika", exact = true)
+        assertEquals(2, api.basqueCalls)
+    }
+
+    @Test
+    fun basqueReferenceAutocompleteReturnsTerms() = runTest {
+        val api = FakeDictionaryApi(
+            autocomplete = BasqueAutocompleteResponseDto("afr", listOf("Afrika", "afrikaans")),
+        )
+        val result = repo(api).basqueReferenceAutocomplete("afr")
+        assertEquals(listOf("Afrika", "afrikaans"), (result as Outcome.Success).data)
+    }
+
+    @Test
+    fun basqueReferenceAutocompleteForbiddenMapsToFailure() = runTest {
+        val result = repo(FakeDictionaryApi(error = http(403))).basqueReferenceAutocomplete("afr")
+        assertTrue(result is Outcome.Failure)
+    }
+
+    @Test
     fun httpErrorMapsToFailure() = runTest {
         val repo = repo(FakeDictionaryApi(error = http(404)))
         assertTrue(repo.translations("missing") is Outcome.Failure)
@@ -285,10 +319,12 @@ private class FakeDictionaryApi(
     var translations: LemmaTranslationsDto? = null,
     private val known: KnownLemmaResponseDto? = null,
     private val basque: BasqueReferenceResponseDto? = null,
+    private val autocomplete: BasqueAutocompleteResponseDto = BasqueAutocompleteResponseDto(),
     private val error: Throwable? = null,
 ) : DictionaryApi {
     var lastSet: Pair<String, String>? = null
     var lastAdded: CreateTranslationRequest? = null
+    var lastBasqueExact: String? = null
     var translationCalls = 0
     override suspend fun translations(lemmaId: String): LemmaTranslationsDto {
         translationCalls++
@@ -313,10 +349,14 @@ private class FakeDictionaryApi(
     }
 
     var basqueCalls = 0
-    override suspend fun basqueReference(word: String): BasqueReferenceResponseDto {
+    override suspend fun basqueReference(word: String, exact: String?): BasqueReferenceResponseDto {
         basqueCalls++
+        lastBasqueExact = exact
         return error?.let { throw it } ?: basque!!
     }
+
+    override suspend fun basqueAutocomplete(term: String): BasqueAutocompleteResponseDto =
+        error?.let { throw it } ?: autocomplete
 
     override suspend fun setKnownStatus(lemmaId: String, body: KnownLemmaRequest): KnownLemmaResponseDto {
         lastSet = lemmaId to body.status

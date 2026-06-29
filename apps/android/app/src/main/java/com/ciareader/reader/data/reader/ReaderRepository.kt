@@ -111,6 +111,11 @@ data class ReadingProgress(
 interface ReaderRepository {
     suspend fun textMeta(textId: String): Outcome<TextMeta>
     suspend fun chapter(textId: String, chapterIdx: Int): Outcome<Chapter>
+
+    /** Book-wide occurrence count for a lemma's word ("appears N× in this book"),
+     *  driving the word sheet's frequency badge. Best-effort: null on failure so
+     *  the badge simply doesn't show. Mirrors the web reader. */
+    suspend fun lemmaFrequency(textId: String, lemmaId: String): Int?
     suspend fun progress(textId: String): Outcome<ReadingProgress?>
     suspend fun saveProgress(
         textId: String,
@@ -163,6 +168,14 @@ class ReaderRepositoryImpl @Inject constructor(
                 net
             }
             is Outcome.Failure -> cache.chapter(textId, chapterIdx)?.let { Outcome.Success(it) } ?: net
+        }
+
+    // A nice-to-have badge, not part of the reading flow: a failure (offline,
+    // server hiccup) just hides it, so there's no cache fallback here.
+    override suspend fun lemmaFrequency(textId: String, lemmaId: String): Int? =
+        when (val net = apiCall { api.lemmaFrequency(textId, lemmaId).book }) {
+            is Outcome.Success -> net.data
+            is Outcome.Failure -> null
         }
 
     override suspend fun progress(textId: String): Outcome<ReadingProgress?> {

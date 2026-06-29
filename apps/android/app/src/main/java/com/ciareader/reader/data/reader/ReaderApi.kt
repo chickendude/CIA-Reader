@@ -17,6 +17,12 @@ interface ReaderApi {
         @Path("idx") chapterIdx: Int,
     ): ChapterTokensDto
 
+    @GET("api/v1/texts/{textId}/lemmas/{lemmaId}/frequency")
+    suspend fun lemmaFrequency(
+        @Path("textId") textId: String,
+        @Path("lemmaId") lemmaId: String,
+    ): LemmaFrequencyDto
+
     @GET("api/v1/me/text-progress/{textId}")
     suspend fun progress(@Path("textId") textId: String): TextProgressEnvelopeDto
 

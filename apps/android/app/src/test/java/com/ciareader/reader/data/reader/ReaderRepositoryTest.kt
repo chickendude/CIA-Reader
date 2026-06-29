@@ -54,6 +54,19 @@ class ReaderRepositoryTest {
     }
 
     @Test
+    fun lemmaFrequencyReturnsBookCount() = runTest {
+        val api = FakeReaderApi(frequency = LemmaFrequencyDto(book = 7, text = 3))
+        assertEquals(7, repo(api).lemmaFrequency("t1", "l1"))
+    }
+
+    @Test
+    fun lemmaFrequencyIsNullOnFailure() = runTest {
+        // Best-effort badge: a transport error hides it rather than surfacing.
+        val api = FakeReaderApi(online = false)
+        assertEquals(null, repo(api).lemmaFrequency("t1", "l1"))
+    }
+
+    @Test
     fun mapsParseCandidatesToDomain() = runTest {
         val api = FakeReaderApi(
             chapter = ChapterTokensDto(
@@ -308,6 +321,7 @@ private class FakeReaderApi(
     private val chapter: ChapterTokensDto? = null,
     private val progress: TextProgressEnvelopeDto = TextProgressEnvelopeDto(progress = null),
     private val translation: TranslateSentenceResponseDto = TranslateSentenceResponseDto(),
+    private val frequency: LemmaFrequencyDto = LemmaFrequencyDto(),
     private val error: Throwable? = null,
     /** Flip to false to simulate going offline mid-session (throws like the transport would). */
     var online: Boolean = true,
@@ -326,6 +340,10 @@ private class FakeReaderApi(
 
     override suspend fun chapterTokens(textId: String, chapterIdx: Int): ChapterTokensDto {
         guard(); return chapter!!
+    }
+
+    override suspend fun lemmaFrequency(textId: String, lemmaId: String): LemmaFrequencyDto {
+        guard(); return frequency
     }
 
     override suspend fun progress(textId: String): TextProgressEnvelopeDto {

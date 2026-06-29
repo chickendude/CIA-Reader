@@ -29,6 +29,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.padding
@@ -69,14 +70,23 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.ContentDrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -131,7 +141,6 @@ import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.foundation.layout.offset
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
-import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntRect
@@ -200,6 +209,8 @@ fun ReaderScreen(
         onTranslateSentence = viewModel::translateSentence,
         onRefreshWord = viewModel::refreshSelectedWord,
         onSetBasqueRefSource = viewModel::setBasqueRefSource,
+        onBasqueRefSearchInput = viewModel::onBasqueRefSearchInput,
+        onBasqueRefSearch = viewModel::searchBasqueReference,
         onRecordPosition = viewModel::recordPosition,
         onRestoreConsumed = viewModel::onRestoreConsumed,
         onToggleRomanize = viewModel::toggleRomanization,
@@ -238,6 +249,8 @@ internal fun ReaderScreenContent(
     onTranslateSentence: () -> Unit = {},
     onRefreshWord: () -> Unit = {},
     onSetBasqueRefSource: (String) -> Unit = {},
+    onBasqueRefSearchInput: (String) -> Unit = {},
+    onBasqueRefSearch: (String) -> Unit = {},
     onRecordPosition: (Int, Double) -> Unit,
     onRestoreConsumed: () -> Unit,
     onToggleRomanize: () -> Unit,
@@ -258,6 +271,12 @@ internal fun ReaderScreenContent(
     // then so the keyboard can show (otherwise it stays non-focusable for one-tap
     // word switching).
     var wordEditing by remember { mutableStateOf(false) }
+    // "You were here" marker: when the popup closes, the word that was open keeps
+    // a brief outline that fades out so the reader can find their place again.
+    // Tracked by the token's stable idx; one Animatable drives the alpha for every
+    // reading mode, read in the draw phase so only the outline repaints.
+    var highlightTokenIdx by remember { mutableStateOf<Int?>(null) }
+    val highlightAlpha = remember { Animatable(0f) }
     val closeWord = {
         wordAnchor = null
         wordExpanded = false
@@ -268,7 +287,20 @@ internal fun ReaderScreenContent(
         wordAnchor = rect
         wordExpanded = false
         wordEditing = false
+        highlightTokenIdx = token.idx
         onWordTap(token)
+    }
+    // Hold the outline solid while the popup is open; on close, briefly hold then
+    // slowly fade it out (~2s total) over the word's last position.
+    val selectionActive = state.selectedWord != null
+    LaunchedEffect(selectionActive) {
+        if (selectionActive) {
+            highlightAlpha.snapTo(1f)
+        } else if (highlightTokenIdx != null) {
+            highlightAlpha.snapTo(1f)
+            highlightAlpha.animateTo(1f, animationSpec = tween(durationMillis = 600))
+            highlightAlpha.animateTo(0f, animationSpec = tween(durationMillis = 1600, easing = LinearEasing))
+        }
     }
     Scaffold(
         topBar = {
@@ -368,6 +400,8 @@ internal fun ReaderScreenContent(
                         onRecordPosition = onRecordPosition,
                         restoreTokenIdx = state.restoreTokenIdx,
                         onRestoreConsumed = onRestoreConsumed,
+                        highlightTokenIdx = highlightTokenIdx,
+                        highlightAlpha = { highlightAlpha.value },
                         modifier = Modifier.fillMaxSize(),
                     )
 
@@ -385,6 +419,8 @@ internal fun ReaderScreenContent(
                         onRecordPosition = onRecordPosition,
                         onRestoreConsumed = onRestoreConsumed,
                         onProgress = onProgress,
+                        highlightTokenIdx = highlightTokenIdx,
+                        highlightAlpha = { highlightAlpha.value },
                         modifier = Modifier.fillMaxSize(),
                     )
             }
@@ -423,6 +459,11 @@ internal fun ReaderScreenContent(
                 translations = state.wordTranslations,
                 basqueReference = state.basqueReference,
                 basqueRefSource = state.basqueRefSource,
+                basqueRefAvailable = state.basqueRefAvailable,
+                basqueRefSearch = state.basqueRefSearch,
+                basqueRefPrefill = state.basqueRefPrefill,
+                basqueRefSuggestions = state.basqueRefSuggestions,
+                isBasqueRefLoading = state.isBasqueRefLoading,
                 isLoading = state.isWordLoading,
                 sentenceTranslation = state.sentenceTranslation,
                 isSentenceTranslating = state.isSentenceTranslating,
@@ -437,6 +478,8 @@ internal fun ReaderScreenContent(
                 onDeleteDefinition = onDeleteDefinition,
                 onSaveDictionaryDefinition = onSaveDictionaryDefinition,
                 onSelectBasqueSource = onSetBasqueRefSource,
+                onBasqueRefSearchInput = onBasqueRefSearchInput,
+                onBasqueRefSearch = onBasqueRefSearch,
                 onEditingChange = { wordEditing = it },
                 modifier = contentModifier,
             )
@@ -447,7 +490,13 @@ internal fun ReaderScreenContent(
         val hasLemma = selected.lemmaId != null
         // The VM toggles against its live status (re-selecting the active status
         // clears it to "new"), so repeated toggles in one open sheet work.
-        val onKnown = { onToggleStatus(KnownStatus.KNOWN) }
+        // Marking known closes the popup right away; the recolor is optimistic in
+        // the VM, so we don't wait on the network before dismissing. Toggle first
+        // (while the word is still selected), then close.
+        val onKnown = {
+            onToggleStatus(KnownStatus.KNOWN)
+            closeWord()
+        }
         val onLearn = { onToggleStatus(KnownStatus.LEARNING) }
         val onIgnore = { onToggleStatus(KnownStatus.IGNORED) }
         if (wordExpanded) {
@@ -461,6 +510,7 @@ internal fun ReaderScreenContent(
                             headword = headword,
                             pos = pos,
                             romanization = romanization,
+                            frequency = state.wordFrequency,
                             showRadial = hasLemma,
                             status = selected.status,
                             onKnown = onKnown,
@@ -487,6 +537,10 @@ internal fun ReaderScreenContent(
                     WordAnchorPositionProvider(anchor, gapPx = 8.dp.roundToPx(), marginPx = 8.dp.roundToPx())
                 }
             }
+            // Fixed height (independent of content) so the popup doesn't jump as a
+            // note is added — the body scrolls instead. Capped to the screen so it
+            // never overflows on short/landscape displays.
+            val popupHeight = minOf(420.dp, (LocalConfiguration.current.screenHeightDp * 0.85f).dp)
             Popup(
                 popupPositionProvider = provider,
                 // Focusable only while editing a note, so the keyboard can show;
@@ -497,7 +551,7 @@ internal fun ReaderScreenContent(
                 Surface(
                     modifier = Modifier
                         .width(320.dp)
-                        .height(300.dp),
+                        .height(popupHeight),
                     shape = RoundedCornerShape(16.dp),
                     color = MaterialTheme.colorScheme.surface,
                     tonalElevation = 3.dp,
@@ -508,6 +562,7 @@ internal fun ReaderScreenContent(
                             headword = headword,
                             pos = pos,
                             romanization = romanization,
+                            frequency = state.wordFrequency,
                             showRadial = hasLemma,
                             status = selected.status,
                             onKnown = onKnown,
@@ -573,6 +628,8 @@ private fun ChapterText(
     onRecordPosition: (Int, Double) -> Unit,
     onRestoreConsumed: () -> Unit,
     onProgress: (Float) -> Unit,
+    highlightTokenIdx: Int?,
+    highlightAlpha: () -> Float,
     modifier: Modifier = Modifier,
 ) {
     val scheme = MaterialTheme.colorScheme
@@ -594,6 +651,14 @@ private fun ChapterText(
             start until offset
         }
     }
+    // Char range of the word to outline as the "you were here" marker, mapped from
+    // the highlighted token's stable idx.
+    val highlightRange = remember(highlightTokenIdx, tokens, ranges) {
+        highlightTokenIdx?.let { id ->
+            tokens.indexOfFirst { it.idx == id }.takeIf { it >= 0 }?.let { ranges.getOrNull(it) }
+        }
+    }
+    val outlineColor = scheme.primary
     var layout by remember { mutableStateOf<TextLayoutResult?>(null) }
     var textCoords by remember { mutableStateOf<LayoutCoordinates?>(null) }
     // Fresh scroll position per chapter, so navigating starts at the top.
@@ -645,6 +710,7 @@ private fun ChapterText(
         modifier = modifier
             .verticalScroll(scrollState)
             .padding(16.dp)
+            .drawWithContent { drawWordOutline(layout, highlightRange, highlightAlpha(), outlineColor) }
             .onGloballyPositioned { textCoords = it }
             .pointerInput(tokens) {
                 detectTapGestures { pos ->
@@ -686,6 +752,8 @@ private fun PagedChapter(
     onRecordPosition: (Int, Double) -> Unit,
     restoreTokenIdx: Int?,
     onRestoreConsumed: () -> Unit,
+    highlightTokenIdx: Int?,
+    highlightAlpha: () -> Float,
     modifier: Modifier = Modifier,
 ) {
     val scheme = MaterialTheme.colorScheme
@@ -789,6 +857,8 @@ private fun PagedChapter(
                         tokens = tokens,
                         onWordTap = onWordTap,
                         onDismissWord = onDismissWord,
+                        highlightTokenIdx = highlightTokenIdx,
+                        highlightAlpha = highlightAlpha,
                     )
                 }
             }
@@ -828,15 +898,29 @@ private fun PageText(
     tokens: List<ReaderToken>,
     onWordTap: (ReaderToken, Rect) -> Unit,
     onDismissWord: () -> Unit,
+    highlightTokenIdx: Int?,
+    highlightAlpha: () -> Float,
 ) {
     var layout by remember(text) { mutableStateOf<TextLayoutResult?>(null) }
     var textCoords by remember(text) { mutableStateOf<LayoutCoordinates?>(null) }
+    val outlineColor = MaterialTheme.colorScheme.primary
+    // The highlighted token's char range relative to this page's substring; null
+    // unless the word actually falls on this page.
+    val highlightRange = remember(highlightTokenIdx, tokens, ranges, baseOffset, text) {
+        highlightTokenIdx?.let { id ->
+            tokens.indexOfFirst { it.idx == id }.takeIf { it >= 0 }
+                ?.let { ranges.getOrNull(it) }
+                ?.let { (it.first - baseOffset)..(it.last - baseOffset) }
+                ?.takeIf { it.first >= 0 && it.last < text.length }
+        }
+    }
     Text(
         text = text,
         style = style,
         onTextLayout = { layout = it },
         modifier = Modifier
             .fillMaxSize()
+            .drawWithContent { drawWordOutline(layout, highlightRange, highlightAlpha(), outlineColor) }
             .onGloballyPositioned { textCoords = it }
             .pointerInput(text) {
                 detectTapGestures { pos ->
@@ -1008,7 +1092,14 @@ internal fun WordDetails(
     autoExpandSentence: Boolean = false,
     basqueReference: List<BasqueReference> = emptyList(),
     basqueRefSource: String? = null,
+    basqueRefAvailable: Boolean = false,
+    basqueRefSearch: String = "",
+    basqueRefPrefill: String = "",
+    basqueRefSuggestions: List<String> = emptyList(),
+    isBasqueRefLoading: Boolean = false,
     onSelectBasqueSource: (String) -> Unit = {},
+    onBasqueRefSearchInput: (String) -> Unit = {},
+    onBasqueRefSearch: (String) -> Unit = {},
     modifier: Modifier = Modifier,
     activeParseLemmaId: String? = token.lemmaId,
     primaryHeadword: String? = null,
@@ -1049,6 +1140,11 @@ internal fun WordDetails(
                 onEditingChange = onEditingChange,
             )
             Spacer(Modifier.height(12.dp))
+            // A rule separates your own note(s) from the dictionary definitions below.
+            if (translations?.personal?.isNotEmpty() == true) {
+                HorizontalDivider(Modifier.testTag("personalNoteDivider"))
+                Spacer(Modifier.height(12.dp))
+            }
         }
 
         // The dictionary definitions (official/community/gloss). Each is tappable
@@ -1092,12 +1188,22 @@ internal fun WordDetails(
             )
         }
 
-        if (basqueReference.isNotEmpty()) {
+        // Admins see the reference panel whenever an eu lookup has confirmed
+        // access — even with zero entries — so the search box is there to recover
+        // an inflected/OOV surface form the auto-lookup missed.
+        if (basqueRefAvailable) {
             Spacer(Modifier.height(16.dp))
             BasqueReferenceSection(
                 entries = basqueReference,
                 selectedSource = basqueRefSource,
+                search = basqueRefSearch,
+                prefill = basqueRefPrefill,
+                suggestions = basqueRefSuggestions,
+                isLoading = isBasqueRefLoading,
+                wordKey = token,
                 onSelectSource = onSelectBasqueSource,
+                onSearchInput = onBasqueRefSearchInput,
+                onSearch = onBasqueRefSearch,
                 canSave = activeParseLemmaId != null,
                 onSave = onSaveDictionaryDefinition,
                 onEditingChange = onEditingChange,
@@ -1591,14 +1697,32 @@ private fun basqueRefTabLabel(source: String): String = when (source) {
 private fun BasqueReferenceSection(
     entries: List<BasqueReference>,
     selectedSource: String?,
+    search: String,
+    // The prefilled (parsed) word; the reset (X) appears once [search] differs from it.
+    prefill: String,
+    suggestions: List<String>,
+    isLoading: Boolean,
+    // Reset key — drops the focused field when the popup rebinds to another word
+    // (the host turns the popup non-focusable again on every word tap).
+    wordKey: Any?,
     onSelectSource: (String) -> Unit,
+    onSearchInput: (String) -> Unit,
+    onSearch: (String) -> Unit,
+    onEditingChange: (Boolean) -> Unit,
     canSave: Boolean = false,
     onSave: (parentId: String?, text: String) -> Unit = { _, _ -> },
-    onEditingChange: (Boolean) -> Unit = {},
 ) {
-    val available = BASQUE_REF_ORDER.filter { src -> entries.any { it.source == src } }
-    if (available.isEmpty()) return
-    val selected = selectedSource?.takeIf { it in available } ?: available.first()
+    val selected = selectedSource?.takeIf { it in BASQUE_REF_ORDER } ?: BASQUE_REF_ORDER.first()
+    val keyboard = LocalSoftwareKeyboardController.current
+    // The compact popup is non-focusable so a tap on another word switches in one
+    // go — but a non-focusable window can't raise the keyboard. So (like the note
+    // editor) tapping the box flips the popup focusable, then we focus the field.
+    var editing by remember(wordKey) { mutableStateOf(false) }
+    fun stopEditing() {
+        editing = false
+        onEditingChange(false)
+        keyboard?.hide()
+    }
 
     // Which reference entry (source + index) is open for editing, if any. Resets
     // when the entries or the selected tab change.
@@ -1618,8 +1742,98 @@ private fun BasqueReferenceSection(
         color = MaterialTheme.colorScheme.primary,
     )
     Spacer(Modifier.height(8.dp))
+    // Search box — the recovery path when the tapped surface isn't itself an entry
+    // (Elhuyar wants the lemma; case + spelling matter, hence autocomplete).
+    if (editing) {
+        val focusRequester = remember { FocusRequester() }
+        val density = LocalDensity.current
+        // The field's bounds in window coordinates — a nested Popup can't trust the
+        // anchorBounds it's handed (wrong coordinate space), so we anchor explicitly,
+        // the same way the word popup itself does.
+        var fieldBounds by remember { mutableStateOf<Rect?>(null) }
+        Box(Modifier.fillMaxWidth()) {
+            OutlinedTextField(
+                value = search,
+                onValueChange = onSearchInput,
+                placeholder = { Text("Search…") },
+                singleLine = true,
+                // Once you've changed the prefilled word, an X resets it and closes.
+                trailingIcon = if (search != prefill) {
+                    {
+                        IconButton(onClick = { onSearchInput(prefill); stopEditing() }) {
+                            Icon(painter = painterResource(R.drawable.ic_close), contentDescription = "Reset search")
+                        }
+                    }
+                } else {
+                    null
+                },
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                keyboardActions = KeyboardActions(onSearch = { onSearch(search); stopEditing() }),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .onGloballyPositioned { coords ->
+                        // Absolute screen coords: the suggestion popup renders in a
+                        // full-screen window, so window-relative bounds (which differ
+                        // by the word popup's offset) would mis-place it.
+                        val pos = coords.localToScreen(Offset.Zero)
+                        fieldBounds = Rect(pos.x, pos.y, pos.x + coords.size.width, pos.y + coords.size.height)
+                    }
+                    .focusRequester(focusRequester)
+                    .semantics { contentDescription = "Search reference dictionaries" },
+            )
+            // Suggestions float just above the field in their own window: a real
+            // dropdown that overlays the sheet (no reflow) and clears the IME below.
+            val bounds = fieldBounds
+            if (suggestions.isNotEmpty() && bounds != null) {
+                val gapPx = with(density) { 4.dp.roundToPx() }
+                val positionProvider = remember(bounds, gapPx) {
+                    SuggestionPopupPositionProvider(bounds, gapPx)
+                }
+                Popup(
+                    popupPositionProvider = positionProvider,
+                    // Non-focusable so the field keeps focus and the keyboard stays up.
+                    properties = PopupProperties(focusable = false),
+                    onDismissRequest = {},
+                ) {
+                    Surface(
+                        modifier = Modifier
+                            .width(with(density) { bounds.width.toDp() })
+                            .heightIn(max = 240.dp),
+                        shape = RoundedCornerShape(8.dp),
+                        color = MaterialTheme.colorScheme.surface,
+                        tonalElevation = 3.dp,
+                        shadowElevation = 8.dp,
+                    ) {
+                        Column(Modifier.verticalScroll(rememberScrollState())) {
+                            suggestions.forEach { s ->
+                                Text(
+                                    s,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable { onSearch(s); stopEditing() }
+                                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        LaunchedEffect(Unit) {
+            // The popup has just turned focusable — focus the field and raise the
+            // keyboard, which a freshly-focusable popup window won't always do itself.
+            focusRequester.requestFocus()
+            keyboard?.show()
+            // Surface suggestions for the prefilled word straight away.
+            onSearchInput(search)
+        }
+    } else {
+        ReferenceSearchBox(text = search, onClick = { editing = true; onEditingChange(true) })
+    }
+    Spacer(Modifier.height(8.dp))
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        available.forEach { src ->
+        BASQUE_REF_ORDER.forEach { src ->
             BrandChip(
                 label = basqueRefTabLabel(src),
                 selected = src == selected,
@@ -1628,23 +1842,71 @@ private fun BasqueReferenceSection(
         }
     }
     Spacer(Modifier.height(8.dp))
-    val shown = entries.filter { it.source == selected }
-    // POS shows only when it changes from the previous entry (1,2,3 izond. → one label).
-    shown.forEachIndexed { i, e ->
-        val key = "${e.source}::$i"
-        BasqueRefEntry(
-            entry = e,
-            showPos = i == 0 || shown[i - 1].pos != e.pos,
-            canSave = canSave,
-            editing = editingKey == key,
-            onStartEdit = { open(key) },
-            // A reference entry isn't a stored translation, so it forks from null.
-            onSave = { t ->
-                if (t.isNotBlank()) onSave(null, t)
-                close()
+    when {
+        isLoading ->
+            Text(
+                "Looking up…",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+
+        else -> {
+            val shown = entries.filter { it.source == selected }
+            if (shown.isEmpty()) {
+                Text(
+                    "No ${basqueRefTabLabel(selected)} entries.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            } else {
+                // POS shows only when it changes from the previous entry (1,2,3 izond. → one label).
+                // Each entry is tappable to edit + save as your own personal definition.
+                shown.forEachIndexed { i, e ->
+                    val key = "${e.source}::$i"
+                    BasqueRefEntry(
+                        entry = e,
+                        showPos = i == 0 || shown[i - 1].pos != e.pos,
+                        canSave = canSave,
+                        editing = editingKey == key,
+                        onStartEdit = { open(key) },
+                        // A reference entry isn't a stored translation, so it forks from null.
+                        onSave = { t ->
+                            if (t.isNotBlank()) onSave(null, t)
+                            close()
+                        },
+                    )
+                    Spacer(Modifier.height(8.dp))
+                }
+            }
+        }
+    }
+}
+
+/** The non-editing face of the reference search: looks like the text field but is
+ *  a plain tap target, so the first tap can flip the popup focusable before a real
+ *  field appears (a tap straight onto a field in a non-focusable popup does nothing). */
+@Composable
+private fun ReferenceSearchBox(text: String, onClick: () -> Unit) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(4.dp))
+            .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(4.dp))
+            .clickable(onClick = onClick)
+            .semantics { contentDescription = "Search reference dictionaries" }
+            .padding(horizontal = 16.dp, vertical = 16.dp),
+    ) {
+        Text(
+            text.ifEmpty { "Search…" },
+            style = MaterialTheme.typography.bodyLarge,
+            color = if (text.isEmpty()) {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            } else {
+                MaterialTheme.colorScheme.onSurface
             },
+            modifier = Modifier.weight(1f),
         )
-        Spacer(Modifier.height(8.dp))
     }
 }
 
@@ -1959,6 +2221,33 @@ private fun statusLabel(status: KnownStatus): String = when (status) {
  * [anchor] is the word's bounds in window px; [anchorBounds] (the popup's
  * parent) is intentionally ignored.
  */
+/**
+ * Positions the reference-search suggestions just above the field, left-aligned to
+ * it (the IME sits below the field, so opening upward keeps them visible). Falls
+ * back to just below the field only when there isn't room above.
+ *
+ * [anchor] is the field's bounds in absolute screen coordinates — the suggestion
+ * popup renders in a full-screen window, so the [anchorBounds] Compose hands in
+ * (relative to the nested word popup's window) can't be trusted.
+ */
+internal class SuggestionPopupPositionProvider(
+    private val anchor: Rect,
+    private val gapPx: Int,
+) : PopupPositionProvider {
+    override fun calculatePosition(
+        anchorBounds: IntRect,
+        windowSize: IntSize,
+        layoutDirection: LayoutDirection,
+        popupContentSize: IntSize,
+    ): IntOffset {
+        val above = anchor.top.roundToInt() - gapPx - popupContentSize.height
+        val below = anchor.bottom.roundToInt() + gapPx
+        // The field is on-screen and the popup matches its width, so its left edge
+        // needs no clamping; only flip below when the popup wouldn't fit above.
+        return IntOffset(anchor.left.roundToInt(), if (above >= 0) above else below)
+    }
+}
+
 private class WordAnchorPositionProvider(
     private val anchor: Rect,
     private val gapPx: Int,
@@ -1994,6 +2283,9 @@ internal fun WordPopupHeader(
     headword: String,
     pos: String?,
     romanization: String?,
+    /** Book-wide occurrence count; shows an "N×" badge before the action icons.
+     *  Hidden when null or zero. */
+    frequency: Int? = null,
     showRadial: Boolean,
     status: KnownStatus,
     onKnown: () -> Unit,
@@ -2033,6 +2325,24 @@ internal fun WordPopupHeader(
                 )
             }
         }
+        if (frequency != null && frequency > 0) {
+            Text(
+                text = "${frequency}×",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                modifier = Modifier
+                    .semantics {
+                        contentDescription =
+                            "Appears $frequency ${if (frequency == 1) "time" else "times"} in this book"
+                    }
+                    .background(
+                        MaterialTheme.colorScheme.secondaryContainer,
+                        RoundedCornerShape(percent = 50),
+                    )
+                    .padding(horizontal = 10.dp, vertical = 4.dp),
+            )
+            Spacer(Modifier.width(8.dp))
+        }
         if (showRadial) {
             RadialActionButton(
                 status = status,
@@ -2056,6 +2366,42 @@ internal fun WordPopupHeader(
             Icon(painter = painterResource(R.drawable.ic_close), contentDescription = "Close word")
         }
     }
+}
+
+/**
+ * Draws the page content, then strokes a fading rounded outline around one token
+ * — the "you were here" marker shown briefly after the word popup closes.
+ * [localRange] is the token's char range within [layout]; the box hugs the word's
+ * own bounds so it never reflows the text. A no-op when [alpha] is 0 or the token
+ * isn't laid out on this text.
+ */
+private fun ContentDrawScope.drawWordOutline(
+    layout: TextLayoutResult?,
+    localRange: IntRange?,
+    alpha: Float,
+    color: Color,
+) {
+    drawContent()
+    if (alpha <= 0f || layout == null || localRange == null) return
+    val len = layout.layoutInput.text.length
+    if (len == 0) return
+    val start = localRange.first.coerceIn(0, len - 1)
+    val end = localRange.last.coerceIn(start, len - 1)
+    val a = layout.getBoundingBox(start)
+    val b = layout.getBoundingBox(end)
+    val padX = 2.dp.toPx()
+    val padY = 1.dp.toPx()
+    val left = minOf(a.left, b.left) - padX
+    val top = minOf(a.top, b.top) - padY
+    val right = maxOf(a.right, b.right) + padX
+    val bottom = maxOf(a.bottom, b.bottom) + padY
+    drawRoundRect(
+        color = color.copy(alpha = alpha),
+        topLeft = Offset(left, top),
+        size = Size(right - left, bottom - top),
+        cornerRadius = CornerRadius(4.dp.toPx()),
+        style = Stroke(width = 1.5.dp.toPx()),
+    )
 }
 
 /** Window-space bounds of a token from its (local) char range in a laid-out text. */

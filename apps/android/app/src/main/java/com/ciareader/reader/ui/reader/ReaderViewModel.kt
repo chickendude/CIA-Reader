@@ -47,9 +47,26 @@ data class ReaderUiState(
     val chapterIdx: Int = 0,
     val tokens: List<ReaderToken> = emptyList(),
     val selectedWord: ReaderToken? = null,
+    /** Book-wide occurrence count of the selected word, shown as an "N×" badge in
+     *  the word sheet. Null until it loads (or if the best-effort fetch fails). */
+    val wordFrequency: Int? = null,
     val wordTranslations: LemmaTranslations? = null,
     val basqueReference: List<BasqueReference> = emptyList(),
     val basqueRefSource: String? = null,
+    /** Admin-confirmed: a reference lookup succeeded (even with no entries), so the
+     *  panel — and its search box — stays available to recover OOV/inflected
+     *  surface forms the auto-lookup missed. Non-admins (403) never see it. Sticky
+     *  across word taps once true, since admin status doesn't change mid-session. */
+    val basqueRefAvailable: Boolean = false,
+    /** Current text in the reference search box. */
+    val basqueRefSearch: String = "",
+    /** The word the box was prefilled with — the parsed lemma (e.g. "hamar") once it
+     *  loads, else the tapped surface. Baseline for the reset (X) and the reset target. */
+    val basqueRefPrefill: String = "",
+    /** Elhuyar autocomplete suggestions for the current search term. */
+    val basqueRefSuggestions: List<String> = emptyList(),
+    /** A reference auto-lookup or manual search is in flight. */
+    val isBasqueRefLoading: Boolean = false,
     val isWordLoading: Boolean = false,
     /** Sentence translation for the selected word (word sheet action). */
     val sentenceTranslation: SentenceTranslation? = null,
@@ -158,6 +175,10 @@ class ReaderViewModel @Inject constructor(
     // Admin-only Basque reference lookups; after one denial (non-admin) we stop asking.
     private var basqueRefDisabled = false
 
+    // Debounces the reference search box's autocomplete so a new keystroke cancels
+    // the prior in-flight suggestion fetch.
+    private var basqueAutocompleteJob: Job? = null
+
     init {
         loadInitial()
     }
@@ -243,6 +264,7 @@ class ReaderViewModel @Inject constructor(
                 pageWidth = null,
                 pageHeight = null,
                 selectedWord = null,
+                wordFrequency = null,
                 wordTranslations = null,
                 sentenceTranslation = null,
                 isSentenceTranslating = false,
@@ -324,11 +346,24 @@ class ReaderViewModel @Inject constructor(
     fun onWordTap(token: ReaderToken) {
         if (!token.isWord) return
         val lemmaId = token.lemmaId
+        // Auto-look-up the tapped surface in the reference dictionaries (admins only);
+        // the panel then shows a spinner until it resolves.
+        val loadingRef = language == "eu" && !basqueRefDisabled
+        basqueAutocompleteJob?.cancel()
         _state.update {
             it.copy(
                 selectedWord = token,
+                wordFrequency = null,
                 wordTranslations = null,
                 basqueReference = emptyList(),
+                // Prefill the search box with the tapped word so it's obviously a
+                // search for it; the user can edit to refine. The surface is just a
+                // placeholder — loadParse upgrades it to the parsed lemma once known.
+                // [basqueRefAvailable] stays sticky across taps.
+                basqueRefSearch = if (loadingRef) token.surface else "",
+                basqueRefPrefill = if (loadingRef) token.surface else "",
+                basqueRefSuggestions = emptyList(),
+                isBasqueRefLoading = loadingRef,
                 isWordLoading = lemmaId != null,
                 // Each word opens with a fresh sentence-translation slot.
                 sentenceTranslation = null,
@@ -359,15 +394,41 @@ class ReaderViewModel @Inject constructor(
                 }
             }
         }
-        // Admin-only Basque reference dictionaries (per surface word). The endpoint
-        // 403s non-admins, after which we stop asking for the rest of the session.
-        if (language == "eu" && !basqueRefDisabled) {
+        // Admin-only Basque reference dictionaries. The endpoint 403s non-admins,
+        // after which we stop asking for the session; a success — even with no entries
+        // — confirms admin, keeping the panel (and its search box) available.
+        // Words with a lemma defer to loadParse so the lookup uses the parsed form
+        // ("orduak" → "ordu") instead of the inflected surface; OOV words have no
+        // lemma, so look the surface up here.
+        if (loadingRef && token.lemmaId == null) {
             viewModelScope.launch {
                 when (val ref = dictionary.basqueReference(token.surface)) {
                     is Outcome.Success -> _state.update { s ->
-                        if (s.selectedWord == token) s.copy(basqueReference = ref.data) else s
+                        if (s.selectedWord == token) {
+                            s.copy(
+                                basqueReference = ref.data,
+                                basqueRefAvailable = true,
+                                isBasqueRefLoading = false,
+                            )
+                        } else {
+                            s
+                        }
                     }
-                    is Outcome.Failure -> basqueRefDisabled = true
+                    is Outcome.Failure -> {
+                        basqueRefDisabled = true
+                        _state.update { it.copy(basqueRefAvailable = false, isBasqueRefLoading = false) }
+                    }
+                }
+            }
+        }
+        // Book-wide frequency badge — best-effort, non-blocking (web parity).
+        if (lemmaId != null) {
+            viewModelScope.launch {
+                val freq = repository.lemmaFrequency(textId, lemmaId)
+                if (freq != null) {
+                    _state.update { s ->
+                        if (s.selectedWord == token) s.copy(wordFrequency = freq) else s
+                    }
                 }
             }
         }
@@ -394,16 +455,48 @@ class ReaderViewModel @Inject constructor(
     private fun loadParse(lemmaId: String, isPrimary: Boolean) {
         viewModelScope.launch {
             val outcome = dictionary.translations(lemmaId)
+            var refLookupWord: String? = null
             _state.update { s ->
                 if (s.activeParseLemmaId != lemmaId) return@update s
                 when (outcome) {
-                    is Outcome.Success -> s.copy(
-                        isWordLoading = false,
-                        wordTranslations = outcome.data,
-                        primaryHeadword = if (isPrimary) outcome.data.headword else s.primaryHeadword,
-                        primaryPos = if (isPrimary) outcome.data.pos else s.primaryPos,
-                    )
-                    is Outcome.Failure -> s.copy(isWordLoading = false)
+                    is Outcome.Success -> {
+                        // Drive the reference search + lookup off the parsed lemma
+                        // ("hamarrak" → "hamar"), not the inflected surface — but only
+                        // while the box is the untouched prefill, so a manual search is
+                        // never clobbered.
+                        val headword = outcome.data.headword
+                        val useLemma = isPrimary && language == "eu" && !basqueRefDisabled &&
+                            headword.isNotBlank() && s.basqueRefSearch == s.basqueRefPrefill
+                        if (useLemma) refLookupWord = headword
+                        s.copy(
+                            isWordLoading = false,
+                            wordTranslations = outcome.data,
+                            primaryHeadword = if (isPrimary) headword else s.primaryHeadword,
+                            primaryPos = if (isPrimary) outcome.data.pos else s.primaryPos,
+                            basqueRefSearch = if (useLemma) headword else s.basqueRefSearch,
+                            basqueRefPrefill = if (useLemma) headword else s.basqueRefPrefill,
+                            // Keep the spinner up only while the lemma lookup is pending.
+                            isBasqueRefLoading = refLookupWord != null,
+                        )
+                    }
+                    is Outcome.Failure -> s.copy(isWordLoading = false, isBasqueRefLoading = false)
+                }
+            }
+            // Look up the reference entries by the parsed lemma so they match the box.
+            val word = refLookupWord
+            if (word != null) {
+                when (val ref = dictionary.basqueReference(word)) {
+                    is Outcome.Success -> _state.update { s ->
+                        if (s.activeParseLemmaId == lemmaId) {
+                            s.copy(basqueReference = ref.data, basqueRefAvailable = true, isBasqueRefLoading = false)
+                        } else {
+                            s
+                        }
+                    }
+                    is Outcome.Failure -> {
+                        basqueRefDisabled = true
+                        _state.update { it.copy(basqueRefAvailable = false, isBasqueRefLoading = false) }
+                    }
                 }
             }
         }
@@ -511,22 +604,32 @@ class ReaderViewModel @Inject constructor(
      *  occurrence of that lemma in the current chapter. */
     fun setStatus(status: KnownStatus) {
         val lemmaId = _state.value.selectedWord?.lemmaId ?: return
+        // Recolor optimistically so the popup can close immediately without
+        // waiting on the network. Remember the prior status to roll back on
+        // failure. (The popup may already be dismissed by the time the network
+        // call returns, so reconcile against tokens rather than selectedWord.)
+        val previous = _state.value.tokens.firstOrNull { it.lemmaId == lemmaId }?.status
+        _state.update { s -> s.applyStatus(lemmaId, status) }
         viewModelScope.launch {
             when (val res = dictionary.setStatus(lemmaId, status)) {
-                is Outcome.Success -> _state.update { s ->
-                    val confirmed = res.data
-                    s.copy(
-                        tokens = s.tokens.map {
-                            if (it.lemmaId == lemmaId) it.copy(status = confirmed) else it
-                        },
-                        selectedWord = s.selectedWord?.copy(status = confirmed),
-                    )
+                // Reconcile with the server-confirmed status (usually identical).
+                is Outcome.Success -> _state.update { s -> s.applyStatus(lemmaId, res.data) }
+                // Roll back the optimistic change; user can retry.
+                is Outcome.Failure -> if (previous != null) {
+                    _state.update { s -> s.applyStatus(lemmaId, previous) }
                 }
-
-                is Outcome.Failure -> Unit // leave status unchanged; user can retry
             }
         }
     }
+
+    /** Recolor every occurrence of [lemmaId] in the current chapter to [status],
+     *  keeping the selected word (if it shares the lemma) in sync. */
+    private fun ReaderUiState.applyStatus(lemmaId: String, status: KnownStatus) = copy(
+        tokens = tokens.map { if (it.lemmaId == lemmaId) it.copy(status = status) else it },
+        selectedWord = selectedWord?.let {
+            if (it.lemmaId == lemmaId) it.copy(status = status) else it
+        },
+    )
 
     /** Translate the sentence the selected word sits in, via the server (which
      *  reconstructs + caches it). No-op without a chapter id or selection. */
@@ -554,6 +657,7 @@ class ReaderViewModel @Inject constructor(
     fun dismissWord() = _state.update {
         it.copy(
             selectedWord = null,
+            wordFrequency = null,
             wordTranslations = null,
             isWordLoading = false,
             sentenceTranslation = null,
@@ -624,6 +728,47 @@ class ReaderViewModel @Inject constructor(
     fun setBasqueRefSource(source: String) {
         _state.update { it.copy(basqueRefSource = source) }
         viewModelScope.launch { settings.setBasqueRefSource(source) }
+    }
+
+    /** Update the reference search box and, debounced, fetch Elhuyar suggestions. */
+    fun onBasqueRefSearchInput(text: String) {
+        _state.update { it.copy(basqueRefSearch = text) }
+        basqueAutocompleteJob?.cancel()
+        val term = text.trim()
+        if (term.isEmpty()) {
+            _state.update { it.copy(basqueRefSuggestions = emptyList()) }
+            return
+        }
+        basqueAutocompleteJob = viewModelScope.launch {
+            delay(250)
+            when (val res = dictionary.basqueReferenceAutocomplete(term)) {
+                is Outcome.Success -> _state.update { s ->
+                    // Drop stale results if the box has moved on to a newer term.
+                    if (s.basqueRefSearch.trim() == term) s.copy(basqueRefSuggestions = res.data) else s
+                }
+                // Autocomplete is a convenience — a flaky upstream shouldn't error.
+                is Outcome.Failure -> Unit
+            }
+        }
+    }
+
+    /** Search the reference dictionaries for an exact term (Enter or suggestion tap)
+     *  — the recovery path when the tapped surface form isn't itself an entry. */
+    fun searchBasqueReference(term: String) {
+        val query = term.trim()
+        if (query.isEmpty()) return
+        basqueAutocompleteJob?.cancel()
+        _state.update {
+            it.copy(basqueRefSearch = query, basqueRefSuggestions = emptyList(), isBasqueRefLoading = true)
+        }
+        viewModelScope.launch {
+            when (val ref = dictionary.basqueReference(query, exact = true)) {
+                is Outcome.Success ->
+                    _state.update { it.copy(basqueReference = ref.data, isBasqueRefLoading = false) }
+                // A search shouldn't 403 (admin already confirmed); treat as transient.
+                is Outcome.Failure -> _state.update { it.copy(isBasqueRefLoading = false) }
+            }
+        }
     }
 
     /** When reading a book, find the adjacent chapter-texts for Prev/Next. */

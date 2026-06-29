@@ -1,9 +1,13 @@
 package com.ciareader.reader.ui.reader
 
 import android.app.Application
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.test.click
@@ -253,6 +257,56 @@ class ReaderScreenTest {
         compose.onNodeWithText("greeting").assertIsDisplayed()
         // Attribution is intentionally not surfaced in the reader (web parity).
         compose.onNodeWithText("Platts").assertDoesNotExist()
+    }
+
+    @Test
+    fun wordPopupHeaderShowsFrequencyBadge() {
+        compose.setContent {
+            CiaReaderTheme {
+                WordPopupHeader(
+                    headword = "aldatu",
+                    pos = "VERB",
+                    romanization = null,
+                    frequency = 7,
+                    showRadial = true,
+                    status = KnownStatus.UNKNOWN,
+                    onKnown = {},
+                    onRefresh = {},
+                    onLearn = {},
+                    onIgnore = {},
+                    onTranslate = {},
+                    expanded = false,
+                    onToggleExpand = {},
+                    onClose = {},
+                )
+            }
+        }
+        compose.onNodeWithText("7×").assertIsDisplayed()
+    }
+
+    @Test
+    fun wordPopupHeaderHidesFrequencyBadgeWhenAbsent() {
+        compose.setContent {
+            CiaReaderTheme {
+                WordPopupHeader(
+                    headword = "aldatu",
+                    pos = "VERB",
+                    romanization = null,
+                    frequency = null,
+                    showRadial = true,
+                    status = KnownStatus.UNKNOWN,
+                    onKnown = {},
+                    onRefresh = {},
+                    onLearn = {},
+                    onIgnore = {},
+                    onTranslate = {},
+                    expanded = false,
+                    onToggleExpand = {},
+                    onClose = {},
+                )
+            }
+        }
+        compose.onNodeWithText("7×").assertDoesNotExist()
     }
 
     @Test
@@ -551,6 +605,153 @@ class ReaderScreenTest {
         assertEquals(RadialAction.IGNORE, radialSelectionFor(Offset(0f, 100f), dz))
         assertEquals(RadialAction.LEARN, radialSelectionFor(Offset(-100f, 0f), dz))
         assertEquals(RadialAction.REFRESH, radialSelectionFor(Offset(0f, -100f), dz))
+    }
+
+    @Test
+    fun wordDetailsShowsReferenceSearchWhenAvailableEvenWithNoEntries() {
+        compose.setContent {
+            CiaReaderTheme {
+                WordDetails(
+                    token = ReaderToken(0, "etxea", true, KnownStatus.UNKNOWN, "l1", null, null, false, false, true),
+                    translations = null,
+                    isLoading = false,
+                    basqueReference = emptyList(),
+                    basqueRefAvailable = true,
+                )
+            }
+        }
+        // The panel and its search box appear so the user can recover the lemma.
+        // (Below the word sheet's fold, hence assertExists rather than isDisplayed.)
+        compose.onNodeWithText("Reference dictionaries").assertExists()
+        compose.onNodeWithText("Search…").assertExists()
+        compose.onNodeWithText("No ES entries.").assertExists()
+        // The "admin" tag was removed.
+        compose.onNodeWithText("admin").assertDoesNotExist()
+    }
+
+    @Test
+    fun referenceSearchResetXAppearsWhenChangedAndResetsAndCloses() {
+        var searchText by mutableStateOf("abiatu")
+        var resetTo: String? = null
+        var closed = false
+        compose.setContent {
+            CiaReaderTheme {
+                WordDetails(
+                    token = ReaderToken(0, "abiatu", true, KnownStatus.UNKNOWN, "l1", null, null, false, false, true),
+                    translations = null,
+                    isLoading = false,
+                    basqueReference = emptyList(),
+                    basqueRefAvailable = true,
+                    basqueRefSearch = searchText,
+                    basqueRefPrefill = "abiatu",
+                    onBasqueRefSearchInput = { resetTo = it },
+                    onEditingChange = { if (!it) closed = true },
+                )
+            }
+        }
+        // Open the field — prefilled with "abiatu", so no reset X yet.
+        compose.onNodeWithContentDescription("Search reference dictionaries").performClick()
+        compose.waitForIdle()
+        compose.onNodeWithContentDescription("Reset search").assertDoesNotExist()
+
+        // Change the text away from the prefilled word → the X appears.
+        searchText = "abia"
+        compose.waitForIdle()
+        compose.onNodeWithContentDescription("Reset search").assertExists()
+
+        // Tapping it resets the text to the original word and closes the field.
+        resetTo = null
+        compose.onNodeWithContentDescription("Reset search").performClick()
+        assertEquals("abiatu", resetTo)
+        assertTrue(closed)
+    }
+
+    @Test
+    fun wordDetailsReferenceSuggestionTapFiresSearch() {
+        var searched: String? = null
+        compose.setContent {
+            CiaReaderTheme {
+                WordDetails(
+                    token = ReaderToken(0, "etxea", true, KnownStatus.UNKNOWN, "l1", null, null, false, false, true),
+                    translations = null,
+                    isLoading = false,
+                    basqueReference = emptyList(),
+                    basqueRefAvailable = true,
+                    basqueRefSearch = "etx",
+                    basqueRefSuggestions = listOf("etxe", "etxalde"),
+                    onBasqueRefSearch = { searched = it },
+                )
+            }
+        }
+        // Suggestions live in the floating overlay, shown only while editing — open it first.
+        compose.onNodeWithContentDescription("Search reference dictionaries").performClick()
+        compose.waitForIdle()
+        compose.onNodeWithText("etxe").performClick()
+        assertEquals("etxe", searched)
+    }
+
+    @Test
+    fun tappingReferenceSearchBoxRequestsFocusablePopup() {
+        var editing: Boolean? = null
+        compose.setContent {
+            CiaReaderTheme {
+                WordDetails(
+                    token = ReaderToken(0, "etxea", true, KnownStatus.UNKNOWN, "l1", null, null, false, false, true),
+                    translations = null,
+                    isLoading = false,
+                    basqueReference = emptyList(),
+                    basqueRefAvailable = true,
+                    basqueRefSearch = "etxea",
+                    onEditingChange = { editing = it },
+                )
+            }
+        }
+        // Tapping the box must ask the host to make the popup focusable — otherwise a
+        // field inside a non-focusable popup can't take the cursor or raise the keyboard.
+        compose.onNodeWithContentDescription("Search reference dictionaries").performClick()
+        assertEquals(true, editing)
+    }
+
+    @Test
+    fun showsDividerBetweenPersonalNoteAndDictionaryDefs() {
+        compose.setContent {
+            CiaReaderTheme {
+                WordDetails(
+                    token = ReaderToken(0, "etxe", true, KnownStatus.UNKNOWN, "l1", null, null, false, false, true),
+                    translations = LemmaTranslations(
+                        headword = "etxe",
+                        pos = "iz.",
+                        gloss = null,
+                        personal = listOf(WordTranslation("my note", null, "p1")),
+                        official = listOf(WordTranslation("house", null)),
+                        community = emptyList(),
+                    ),
+                    isLoading = false,
+                )
+            }
+        }
+        compose.onNodeWithTag("personalNoteDivider").assertExists()
+    }
+
+    @Test
+    fun noDividerWhenThereIsNoPersonalNote() {
+        compose.setContent {
+            CiaReaderTheme {
+                WordDetails(
+                    token = ReaderToken(0, "etxe", true, KnownStatus.UNKNOWN, "l1", null, null, false, false, true),
+                    translations = LemmaTranslations(
+                        headword = "etxe",
+                        pos = "iz.",
+                        gloss = null,
+                        personal = emptyList(),
+                        official = listOf(WordTranslation("house", null)),
+                        community = emptyList(),
+                    ),
+                    isLoading = false,
+                )
+            }
+        }
+        compose.onNodeWithTag("personalNoteDivider").assertDoesNotExist()
     }
 
     private fun token(surface: String, isWord: Boolean, status: KnownStatus = KnownStatus.UNKNOWN) =

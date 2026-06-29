@@ -64,8 +64,13 @@ interface DictionaryRepository {
     /** Delete one of the viewer's own definitions (by its translation id). */
     suspend fun deleteDefinition(translationId: String): Outcome<Unit>
 
-    /** Admin-only Basque reference dictionaries for a surface word (403 → Failure). */
-    suspend fun basqueReference(word: String): Outcome<List<BasqueReference>>
+    /** Admin-only Basque reference dictionaries for a word (403 → Failure).
+     *  [exact] preserves case for a precise search (an autocomplete pick); the
+     *  default lowercases the word for the tapped-surface lemma lookup. */
+    suspend fun basqueReference(word: String, exact: Boolean = false): Outcome<List<BasqueReference>>
+
+    /** Admin-only Elhuyar headword suggestions for the reference search box. */
+    suspend fun basqueReferenceAutocomplete(term: String): Outcome<List<String>>
 }
 
 @Singleton
@@ -132,17 +137,22 @@ class DictionaryRepositoryImpl @Inject constructor(
     // a word shows them instantly instead of re-hitting the network.
     private val basqueCache = mutableMapOf<String, List<BasqueReference>>()
 
-    override suspend fun basqueReference(word: String): Outcome<List<BasqueReference>> {
-        val key = word.lowercase()
+    override suspend fun basqueReference(word: String, exact: Boolean): Outcome<List<BasqueReference>> {
+        // Exact searches preserve case ("Afrika" ≠ "afrika"), so key on the raw
+        // term; lemma lookups are case-folded and share a key across re-taps.
+        val key = if (exact) "exact:$word" else word.lowercase()
         basqueCache[key]?.let { return Outcome.Success(it) }
         val net = apiCall {
-            api.basqueReference(word).results.map {
+            api.basqueReference(word, if (exact) "1" else null).results.map {
                 BasqueReference(it.source, it.label, it.pos, it.definition, it.examples)
             }
         }
         if (net is Outcome.Success) basqueCache[key] = net.data
         return net
     }
+
+    override suspend fun basqueReferenceAutocomplete(term: String): Outcome<List<String>> =
+        apiCall { api.basqueAutocomplete(term).terms }
 }
 
 private fun KnownStatus.wire(): String = when (this) {
