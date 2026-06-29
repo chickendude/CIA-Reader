@@ -208,6 +208,60 @@ class ReaderViewModelTest {
     }
 
     @Test
+    fun wordTapFetchesBookFrequency() = runTest(mainRule.dispatcher) {
+        val w = ReaderToken(0, "नमस्ते", true, KnownStatus.UNKNOWN, "l1", null, null, false, false, true)
+        val repo = FakeReaderRepository(
+            meta = meta(1),
+            chapters = mapOf(0 to Chapter(0, listOf(w))),
+            lemmaFrequency = 7,
+        )
+        val v = vm(repo)
+        advanceUntilIdle()
+
+        v.onWordTap(w)
+        advanceUntilIdle()
+
+        assertEquals(7, v.state.value.wordFrequency)
+        assertEquals("l1", repo.lastFrequencyLemmaId)
+    }
+
+    @Test
+    fun wordWithoutLemmaSkipsFrequency() = runTest(mainRule.dispatcher) {
+        val w = ReaderToken(0, "नमस्ते", true, KnownStatus.UNKNOWN, null, null, null, false, false, false)
+        val repo = FakeReaderRepository(
+            meta = meta(1),
+            chapters = mapOf(0 to Chapter(0, listOf(w))),
+            lemmaFrequency = 7,
+        )
+        val v = vm(repo)
+        advanceUntilIdle()
+
+        v.onWordTap(w)
+        advanceUntilIdle()
+
+        assertNull(v.state.value.wordFrequency)
+        assertNull(repo.lastFrequencyLemmaId)
+    }
+
+    @Test
+    fun dismissingWordClearsFrequency() = runTest(mainRule.dispatcher) {
+        val w = ReaderToken(0, "नमस्ते", true, KnownStatus.UNKNOWN, "l1", null, null, false, false, true)
+        val repo = FakeReaderRepository(
+            meta = meta(1),
+            chapters = mapOf(0 to Chapter(0, listOf(w))),
+            lemmaFrequency = 7,
+        )
+        val v = vm(repo)
+        advanceUntilIdle()
+        v.onWordTap(w)
+        advanceUntilIdle()
+        assertEquals(7, v.state.value.wordFrequency)
+
+        v.dismissWord()
+        assertNull(v.state.value.wordFrequency)
+    }
+
+    @Test
     fun wordTapDefaultsActiveParseToChosenLemma() = runTest(mainRule.dispatcher) {
         val w = ReaderToken(0, "सोने", true, KnownStatus.UNKNOWN, "l-gold", null, null, false, true, true)
         val repo = FakeReaderRepository(meta = meta(1), chapters = mapOf(0 to Chapter(0, listOf(w))))
@@ -989,6 +1043,7 @@ private class SavingReaderRepository(
     override suspend fun textMeta(textId: String): Outcome<TextMeta> = Outcome.Success(meta)
     override suspend fun chapter(textId: String, chapterIdx: Int): Outcome<Chapter> =
         Outcome.Success(Chapter(chapterIdx, chapterTokens))
+    override suspend fun lemmaFrequency(textId: String, lemmaId: String): Int? = null
     override suspend fun progress(textId: String): Outcome<ReadingProgress?> = Outcome.Success(saved)
     override suspend fun saveProgress(
         textId: String,
@@ -1022,8 +1077,10 @@ private class FakeReaderRepository(
     private val sentenceTranslation: SentenceTranslation? = null,
     private val sentenceTranslateError: String? = null,
     private val cachedSentence: SentenceTranslation? = null,
+    private val lemmaFrequency: Int? = null,
 ) : ReaderRepository {
     var lastSaved: ReadingProgress? = null
+    var lastFrequencyLemmaId: String? = null
     var lastTranslate: Triple<String, Int, String>? = null
     var translateCalls = 0
 
@@ -1033,6 +1090,11 @@ private class FakeReaderRepository(
     override suspend fun chapter(textId: String, chapterIdx: Int): Outcome<Chapter> =
         chapterError?.let { Outcome.Failure(it) }
             ?: Outcome.Success(chapters[chapterIdx] ?: Chapter(chapterIdx, emptyList()))
+
+    override suspend fun lemmaFrequency(textId: String, lemmaId: String): Int? {
+        lastFrequencyLemmaId = lemmaId
+        return lemmaFrequency
+    }
 
     override suspend fun progress(textId: String): Outcome<ReadingProgress?> =
         Outcome.Success(savedProgress)

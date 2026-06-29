@@ -507,6 +507,7 @@ internal fun ReaderScreenContent(
                             headword = headword,
                             pos = pos,
                             romanization = romanization,
+                            frequency = state.wordFrequency,
                             showRadial = hasLemma,
                             status = selected.status,
                             onKnown = onKnown,
@@ -558,6 +559,7 @@ internal fun ReaderScreenContent(
                             headword = headword,
                             pos = pos,
                             romanization = romanization,
+                            frequency = state.wordFrequency,
                             showRadial = hasLemma,
                             status = selected.status,
                             onKnown = onKnown,
@@ -2150,6 +2152,9 @@ internal fun WordPopupHeader(
     headword: String,
     pos: String?,
     romanization: String?,
+    /** Book-wide occurrence count; shows an "N×" badge before the action icons.
+     *  Hidden when null or zero. */
+    frequency: Int? = null,
     showRadial: Boolean,
     status: KnownStatus,
     onKnown: () -> Unit,
@@ -2188,6 +2193,24 @@ internal fun WordPopupHeader(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
+        }
+        if (frequency != null && frequency > 0) {
+            Text(
+                text = "${frequency}×",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                modifier = Modifier
+                    .semantics {
+                        contentDescription =
+                            "Appears $frequency ${if (frequency == 1) "time" else "times"} in this book"
+                    }
+                    .background(
+                        MaterialTheme.colorScheme.secondaryContainer,
+                        RoundedCornerShape(percent = 50),
+                    )
+                    .padding(horizontal = 10.dp, vertical = 4.dp),
+            )
+            Spacer(Modifier.width(8.dp))
         }
         if (showRadial) {
             RadialActionButton(

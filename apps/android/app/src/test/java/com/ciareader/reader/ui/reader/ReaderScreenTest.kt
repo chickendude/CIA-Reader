@@ -260,6 +260,56 @@ class ReaderScreenTest {
     }
 
     @Test
+    fun wordPopupHeaderShowsFrequencyBadge() {
+        compose.setContent {
+            CiaReaderTheme {
+                WordPopupHeader(
+                    headword = "aldatu",
+                    pos = "VERB",
+                    romanization = null,
+                    frequency = 7,
+                    showRadial = true,
+                    status = KnownStatus.UNKNOWN,
+                    onKnown = {},
+                    onRefresh = {},
+                    onLearn = {},
+                    onIgnore = {},
+                    onTranslate = {},
+                    expanded = false,
+                    onToggleExpand = {},
+                    onClose = {},
+                )
+            }
+        }
+        compose.onNodeWithText("7×").assertIsDisplayed()
+    }
+
+    @Test
+    fun wordPopupHeaderHidesFrequencyBadgeWhenAbsent() {
+        compose.setContent {
+            CiaReaderTheme {
+                WordPopupHeader(
+                    headword = "aldatu",
+                    pos = "VERB",
+                    romanization = null,
+                    frequency = null,
+                    showRadial = true,
+                    status = KnownStatus.UNKNOWN,
+                    onKnown = {},
+                    onRefresh = {},
+                    onLearn = {},
+                    onIgnore = {},
+                    onTranslate = {},
+                    expanded = false,
+                    onToggleExpand = {},
+                    onClose = {},
+                )
+            }
+        }
+        compose.onNodeWithText("7×").assertDoesNotExist()
+    }
+
+    @Test
     fun wordDetailsShowsParseSwitcherAndSwitchesParse() {
         var picked: String? = null
         compose.setContent {

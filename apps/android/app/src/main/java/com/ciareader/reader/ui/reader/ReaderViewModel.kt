@@ -47,6 +47,9 @@ data class ReaderUiState(
     val chapterIdx: Int = 0,
     val tokens: List<ReaderToken> = emptyList(),
     val selectedWord: ReaderToken? = null,
+    /** Book-wide occurrence count of the selected word, shown as an "N×" badge in
+     *  the word sheet. Null until it loads (or if the best-effort fetch fails). */
+    val wordFrequency: Int? = null,
     val wordTranslations: LemmaTranslations? = null,
     val basqueReference: List<BasqueReference> = emptyList(),
     val basqueRefSource: String? = null,
@@ -261,6 +264,7 @@ class ReaderViewModel @Inject constructor(
                 pageWidth = null,
                 pageHeight = null,
                 selectedWord = null,
+                wordFrequency = null,
                 wordTranslations = null,
                 sentenceTranslation = null,
                 isSentenceTranslating = false,
@@ -349,6 +353,7 @@ class ReaderViewModel @Inject constructor(
         _state.update {
             it.copy(
                 selectedWord = token,
+                wordFrequency = null,
                 wordTranslations = null,
                 basqueReference = emptyList(),
                 // Prefill the search box with the tapped word so it's obviously a
@@ -412,6 +417,17 @@ class ReaderViewModel @Inject constructor(
                     is Outcome.Failure -> {
                         basqueRefDisabled = true
                         _state.update { it.copy(basqueRefAvailable = false, isBasqueRefLoading = false) }
+                    }
+                }
+            }
+        }
+        // Book-wide frequency badge — best-effort, non-blocking (web parity).
+        if (lemmaId != null) {
+            viewModelScope.launch {
+                val freq = repository.lemmaFrequency(textId, lemmaId)
+                if (freq != null) {
+                    _state.update { s ->
+                        if (s.selectedWord == token) s.copy(wordFrequency = freq) else s
                     }
                 }
             }
@@ -634,6 +650,7 @@ class ReaderViewModel @Inject constructor(
     fun dismissWord() = _state.update {
         it.copy(
             selectedWord = null,
+            wordFrequency = null,
             wordTranslations = null,
             isWordLoading = false,
             sentenceTranslation = null,
