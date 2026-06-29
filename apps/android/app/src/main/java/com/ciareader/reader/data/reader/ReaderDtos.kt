@@ -98,6 +98,17 @@ data class PhraseSpanDto(
     val status: String = "unknown",
 )
 
+// --- GET /api/v1/texts/:id/lemmas/:lemmaId/frequency ---
+
+/** How often a word (the lemma's headword) occurs across the whole book and
+ *  within the current text. The word sheet shows [book] as an "N×" badge so a
+ *  learner can prioritise frequent words (web parity). */
+@Serializable
+data class LemmaFrequencyDto(
+    val book: Int = 0,
+    val text: Int = 0,
+)
+
 // --- GET / PATCH /api/v1/me/text-progress/:textId ---
 
 @Serializable
