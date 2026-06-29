@@ -70,11 +70,17 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.ContentDrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
@@ -263,6 +269,12 @@ internal fun ReaderScreenContent(
     // then so the keyboard can show (otherwise it stays non-focusable for one-tap
     // word switching).
     var wordEditing by remember { mutableStateOf(false) }
+    // "You were here" marker: when the popup closes, the word that was open keeps
+    // a brief outline that fades out so the reader can find their place again.
+    // Tracked by the token's stable idx; one Animatable drives the alpha for every
+    // reading mode, read in the draw phase so only the outline repaints.
+    var highlightTokenIdx by remember { mutableStateOf<Int?>(null) }
+    val highlightAlpha = remember { Animatable(0f) }
     val closeWord = {
         wordAnchor = null
         wordExpanded = false
@@ -273,7 +285,20 @@ internal fun ReaderScreenContent(
         wordAnchor = rect
         wordExpanded = false
         wordEditing = false
+        highlightTokenIdx = token.idx
         onWordTap(token)
+    }
+    // Hold the outline solid while the popup is open; on close, briefly hold then
+    // slowly fade it out (~2s total) over the word's last position.
+    val selectionActive = state.selectedWord != null
+    LaunchedEffect(selectionActive) {
+        if (selectionActive) {
+            highlightAlpha.snapTo(1f)
+        } else if (highlightTokenIdx != null) {
+            highlightAlpha.snapTo(1f)
+            highlightAlpha.animateTo(1f, animationSpec = tween(durationMillis = 600))
+            highlightAlpha.animateTo(0f, animationSpec = tween(durationMillis = 1600, easing = LinearEasing))
+        }
     }
     Scaffold(
         topBar = {
@@ -373,6 +398,8 @@ internal fun ReaderScreenContent(
                         onRecordPosition = onRecordPosition,
                         restoreTokenIdx = state.restoreTokenIdx,
                         onRestoreConsumed = onRestoreConsumed,
+                        highlightTokenIdx = highlightTokenIdx,
+                        highlightAlpha = { highlightAlpha.value },
                         modifier = Modifier.fillMaxSize(),
                     )
 
@@ -390,6 +417,8 @@ internal fun ReaderScreenContent(
                         onRecordPosition = onRecordPosition,
                         onRestoreConsumed = onRestoreConsumed,
                         onProgress = onProgress,
+                        highlightTokenIdx = highlightTokenIdx,
+                        highlightAlpha = { highlightAlpha.value },
                         modifier = Modifier.fillMaxSize(),
                     )
             }
@@ -588,6 +617,8 @@ private fun ChapterText(
     onRecordPosition: (Int, Double) -> Unit,
     onRestoreConsumed: () -> Unit,
     onProgress: (Float) -> Unit,
+    highlightTokenIdx: Int?,
+    highlightAlpha: () -> Float,
     modifier: Modifier = Modifier,
 ) {
     val scheme = MaterialTheme.colorScheme
@@ -609,6 +640,14 @@ private fun ChapterText(
             start until offset
         }
     }
+    // Char range of the word to outline as the "you were here" marker, mapped from
+    // the highlighted token's stable idx.
+    val highlightRange = remember(highlightTokenIdx, tokens, ranges) {
+        highlightTokenIdx?.let { id ->
+            tokens.indexOfFirst { it.idx == id }.takeIf { it >= 0 }?.let { ranges.getOrNull(it) }
+        }
+    }
+    val outlineColor = scheme.primary
     var layout by remember { mutableStateOf<TextLayoutResult?>(null) }
     var textCoords by remember { mutableStateOf<LayoutCoordinates?>(null) }
     // Fresh scroll position per chapter, so navigating starts at the top.
@@ -660,6 +699,7 @@ private fun ChapterText(
         modifier = modifier
             .verticalScroll(scrollState)
             .padding(16.dp)
+            .drawWithContent { drawWordOutline(layout, highlightRange, highlightAlpha(), outlineColor) }
             .onGloballyPositioned { textCoords = it }
             .pointerInput(tokens) {
                 detectTapGestures { pos ->
@@ -701,6 +741,8 @@ private fun PagedChapter(
     onRecordPosition: (Int, Double) -> Unit,
     restoreTokenIdx: Int?,
     onRestoreConsumed: () -> Unit,
+    highlightTokenIdx: Int?,
+    highlightAlpha: () -> Float,
     modifier: Modifier = Modifier,
 ) {
     val scheme = MaterialTheme.colorScheme
@@ -804,6 +846,8 @@ private fun PagedChapter(
                         tokens = tokens,
                         onWordTap = onWordTap,
                         onDismissWord = onDismissWord,
+                        highlightTokenIdx = highlightTokenIdx,
+                        highlightAlpha = highlightAlpha,
                     )
                 }
             }
@@ -843,15 +887,29 @@ private fun PageText(
     tokens: List<ReaderToken>,
     onWordTap: (ReaderToken, Rect) -> Unit,
     onDismissWord: () -> Unit,
+    highlightTokenIdx: Int?,
+    highlightAlpha: () -> Float,
 ) {
     var layout by remember(text) { mutableStateOf<TextLayoutResult?>(null) }
     var textCoords by remember(text) { mutableStateOf<LayoutCoordinates?>(null) }
+    val outlineColor = MaterialTheme.colorScheme.primary
+    // The highlighted token's char range relative to this page's substring; null
+    // unless the word actually falls on this page.
+    val highlightRange = remember(highlightTokenIdx, tokens, ranges, baseOffset, text) {
+        highlightTokenIdx?.let { id ->
+            tokens.indexOfFirst { it.idx == id }.takeIf { it >= 0 }
+                ?.let { ranges.getOrNull(it) }
+                ?.let { (it.first - baseOffset)..(it.last - baseOffset) }
+                ?.takeIf { it.first >= 0 && it.last < text.length }
+        }
+    }
     Text(
         text = text,
         style = style,
         onTextLayout = { layout = it },
         modifier = Modifier
             .fillMaxSize()
+            .drawWithContent { drawWordOutline(layout, highlightRange, highlightAlpha(), outlineColor) }
             .onGloballyPositioned { textCoords = it }
             .pointerInput(text) {
                 detectTapGestures { pos ->
@@ -2148,6 +2206,42 @@ internal fun WordPopupHeader(
             Icon(painter = painterResource(R.drawable.ic_close), contentDescription = "Close word")
         }
     }
+}
+
+/**
+ * Draws the page content, then strokes a fading rounded outline around one token
+ * — the "you were here" marker shown briefly after the word popup closes.
+ * [localRange] is the token's char range within [layout]; the box hugs the word's
+ * own bounds so it never reflows the text. A no-op when [alpha] is 0 or the token
+ * isn't laid out on this text.
+ */
+private fun ContentDrawScope.drawWordOutline(
+    layout: TextLayoutResult?,
+    localRange: IntRange?,
+    alpha: Float,
+    color: Color,
+) {
+    drawContent()
+    if (alpha <= 0f || layout == null || localRange == null) return
+    val len = layout.layoutInput.text.length
+    if (len == 0) return
+    val start = localRange.first.coerceIn(0, len - 1)
+    val end = localRange.last.coerceIn(start, len - 1)
+    val a = layout.getBoundingBox(start)
+    val b = layout.getBoundingBox(end)
+    val padX = 2.dp.toPx()
+    val padY = 1.dp.toPx()
+    val left = minOf(a.left, b.left) - padX
+    val top = minOf(a.top, b.top) - padY
+    val right = maxOf(a.right, b.right) + padX
+    val bottom = maxOf(a.bottom, b.bottom) + padY
+    drawRoundRect(
+        color = color.copy(alpha = alpha),
+        topLeft = Offset(left, top),
+        size = Size(right - left, bottom - top),
+        cornerRadius = CornerRadius(4.dp.toPx()),
+        style = Stroke(width = 1.5.dp.toPx()),
+    )
 }
 
 /** Window-space bounds of a token from its (local) char range in a laid-out text. */
