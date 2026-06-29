@@ -24,9 +24,18 @@ interface DictionaryApi {
     @DELETE("api/v1/translations/{id}")
     suspend fun deleteTranslation(@Path("id") id: String)
 
-    /** Admin-only Basque reference dictionaries; 403 for non-admins. */
+    /** Admin-only Basque reference dictionaries; 403 for non-admins.
+     *  [exact] = "1" preserves case for a precise search picked from autocomplete;
+     *  null (the default) lowercases the word for a lemma lookup. */
     @GET("api/v1/admin/basque-dictionary")
-    suspend fun basqueReference(@Query("word") word: String): BasqueReferenceResponseDto
+    suspend fun basqueReference(
+        @Query("word") word: String,
+        @Query("exact") exact: String? = null,
+    ): BasqueReferenceResponseDto
+
+    /** Admin-only Elhuyar headword suggestions for the reference search box. */
+    @GET("api/v1/admin/basque-dictionary/autocomplete")
+    suspend fun basqueAutocomplete(@Query("term") term: String): BasqueAutocompleteResponseDto
 
     @PATCH("api/v1/me/known-lemmas/{lemmaId}")
     suspend fun setKnownStatus(

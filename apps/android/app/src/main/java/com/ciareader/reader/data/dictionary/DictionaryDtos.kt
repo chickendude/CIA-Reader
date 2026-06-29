@@ -68,6 +68,14 @@ data class BasqueRefDto(
     val url: String = "",
 )
 
+/** GET /api/v1/admin/basque-dictionary/autocomplete?term= — admin-only Elhuyar
+ *  headword suggestions for the reference search box. 403s for non-admins. */
+@Serializable
+data class BasqueAutocompleteResponseDto(
+    val term: String = "",
+    val terms: List<String> = emptyList(),
+)
+
 /** PATCH /api/v1/me/known-lemmas/:lemmaId */
 @Serializable
 data class KnownLemmaRequest(val status: String)

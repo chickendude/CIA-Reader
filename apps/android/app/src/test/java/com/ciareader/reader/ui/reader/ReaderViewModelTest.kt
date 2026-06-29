@@ -792,6 +792,120 @@ class ReaderViewModelTest {
         assertEquals(emptyList<String>(), v.state.value.basqueReference.map { it.definition })
     }
 
+    @Test
+    fun basqueRefPanelStaysAvailableForAdminEvenWithNoEntries() = runTest(mainRule.dispatcher) {
+        // Admin, but the tapped (inflected) surface form has no reference entry.
+        val dict = FakeDictionaryRepository(
+            translations = LemmaTranslations("etxea", null, null, emptyList(), emptyList(), emptyList()),
+            basqueAdmin = true,
+        )
+        val token = ReaderToken(0, "etxea", true, KnownStatus.UNKNOWN, "l1", null, null, false, false, true)
+        val repo = FakeReaderRepository(meta = meta(1, "eu"), chapters = mapOf(0 to Chapter(0, listOf(token))))
+        val v = vm(repo, dict)
+        advanceUntilIdle()
+
+        v.onWordTap(token)
+        advanceUntilIdle()
+
+        val s = v.state.value
+        // No entries, but the panel (and its search box) stays available to recover.
+        assertTrue(s.basqueRefAvailable)
+        assertTrue(s.basqueReference.isEmpty())
+        assertFalse(s.isBasqueRefLoading)
+        // The search box is prefilled with the tapped word, ready to refine.
+        assertEquals("etxea", s.basqueRefSearch)
+    }
+
+    @Test
+    fun referenceSearchPrefillUpgradesToParsedLemma() = runTest(mainRule.dispatcher) {
+        // Tapped form is inflected ("hamarrak"); its lemma parses to "hamar".
+        val dict = FakeDictionaryRepository(
+            translations = LemmaTranslations("hamar", null, null, emptyList(), emptyList(), emptyList()),
+            basqueAdmin = true,
+        )
+        val token = ReaderToken(0, "hamarrak", true, KnownStatus.UNKNOWN, "l1", null, null, false, false, true)
+        val repo = FakeReaderRepository(meta = meta(1, "eu"), chapters = mapOf(0 to Chapter(0, listOf(token))))
+        val v = vm(repo, dict)
+        advanceUntilIdle()
+
+        v.onWordTap(token)
+        advanceUntilIdle()
+
+        val s = v.state.value
+        // Once the lemma loads, the box shows the parsed form, not the surface.
+        assertEquals("hamar", s.basqueRefSearch)
+        assertEquals("hamar", s.basqueRefPrefill)
+    }
+
+    @Test
+    fun referenceAutoLookupUsesParsedLemmaNotSurface() = runTest(mainRule.dispatcher) {
+        // Tapping inflected "orduak" (lemma "ordu") should fetch entries for "ordu".
+        val dict = FakeDictionaryRepository(
+            translations = LemmaTranslations("ordu", null, null, emptyList(), emptyList(), emptyList()),
+            basque = listOf(BasqueReference("elhuyar_es", "Elhuyar eu-es", "iz.", "hora", emptyList())),
+        )
+        val token = ReaderToken(0, "orduak", true, KnownStatus.UNKNOWN, "l1", null, null, false, false, true)
+        val repo = FakeReaderRepository(meta = meta(1, "eu"), chapters = mapOf(0 to Chapter(0, listOf(token))))
+        val v = vm(repo, dict)
+        advanceUntilIdle()
+
+        v.onWordTap(token)
+        advanceUntilIdle()
+
+        // The auto-lookup queried the lemma "ordu" (not the surface "orduak")…
+        assertEquals("ordu" to false, dict.lastBasqueQuery)
+        // …so its entries show up without the user having to search manually.
+        assertEquals(listOf("hora"), v.state.value.basqueReference.map { it.definition })
+    }
+
+    @Test
+    fun searchBasqueReferenceFetchesExactResults() = runTest(mainRule.dispatcher) {
+        val dict = FakeDictionaryRepository(
+            translations = LemmaTranslations("etxea", null, null, emptyList(), emptyList(), emptyList()),
+            basqueAdmin = true,
+            basqueSearchResults = listOf(BasqueReference("elhuyar_es", "Elhuyar eu-es", "iz.", "casa", emptyList())),
+        )
+        val token = ReaderToken(0, "etxea", true, KnownStatus.UNKNOWN, "l1", null, null, false, false, true)
+        val repo = FakeReaderRepository(meta = meta(1, "eu"), chapters = mapOf(0 to Chapter(0, listOf(token))))
+        val v = vm(repo, dict)
+        advanceUntilIdle()
+        v.onWordTap(token)
+        advanceUntilIdle()
+
+        v.searchBasqueReference("etxe")
+        advanceUntilIdle()
+
+        val s = v.state.value
+        assertEquals(listOf("casa"), s.basqueReference.map { it.definition })
+        assertEquals("etxe" to true, dict.lastBasqueQuery) // exact search
+        assertEquals("etxe", s.basqueRefSearch)
+        assertFalse(s.isBasqueRefLoading)
+    }
+
+    @Test
+    fun basqueRefSearchInputFetchesSuggestions() = runTest(mainRule.dispatcher) {
+        val dict = FakeDictionaryRepository(
+            translations = LemmaTranslations("etxea", null, null, emptyList(), emptyList(), emptyList()),
+            basqueAdmin = true,
+            basqueSuggestions = listOf("etxe", "etxalde"),
+        )
+        val token = ReaderToken(0, "etxea", true, KnownStatus.UNKNOWN, "l1", null, null, false, false, true)
+        val repo = FakeReaderRepository(meta = meta(1, "eu"), chapters = mapOf(0 to Chapter(0, listOf(token))))
+        val v = vm(repo, dict)
+        advanceUntilIdle()
+        v.onWordTap(token)
+        advanceUntilIdle()
+
+        v.onBasqueRefSearchInput("etx")
+        advanceUntilIdle() // lets the debounce delay elapse
+
+        assertEquals(listOf("etxe", "etxalde"), v.state.value.basqueRefSuggestions)
+        // Clearing the box drops the suggestions.
+        v.onBasqueRefSearchInput("")
+        advanceUntilIdle()
+        assertTrue(v.state.value.basqueRefSuggestions.isEmpty())
+    }
+
     private fun word(surface: String) =
         ReaderToken(0, surface, true, KnownStatus.UNKNOWN, null, null, null, false, false, false)
 
@@ -924,11 +1038,19 @@ private class FakeReaderRepository(
 private class FakeDictionaryRepository(
     private var translations: LemmaTranslations? = null,
     private val basque: List<BasqueReference> = emptyList(),
+    /** Whether reference lookups succeed (admin); else they 403 → Failure. Defaults
+     *  to admin when [basque] entries are supplied, so most tests need not set it. */
+    private val basqueAdmin: Boolean = basque.isNotEmpty(),
+    /** Exact-search results, distinct from the auto-lookup's [basque] entries. */
+    private val basqueSearchResults: List<BasqueReference> = basque,
+    /** Autocomplete suggestions returned for any search term. */
+    private val basqueSuggestions: List<String> = emptyList(),
     /** Per-lemma overrides so a test can fetch distinct definitions for the
      *  primary parse and its alternate candidates. */
     private val byLemma: Map<String, LemmaTranslations> = emptyMap(),
 ) : DictionaryRepository {
     var lastAdded: Pair<String, String>? = null
+    var lastBasqueQuery: Pair<String, Boolean>? = null
     val requestedLemmaIds = mutableListOf<String>()
 
     override suspend fun translations(lemmaId: String): Outcome<LemmaTranslations> {
@@ -965,8 +1087,14 @@ private class FakeDictionaryRepository(
         return Outcome.Success(Unit)
     }
 
-    override suspend fun basqueReference(word: String): Outcome<List<BasqueReference>> =
-        if (basque.isNotEmpty()) Outcome.Success(basque) else Outcome.Failure("not admin")
+    override suspend fun basqueReference(word: String, exact: Boolean): Outcome<List<BasqueReference>> {
+        lastBasqueQuery = word to exact
+        if (!basqueAdmin) return Outcome.Failure("not admin")
+        return Outcome.Success(if (exact) basqueSearchResults else basque)
+    }
+
+    override suspend fun basqueReferenceAutocomplete(term: String): Outcome<List<String>> =
+        Outcome.Success(basqueSuggestions)
 }
 
 private class FakeSettingsStore(
