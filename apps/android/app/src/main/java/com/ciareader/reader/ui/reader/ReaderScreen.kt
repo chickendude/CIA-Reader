@@ -196,6 +196,7 @@ fun ReaderScreen(
         onAddDefinition = viewModel::addDefinition,
         onEditDefinition = viewModel::editDefinition,
         onDeleteDefinition = viewModel::deleteDefinition,
+        onSaveDictionaryDefinition = viewModel::saveDefinitionFrom,
         onTranslateSentence = viewModel::translateSentence,
         onRefreshWord = viewModel::refreshSelectedWord,
         onSetBasqueRefSource = viewModel::setBasqueRefSource,
@@ -233,6 +234,7 @@ internal fun ReaderScreenContent(
     onAddDefinition: (String) -> Unit = {},
     onEditDefinition: (String, String) -> Unit = { _, _ -> },
     onDeleteDefinition: (String) -> Unit = {},
+    onSaveDictionaryDefinition: (String?, String) -> Unit = { _, _ -> },
     onTranslateSentence: () -> Unit = {},
     onRefreshWord: () -> Unit = {},
     onSetBasqueRefSource: (String) -> Unit = {},
@@ -433,6 +435,7 @@ internal fun ReaderScreenContent(
                 onAddDefinition = onAddDefinition,
                 onEditDefinition = onEditDefinition,
                 onDeleteDefinition = onDeleteDefinition,
+                onSaveDictionaryDefinition = onSaveDictionaryDefinition,
                 onSelectBasqueSource = onSetBasqueRefSource,
                 onEditingChange = { wordEditing = it },
                 modifier = contentModifier,
@@ -996,6 +999,9 @@ internal fun WordDetails(
     onAddDefinition: (String) -> Unit = {},
     onEditDefinition: (String, String) -> Unit = { _, _ -> },
     onDeleteDefinition: (String) -> Unit = {},
+    // Fork a dictionary entry (official/community/reference/gloss) into a personal
+    // definition: (parentTranslationId or null, edited body).
+    onSaveDictionaryDefinition: (String?, String) -> Unit = { _, _ -> },
     sentenceTranslation: SentenceTranslation? = null,
     isSentenceTranslating: Boolean = false,
     sentenceTranslateError: String? = null,
@@ -1019,32 +1025,6 @@ internal fun WordDetails(
         buildList {
             token.lemmaId?.let { add(WordParse(it, primaryHeadword ?: token.surface, primaryPos)) }
             token.candidates.forEach { add(WordParse(it.lemmaId, it.headword, it.pos)) }
-        }
-    }
-    // The dictionary definition as one flowable string: official defs (no label),
-    // then community (labelled), else the inline gloss. Personal notes render
-    // separately below so they can stay editable.
-    val labelColor = MaterialTheme.colorScheme.primary
-    val definition = remember(translations, token.glossDefault, isLoading, labelColor) {
-        buildAnnotatedString {
-            when {
-                isLoading -> append("Loading…")
-                translations != null && !translations.isEmpty -> {
-                    translations.official.forEachIndexed { i, t ->
-                        if (i > 0) append("\n")
-                        append(t.body)
-                    }
-                    if (translations.community.isNotEmpty()) {
-                        if (translations.official.isNotEmpty()) append("\n\n")
-                        withStyle(SpanStyle(color = labelColor)) { append("Community") }
-                        translations.community.forEach { append("\n"); append(it.body) }
-                    }
-                    if (translations.official.isEmpty() && translations.community.isEmpty()) {
-                        append(token.glossDefault ?: "")
-                    }
-                }
-                else -> append(token.glossDefault ?: "No definition yet.")
-            }
         }
     }
     Column(
@@ -1071,12 +1051,35 @@ internal fun WordDetails(
             Spacer(Modifier.height(12.dp))
         }
 
-        // The dictionary definition (reference; status + translate are in the header).
-        Text(
-            definition,
-            style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.onSurface,
-        )
+        // The dictionary definitions (official/community/gloss). Each is tappable
+        // to edit and save as your own personal definition (status + translate are
+        // in the header).
+        val official = translations?.official.orEmpty()
+        val community = translations?.community.orEmpty()
+        val hasDictionary =
+            official.isNotEmpty() || community.isNotEmpty() || !token.glossDefault.isNullOrBlank()
+        when {
+            isLoading -> Text(
+                "Loading…",
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            hasDictionary -> DictionaryDefinitions(
+                official = official,
+                community = community,
+                glossDefault = token.glossDefault,
+                canSave = activeParseLemmaId != null,
+                onSave = onSaveDictionaryDefinition,
+                onEditingChange = onEditingChange,
+            )
+            // Nothing in the dictionary: only say so when there's no personal note
+            // either, matching the pre-existing empty-state copy.
+            translations?.personal.isNullOrEmpty() -> Text(
+                "No definition yet.",
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+        }
 
         // Sentence translation result (the translate action is the icon up top).
         if (token.isWord && (sentenceTranslation != null || isSentenceTranslating || sentenceTranslateError != null)) {
@@ -1091,7 +1094,14 @@ internal fun WordDetails(
 
         if (basqueReference.isNotEmpty()) {
             Spacer(Modifier.height(16.dp))
-            BasqueReferenceSection(basqueReference, basqueRefSource, onSelectBasqueSource)
+            BasqueReferenceSection(
+                entries = basqueReference,
+                selectedSource = basqueRefSource,
+                onSelectSource = onSelectBasqueSource,
+                canSave = activeParseLemmaId != null,
+                onSave = onSaveDictionaryDefinition,
+                onEditingChange = onEditingChange,
+            )
         }
     }
 }
@@ -1436,6 +1446,91 @@ private fun PersonalDefinitionEditor(
     }
 }
 
+private const val GLOSS_KEY = "::gloss"
+
+/**
+ * The dictionary definitions for a word — official (internal) first, then any
+ * community suggestions (labelled), else the inline gloss. Each entry is tappable:
+ * tapping opens an inline editor seeded with that entry's text so the reader can
+ * tweak it and press Enter to save it as their OWN personal definition. Official /
+ * community entries pass their id as the parent so the server tracks the fork; the
+ * gloss has no stored row, so it forks from null. [canSave] is false for OOV tokens
+ * (no lemma to attach a personal definition to) — then entries are plain, read-only.
+ *
+ * Renders nothing when there are no dictionary entries at all (the caller owns the
+ * "No definition yet." placeholder, so it isn't shown under a lone personal note).
+ */
+@Composable
+private fun DictionaryDefinitions(
+    official: List<WordTranslation>,
+    community: List<WordTranslation>,
+    glossDefault: String?,
+    canSave: Boolean,
+    onSave: (parentId: String?, text: String) -> Unit,
+    onEditingChange: (Boolean) -> Unit,
+) {
+    // The entry key being edited, or null for none. Resets when the lists change
+    // (e.g. after a save reconciles), mirroring PersonalDefinitionEditor.
+    var editingKey by remember(official, community, glossDefault) { mutableStateOf<String?>(null) }
+    fun open(key: String) {
+        editingKey = key
+        onEditingChange(true)
+    }
+    fun close() {
+        editingKey = null
+        onEditingChange(false)
+    }
+
+    @Composable
+    fun entry(key: String, parentId: String?, body: String) {
+        if (canSave && editingKey == key) {
+            // Seed the editor with the dictionary text; Enter saves it as the
+            // viewer's own. A cleared field just cancels (we never delete a
+            // dictionary entry — only personal notes can be deleted).
+            NoteEditField(
+                initial = body,
+                onCommit = { t ->
+                    if (t.isNotBlank()) onSave(parentId, t)
+                    close()
+                },
+            )
+        } else {
+            Text(
+                body,
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(enabled = canSave) { open(key) }
+                    .padding(vertical = 4.dp),
+            )
+        }
+    }
+
+    if (official.isEmpty() && community.isEmpty()) {
+        // Only the inline gloss to show (or nothing — the caller handles the
+        // empty-state copy so it doesn't appear beneath a lone personal note).
+        glossDefault?.takeUnless { it.isBlank() }?.let { gloss ->
+            entry(key = GLOSS_KEY, parentId = null, body = gloss)
+        }
+        return
+    }
+
+    official.forEach { t -> entry(key = t.id ?: t.body, parentId = t.id, body = t.body) }
+
+    if (community.isNotEmpty()) {
+        if (official.isNotEmpty()) Spacer(Modifier.height(8.dp))
+        Text(
+            "Community",
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.primary,
+        )
+        community.forEach { t ->
+            entry(key = "community::" + (t.id ?: t.body), parentId = t.id, body = t.body)
+        }
+    }
+}
+
 /** Single-line inline editor: autofocuses; Enter (Done) commits the trimmed value
  *  (the caller treats a blank value as a delete). */
 @Composable
@@ -1497,10 +1592,25 @@ private fun BasqueReferenceSection(
     entries: List<BasqueReference>,
     selectedSource: String?,
     onSelectSource: (String) -> Unit,
+    canSave: Boolean = false,
+    onSave: (parentId: String?, text: String) -> Unit = { _, _ -> },
+    onEditingChange: (Boolean) -> Unit = {},
 ) {
     val available = BASQUE_REF_ORDER.filter { src -> entries.any { it.source == src } }
     if (available.isEmpty()) return
     val selected = selectedSource?.takeIf { it in available } ?: available.first()
+
+    // Which reference entry (source + index) is open for editing, if any. Resets
+    // when the entries or the selected tab change.
+    var editingKey by remember(entries, selected) { mutableStateOf<String?>(null) }
+    fun open(key: String) {
+        editingKey = key
+        onEditingChange(true)
+    }
+    fun close() {
+        editingKey = null
+        onEditingChange(false)
+    }
 
     Text(
         "Reference dictionaries",
@@ -1521,39 +1631,65 @@ private fun BasqueReferenceSection(
     val shown = entries.filter { it.source == selected }
     // POS shows only when it changes from the previous entry (1,2,3 izond. → one label).
     shown.forEachIndexed { i, e ->
-        BasqueRefEntry(e, showPos = i == 0 || shown[i - 1].pos != e.pos)
+        val key = "${e.source}::$i"
+        BasqueRefEntry(
+            entry = e,
+            showPos = i == 0 || shown[i - 1].pos != e.pos,
+            canSave = canSave,
+            editing = editingKey == key,
+            onStartEdit = { open(key) },
+            // A reference entry isn't a stored translation, so it forks from null.
+            onSave = { t ->
+                if (t.isNotBlank()) onSave(null, t)
+                close()
+            },
+        )
         Spacer(Modifier.height(8.dp))
     }
 }
 
 @Composable
-private fun BasqueRefEntry(entry: BasqueReference, showPos: Boolean) {
+private fun BasqueRefEntry(
+    entry: BasqueReference,
+    showPos: Boolean,
+    canSave: Boolean = false,
+    editing: Boolean = false,
+    onStartEdit: () -> Unit = {},
+    onSave: (String) -> Unit = {},
+) {
     var showExamples by remember { mutableStateOf(false) }
     val hasExamples = entry.examples.isNotEmpty()
     if (showPos && entry.pos.isNotBlank()) {
         Text(entry.pos, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
+    if (editing) {
+        // Seed the editor with the reference text; Enter saves it as the viewer's own.
+        NoteEditField(initial = entry.definition, onCommit = onSave)
+        return
+    }
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        // The whole row toggles the examples, not just the +.
-        modifier = if (hasExamples) {
-            Modifier
-                .fillMaxWidth()
-                .clickable { showExamples = !showExamples }
-                .semantics { contentDescription = if (showExamples) "Hide examples" else "Show examples" }
-        } else {
-            Modifier.fillMaxWidth()
-        },
+        modifier = Modifier.fillMaxWidth(),
     ) {
         if (entry.definition.isNotBlank()) {
-            Text(entry.definition, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+            // Tap the definition to edit + save it as your own; the +/- toggles examples.
+            Text(
+                entry.definition,
+                style = MaterialTheme.typography.bodyLarge,
+                modifier = Modifier
+                    .weight(1f)
+                    .clickable(enabled = canSave) { onStartEdit() },
+            )
         }
         if (hasExamples) {
             Text(
                 if (showExamples) "–" else "+",
                 style = MaterialTheme.typography.titleLarge,
                 color = if (showExamples) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(start = 12.dp),
+                modifier = Modifier
+                    .clickable { showExamples = !showExamples }
+                    .semantics { contentDescription = if (showExamples) "Hide examples" else "Show examples" }
+                    .padding(start = 12.dp),
             )
         }
     }

@@ -411,7 +411,14 @@ class ReaderViewModel @Inject constructor(
 
     /** Save the viewer's own definition for the active parse, then refresh the
      *  panel so it appears under "Your notes". */
-    fun addDefinition(text: String) {
+    fun addDefinition(text: String) = saveDefinitionFrom(parentId = null, text = text)
+
+    /** Save a dictionary entry the user edited as their own definition. [parentId]
+     *  is the official/community translation it was forked from (so the server can
+     *  track the lineage); null when seeded from the reference dictionary or gloss,
+     *  which aren't stored translations. Behaves like [addDefinition] otherwise:
+     *  optimistic insert, then reconcile against a fresh fetch. */
+    fun saveDefinitionFrom(parentId: String?, text: String) {
         val body = text.trim()
         if (body.isEmpty()) return
         val lemmaId = _state.value.activeParseLemmaId ?: return
@@ -429,7 +436,7 @@ class ReaderViewModel @Inject constructor(
             s.copy(wordTranslations = lt.copy(personal = lt.personal + WordTranslation(body, null)))
         }
         viewModelScope.launch {
-            dictionary.addDefinition(lemmaId, body)
+            dictionary.addDefinition(lemmaId, body, parentId)
             refreshSelectedTranslations()
         }
     }

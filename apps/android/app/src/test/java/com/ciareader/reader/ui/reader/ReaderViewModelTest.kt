@@ -588,7 +588,54 @@ class ReaderViewModelTest {
         advanceUntilIdle()
 
         assertEquals("l1" to "my own def", dict.lastAdded)
+        assertNull(dict.lastAddedParentId)
         assertEquals(listOf("my own def"), v.state.value.wordTranslations?.personal?.map { it.body })
+    }
+
+    @Test
+    fun saveDefinitionFromForksDictionaryEntryWithParentId() = runTest(mainRule.dispatcher) {
+        val dict = FakeDictionaryRepository(
+            LemmaTranslations(
+                "etxe", "NOUN", null,
+                personal = emptyList(),
+                official = listOf(WordTranslation("house", "Elhuyar", "o1")),
+                community = emptyList(),
+            ),
+        )
+        val token = ReaderToken(0, "etxe", true, KnownStatus.UNKNOWN, "l1", null, null, false, false, true)
+        val repo = FakeReaderRepository(meta = meta(1), chapters = mapOf(0 to Chapter(0, listOf(token))))
+        val v = vm(repo, dict)
+        advanceUntilIdle()
+        v.onWordTap(token)
+        advanceUntilIdle()
+
+        // Edit the official "house" entry and save it as the viewer's own.
+        v.saveDefinitionFrom("o1", "house (home)")
+        advanceUntilIdle()
+
+        assertEquals("l1" to "house (home)", dict.lastAdded)
+        assertEquals("o1", dict.lastAddedParentId)
+        assertEquals(listOf("house (home)"), v.state.value.wordTranslations?.personal?.map { it.body })
+    }
+
+    @Test
+    fun saveDefinitionFromReferenceForksFromNull() = runTest(mainRule.dispatcher) {
+        val dict = FakeDictionaryRepository(
+            LemmaTranslations("etxe", "NOUN", "house", emptyList(), emptyList(), emptyList()),
+        )
+        val token = ReaderToken(0, "etxe", true, KnownStatus.UNKNOWN, "l1", null, null, false, false, true)
+        val repo = FakeReaderRepository(meta = meta(1), chapters = mapOf(0 to Chapter(0, listOf(token))))
+        val v = vm(repo, dict)
+        advanceUntilIdle()
+        v.onWordTap(token)
+        advanceUntilIdle()
+
+        // A reference/gloss entry isn't a stored translation, so it forks from null.
+        v.saveDefinitionFrom(null, "casa")
+        advanceUntilIdle()
+
+        assertEquals("l1" to "casa", dict.lastAdded)
+        assertNull(dict.lastAddedParentId)
     }
 
     @Test
@@ -929,6 +976,7 @@ private class FakeDictionaryRepository(
     private val byLemma: Map<String, LemmaTranslations> = emptyMap(),
 ) : DictionaryRepository {
     var lastAdded: Pair<String, String>? = null
+    var lastAddedParentId: String? = null
     val requestedLemmaIds = mutableListOf<String>()
 
     override suspend fun translations(lemmaId: String): Outcome<LemmaTranslations> {
@@ -943,8 +991,13 @@ private class FakeDictionaryRepository(
     override suspend fun setStatus(lemmaId: String, status: KnownStatus): Outcome<KnownStatus> =
         Outcome.Success(status)
 
-    override suspend fun addDefinition(lemmaId: String, body: String): Outcome<Unit> {
+    override suspend fun addDefinition(
+        lemmaId: String,
+        body: String,
+        parentTranslationId: String?,
+    ): Outcome<Unit> {
         lastAdded = lemmaId to body
+        lastAddedParentId = parentTranslationId
         translations = translations?.let { it.copy(personal = it.personal + WordTranslation(body, null, "p${it.personal.size + 1}")) }
         return Outcome.Success(Unit)
     }

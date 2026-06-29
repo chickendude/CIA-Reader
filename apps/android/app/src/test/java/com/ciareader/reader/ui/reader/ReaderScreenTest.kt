@@ -443,6 +443,35 @@ class ReaderScreenTest {
     }
 
     @Test
+    fun tappingDictionaryDefinitionSavesItAsYourOwn() {
+        var saved: Pair<String?, String>? = null
+        compose.setContent {
+            CiaReaderTheme {
+                WordDetails(
+                    token = ReaderToken(0, "etxe", true, KnownStatus.UNKNOWN, "l1", null, null, false, false, true),
+                    translations = LemmaTranslations(
+                        headword = "etxe",
+                        pos = "NOUN",
+                        gloss = null,
+                        personal = emptyList(),
+                        official = listOf(WordTranslation("house", "Elhuyar", "o1")),
+                        community = emptyList(),
+                    ),
+                    isLoading = false,
+                    onSaveDictionaryDefinition = { parent, text -> saved = parent to text },
+                )
+            }
+        }
+        // Tap the official "house" entry → inline editor seeded with it; edit + Enter
+        // saves it as a personal definition forked from the official's id.
+        compose.onNodeWithText("house").performClick()
+        compose.onNode(hasSetTextAction()).performTextClearance()
+        compose.onNode(hasSetTextAction()).performTextInput("house (home)")
+        compose.onNode(hasSetTextAction()).performImeAction()
+        assertEquals("o1" to "house (home)", saved)
+    }
+
+    @Test
     fun tappingAddPlaceholderOpensInlineEditor() {
         var editing = false
         compose.setContent {

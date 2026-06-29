@@ -173,6 +173,15 @@ class DictionaryRepositoryTest {
         assertTrue(result is Outcome.Success)
         assertEquals("l1", api.lastAdded?.lemmaId)
         assertEquals("my own definition", api.lastAdded?.body)
+        assertNull(api.lastAdded?.parentTranslationId)
+    }
+
+    @Test
+    fun addDefinitionForwardsParentTranslationId() = runTest {
+        val api = FakeDictionaryApi()
+        val result = repo(api).addDefinition("l1", "house (home)", parentTranslationId = "o1")
+        assertTrue(result is Outcome.Success)
+        assertEquals("o1", api.lastAdded?.parentTranslationId)
     }
 
     @Test
