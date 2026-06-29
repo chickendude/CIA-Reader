@@ -18,6 +18,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -93,6 +94,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.rememberTextMeasurer
@@ -1641,18 +1643,20 @@ private fun DictionaryDefinitions(
  *  (the caller treats a blank value as a delete). */
 @Composable
 private fun NoteEditField(initial: String, onCommit: (String) -> Unit) {
-    var text by remember { mutableStateOf(initial) }
+    // Seed the cursor at the END of the existing text so editing a dictionary entry
+    // or note lands ready to tweak the tail, not at character 0.
+    var value by remember { mutableStateOf(TextFieldValue(initial, selection = TextRange(initial.length))) }
     val focusRequester = remember { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current
     OutlinedTextField(
-        value = text,
-        onValueChange = { text = it },
+        value = value,
+        onValueChange = { value = it },
         singleLine = true,
         modifier = Modifier
             .fillMaxWidth()
             .focusRequester(focusRequester),
         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-        keyboardActions = KeyboardActions(onDone = { onCommit(text.trim()) }),
+        keyboardActions = KeyboardActions(onDone = { onCommit(value.text.trim()) }),
     )
     LaunchedEffect(Unit) {
         // The popup has just turned focusable (onEditingChange) — focus the field
@@ -1747,18 +1751,37 @@ private fun BasqueReferenceSection(
     if (editing) {
         val focusRequester = remember { FocusRequester() }
         val density = LocalDensity.current
+        // Local editable value so we control the cursor: seed it at the END of the
+        // prefilled word (tapping the box usually means trimming the tail), not at 0.
+        var fieldValue by remember {
+            mutableStateOf(TextFieldValue(search, selection = TextRange(search.length)))
+        }
+        // Reflect a genuinely-external `search` change (a reset, a suggestion pick, a
+        // programmatic prefill) into the field, cursor at the end — but ignore the echo
+        // of our own keystrokes (guarded by lastSearch) so mid-word edits don't snap
+        // the cursor back to the end on every keypress.
+        var lastSearch by remember { mutableStateOf(search) }
+        if (search != lastSearch) {
+            lastSearch = search
+            if (search != fieldValue.text) {
+                fieldValue = TextFieldValue(search, selection = TextRange(search.length))
+            }
+        }
         // The field's bounds in window coordinates — a nested Popup can't trust the
         // anchorBounds it's handed (wrong coordinate space), so we anchor explicitly,
         // the same way the word popup itself does.
         var fieldBounds by remember { mutableStateOf<Rect?>(null) }
         Box(Modifier.fillMaxWidth()) {
             OutlinedTextField(
-                value = search,
-                onValueChange = onSearchInput,
+                value = fieldValue,
+                onValueChange = {
+                    fieldValue = it
+                    onSearchInput(it.text)
+                },
                 placeholder = { Text("Search…") },
                 singleLine = true,
                 // Once you've changed the prefilled word, an X resets it and closes.
-                trailingIcon = if (search != prefill) {
+                trailingIcon = if (fieldValue.text != prefill) {
                     {
                         IconButton(onClick = { onSearchInput(prefill); stopEditing() }) {
                             Icon(painter = painterResource(R.drawable.ic_close), contentDescription = "Reset search")
@@ -1768,7 +1791,7 @@ private fun BasqueReferenceSection(
                     null
                 },
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                keyboardActions = KeyboardActions(onSearch = { onSearch(search); stopEditing() }),
+                keyboardActions = KeyboardActions(onSearch = { onSearch(fieldValue.text); stopEditing() }),
                 modifier = Modifier
                     .fillMaxWidth()
                     .onGloballyPositioned { coords ->

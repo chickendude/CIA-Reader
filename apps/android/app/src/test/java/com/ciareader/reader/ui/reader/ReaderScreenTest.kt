@@ -10,6 +10,7 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.click
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.performClick
@@ -24,6 +25,7 @@ import com.ciareader.reader.data.reader.ParseCandidate
 import com.ciareader.reader.data.reader.ReaderToken
 import com.ciareader.reader.data.reader.SentenceTranslation
 import com.ciareader.reader.ui.theme.CiaReaderTheme
+import androidx.compose.ui.text.TextRange
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -664,6 +666,32 @@ class ReaderScreenTest {
         compose.onNodeWithContentDescription("Reset search").performClick()
         assertEquals("abiatu", resetTo)
         assertTrue(closed)
+    }
+
+    @Test
+    fun openingReferenceSearchPutsCursorAtEnd() {
+        compose.setContent {
+            CiaReaderTheme {
+                WordDetails(
+                    token = ReaderToken(0, "etxea", true, KnownStatus.UNKNOWN, "l1", null, null, false, false, true),
+                    translations = null,
+                    isLoading = false,
+                    basqueReference = emptyList(),
+                    basqueRefAvailable = true,
+                    basqueRefSearch = "etxea",
+                    basqueRefPrefill = "etxea",
+                )
+            }
+        }
+        compose.onNodeWithContentDescription("Search reference dictionaries").performClick()
+        compose.waitForIdle()
+        // The field opens with the cursor collapsed at the end of the prefilled word
+        // (so trimming the tail is one tap away), not at position 0.
+        val selection = compose
+            .onNode(hasSetTextAction())
+            .fetchSemanticsNode()
+            .config[SemanticsProperties.TextSelectionRange]
+        assertEquals(TextRange("etxea".length), selection)
     }
 
     @Test
