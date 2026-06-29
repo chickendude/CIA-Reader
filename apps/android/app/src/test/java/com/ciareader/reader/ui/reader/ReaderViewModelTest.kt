@@ -289,6 +289,38 @@ class ReaderViewModelTest {
     }
 
     @Test
+    fun setStatusRecolorsImmediatelyBeforeNetwork() = runTest(mainRule.dispatcher) {
+        val w = ReaderToken(0, "नमस्ते", true, KnownStatus.UNKNOWN, "l1", null, null, false, false, true)
+        val repo = FakeReaderRepository(meta = meta(1), chapters = mapOf(0 to Chapter(0, listOf(w))))
+        val v = vm(repo)
+        advanceUntilIdle()
+
+        v.onWordTap(w)
+        advanceUntilIdle()
+        v.setStatus(KnownStatus.KNOWN)
+        // No advanceUntilIdle: the network coroutine hasn't run yet, but the
+        // optimistic recolor must already be visible so the popup can close.
+        assertEquals(KnownStatus.KNOWN, v.state.value.tokens[0].status)
+        assertEquals(KnownStatus.KNOWN, v.state.value.selectedWord?.status)
+    }
+
+    @Test
+    fun setStatusRollsBackWhenNetworkFails() = runTest(mainRule.dispatcher) {
+        val w = ReaderToken(0, "नमस्ते", true, KnownStatus.UNKNOWN, "l1", null, null, false, false, true)
+        val repo = FakeReaderRepository(meta = meta(1), chapters = mapOf(0 to Chapter(0, listOf(w))))
+        val v = vm(repo, dict = FakeDictionaryRepository(statusFails = true))
+        advanceUntilIdle()
+
+        v.onWordTap(w)
+        advanceUntilIdle()
+        v.setStatus(KnownStatus.KNOWN)
+        advanceUntilIdle()
+
+        // The failed call rolls the optimistic change back to the prior status.
+        assertEquals(KnownStatus.UNKNOWN, v.state.value.tokens[0].status)
+    }
+
+    @Test
     fun nextChapterLoadsThatChapter() = runTest(mainRule.dispatcher) {
         val repo = FakeReaderRepository(
             meta = meta(2),
@@ -1048,6 +1080,8 @@ private class FakeDictionaryRepository(
     /** Per-lemma overrides so a test can fetch distinct definitions for the
      *  primary parse and its alternate candidates. */
     private val byLemma: Map<String, LemmaTranslations> = emptyMap(),
+    /** When true, [setStatus] returns Failure so tests can exercise rollback. */
+    private val statusFails: Boolean = false,
 ) : DictionaryRepository {
     var lastAdded: Pair<String, String>? = null
     var lastBasqueQuery: Pair<String, Boolean>? = null
@@ -1063,7 +1097,7 @@ private class FakeDictionaryRepository(
         translations?.let { Outcome.Success(it) } ?: Outcome.Failure("no translations")
 
     override suspend fun setStatus(lemmaId: String, status: KnownStatus): Outcome<KnownStatus> =
-        Outcome.Success(status)
+        if (statusFails) Outcome.Failure("offline") else Outcome.Success(status)
 
     override suspend fun addDefinition(lemmaId: String, body: String): Outcome<Unit> {
         lastAdded = lemmaId to body
