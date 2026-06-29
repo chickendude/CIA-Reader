@@ -581,22 +581,32 @@ class ReaderViewModel @Inject constructor(
      *  occurrence of that lemma in the current chapter. */
     fun setStatus(status: KnownStatus) {
         val lemmaId = _state.value.selectedWord?.lemmaId ?: return
+        // Recolor optimistically so the popup can close immediately without
+        // waiting on the network. Remember the prior status to roll back on
+        // failure. (The popup may already be dismissed by the time the network
+        // call returns, so reconcile against tokens rather than selectedWord.)
+        val previous = _state.value.tokens.firstOrNull { it.lemmaId == lemmaId }?.status
+        _state.update { s -> s.applyStatus(lemmaId, status) }
         viewModelScope.launch {
             when (val res = dictionary.setStatus(lemmaId, status)) {
-                is Outcome.Success -> _state.update { s ->
-                    val confirmed = res.data
-                    s.copy(
-                        tokens = s.tokens.map {
-                            if (it.lemmaId == lemmaId) it.copy(status = confirmed) else it
-                        },
-                        selectedWord = s.selectedWord?.copy(status = confirmed),
-                    )
+                // Reconcile with the server-confirmed status (usually identical).
+                is Outcome.Success -> _state.update { s -> s.applyStatus(lemmaId, res.data) }
+                // Roll back the optimistic change; user can retry.
+                is Outcome.Failure -> if (previous != null) {
+                    _state.update { s -> s.applyStatus(lemmaId, previous) }
                 }
-
-                is Outcome.Failure -> Unit // leave status unchanged; user can retry
             }
         }
     }
+
+    /** Recolor every occurrence of [lemmaId] in the current chapter to [status],
+     *  keeping the selected word (if it shares the lemma) in sync. */
+    private fun ReaderUiState.applyStatus(lemmaId: String, status: KnownStatus) = copy(
+        tokens = tokens.map { if (it.lemmaId == lemmaId) it.copy(status = status) else it },
+        selectedWord = selectedWord?.let {
+            if (it.lemmaId == lemmaId) it.copy(status = status) else it
+        },
+    )
 
     /** Translate the sentence the selected word sits in, via the server (which
      *  reconstructs + caches it). No-op without a chapter id or selection. */

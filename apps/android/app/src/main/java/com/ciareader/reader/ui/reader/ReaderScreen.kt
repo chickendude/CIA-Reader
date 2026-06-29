@@ -487,7 +487,13 @@ internal fun ReaderScreenContent(
         val hasLemma = selected.lemmaId != null
         // The VM toggles against its live status (re-selecting the active status
         // clears it to "new"), so repeated toggles in one open sheet work.
-        val onKnown = { onToggleStatus(KnownStatus.KNOWN) }
+        // Marking known closes the popup right away; the recolor is optimistic in
+        // the VM, so we don't wait on the network before dismissing. Toggle first
+        // (while the word is still selected), then close.
+        val onKnown = {
+            onToggleStatus(KnownStatus.KNOWN)
+            closeWord()
+        }
         val onLearn = { onToggleStatus(KnownStatus.LEARNING) }
         val onIgnore = { onToggleStatus(KnownStatus.IGNORED) }
         if (wordExpanded) {
