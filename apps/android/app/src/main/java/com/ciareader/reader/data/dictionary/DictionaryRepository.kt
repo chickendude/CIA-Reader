@@ -49,8 +49,14 @@ interface DictionaryRepository {
     /** Persists the viewer's status for a lemma; returns the confirmed status. */
     suspend fun setStatus(lemmaId: String, status: KnownStatus): Outcome<KnownStatus>
 
-    /** Submit the viewer's own definition for a lemma. */
-    suspend fun addDefinition(lemmaId: String, body: String): Outcome<Unit>
+    /** Submit the viewer's own definition for a lemma. [parentTranslationId] links
+     *  it to the official/community entry it was forked from (the "customize a
+     *  dictionary entry" flow); null for from-scratch or reference-seeded notes. */
+    suspend fun addDefinition(
+        lemmaId: String,
+        body: String,
+        parentTranslationId: String? = null,
+    ): Outcome<Unit>
 
     /** Edit one of the viewer's own definitions (by its translation id). */
     suspend fun editDefinition(translationId: String, body: String): Outcome<Unit>
@@ -109,8 +115,17 @@ class DictionaryRepositoryImpl @Inject constructor(
             KnownStatus.fromWire(response.knownLemma.status)
         }
 
-    override suspend fun addDefinition(lemmaId: String, body: String): Outcome<Unit> =
-        apiCall { api.addTranslation(CreateTranslationRequest(lemmaId, body)); Unit }
+    override suspend fun addDefinition(
+        lemmaId: String,
+        body: String,
+        parentTranslationId: String?,
+    ): Outcome<Unit> =
+        apiCall {
+            api.addTranslation(
+                CreateTranslationRequest(lemmaId, body, parentTranslationId = parentTranslationId),
+            )
+            Unit
+        }
 
     override suspend fun editDefinition(translationId: String, body: String): Outcome<Unit> =
         apiCall { api.editTranslation(translationId, UpdateTranslationRequest(body)); Unit }

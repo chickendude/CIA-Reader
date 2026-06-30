@@ -34,12 +34,16 @@ data class TranslationDto(
 )
 
 /** POST /api/v1/translations — submit the viewer's own definition for a lemma.
- *  targetLanguage is optional; omitted lets the server use the account default. */
+ *  targetLanguage is optional; omitted lets the server use the account default.
+ *  parentTranslationId links the new personal definition to the official /
+ *  community entry it was forked from (the "customize a dictionary entry" flow);
+ *  null when written from scratch or seeded from a reference (non-DB) entry. */
 @Serializable
 data class CreateTranslationRequest(
     val lemmaId: String,
     val body: String,
     val targetLanguage: String? = null,
+    val parentTranslationId: String? = null,
 )
 
 @Serializable
