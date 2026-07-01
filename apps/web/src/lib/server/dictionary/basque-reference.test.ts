@@ -142,6 +142,30 @@ describe('parseElhuyarAutocomplete', () => {
     expect(parseElhuyarAutocomplete('not json')).toEqual([]);
     expect(parseElhuyarAutocomplete('{"value":"/eu_es/x"}')).toEqual([]);
   });
+
+  it('form-decodes the slug and tightens a space-padded compound hyphen', () => {
+    // The real Elhuyar payload form-encodes the slug: a space is "+", reserved
+    // chars are "%XX", and it pads a compound's hyphen with spaces. Without
+    // decoding, "goi-lautada" (slug "goi+-+lautada") surfaced literally as
+    // "goi+-+lautada"; the hyphen must come back tight, not as "goi - lautada".
+    const json = JSON.stringify([
+      { value: '/eu_es/goi+-+lautada', label: 'x' },
+      { value: '/eu_es/herri%2Dlan', label: 'x' },
+      // A genuine multi-word entry keeps its spaces (no hyphen to tighten).
+      { value: '/eu_es/Afrika+Erdiko+Errepublika', label: 'x' },
+    ]);
+    expect(parseElhuyarAutocomplete(json)).toEqual([
+      'goi-lautada',
+      'herri-lan',
+      'Afrika Erdiko Errepublika',
+    ]);
+  });
+
+  it('falls back to the raw slug when it is not valid form-encoding', () => {
+    // A stray "%" that isn't a valid escape must not throw — show it as-is.
+    const json = JSON.stringify([{ value: '/eu_es/100%', label: 'x' }]);
+    expect(parseElhuyarAutocomplete(json)).toEqual(['100%']);
+  });
 });
 
 describe('searchElhuyarAutocomplete', () => {
