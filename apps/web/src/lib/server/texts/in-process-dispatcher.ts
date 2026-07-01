@@ -300,15 +300,16 @@ async function pickLemmaId(
   token: NlpToken,
   language: LanguageCode,
   index: LemmaIndex,
-): Promise<string | null> {
-  if (!token.is_word) return null;
+): Promise<{ lemmaId: string | null; viaSurfaceMap: boolean }> {
+  if (!token.is_word) return { lemmaId: null, viaSurfaceMap: false };
   // T-2.8: digit-only surfaces (with or without comma separators)
   // get rendered as numbers in the popup, not as lemmas. Skip lemma
   // resolution + auto-create for them so the lemmas table doesn't
   // collect "1,013,322 / NUM" rows the curator has to clean up later.
   // The number_forms column on the token row carries the per-language
   // spelled-out payload that drives the popup.
-  if (looksLikeNumberToken(token.surface)) return null;
+  if (looksLikeNumberToken(token.surface))
+    return { lemmaId: null, viaSurfaceMap: false };
   // T-2.7: form_lemma_overrides wins over Stanza. Curator seeds for
   // treebank quirks (Hindi finite copulas → होना and friends) +
   // T-6.7's crowdsourced promotions land here. The lookup is keyed
@@ -316,7 +317,7 @@ async function pickLemmaId(
   // entries — context-specific rows come online when the M6
   // disambiguation UI ships.
   const override = index.overridesBySurface.get(token.surface);
-  if (override) return override;
+  if (override) return { lemmaId: override, viaSurfaceMap: true };
   // `lemma_forms` surface tier. A recorded inflected form (curator-
   // added or paradigm-generated, with quarantined junk filtered out)
   // resolves the surface directly to its parent lemma — beats
@@ -326,12 +327,12 @@ async function pickLemmaId(
   // because that one can encode "this surface in *this* sentence
   // means X" while this one is unconditional.
   const fromForms = index.bySurface.get(token.surface);
-  if (fromForms) return fromForms;
+  if (fromForms) return { lemmaId: fromForms, viaSurfaceMap: true };
   // Strict-POS lookup first across every candidate. Real Stanza
   // output usually hits this path.
   for (const c of token.candidates) {
     const strict = index.byHeadwordPos.get(`${c.lemma} ${c.pos}`);
-    if (strict) return strict;
+    if (strict) return { lemmaId: strict, viaSurfaceMap: false };
   }
   // Loose fallback — the stub emits `pos: 'X'` for everything, and
   // even real Stanza occasionally disagrees with the dictionary's
@@ -339,7 +340,7 @@ async function pickLemmaId(
   // wins.
   for (const c of token.candidates) {
     const loose = index.byHeadword.get(c.lemma);
-    if (loose) return loose;
+    if (loose) return { lemmaId: loose, viaSurfaceMap: false };
   }
   // #320 nukta-stripped fallback. Catches the post-#316 / pre-#316
   // mismatch where the candidate's headword has nuktas the stored
@@ -350,15 +351,15 @@ async function pickLemmaId(
   // lossy (`ज़रा` and `जरा` collapse) so it goes last.
   for (const c of token.candidates) {
     const stripped = index.byNuktaStrippedHeadword.get(stripNukta(c.lemma));
-    if (stripped) return stripped;
+    if (stripped) return { lemmaId: stripped, viaSurfaceMap: false };
   }
   // Last resort — auto-create a lemma row from the top candidate so
   // the user can attach translations to it. Stub-pipeline candidates
   // (`pos: 'X'`, `lemma === surface`) still create a row; T-3.7's
   // editor lets curators clean those up later.
   const top = token.candidates[0];
-  if (!top || !top.lemma) return null;
-  return ensureLemma(language, top, index);
+  if (!top || !top.lemma) return { lemmaId: null, viaSurfaceMap: false };
+  return { lemmaId: await ensureLemma(language, top, index), viaSurfaceMap: false };
 }
 
 /**
@@ -386,22 +387,33 @@ export async function persistTokens(args: {
   // ensureLemma writes into the shared index — sequential keeps
   // duplicate inserts from racing each other across tokens of the
   // same lemma.
-  const resolvedLemmaIds: Array<string | null> = [];
+  const resolved: Array<{ lemmaId: string | null; viaSurfaceMap: boolean }> = [];
   for (const t of tokens) {
-    resolvedLemmaIds.push(await pickLemmaId(t, language, index));
+    resolved.push(await pickLemmaId(t, language, index));
   }
   const rows = tokens.map((t, i) => {
-    const lemmaId = resolvedLemmaIds[i] ?? null;
+    const { lemmaId: resolvedLemmaId, viaSurfaceMap } = resolved[i]!;
+    const lemmaId = resolvedLemmaId ?? null;
     return {
       chapterId,
       idx: t.idx,
       surface: t.surface,
       lemmaId,
-      lemmaCandidates: t.candidates.map((c) => ({
-        lemmaId: lookupCandidate(c, index),
-        features: c.features,
-        score: c.score,
-      })),
+      // T-2.7: when a surface-level override (or a vetted lemma_forms
+      // mapping) resolved the lemma, Stanza's discarded guess must not
+      // linger as an alternate candidate — it would render as a bogus
+      // second tab in the reader popup (e.g. `arrastiko` shown next to
+      // the override's `arrasti`). Collapse candidates to the resolved
+      // lemma; tokens.ts drops the entry equal to the active lemma, so
+      // the popup shows a single term.
+      lemmaCandidates:
+        viaSurfaceMap && lemmaId
+          ? [{ lemmaId, features: t.candidates[0]?.features ?? {}, score: 1 }]
+          : t.candidates.map((c) => ({
+              lemmaId: lookupCandidate(c, index),
+              features: c.features,
+              score: c.score,
+            })),
       features: t.candidates[0]?.features ?? {},
       isAmbiguous: t.is_ambiguous,
       // If we resolved (or auto-created) a dictionary row, the token
