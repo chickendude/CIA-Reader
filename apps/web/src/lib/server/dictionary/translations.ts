@@ -13,7 +13,7 @@
  * if the DB cost becomes real; until then the simpler approach is
  * easier to reason about and leaves an auditable trail.
  */
-import { and, count, eq, gt } from 'drizzle-orm';
+import { and, count, eq, gt, inArray } from 'drizzle-orm';
 
 import { db, schema } from '../db/index.js';
 import type { Translation } from '../db/schema.js';
@@ -99,35 +99,71 @@ async function assertLemmaExists(lemmaId: string): Promise<void> {
   }
 }
 
-async function assertParentBelongsToLemma(
+/**
+ * Resolve the lemma a forked personal note should attach to, validating the
+ * fork along the way. "Customize" copies an official/community entry the reader
+ * saw for this word — but that entry can live on a *sibling* lemma: the parser
+ * tags the tapped token under one POS while the dictionary entry sits under
+ * another (or, in messy data, under a duplicate same-headword lemma), and the
+ * reader surfaces it via the same-headword fallback in `getLemmaTranslations`.
+ * Pinning the note to the parent's own lemma keeps the fork with the entry it
+ * copied and preserves the invariant that a parent and its child share a
+ * target. Returns the lemma id to write the note against.
+ */
+async function resolveForkTargetLemma(
   parentId: string,
-  lemmaId: string,
-): Promise<void> {
-  const [row] = await db
+  requestedLemmaId: string,
+): Promise<string> {
+  const [parent] = await db
     .select({
-      id: schema.translations.id,
-      // T-14.7a: parent-target check via the polymorphic columns
-      // so the legacy lemma_id column can be dropped. A phrase-
-      // target parent forking onto a lemma is rejected here for
-      // the same reason it was when this used `lemmaId !== ...`
-      // — the customize-fork mechanic is per-target.
+      // T-14.7a: parent-target check via the polymorphic columns so the
+      // legacy lemma_id column can be dropped.
       targetType: schema.translations.targetType,
       targetId: schema.translations.targetId,
     })
     .from(schema.translations)
     .where(eq(schema.translations.id, parentId))
     .limit(1);
-  if (!row) {
+  if (!parent) {
     throw new TranslationValidationError(
       `parentTranslationId ${parentId} not found`,
       404,
     );
   }
-  if (row.targetType !== 'lemma' || row.targetId !== lemmaId) {
+  // A phrase-target parent can't be forked onto a lemma.
+  if (parent.targetType !== 'lemma') {
     throw new TranslationValidationError(
       'parentTranslationId belongs to a different lemma',
     );
   }
+  // The common case: the parent lives on the tapped lemma. No extra lookup.
+  if (parent.targetId === requestedLemmaId) return requestedLemmaId;
+
+  // Different lemma: allow it only when the parent sits on a same-word sibling
+  // (same headword + language) — the fallback-surfaced entry the reader really
+  // saw — and attach the note there so the guard's row invariant holds. Any
+  // other lemma is a cross-word fork and stays rejected.
+  const lemmaRows = await db
+    .select({
+      id: schema.lemmas.id,
+      headword: schema.lemmas.headword,
+      language: schema.lemmas.language,
+    })
+    .from(schema.lemmas)
+    .where(inArray(schema.lemmas.id, [parent.targetId, requestedLemmaId]));
+  const parentLemma = lemmaRows.find((r) => r.id === parent.targetId);
+  const requestedLemma = lemmaRows.find((r) => r.id === requestedLemmaId);
+  if (
+    parentLemma &&
+    requestedLemma &&
+    parentLemma.headword === requestedLemma.headword &&
+    parentLemma.language === requestedLemma.language
+  ) {
+    return parent.targetId;
+  }
+  throw new TranslationValidationError(
+    'parentTranslationId belongs to a different lemma',
+  );
 }
 
 async function assertUnderRateLimit(userId: string, now: Date): Promise<void> {
@@ -168,9 +204,12 @@ export async function submitUserTranslation(
 ): Promise<Translation> {
   const { body, targetLanguage } = validateInput(input);
   await assertLemmaExists(input.lemmaId);
-  if (input.parentTranslationId) {
-    await assertParentBelongsToLemma(input.parentTranslationId, input.lemmaId);
-  }
+  // A fork inherits the parent entry's lemma — which may be a same-word sibling
+  // the reader saw via the fallback — so the note lands with the entry it
+  // copied instead of being rejected for living on a different lemma.
+  const targetLemmaId = input.parentTranslationId
+    ? await resolveForkTargetLemma(input.parentTranslationId, input.lemmaId)
+    : input.lemmaId;
   await assertUnderRateLimit(userId, now);
 
   const [row] = await db
@@ -181,7 +220,7 @@ export async function submitUserTranslation(
       // pair. The reader / popup / export / merge surfaces all
       // moved to that pair in this PR's read-site sweep.
       targetType: 'lemma',
-      targetId: input.lemmaId,
+      targetId: targetLemmaId,
       source: 'user',
       submittedBy: userId,
       parentTranslationId: input.parentTranslationId ?? null,

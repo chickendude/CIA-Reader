@@ -282,9 +282,14 @@ describe('submitUserTranslation — validation errors', () => {
     }
   });
 
-  it('rejects a parent translation that belongs to a different lemma', async () => {
-    stageSelect([{ id: 'lemma-1' }]);
-    stageSelect([{ id: 'parent-1', lemmaId: 'lemma-OTHER' }]);
+  it('rejects a parent translation on a different, non-sibling lemma', async () => {
+    stageSelect([{ id: 'lemma-1' }]); // lemma exists
+    stageSelect([{ targetType: 'lemma', targetId: 'lemma-OTHER' }]); // parent
+    // Sibling comparison: different headwords → a cross-word fork, rejected.
+    stageSelect([
+      { id: 'lemma-1', headword: 'ur', language: 'eu' },
+      { id: 'lemma-OTHER', headword: 'sua', language: 'eu' },
+    ]);
     await expect(
       submitUserTranslation('user-1', {
         lemmaId: 'lemma-1',
@@ -292,6 +297,44 @@ describe('submitUserTranslation — validation errors', () => {
         parentTranslationId: 'parent-1',
       }),
     ).rejects.toBeInstanceOf(TranslationValidationError);
+  });
+
+  it('attaches a fork to the parent lemma when it is a same-word sibling', async () => {
+    // The reader saw this official via the same-headword fallback: the tapped
+    // lemma (lemma-1) is empty, the entry lives on sibling lemma-SIB. The fork
+    // must save — pinned to the parent's lemma — not be rejected.
+    stageSelect([{ id: 'lemma-1' }]); // lemma exists
+    stageSelect([{ targetType: 'lemma', targetId: 'lemma-SIB' }]); // parent
+    stageSelect([
+      { id: 'lemma-1', headword: 'hegoalde', language: 'eu' },
+      { id: 'lemma-SIB', headword: 'hegoalde', language: 'eu' },
+    ]);
+    stageSelect([{ n: 0 }]); // rate-limit count
+    stageInsert([
+      {
+        id: 'tr-1',
+        source: 'user',
+        submittedBy: 'user-1',
+        parentTranslationId: 'parent-1',
+        body: 'southern region',
+        targetLanguage: 'en',
+        sourceAttribution: null,
+        sourceId: null,
+        hidden: false,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+    ]);
+
+    await submitUserTranslation('user-1', {
+      lemmaId: 'lemma-1',
+      body: 'southern region',
+      parentTranslationId: 'parent-1',
+    });
+
+    // The note is written against the parent entry's lemma, not the tapped one.
+    const insertCall = calls.find((c) => c.kind === 'insert');
+    expect(insertCall?.payload).toMatchObject({ targetId: 'lemma-SIB' });
   });
 
   it('rejects a missing parent translation', async () => {

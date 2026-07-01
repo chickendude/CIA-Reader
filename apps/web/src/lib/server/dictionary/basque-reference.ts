@@ -52,6 +52,20 @@ function clean(text: string | null | undefined): string {
   return (text ?? '').replace(/\s+/g, ' ').trim();
 }
 
+/** Decode a form-encoded Elhuyar URL slug (`+`=space, `%XX`=escapes) back to
+ *  its display headword. Elhuyar pads the hyphen in compound headwords with
+ *  spaces ("goi + - + lautada"), so collapse a space-flanked hyphen back to a
+ *  tight one ("goi-lautada") — genuine multi-word entries ("Afrika Erdiko
+ *  Errepublika") and already-tight hyphens are left untouched. Returns the
+ *  input unchanged if it can't be decoded. */
+function decodeBasqueSlug(slug: string): string {
+  try {
+    return decodeURIComponent(slug.replace(/\+/g, ' ')).replace(/\s+-\s+/g, '-');
+  } catch {
+    return slug;
+  }
+}
+
 // ---- URLs -------------------------------------------------------------
 
 export function elhuyarUrl(word: string, opts: { preserveCase?: boolean } = {}): string {
@@ -326,7 +340,13 @@ export function parseElhuyarAutocomplete(jsonText: string): string[] {
   for (const item of raw) {
     const value = (item as { value?: unknown }).value;
     if (typeof value !== 'string') continue;
-    const term = clean(value.replace(/^\/[a-z_]+\//, ''));
+    // `value` is a URL path (`/eu_es/<slug>`) whose slug is form-encoded: a
+    // space is `+`, other reserved chars are `%XX`. Decode it before display,
+    // else a multi-word entry like "goi - lautada" surfaces literally as
+    // "goi+-+lautada". `+`→space first (decodeURIComponent leaves `+` as-is),
+    // then percent-decode; fall back to the raw slug if it's malformed.
+    const slug = value.replace(/^\/[a-z_]+\//, '');
+    const term = clean(decodeBasqueSlug(slug));
     if (!term || seen.has(term)) continue;
     seen.add(term);
     terms.push(term);

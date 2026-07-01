@@ -353,7 +353,20 @@ export async function getLemmaTranslations(
   // stripped key, so the second tier finds the entry the first
   // tier's strict-equality `headword =` clause missed.
   const lemmaTyped = lemma as Lemma;
-  let rows: Translation[] = primaryRows as Translation[];
+  // A viewer's own definition is stored on the directly-linked lemma, so once
+  // they save one the primary is no longer empty. That used to suppress the
+  // sibling-lemma dictionary fallback below — making the built-in Wiktionary /
+  // community entries the reader had been seeing vanish the moment they added a
+  // personal note. A personal note is not a dictionary entry: set it aside,
+  // decide the fallback on the remaining (dictionary) rows only, then merge the
+  // viewer's notes back in (they live on the primary lemma, never on a sibling).
+  const primaryTyped = primaryRows as Translation[];
+  const personalRows = viewer
+    ? primaryTyped.filter((r) => r.source === 'user' && r.submittedBy === viewer.id)
+    : [];
+  let rows: Translation[] = personalRows.length
+    ? primaryTyped.filter((r) => !personalRows.includes(r))
+    : primaryTyped;
   if (rows.length === 0) {
     const joined = await db
       .select({ translation: schema.translations })
@@ -406,6 +419,11 @@ export async function getLemmaTranslations(
       );
     rows = joinedStripped.map((r) => r.translation as Translation);
   }
+
+  // Re-attach the viewer's own notes from the primary lemma. They were held
+  // out of the fallback decision above; bucketTranslations re-sorts each bucket
+  // independently, so prepending here doesn't affect display order.
+  if (personalRows.length > 0) rows = [...personalRows, ...rows];
 
   const rowsWithVotes = await attachVoteData(rows, viewer);
 

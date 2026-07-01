@@ -192,6 +192,35 @@ describe('getLemmaTranslations (T-3.14 sibling fallback)', () => {
     expect(selectFn).toHaveBeenCalledTimes(4);
   });
 
+  it('keeps sibling dictionary entries visible after the viewer saves a personal note', async () => {
+    // Repro: the viewer's own definition is stored on the directly-linked
+    // lemma. Before the fix, that made `primaryRows` non-empty and suppressed
+    // the sibling fallback — so adding a personal note hid the built-in
+    // Wiktionary entries the reader had been seeing.
+    stage([lemmaRow({ id: 'lemma-1', pos: 'PROPN' })]); // SELECT lemma
+    stage([
+      // viewer's own note, stored on the tapped lemma
+      translationRow({
+        id: 'tr-personal',
+        lemmaId: 'lemma-1',
+        source: 'user',
+        submittedBy: 'u1',
+        body: 'my note',
+        sourceAttribution: null,
+        sourceId: null,
+      }),
+    ]); // primary translations → only the personal note
+    stage([
+      // sibling NOUN lemma still carries the dictionary entry
+      { translation: translationRow({ lemmaId: 'lemma-2', body: 'park' }) },
+    ]); // exact-headword sibling join
+    stage({ rows: [] }); // vote-score lookup (the personal row is source='user')
+    stage([]); // viewer vote lookup
+    const out = await getLemmaTranslations('lemma-1', { id: 'u1', role: 'user' });
+    expect(out.translations.personal.map((t) => t.body)).toEqual(['my note']);
+    expect(out.translations.official.map((t) => t.body)).toEqual(['park']);
+  });
+
   it('honors the viewer when bucketing sibling translations into personal vs community', async () => {
     stage([lemmaRow()]);
     stage([]); // primary empty
