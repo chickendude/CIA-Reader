@@ -70,6 +70,23 @@ export const BASQUE_OVERRIDES = [
   { surface: 'badia', lemma: 'badia', pos: 'NOUN', gloss: 'bay' },
   { surface: 'mendebalera', lemma: 'mendebal', pos: 'NOUN', gloss: 'west' },
   { surface: 'aspaldion', lemma: 'aspaldion', pos: 'ADV', gloss: 'lately; recently' },
+  // Second batch of Stanza mislemmatizations (verified against the live
+  // model). Over-strips, an unrecognized form, a -tzat prolative trio,
+  // a context-unstable verbal noun, and one malformed seq2seq lemma
+  // (`hamargarren` came back as the literal edit-script string
+  // "hamaR+garren!"). The -tzat cases + the case/number over-strips are
+  // interim fixes until the Phase 3 suffix-rule tier generalizes them.
+  { surface: 'gurea', lemma: 'gure', pos: 'DET', gloss: 'our; ours' },
+  { surface: 'aztarnak', lemma: 'aztarna', pos: 'NOUN', gloss: 'trace; footprint' },
+  { surface: 'menturaz', lemma: 'mentura', pos: 'NOUN', gloss: 'chance; fortune' },
+  { surface: 'kariaz', lemma: 'kari', pos: 'NOUN', gloss: 'reason; motive' },
+  { surface: 'espainiera', lemma: 'espainiera', pos: 'NOUN', gloss: 'Spanish (language)' },
+  { surface: 'sorrerako', lemma: 'sorrera', pos: 'NOUN', gloss: 'origin; birth' },
+  { surface: 'ergeltzat', lemma: 'ergel', pos: 'ADJ', gloss: 'foolish; silly' },
+  { surface: 'ezjakintzat', lemma: 'ezjakin', pos: 'ADJ', gloss: 'ignorant' },
+  { surface: 'traidoretzat', lemma: 'traidore', pos: 'NOUN', gloss: 'traitor' },
+  { surface: 'amaitzeaz', lemma: 'amaitu', pos: 'VERB', gloss: 'to finish; to end' },
+  { surface: 'hamargarren', lemma: 'hamargarren', pos: 'ADJ', gloss: 'tenth' },
 ];
 
 // Latin script is case-bearing and overrides match `token.surface` exactly,
