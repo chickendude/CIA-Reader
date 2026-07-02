@@ -65,6 +65,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -142,6 +143,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.foundation.layout.offset
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.IntOffset
@@ -360,6 +362,11 @@ internal fun ReaderScreenContent(
                 .fillMaxSize()
                 .padding(padding),
         ) {
+            // The progress bar is overlaid at the bottom edge; reserve its measured
+            // height as a bottom inset on the reader content so the last text row is
+            // never drawn behind it (otherwise descenders like y/g/p/q get clipped).
+            var progressBarHeightPx by remember { mutableIntStateOf(0) }
+            val readerInset = Modifier.padding(bottom = with(LocalDensity.current) { progressBarHeightPx.toDp() })
             when {
                 state.isLoading ->
                     CircularProgressIndicator(Modifier.align(Alignment.Center))
@@ -380,7 +387,7 @@ internal fun ReaderScreenContent(
                         onDismissWord = closeWord,
                         onPrevPage = onPrevChapter,
                         onNextPage = onNextChapter,
-                        modifier = Modifier.fillMaxSize(),
+                        modifier = Modifier.fillMaxSize().then(readerInset),
                     )
 
                 state.pageMode ->
@@ -404,7 +411,7 @@ internal fun ReaderScreenContent(
                         onRestoreConsumed = onRestoreConsumed,
                         highlightTokenIdx = highlightTokenIdx,
                         highlightAlpha = { highlightAlpha.value },
-                        modifier = Modifier.fillMaxSize(),
+                        modifier = Modifier.fillMaxSize().then(readerInset),
                     )
 
                 else ->
@@ -423,7 +430,7 @@ internal fun ReaderScreenContent(
                         onProgress = onProgress,
                         highlightTokenIdx = highlightTokenIdx,
                         highlightAlpha = { highlightAlpha.value },
-                        modifier = Modifier.fillMaxSize(),
+                        modifier = Modifier.fillMaxSize().then(readerInset),
                     )
             }
             if (!state.isLoading && state.errorMessage == null) {
@@ -431,6 +438,7 @@ internal fun ReaderScreenContent(
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
                         .fillMaxWidth()
+                        .onSizeChanged { progressBarHeightPx = it.height }
                         .background(MaterialTheme.colorScheme.surface)
                         .padding(horizontal = 12.dp, vertical = 4.dp),
                     verticalAlignment = Alignment.CenterVertically,
