@@ -2165,6 +2165,10 @@ private fun ReaderImage(
         // At 1× the pager owns horizontal drags (page flips); once zoomed in a
         // drag pans the page instead, so paging pauses until you zoom back out.
         userScrollEnabled = scale <= 1f,
+        // Keep the adjacent pages composed off-screen so their image is decoded
+        // into Coil's cache (and their overlay tokens prefetched) before you
+        // swipe — the next page is ready to slide in, not loading mid-swipe.
+        beyondViewportPageCount = 1,
     ) { page ->
         val data = pageCache[page]
         LaunchedEffect(page) { if (data == null) onEnsurePage(page) }
