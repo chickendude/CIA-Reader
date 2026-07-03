@@ -312,14 +312,22 @@
 
   let payload = $state<LemmaPayload | null>(null);
   let loadError = $state<string | null>(null);
-  let showAlternates = $state(false);
+  // Parse tabs: which lemma the popup is currently *viewing* — the token's
+  // resolved lemma by default, or an alternate candidate the reader tapped.
+  // Definition + translation actions follow this; status stays on the token's
+  // primary (a tab is a view, "set as correct" is the commit). Reset per word.
+  let activeLemmaId = $state<string | null>(null);
+  // The primary lemma's headword/pos, captured on load so its tab keeps a
+  // stable label after `payload` switches to an alternate.
+  let primaryHeadword = $state<string | null>(null);
+  let primaryPos = $state<string | null>(null);
   // T-6.2: opens the CorrectionModal layered on top of the popup.
   let showCorrectionModal = $state(false);
   let optimisticStatus = $state<'unknown' | 'learning' | 'known' | 'ignored'>(
     untrack(() => token?.status ?? 'unknown'),
   );
   let writeError = $state<string | null>(null);
-  // T-6.1: tracks the in-flight candidate pick so the "This one"
+  // T-6.1: tracks the in-flight candidate pick so the "Set as correct"
   // button can disable itself while the POST resolves and so the
   // user sees a visible "saving" state.
   let pickingLemmaId = $state<string | null>(null);
@@ -379,29 +387,15 @@
       return;
     }
     optimisticStatus = t.status;
+    // Reset the parse view to the token's primary lemma; the fetch effect
+    // below loads translations for whatever `viewLemmaId` resolves to.
+    activeLemmaId = t.lemmaId ?? null;
+    primaryHeadword = null;
+    primaryPos = null;
     if (!t.lemmaId) {
-      payload = null;
-      loadError = null;
       return;
     }
     let cancelled = false;
-    payload = null;
-    loadError = null;
-    void (async () => {
-      try {
-        const res = await fetch(`/api/v1/lemmas/${t.lemmaId}/translations`);
-        if (cancelled) return;
-        if (res.ok) {
-          payload = (await res.json()) as LemmaPayload;
-        } else {
-          loadError = `Could not load translations (${res.status})`;
-        }
-      } catch (e) {
-        if (!cancelled) {
-          loadError = `Network error: ${(e as Error).message}`;
-        }
-      }
-    })();
     // Book-wide frequency — best-effort, non-blocking, doesn't affect the rest
     // of the popup if it fails.
     void (async () => {
@@ -449,6 +443,72 @@
       cancelled = true;
     };
   });
+
+  // The lemma the popup currently acts on: the tapped parse tab, else the
+  // token's resolved lemma. Definition + translation reads/writes use this.
+  const viewLemmaId = $derived(activeLemmaId ?? token?.lemmaId ?? null);
+
+  // (Re)load translations whenever the viewed lemma changes — the initial
+  // primary load and every parse-tab switch both flow through here.
+  $effect(() => {
+    const id = viewLemmaId;
+    if (!id) {
+      payload = null;
+      loadError = null;
+      return;
+    }
+    let cancelled = false;
+    payload = null;
+    loadError = null;
+    void (async () => {
+      try {
+        const res = await fetch(`/api/v1/lemmas/${id}/translations`);
+        if (cancelled) return;
+        if (res.ok) {
+          const p = (await res.json()) as LemmaPayload;
+          payload = p;
+          // Stash the primary's headword/pos for its tab label — `payload`
+          // becomes the alternate's once a tab is picked.
+          if (id === token?.lemmaId) {
+            primaryHeadword = p.lemma.headword;
+            primaryPos = p.lemma.pos;
+          }
+        } else {
+          loadError = `Could not load translations (${res.status})`;
+        }
+      } catch (e) {
+        if (!cancelled) {
+          loadError = `Network error: ${(e as Error).message}`;
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  });
+
+  // Parse tabs shown above the definition: the primary lemma first, then the
+  // scored alternate candidates. Empty (no tabs) when the word is unambiguous.
+  const parseTabs = $derived.by(() => {
+    if (!token?.lemmaId) return [] as Array<{ lemmaId: string; headword: string; pos: string }>;
+    const tabs = [
+      {
+        lemmaId: token.lemmaId,
+        headword: primaryHeadword ?? payload?.lemma.headword ?? token.surface,
+        pos: primaryPos ?? payload?.lemma.pos ?? '',
+      },
+    ];
+    for (const c of token.candidates) {
+      if (c.lemmaId) tabs.push({ lemmaId: c.lemmaId, headword: c.headword, pos: c.pos });
+    }
+    return tabs;
+  });
+
+  // Switch the viewed parse (the fetch effect above reloads the definition).
+  function selectParse(lemmaId: string) {
+    if (lemmaId === activeLemmaId) return;
+    activeLemmaId = lemmaId;
+  }
 
   // ---- Admin-only Basque reference panel (Elhuyar / Euskaltzaindia) ---
   // Proprietary dictionaries shown to admins only, as a curation aid.
@@ -1033,12 +1093,12 @@
         createdAt: new Date().toISOString(),
       } as unknown as PublicTranslation;
     }
-    if (!token || !token.lemmaId) throw new Error('Missing lemma id');
+    if (!viewLemmaId) throw new Error('Missing lemma id');
     const res = await fetch('/api/v1/translations', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
-        lemmaId: token.lemmaId,
+        lemmaId: viewLemmaId,
         body,
         targetLanguage: 'en',
         parentTranslationId,
@@ -1082,9 +1142,9 @@
   // primary body up to the parent. The "primary" matches the loader's
   // pick: the oldest personal row (which the popup also lists first).
   function notifyPersonalChange() {
-    if (!token?.lemmaId) return;
+    if (!viewLemmaId) return;
     const next = payload?.translations.personal[0]?.body ?? null;
-    onPersonalTranslationChange?.(token.lemmaId, next);
+    onPersonalTranslationChange?.(viewLemmaId, next);
   }
 
   function startEditPrimary() {
@@ -1100,13 +1160,13 @@
   }
 
   async function submitPrimary() {
-    if (!token?.lemmaId) return;
+    if (!viewLemmaId) return;
     const trimmed = primaryBody.trim();
     if (trimmed.length === 0) {
       cancelEditPrimary();
       return;
     }
-    const lemmaId = token.lemmaId;
+    const lemmaId = viewLemmaId;
     const existing = payload?.translations.personal[0] ?? null;
     savingPrimary = true;
     primaryError = null;
@@ -1164,13 +1224,13 @@
     // T-14.3b: pending phrase has no lemmaId; postTranslation
     // routes that case through the phrase create-or-reuse path
     // and the popup closes via onPhraseCreated.
-    if (!token.lemmaId && !pendingSelection) return;
+    if (!viewLemmaId && !pendingSelection) return;
     const trimmed = newTranslationBody.trim();
     if (trimmed.length === 0) {
       addError = 'Translation cannot be empty.';
       return;
     }
-    const lemmaId = token.lemmaId;
+    const lemmaId = viewLemmaId;
     savingTranslation = true;
     addError = null;
     try {
@@ -1238,13 +1298,13 @@
   }
 
   async function submitCustomize() {
-    if (!customizingId || !token || !token.lemmaId) return;
+    if (!customizingId || !viewLemmaId) return;
     const trimmed = customizeBody.trim();
     if (trimmed.length === 0) {
       customizeError = 'Translation cannot be empty.';
       return;
     }
-    const lemmaId = token.lemmaId;
+    const lemmaId = viewLemmaId;
     savingCustomize = true;
     customizeError = null;
     try {
@@ -1273,13 +1333,13 @@
   }
 
   async function submitEditPersonal() {
-    if (!editingId || !token?.lemmaId) return;
+    if (!editingId || !viewLemmaId) return;
     const trimmed = editBody.trim();
     if (trimmed.length === 0) {
       editError = 'Translation cannot be empty.';
       return;
     }
-    const lemmaId = token.lemmaId;
+    const lemmaId = viewLemmaId;
     const id = editingId;
     savingEdit = true;
     editError = null;
@@ -1328,14 +1388,14 @@
   }
 
   async function deletePersonal(t: PublicTranslation) {
-    if (!token?.lemmaId) return;
+    if (!viewLemmaId) return;
     if (
       typeof window !== 'undefined' &&
       !window.confirm('Delete this translation?')
     ) {
       return;
     }
-    const lemmaId = token.lemmaId;
+    const lemmaId = viewLemmaId;
     deletingId = t.id;
     deleteError = null;
     try {
@@ -1360,7 +1420,7 @@
     translation: PublicTranslation,
     vote: 'up' | 'down',
   ) {
-    if (!token?.lemmaId) return;
+    if (!viewLemmaId) return;
     const nextVote = translation.viewerVote === vote ? null : vote;
     votingTranslationId = translation.id;
     voteError = null;
@@ -1374,7 +1434,7 @@
         const text = await res.text().catch(() => '');
         throw new Error(text || `PATCH failed: ${res.status}`);
       }
-      await refetchPayload(token.lemmaId);
+      await refetchPayload(viewLemmaId);
     } catch (e) {
       voteError = (e as Error).message;
     } finally {
@@ -1783,6 +1843,44 @@
     </header>
 
     {#if !isNumberToken}
+    <!-- Parse tabs (T-6.1): the token's resolved lemma plus any scored
+         alternates. Tapping a tab switches the definition shown below; the
+         active alternate offers "Set as correct" to commit a pick_candidate
+         correction. Only shown when the word is ambiguous (2+ parses). -->
+    {#if parseTabs.length > 1}
+      <div class="parse-tabs" role="tablist" aria-label="Word parsings" data-testid="parse-tabs">
+        {#each parseTabs as tab (tab.lemmaId)}
+          <button
+            type="button"
+            role="tab"
+            class="parse-tab"
+            data-active={tab.lemmaId === viewLemmaId ? '1' : '0'}
+            aria-selected={tab.lemmaId === viewLemmaId}
+            data-testid="parse-tab"
+            onclick={() => selectParse(tab.lemmaId)}
+          >
+            <span class="parse-tab-hw">{tab.headword}</span>
+            {#if tab.pos}<PosPill pos={tab.pos} class="parse-tab-pos-pill" />{/if}
+          </button>
+        {/each}
+      </div>
+      {#if viewLemmaId && viewLemmaId !== token.lemmaId}
+        <button
+          type="button"
+          class="parse-set-correct"
+          data-testid="parse-set-correct"
+          disabled={pickingLemmaId === viewLemmaId}
+          onclick={() => {
+            if (viewLemmaId) void pickCandidate(viewLemmaId);
+          }}
+        >
+          {pickingLemmaId === viewLemmaId ? 'Saving…' : 'Set as correct'}
+        </button>
+        {#if pickError}
+          <p class="err small" role="alert">{pickError}</p>
+        {/if}
+      {/if}
+    {/if}
     {#if isOwner && token.lemmaId && payload}
       <section class="sp-primary" data-testid="primary-translation">
         {#if editingPrimary}
@@ -2278,43 +2376,6 @@
       </button>
     {/if}
 
-    {#if token.isAmbiguous && token.candidates.length > 0}
-      <button
-        type="button"
-        class="alt-toggle"
-        onclick={() => (showAlternates = !showAlternates)}
-        aria-expanded={showAlternates}
-      >
-        <span class="chev" aria-hidden="true" data-open={showAlternates ? '1' : '0'}>›</span>
-        {token.candidates.length} alternate {token.candidates.length === 1 ? 'meaning' : 'meanings'}
-      </button>
-      {#if showAlternates}
-        <ul class="alt-list" data-testid="alt-candidates">
-          {#each token.candidates as cand (cand.lemmaId)}
-            <li class="alt" data-lemma-id={cand.lemmaId}>
-              <div class="alt-head">
-                <span class="alt-h">{cand.headword}</span>
-                <PosPill pos={cand.pos} class="alt-pos-pill" />
-              </div>
-              {#if cand.glossDefault}
-                <p class="alt-gloss">{cand.glossDefault}</p>
-              {/if}
-              <button
-                type="button"
-                class="alt-pick"
-                disabled={pickingLemmaId === cand.lemmaId}
-                onclick={() => pickCandidate(cand.lemmaId)}
-              >
-                {pickingLemmaId === cand.lemmaId ? 'Saving…' : 'This one'}
-              </button>
-            </li>
-          {/each}
-        </ul>
-        {#if pickError}
-          <p class="err small" role="alert">{pickError}</p>
-        {/if}
-      {/if}
-    {/if}
     {/if}
     </div>
   {/if}
@@ -3296,64 +3357,45 @@
   .fix-toggle:hover {
     background: color-mix(in oklch, var(--ink, var(--color-fg)) 5%, transparent);
   }
-  .alt-toggle {
+  /* Parse tabs (folder-tab strip): tap to switch the viewed lemma. */
+  .parse-tabs {
     margin-top: 0.85rem;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+    border-bottom: 1px solid var(--rule, var(--color-border));
+  }
+  .parse-tab {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 0.4rem;
     background: transparent;
     border: 1px solid var(--rule, var(--color-border));
-    border-radius: 999px;
-    padding: 0.4rem 0.85rem;
+    border-bottom: 0;
+    border-radius: 8px 8px 0 0;
+    padding: 0.35rem 0.7rem;
+    margin-bottom: -1px; /* overlap the strip's baseline so the active tab "opens" */
     font: inherit;
-    font-size: 0.78rem;
+    font-size: 0.85rem;
     color: var(--ink-3, var(--color-fg-muted));
     cursor: pointer;
-    display: inline-flex;
-    align-items: center;
-    gap: 0.45rem;
   }
-  .alt-toggle .chev {
-    display: inline-block;
-    transition: transform 140ms ease;
-    font-size: 0.95rem;
-    line-height: 0.8;
-  }
-  .alt-toggle .chev[data-open='1'] {
-    transform: rotate(90deg);
-  }
-  .alt-list {
-    list-style: none;
-    margin: 0.6rem 0 0;
-    padding: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 0.55rem;
-  }
-  .alt {
-    border: 1px solid var(--rule, var(--color-border));
-    border-radius: 8px;
-    padding: 0.55rem 0.7rem;
-    background: var(--card, var(--color-bg));
-  }
-  .alt-head {
-    display: flex;
-    align-items: baseline;
-    gap: 0.55rem;
-    margin-bottom: 0.2rem;
-  }
-  .alt-h {
-    font-family: var(--font-serif-dev, var(--font-serif));
-    font-size: 1.05rem;
+  .parse-tab[data-active='1'] {
     color: var(--ink, var(--color-fg));
+    background: var(--card, var(--color-bg));
+    border-color: var(--accent, var(--color-accent));
+    /* paint over the baseline so the tab reads as open into the panel below */
+    border-bottom: 1px solid var(--card, var(--color-bg));
   }
-  :global(.alt-pos-pill) {
+  .parse-tab-hw {
+    font-family: var(--font-serif-dev, var(--font-serif));
+    font-size: 1rem;
+  }
+  :global(.parse-tab-pos-pill) {
     flex-shrink: 0;
   }
-  .alt-gloss {
-    margin: 0 0 0.45rem;
-    font-size: 0.82rem;
-    color: var(--ink-2, var(--color-fg));
-    line-height: 1.35;
-  }
-  .alt-pick {
+  .parse-set-correct {
+    margin-top: 0.6rem;
     background: var(--accent, var(--color-accent));
     color: var(--accent-ink, var(--color-bg));
     border: 0;
@@ -3363,7 +3405,7 @@
     font-size: 0.78rem;
     cursor: pointer;
   }
-  .alt-pick:disabled {
+  .parse-set-correct:disabled {
     opacity: 0.6;
     cursor: progress;
   }

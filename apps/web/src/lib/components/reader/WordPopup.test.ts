@@ -1997,3 +1997,140 @@ describe('WordPopup — editable headword search', () => {
     expect(input.value).toBe('pena');
   });
 });
+
+describe('WordPopup — parse tabs (T-6.1)', () => {
+  function res(payload: unknown, status = 200) {
+    return new Response(JSON.stringify(payload), {
+      status,
+      headers: { 'content-type': 'application/json' },
+    });
+  }
+
+  const PRIMARY = {
+    lemma: { id: 'lem-galera', headword: 'galera', pos: 'NOUN', glossDefault: 'loss' },
+    translations: { personal: [], official: [], community: [] },
+  };
+  const ALT = {
+    lemma: { id: 'lem-gale', headword: 'gale', pos: 'NOUN', glossDefault: 'hunger' },
+    translations: { personal: [], official: [], community: [] },
+  };
+
+  function homographToken() {
+    return makeToken({
+      surface: 'galera',
+      lemmaId: 'lem-galera',
+      isWord: true,
+      isAmbiguous: true,
+      candidates: [
+        {
+          lemmaId: 'lem-gale',
+          headword: 'gale',
+          pos: 'NOUN',
+          glossDefault: 'hunger',
+          score: 0.999,
+          features: {},
+        },
+      ],
+    });
+  }
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('renders a tab per parse; the alternate has no "Set as correct" until viewed', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: unknown) => {
+        const url = String(input);
+        if (url.includes('/lemmas/lem-gale/translations')) return res(ALT);
+        return res(PRIMARY);
+      }),
+    );
+    render(WordPopup, {
+      token: homographToken(),
+      language: 'eu',
+      isOwner: true,
+      onClose: vi.fn(),
+    });
+    await waitFor(() => {
+      const tabs = document.body.querySelectorAll('[data-testid="parse-tab"]');
+      expect(tabs.length).toBe(2);
+    });
+    // The primary is active on open, so no correct-commit affordance yet.
+    expect(document.body.querySelector('[data-testid="parse-set-correct"]')).toBeNull();
+  });
+
+  it('switches the viewed definition on tab click and commits via "Set as correct"', async () => {
+    const fetchMock = vi.fn(async (input: unknown, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/me/token-corrections') && init?.method === 'POST') return res({}, 200);
+      if (url.includes('/lemmas/lem-gale/translations')) return res(ALT);
+      return res(PRIMARY);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const onClose = vi.fn();
+    render(WordPopup, {
+      token: homographToken(),
+      language: 'eu',
+      isOwner: true,
+      onClose,
+    });
+
+    const tabs = await waitFor(() => {
+      const t = document.body.querySelectorAll('[data-testid="parse-tab"]');
+      if (t.length !== 2) throw new Error('tabs not ready');
+      return [...t] as HTMLButtonElement[];
+    });
+
+    // Tap the alternate (second) tab → fetches gale's translations, and the
+    // "Set as correct" commit affordance appears.
+    tabs[1]!.click();
+    await waitFor(() => {
+      expect(
+        fetchMock.mock.calls.some((c) =>
+          String(c[0]).includes('/lemmas/lem-gale/translations'),
+        ),
+      ).toBe(true);
+      expect(document.body.querySelector('[data-testid="parse-set-correct"]')).not.toBeNull();
+    });
+
+    // Commit the pick — POSTs a pick_candidate correction for the viewed lemma.
+    (document.body.querySelector('[data-testid="parse-set-correct"]') as HTMLButtonElement).click();
+    await waitFor(() => {
+      const post = fetchMock.mock.calls.find(
+        (c) =>
+          String(c[0]).includes('/me/token-corrections') &&
+          (c[1] as RequestInit | undefined)?.method === 'POST',
+      );
+      expect(post).toBeTruthy();
+      const body = JSON.parse(String((post![1] as RequestInit).body));
+      expect(body).toMatchObject({
+        tokenId: 't1',
+        type: 'pick_candidate',
+        chosenLemmaId: 'lem-gale',
+      });
+    });
+    // A successful pick closes the popup.
+    await waitFor(() => expect(onClose).toHaveBeenCalled());
+  });
+
+  it('shows no parse tabs for an unambiguous word', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(res(PRIMARY)));
+    render(WordPopup, {
+      token: makeToken({
+        surface: 'galera',
+        lemmaId: 'lem-galera',
+        isWord: true,
+        candidates: [],
+      }),
+      language: 'eu',
+      isOwner: true,
+      onClose: vi.fn(),
+    });
+    await waitFor(() => {
+      expect(document.body.querySelector('[data-testid="word-popup"]')).not.toBeNull();
+    });
+    expect(document.body.querySelector('[data-testid="parse-tabs"]')).toBeNull();
+  });
+});
