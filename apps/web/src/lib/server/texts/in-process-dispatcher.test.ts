@@ -350,6 +350,63 @@ describe('processTextNow', () => {
     expect(tokenInsert[0]!.surface).toBe('है');
   });
 
+  it('applies a Basque form_lemma_overrides seed over Stanza (badiara → badia)', async () => {
+    // Regression guard for the Basque parser fix: Stanza's
+    // UD_Basque-BDT over-strips the allative `badiara` to `badi`.
+    // The curator seed (seed-form-overrides.mjs) maps the surface to
+    // the correct `badia` lemma, and the override must win here.
+    stage([{ id: 'text-1', language: 'eu' }]);
+    stage([{ id: 'chap-1', body: 'Gu badiara iritsi ginen.' }]);
+    stage([{ id: 'lemma-badia', headword: 'badia', pos: 'NOUN' }]);
+    stage([
+      {
+        surfaceNfc: 'badiara',
+        chosenLemmaId: 'lemma-badia',
+        contextSignature: '',
+      },
+    ]);
+    stage([]); // lemma_forms surface preload — empty for this test.
+
+    nlpProcess.mockResolvedValueOnce({
+      language: 'eu',
+      pipeline_id: 'stanza-eu',
+      tokens: [
+        {
+          idx: 0,
+          surface: 'badiara',
+          is_word: true,
+          is_ambiguous: false,
+          is_oov: false,
+          romanization: null,
+          number_forms: null,
+          // Stanza's wrong guess: over-stripped bare `badi`.
+          candidates: [{ lemma: 'badi', pos: 'NOUN', score: 1.0, features: {} }],
+        },
+      ],
+    });
+
+    await processTextNow('text-1');
+
+    const inserts = calls.filter(
+      (c): c is Extract<Call, { kind: 'insert' }> => c.kind === 'insert',
+    );
+    // Override wins → no junk `badi` lemma auto-created; only the
+    // text_tokens batch is inserted.
+    expect(inserts).toHaveLength(1);
+    const tokenInsert = inserts[0]!.values as Array<{
+      lemmaId: string | null;
+      surface: string;
+      lemmaCandidates: Array<{ lemmaId: string | null; score: number }>;
+    }>;
+    expect(tokenInsert[0]!.lemmaId).toBe('lemma-badia');
+    expect(tokenInsert[0]!.surface).toBe('badiara');
+    // The stale Stanza guess (`badi`) must NOT survive as an alternate
+    // candidate — otherwise the reader popup shows a bogus second tab.
+    expect(tokenInsert[0]!.lemmaCandidates).toEqual([
+      { lemmaId: 'lemma-badia', features: {}, score: 1 },
+    ]);
+  });
+
   it('resolves a surface via the lemma_forms tier when Stanza guesses a wrong lemma', async () => {
     // The dispatcher's new tier: a recorded `lemma_forms.surface →
     // lemma_id` mapping wins over Stanza's per-candidate lemma
@@ -396,6 +453,47 @@ describe('processTextNow', () => {
     const tokenInsert = inserts[0]!.values as Array<{ lemmaId: string | null; surface: string }>;
     expect(tokenInsert[0]!.lemmaId).toBe('lemma-rahiba');
     expect(tokenInsert[0]!.surface).toBe('ରହିଲି');
+  });
+
+  it('resolves a sentence-initial capitalized surface via the case-folded lemma_forms tier', async () => {
+    // Basque paradigm forms are stored lower-case; a sentence-initial
+    // "Badiara" must still resolve to badia. foldSurface() lower-cases
+    // both the index keys and the lookup, so the capitalized surface
+    // hits the lower-case form row without auto-creating a junk lemma.
+    stage([{ id: 'text-1', language: 'eu' }]);
+    stage([{ id: 'chap-1', body: 'Badiara iritsi ginen.' }]);
+    stage([{ id: 'lemma-badia', headword: 'badia', pos: 'NOUN' }]);
+    stage([]); // overrides — empty
+    stage([{ surface: 'badiara', lemmaId: 'lemma-badia' }]); // lower-case form
+
+    nlpProcess.mockResolvedValueOnce({
+      language: 'eu',
+      pipeline_id: 'stanza-eu',
+      tokens: [
+        {
+          idx: 0,
+          surface: 'Badiara',
+          is_word: true,
+          is_ambiguous: false,
+          is_oov: false,
+          romanization: null,
+          number_forms: null,
+          candidates: [{ lemma: 'Badia', pos: 'NOUN', score: 1.0, features: {} }],
+        },
+      ],
+    });
+
+    await processTextNow('text-1');
+
+    const inserts = calls.filter(
+      (c): c is Extract<Call, { kind: 'insert' }> => c.kind === 'insert',
+    );
+    // No auto-create — the case-folded form tier matched.
+    expect(inserts).toHaveLength(1);
+    const tokenInsert = inserts[0]!.values as Array<{ lemmaId: string | null; surface: string }>;
+    expect(tokenInsert[0]!.lemmaId).toBe('lemma-badia');
+    // Original surface case is preserved on the persisted token.
+    expect(tokenInsert[0]!.surface).toBe('Badiara');
   });
 
   it('prefers a dictionary-recorded romanization over the pipeline output', async () => {
