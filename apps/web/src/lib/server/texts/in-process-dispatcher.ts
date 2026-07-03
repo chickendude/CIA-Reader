@@ -77,6 +77,15 @@ export type LemmaIndex = {
    */
   overridesBySurface: Map<string, string>;
   /**
+   * `surface` → ordered alternate lemma ids for a curated homograph
+   * override (form_lemma_overrides.alternate_lemma_ids). Present only
+   * for surfaces whose override carries alternates (e.g. Basque
+   * `galera` → [gale]); the dispatcher expands these into the token's
+   * candidate list so the reader popup offers them as pickable tabs
+   * alongside the chosen default.
+   */
+  overrideAlternatesBySurface: Map<string, string[]>;
+  /**
    * `surface` → lemma id derived from live (non-quarantined)
    * `lemma_forms` rows. Sits between the curator-context override
    * tier and Stanza's candidates: a recorded form mapping is more
@@ -155,20 +164,26 @@ export async function loadLemmaIndex(
     .select({
       surfaceNfc: schema.formLemmaOverrides.surfaceNfc,
       chosenLemmaId: schema.formLemmaOverrides.chosenLemmaId,
+      alternateLemmaIds: schema.formLemmaOverrides.alternateLemmaIds,
       contextSignature: schema.formLemmaOverrides.contextSignature,
     })
     .from(schema.formLemmaOverrides)
     .where(eq(schema.formLemmaOverrides.language, language))) as Array<{
     surfaceNfc: string;
     chosenLemmaId: string;
+    alternateLemmaIds: string[] | null;
     contextSignature: string;
   }>;
   const overridesBySurface = new Map<string, string>();
+  const overrideAlternatesBySurface = new Map<string, string[]>();
   for (const r of overrideRows) {
     if (r.contextSignature !== '') continue; // wildcard only for now
     const key = foldSurface(r.surfaceNfc);
     if (!overridesBySurface.has(key)) {
       overridesBySurface.set(key, r.chosenLemmaId);
+      if (r.alternateLemmaIds && r.alternateLemmaIds.length > 0) {
+        overrideAlternatesBySurface.set(key, r.alternateLemmaIds);
+      }
     }
   }
   // Live `lemma_forms` surface → lemma_id mappings for this language.
@@ -204,6 +219,7 @@ export async function loadLemmaIndex(
     byHeadword,
     byNuktaStrippedHeadword,
     overridesBySurface,
+    overrideAlternatesBySurface,
     bySurface,
     romanizationBySurface,
   };

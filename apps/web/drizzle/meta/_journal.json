@@ -351,6 +351,13 @@
       "when": 1782103478214,
       "tag": "0049_superb_champions",
       "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1783001310331,
+      "tag": "0050_young_psylocke",
+      "breakpoints": true
     }
   ]
 }
