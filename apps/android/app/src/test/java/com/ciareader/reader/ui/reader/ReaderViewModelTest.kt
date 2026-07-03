@@ -1039,6 +1039,142 @@ class ReaderViewModelTest {
         assertTrue(v.state.value.basqueRefSuggestions.isEmpty())
     }
 
+    @Test
+    fun blankPdfPageRendersInsteadOfStuckProcessing() = runTest(mainRule.dispatcher) {
+        // A blank / image-only PDF page has an image but zero words (tokens stay
+        // empty forever) — it must render, not sit on the "preparing" spinner.
+        val repo = FakeReaderRepository(
+            meta = meta(1),
+            chapters = mapOf(0 to imageChapter(0, tokens = emptyList())),
+        )
+        val v = vm(repo)
+        advanceUntilIdle()
+
+        val s = v.state.value
+        assertFalse(s.isProcessing)
+        assertFalse(s.isLoading)
+        assertEquals("/pdf/0.webp", s.pageImageUrl)
+        assertTrue(s.tokens.isEmpty())
+    }
+
+    @Test
+    fun unprocessedChapterWithoutImageStillShowsPreparing() = runTest(mainRule.dispatcher) {
+        // No image + no tokens = genuinely not tokenized yet → keep the preparing UI.
+        val repo = FakeReaderRepository(meta = meta(1), chapters = mapOf(0 to Chapter(0, emptyList())))
+        val v = vm(repo)
+        advanceUntilIdle()
+
+        assertTrue(v.state.value.isProcessing)
+    }
+
+    @Test
+    fun loadingImagePagePrefetchesNeighbours() = runTest(mainRule.dispatcher) {
+        val repo = FakeReaderRepository(
+            meta = meta(3),
+            chapters = mapOf(0 to imageChapter(0), 1 to imageChapter(1), 2 to imageChapter(2)),
+            savedProgress = ReadingProgress(chapterIdx = 1, tokenIdx = 0, pctRead = 0.0),
+        )
+        val v = vm(repo)
+        advanceUntilIdle()
+
+        // Opened at page 1 → the page and both neighbours are cached and ready.
+        assertEquals(setOf(0, 1, 2), v.state.value.pageCache.keys)
+        assertTrue(v.state.value.pageCache.values.all { it.load == PageLoad.READY })
+    }
+
+    @Test
+    fun ensureImagePageCachesImageAndTokens() = runTest(mainRule.dispatcher) {
+        val repo = FakeReaderRepository(
+            meta = meta(2),
+            chapters = mapOf(0 to imageChapter(0), 1 to imageChapter(1, tokens = listOf(word("x")))),
+        )
+        val v = vm(repo)
+        advanceUntilIdle()
+
+        val page = v.state.value.pageCache[1]
+        assertEquals(PageLoad.READY, page?.load)
+        assertEquals("/pdf/1.webp", page?.imageUrl)
+        assertEquals(1, page?.tokens?.size)
+        assertEquals("chap-1", page?.chapterId)
+    }
+
+    @Test
+    fun settlingOnCachedPagePromotesItInstantly() = runTest(mainRule.dispatcher) {
+        val repo = FakeReaderRepository(
+            meta = meta(3),
+            chapters = mapOf(
+                0 to imageChapter(0),
+                1 to imageChapter(1, tokens = listOf(word("दो"))),
+                2 to imageChapter(2),
+            ),
+        )
+        val v = vm(repo)
+        advanceUntilIdle()
+        assertEquals(PageLoad.READY, v.state.value.pageCache[1]?.load) // prefetched
+
+        v.onImagePageSettled(1)
+        advanceUntilIdle()
+
+        val s = v.state.value
+        assertEquals(1, s.chapterIdx)
+        assertEquals("/pdf/1.webp", s.pageImageUrl)
+        assertEquals(1, s.tokens.size)
+        // The flip saves the new spot as the current position.
+        assertEquals(ReadingProgress(1, 0, 0.0), repo.lastSaved)
+    }
+
+    @Test
+    fun settlingOnUncachedPageFallsBackToFullLoad() = runTest(mainRule.dispatcher) {
+        val repo = FakeReaderRepository(
+            meta = meta(4),
+            chapters = mapOf(
+                0 to imageChapter(0), 1 to imageChapter(1),
+                2 to imageChapter(2), 3 to imageChapter(3, tokens = listOf(word("z"))),
+            ),
+        )
+        val v = vm(repo)
+        advanceUntilIdle()
+        assertNull(v.state.value.pageCache[3]) // beyond the prefetch window
+
+        v.onImagePageSettled(3)
+        advanceUntilIdle()
+
+        val s = v.state.value
+        assertEquals(3, s.chapterIdx)
+        assertEquals("/pdf/3.webp", s.pageImageUrl)
+        assertEquals(1, s.tokens.size)
+    }
+
+    @Test
+    fun settlingOnTheCurrentPageIsANoop() = runTest(mainRule.dispatcher) {
+        val repo = FakeReaderRepository(
+            meta = meta(2),
+            chapters = mapOf(0 to imageChapter(0), 1 to imageChapter(1)),
+        )
+        val v = vm(repo)
+        advanceUntilIdle()
+        repo.lastSaved = null
+
+        v.onImagePageSettled(0) // already on page 0
+        advanceUntilIdle()
+
+        assertEquals(0, v.state.value.chapterIdx)
+        assertNull(repo.lastSaved) // no redundant save / reload
+    }
+
+    private fun imageChapter(
+        idx: Int,
+        url: String = "/pdf/$idx.webp",
+        tokens: List<ReaderToken> = emptyList(),
+    ) = Chapter(
+        chapterIdx = idx,
+        tokens = tokens,
+        chapterId = "chap-$idx",
+        pageImageUrl = url,
+        pageWidth = 100,
+        pageHeight = 200,
+    )
+
     private fun word(surface: String) =
         ReaderToken(0, surface, true, KnownStatus.UNKNOWN, null, null, null, false, false, false)
 
