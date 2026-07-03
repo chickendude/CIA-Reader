@@ -22,7 +22,9 @@
     "dictionary:import": "tsx scripts/import-dictionary.ts",
     "dictionary:update": "tsx scripts/update-dictionary.ts",
     "aggregate-corrections": "tsx scripts/aggregate-corrections.ts",
-    "seed-admin": "tsx scripts/seed-admin.ts"
+    "seed-admin": "tsx scripts/seed-admin.ts",
+    "seed:form-overrides": "node scripts/seed-form-overrides.mjs",
+    "seed:basque-paradigms": "node scripts/load-basque-paradigms.mjs"
   },
   "dependencies": {
     "@ciareader/shared-types": "workspace:*",

@@ -118,11 +118,18 @@ async function main() {
   // inflected form → its parent lemma. Excludes quarantined junk. Sits below
   // the context overrides but above Stanza's candidate guesses. This is how
   // paradigm-generated declensions (badietara → badia, …) resolve.
+  // Source-priority tiebreak for homographs (mirrors in-process-dispatcher.ts):
+  // a curator/import form beats a paradigm `generator` form for the same
+  // surface, so a rare noun's generated declension can't shadow a commoner
+  // word. first-win over this order keeps the highest-priority row.
   const formRows = await fetchAll(
     `SELECT lf.surface, lf.lemma_id
        FROM lemma_forms lf
        JOIN lemmas l ON l.id = lf.lemma_id
-      WHERE l.language = $1 AND lf.quarantined_at IS NULL`,
+      WHERE l.language = $1 AND lf.quarantined_at IS NULL
+      ORDER BY CASE lf.created_by
+                 WHEN 'curator' THEN 0 WHEN 'import' THEN 1
+                 WHEN 'pipeline' THEN 2 ELSE 3 END`,
     text.language,
   );
   const formsBySurface = new Map();
