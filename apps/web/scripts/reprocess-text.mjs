@@ -31,6 +31,11 @@ if (!textId) {
 
 const sql = postgres(DATABASE_URL, { max: 4, idle_timeout: 5 });
 
+// Case-fold key for surface lookups — mirrors foldSurface() in
+// in-process-dispatcher.ts so sentence-initial / all-caps inflected
+// forms resolve to the same override / lemma_forms entry.
+const foldSurface = (s) => s.normalize('NFC').toLowerCase();
+
 async function fetchOne(query, ...params) {
   const rows = await sql.unsafe(query, params);
   return rows[0] ?? null;
@@ -100,13 +105,32 @@ async function main() {
   );
   const overridesBySurface = new Map();
   for (const r of overrideRows) {
-    if (!overridesBySurface.has(r.surface_nfc)) {
-      overridesBySurface.set(r.surface_nfc, r.chosen_lemma_id);
+    const key = foldSurface(r.surface_nfc);
+    if (!overridesBySurface.has(key)) {
+      overridesBySurface.set(key, r.chosen_lemma_id);
     }
   }
   console.log(
     `[reprocess] form_lemma_overrides loaded: ${overridesBySurface.size} surfaces`,
   );
+
+  // lemma_forms surface tier (mirrors in-process-dispatcher.ts): a recorded
+  // inflected form → its parent lemma. Excludes quarantined junk. Sits below
+  // the context overrides but above Stanza's candidate guesses. This is how
+  // paradigm-generated declensions (badietara → badia, …) resolve.
+  const formRows = await fetchAll(
+    `SELECT lf.surface, lf.lemma_id
+       FROM lemma_forms lf
+       JOIN lemmas l ON l.id = lf.lemma_id
+      WHERE l.language = $1 AND lf.quarantined_at IS NULL`,
+    text.language,
+  );
+  const formsBySurface = new Map();
+  for (const r of formRows) {
+    const key = foldSurface(r.surface);
+    if (!formsBySurface.has(key)) formsBySurface.set(key, r.lemma_id);
+  }
+  console.log(`[reprocess] lemma_forms loaded: ${formsBySurface.size} surfaces`);
 
   // Primary script per language. Mirrors LANGUAGES[lang].script in
   // @ciareader/shared-types (the authoritative registry) — kept inline here
@@ -155,8 +179,11 @@ async function main() {
   async function pickLemmaId(t, language) {
     if (!t.is_word) return null;
     // T-2.7 overrides win over Stanza.
-    const override = overridesBySurface.get(t.surface);
+    const override = overridesBySurface.get(foldSurface(t.surface));
     if (override) return override;
+    // lemma_forms surface tier — paradigm-generated / curator-recorded forms.
+    const fromForms = formsBySurface.get(foldSurface(t.surface));
+    if (fromForms) return fromForms;
     for (const c of t.candidates ?? []) {
       const strict = byHeadwordPos.get(`${c.lemma} ${c.pos}`);
       if (strict) return strict;
@@ -202,7 +229,10 @@ async function main() {
         // Mirror the dispatcher: when a form_lemma_overrides row
         // resolved this surface, drop Stanza's discarded candidate so
         // the reader popup doesn't show it as a bogus second tab.
-        const viaOverride = t.is_word && overridesBySurface.has(t.surface);
+        const viaOverride =
+          t.is_word &&
+          (overridesBySurface.has(foldSurface(t.surface)) ||
+            formsBySurface.has(foldSurface(t.surface)));
         return {
         chapterId: chapter.id,
         idx: t.idx,

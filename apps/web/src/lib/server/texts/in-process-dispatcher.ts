@@ -99,6 +99,20 @@ export type LemmaIndex = {
 };
 
 /**
+ * Case-fold key for surface-keyed lookups (overrides + lemma_forms).
+ * NFC then lower-case so a sentence-initial / all-caps inflected form
+ * ("Badiara", "MENDEBALERANTZ") resolves to the same paradigm/override
+ * entry as its lower-case form. A no-op for case-less scripts
+ * (Devanagari, Hebrew, Odia), so it only affects Latin-script languages
+ * like Basque. The tiny risk — a capitalised proper noun colliding with
+ * a common-noun form — is acceptable for a reader and matches the
+ * intent of the existing Title-case override seeds.
+ */
+function foldSurface(surface: string): string {
+  return surface.normalize('NFC').toLowerCase();
+}
+
+/**
  * Pre-load every lemma in the language into a pair of lookup maps so
  * the per-token resolution is O(1) memory rather than O(n) DB
  * round-trips. For an MVP-sized lemma table (~50k Hindi entries)
@@ -152,8 +166,9 @@ export async function loadLemmaIndex(
   const overridesBySurface = new Map<string, string>();
   for (const r of overrideRows) {
     if (r.contextSignature !== '') continue; // wildcard only for now
-    if (!overridesBySurface.has(r.surfaceNfc)) {
-      overridesBySurface.set(r.surfaceNfc, r.chosenLemmaId);
+    const key = foldSurface(r.surfaceNfc);
+    if (!overridesBySurface.has(key)) {
+      overridesBySurface.set(key, r.chosenLemmaId);
     }
   }
   // Live `lemma_forms` surface → lemma_id mappings for this language.
@@ -178,9 +193,10 @@ export async function loadLemmaIndex(
   const bySurface = new Map<string, string>();
   const romanizationBySurface = new Map<string, string>();
   for (const r of formRows) {
-    if (!bySurface.has(r.surface)) bySurface.set(r.surface, r.lemmaId);
-    if (r.romanization && !romanizationBySurface.has(r.surface)) {
-      romanizationBySurface.set(r.surface, r.romanization);
+    const key = foldSurface(r.surface);
+    if (!bySurface.has(key)) bySurface.set(key, r.lemmaId);
+    if (r.romanization && !romanizationBySurface.has(key)) {
+      romanizationBySurface.set(key, r.romanization);
     }
   }
   return {
@@ -316,7 +332,7 @@ async function pickLemmaId(
   // on surface_nfc; the dispatcher today only loads wildcard-context
   // entries — context-specific rows come online when the M6
   // disambiguation UI ships.
-  const override = index.overridesBySurface.get(token.surface);
+  const override = index.overridesBySurface.get(foldSurface(token.surface));
   if (override) return { lemmaId: override, viaSurfaceMap: true };
   // `lemma_forms` surface tier. A recorded inflected form (curator-
   // added or paradigm-generated, with quarantined junk filtered out)
@@ -326,7 +342,7 @@ async function pickLemmaId(
   // signed off on). Sits below the context-aware override tier
   // because that one can encode "this surface in *this* sentence
   // means X" while this one is unconditional.
-  const fromForms = index.bySurface.get(token.surface);
+  const fromForms = index.bySurface.get(foldSurface(token.surface));
   if (fromForms) return { lemmaId: fromForms, viaSurfaceMap: true };
   // Strict-POS lookup first across every candidate. Real Stanza
   // output usually hits this path.
@@ -426,7 +442,7 @@ export async function persistTokens(args: {
       sentenceIdx: 0,
       // Dictionary-recorded phonetic reading wins over the pipeline's
       // rule-based romanization (see LemmaIndex.romanizationBySurface).
-      romanization: index.romanizationBySurface.get(t.surface) ?? t.romanization,
+      romanization: index.romanizationBySurface.get(foldSurface(t.surface)) ?? t.romanization,
       numberForms: t.number_forms ?? null,
       // PDF source only — normalized word box on the page image. Null
       // for text chapters and for whitespace/punctuation.

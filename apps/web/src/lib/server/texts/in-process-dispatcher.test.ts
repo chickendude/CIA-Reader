@@ -455,6 +455,47 @@ describe('processTextNow', () => {
     expect(tokenInsert[0]!.surface).toBe('ରହିଲି');
   });
 
+  it('resolves a sentence-initial capitalized surface via the case-folded lemma_forms tier', async () => {
+    // Basque paradigm forms are stored lower-case; a sentence-initial
+    // "Badiara" must still resolve to badia. foldSurface() lower-cases
+    // both the index keys and the lookup, so the capitalized surface
+    // hits the lower-case form row without auto-creating a junk lemma.
+    stage([{ id: 'text-1', language: 'eu' }]);
+    stage([{ id: 'chap-1', body: 'Badiara iritsi ginen.' }]);
+    stage([{ id: 'lemma-badia', headword: 'badia', pos: 'NOUN' }]);
+    stage([]); // overrides — empty
+    stage([{ surface: 'badiara', lemmaId: 'lemma-badia' }]); // lower-case form
+
+    nlpProcess.mockResolvedValueOnce({
+      language: 'eu',
+      pipeline_id: 'stanza-eu',
+      tokens: [
+        {
+          idx: 0,
+          surface: 'Badiara',
+          is_word: true,
+          is_ambiguous: false,
+          is_oov: false,
+          romanization: null,
+          number_forms: null,
+          candidates: [{ lemma: 'Badia', pos: 'NOUN', score: 1.0, features: {} }],
+        },
+      ],
+    });
+
+    await processTextNow('text-1');
+
+    const inserts = calls.filter(
+      (c): c is Extract<Call, { kind: 'insert' }> => c.kind === 'insert',
+    );
+    // No auto-create — the case-folded form tier matched.
+    expect(inserts).toHaveLength(1);
+    const tokenInsert = inserts[0]!.values as Array<{ lemmaId: string | null; surface: string }>;
+    expect(tokenInsert[0]!.lemmaId).toBe('lemma-badia');
+    // Original surface case is preserved on the persisted token.
+    expect(tokenInsert[0]!.surface).toBe('Badiara');
+  });
+
   it('prefers a dictionary-recorded romanization over the pipeline output', async () => {
     // Yiddish loshn-koydesh: the NLP service's rule-based romanizer
     // reads שבת letter-by-letter ("shbs"); a curator recorded the
