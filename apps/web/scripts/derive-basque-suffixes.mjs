@@ -15,6 +15,7 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
+import { setTimeout as sleep } from 'node:timers/promises';
 
 const DIR = dirname(fileURLToPath(import.meta.url));
 const BUCKETS = resolve(DIR, 'basque-paradigm-buckets.json');
@@ -22,7 +23,6 @@ const OUT = resolve(DIR, 'basque-paradigms.json');
 const API = 'https://en.wiktionary.org/w/api.php';
 const UA = 'ciareader-paradigm-research/0.1';
 const MINCOUNT = 3;
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 async function renderHtml(title) {
   const url = API + '?' + new URLSearchParams({ action: 'parse', page: title, prop: 'text', format: 'json', formatversion: '2' });

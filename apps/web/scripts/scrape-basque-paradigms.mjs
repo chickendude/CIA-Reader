@@ -15,6 +15,7 @@
 import { writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
+import { setTimeout as sleep } from 'node:timers/promises';
 
 const API = 'https://en.wiktionary.org/w/api.php';
 const UA = 'ciareader-paradigm-research/0.1 (language-reader; contact dev)';
@@ -22,8 +23,6 @@ const OUT = resolve(dirname(fileURLToPath(import.meta.url)), 'basque-paradigm-bu
 
 const limitArg = process.argv.indexOf('--limit');
 const LIMIT = limitArg !== -1 ? parseInt(process.argv[limitArg + 1], 10) : Infinity;
-
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 async function api(params) {
   const url = API + '?' + new URLSearchParams({ format: 'json', formatversion: '2', ...params });
