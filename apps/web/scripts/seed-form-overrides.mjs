@@ -89,6 +89,24 @@ export const BASQUE_OVERRIDES = [
   { surface: 'hamargarren', lemma: 'hamargarren', pos: 'ADJ', gloss: 'tenth' },
 ];
 
+// Curated homographs (feat/basque-homograph-alternates): surfaces that
+// legitimately map to more than one lemma. The override's `chosen_lemma_id`
+// is the default (most-common) reading; `alternate_lemma_ids` carries the
+// others in curator order, and the reader shows them all as pickable tabs.
+// Surface lookups are case-folded in the dispatcher, so lower-case only.
+const BASQUE_HOMOGRAPHS = [
+  {
+    surface: 'galera',
+    chosen: { lemma: 'galera', pos: 'NOUN', gloss: 'loss; defeat' },
+    alternates: [{ lemma: 'gale', pos: 'NOUN', gloss: 'hunger; craving' }],
+  },
+  {
+    surface: 'ilaran',
+    chosen: { lemma: 'ilara', pos: 'NOUN', gloss: 'queue; row' },
+    alternates: [{ lemma: 'ilar', pos: 'NOUN', gloss: 'bean; pea' }],
+  },
+];
+
 // Latin script is case-bearing and overrides match `token.surface` exactly,
 // so a sentence-initial "Badiara" won't hit a lowercase "badiara" row. Seed
 // the Title-case variant of each surface too. (The Phase 3 rule tier removes
@@ -181,9 +199,36 @@ async function seedBasque() {
   );
 }
 
+async function seedBasqueHomographs() {
+  let inserted = 0;
+  let updated = 0;
+  for (const h of BASQUE_HOMOGRAPHS) {
+    const chosenId = await ensureLemma('eu', h.chosen.lemma, h.chosen.pos, h.chosen.gloss);
+    const altIds = [];
+    for (const a of h.alternates) altIds.push(await ensureLemma('eu', a.lemma, a.pos, a.gloss));
+    const result = await sql.unsafe(
+      `INSERT INTO form_lemma_overrides (language, surface_nfc, context_signature, chosen_lemma_id, alternate_lemma_ids, vote_count, promoted_at, note)
+       VALUES ('eu', $1, '', $2, $3, 0, NOW(), 'curator seed: homograph alternates')
+       ON CONFLICT (language, surface_nfc, context_signature)
+         DO UPDATE SET chosen_lemma_id = EXCLUDED.chosen_lemma_id,
+                       alternate_lemma_ids = EXCLUDED.alternate_lemma_ids,
+                       promoted_at = NOW()
+       RETURNING (xmax = 0) AS inserted`,
+      [h.surface, chosenId, altIds],
+    );
+    if (result[0]?.inserted) inserted++;
+    else updated++;
+    console.log(
+      `  ${h.surface.padEnd(10)} → ${h.chosen.lemma} + [${h.alternates.map((a) => a.lemma).join(', ')}]`,
+    );
+  }
+  console.log(`[seed] eu homograph overrides: ${inserted} created, ${updated} updated`);
+}
+
 async function main() {
   await seedHindi();
   await seedBasque();
+  await seedBasqueHomographs();
   await sql.end();
 }
 
