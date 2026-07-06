@@ -34,6 +34,22 @@ data class ReaderChapterRef(
     val wordCount: Int = 0,
 )
 
+/** Whether a PDF page's render data is still loading, ready to draw, or failed. */
+enum class PageLoad { LOADING, READY, ERROR }
+
+/** One PDF page's render data for the page-flip image reader, keyed by chapter
+ *  index in [ReaderUiState.pageCache]. A [READY][PageLoad.READY] page with a
+ *  non-null [imageUrl] draws immediately; empty [tokens] on a ready page is a
+ *  legitimately blank page (image with no tappable words), not a load failure. */
+data class ReaderImagePage(
+    val load: PageLoad,
+    val imageUrl: String? = null,
+    val width: Int? = null,
+    val height: Int? = null,
+    val tokens: List<ReaderToken> = emptyList(),
+    val chapterId: String? = null,
+)
+
 private const val PROCESSING_POLL_MS = 3_000L
 private const val MAX_PROCESSING_POLLS = 40 // ~2 min of auto-retry before pausing
 
@@ -95,6 +111,11 @@ data class ReaderUiState(
     val pageImageUrl: String? = null,
     val pageWidth: Int? = null,
     val pageHeight: Int? = null,
+    /** PDF image reader: per-page render data (image + overlay tokens) keyed by
+     *  chapter index, so the page-flip pager can show neighbouring pages sliding
+     *  in as you swipe. Populated lazily as pages come into view or are
+     *  prefetched; the page currently on screen also lives in the fields above. */
+    val pageCache: Map<Int, ReaderImagePage> = emptyMap(),
     /** Toggle between the page-image view and the reflowable OCR-text view for an
      *  image chapter. Defaults to the image; ignored when there's no page image. */
     val imageView: Boolean = true,
@@ -299,7 +320,13 @@ class ReaderViewModel @Inject constructor(
         when (val chapter = repository.chapter(textId, chapterIdx)) {
             is Outcome.Success -> {
                 currentChapterId = chapter.data.chapterId
-                if (chapter.data.tokens.isEmpty()) {
+                // A chapter with no tokens is normally still being tokenized (the
+                // NLP worker hasn't run). A PDF page is the exception: it carries
+                // its image the moment it's rasterized, and a blank / image-only
+                // page legitimately has zero words — its tokens stay empty forever.
+                // So only keep polling when there's no page image to show yet;
+                // otherwise fall through and render the page (with no overlay).
+                if (chapter.data.tokens.isEmpty() && chapter.data.pageImageUrl == null) {
                     // Not tokenized yet — show the preparing state and keep polling.
                     _state.update {
                         it.copy(isLoading = false, isProcessing = true, chapterIdx = chapterIdx)
@@ -333,6 +360,21 @@ class ReaderViewModel @Inject constructor(
                     val tokenIdx = anchor ?: 0
                     val pctRead = if (atEnd) 100.0 else 0.0
                     repository.saveProgress(textId, chapterIdx, tokenIdx, pctRead)
+                }
+                // Image (PDF) chapter: seed the page-flip cache with this page and
+                // prefetch its neighbours so the first swipe animates in a ready page.
+                if (chapter.data.pageImageUrl != null) {
+                    val page = ReaderImagePage(
+                        load = PageLoad.READY,
+                        imageUrl = chapter.data.pageImageUrl,
+                        width = chapter.data.pageWidth,
+                        height = chapter.data.pageHeight,
+                        tokens = chapter.data.tokens,
+                        chapterId = chapter.data.chapterId,
+                    )
+                    _state.update { it.copy(pageCache = it.pageCache + (chapterIdx to page)) }
+                    ensureImagePage(chapterIdx - 1)
+                    ensureImagePage(chapterIdx + 1)
                 }
             }
 
@@ -676,6 +718,95 @@ class ReaderViewModel @Inject constructor(
 
     fun prevChapter() {
         if (_state.value.hasPrev) loadChapter(_state.value.chapterIdx - 1, saveOnLoad = true)
+    }
+
+    /**
+     * Load (or prefetch) a PDF page's image + overlay tokens into [pageCache] so
+     * the page-flip pager can slide it in. A no-op when the index is out of range
+     * or already loaded / in flight; a previously-errored page re-fetches (retry).
+     * When the loaded page is the one currently on screen, it's promoted to the
+     * live reader state so taps and the OCR-text toggle work.
+     */
+    fun ensureImagePage(idx: Int) {
+        if (idx < 0 || idx >= _state.value.chapterCount) return
+        val existing = _state.value.pageCache[idx]
+        if (existing != null && existing.load != PageLoad.ERROR) return
+        _state.update { it.copy(pageCache = it.pageCache + (idx to ReaderImagePage(PageLoad.LOADING))) }
+        viewModelScope.launch {
+            val page = when (val ch = repository.chapter(textId, idx)) {
+                is Outcome.Success -> ReaderImagePage(
+                    load = PageLoad.READY,
+                    imageUrl = ch.data.pageImageUrl,
+                    width = ch.data.pageWidth,
+                    height = ch.data.pageHeight,
+                    tokens = ch.data.tokens,
+                    chapterId = ch.data.chapterId,
+                )
+                is Outcome.Failure -> ReaderImagePage(PageLoad.ERROR)
+            }
+            _state.update { it.copy(pageCache = it.pageCache + (idx to page)) }
+            // If the fetched page is the one on screen, make it the live page.
+            if (page.load == PageLoad.READY && page.imageUrl != null && _state.value.chapterIdx == idx) {
+                promotePage(idx, page, saveOnLoad = false)
+            }
+        }
+    }
+
+    /**
+     * The page-flip pager settled on [idx]. When that page is cached and drawable,
+     * promote it to the live reader state instantly (no spinner) and prefetch the
+     * new neighbours; otherwise fall back to the full [loadChapter] path, which
+     * shows the loading / "preparing" UI and polls an unprocessed page.
+     */
+    fun onImagePageSettled(idx: Int) {
+        if (idx == _state.value.chapterIdx) return
+        val page = _state.value.pageCache[idx]
+        if (page != null && page.load == PageLoad.READY && page.imageUrl != null) {
+            promotePage(idx, page, saveOnLoad = true)
+            ensureImagePage(idx - 1)
+            ensureImagePage(idx + 1)
+        } else {
+            loadChapter(idx, saveOnLoad = true)
+        }
+    }
+
+    /** Make a cached PDF page the current one: swap in its image + overlay tokens,
+     *  close any open word sheet, mark it current in the TOC, and save the spot. */
+    private fun promotePage(idx: Int, page: ReaderImagePage, saveOnLoad: Boolean) {
+        currentChapterId = page.chapterId
+        currentTopToken = 0
+        progressJob?.cancel()
+        pollJob?.cancel()
+        _state.update {
+            it.copy(
+                isLoading = false,
+                isProcessing = false,
+                errorMessage = null,
+                chapterIdx = idx,
+                tokens = page.tokens,
+                pageImageUrl = page.imageUrl,
+                pageWidth = page.width,
+                pageHeight = page.height,
+                restoreTokenIdx = null,
+                // Flipping pages closes any open word sheet + its transient state.
+                selectedWord = null,
+                wordFrequency = null,
+                wordTranslations = null,
+                sentenceTranslation = null,
+                isSentenceTranslating = false,
+                sentenceTranslateError = null,
+                autoExpandSentence = false,
+                activeParseLemmaId = null,
+                primaryHeadword = null,
+                primaryPos = null,
+                chapters = it.chapters.map { ref ->
+                    if (ref.chapterIdx != null) ref.copy(isCurrent = ref.chapterIdx == idx) else ref
+                },
+            )
+        }
+        if (saveOnLoad) {
+            viewModelScope.launch { repository.saveProgress(textId, idx, 0, 0.0) }
+        }
     }
 
     /** Debounced reading-progress write-back as the user scrolls. */

@@ -11,6 +11,8 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.PressInteraction
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.calculatePan
+import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.text.KeyboardActions
@@ -85,6 +87,7 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.ContentDrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChanged
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
@@ -120,8 +123,6 @@ import com.ciareader.reader.data.reader.KnownStatus
 import com.ciareader.reader.BuildConfig
 import coil.compose.AsyncImage
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.gestures.rememberTransformableState
-import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.material3.TextButton
 import androidx.compose.ui.geometry.Offset
@@ -231,6 +232,8 @@ fun ReaderScreen(
             }
         },
         onProgress = viewModel::setProgress,
+        onImagePageSettled = viewModel::onImagePageSettled,
+        onEnsureImagePage = viewModel::ensureImagePage,
     )
 }
 
@@ -264,6 +267,8 @@ internal fun ReaderScreenContent(
     onSetLineSpacing: (Float) -> Unit = {},
     onSelectChapter: (ReaderChapterRef) -> Unit = {},
     onProgress: (Float) -> Unit = {},
+    onImagePageSettled: (Int) -> Unit = {},
+    onEnsureImagePage: (Int) -> Unit = {},
 ) {
     var showSettings by remember { mutableStateOf(false) }
     var showChapters by remember { mutableStateOf(false) }
@@ -379,14 +384,13 @@ internal fun ReaderScreenContent(
 
                 state.pageImageUrl != null && state.imageView ->
                     ReaderImage(
-                        imageUrl = BuildConfig.API_BASE_URL.trimEnd('/') + state.pageImageUrl,
-                        pageWidth = state.pageWidth,
-                        pageHeight = state.pageHeight,
-                        tokens = state.tokens,
+                        currentIdx = state.chapterIdx,
+                        chapterCount = state.chapterCount,
+                        pageCache = state.pageCache,
                         onWordTap = handleWordTap,
                         onDismissWord = closeWord,
-                        onPrevPage = onPrevChapter,
-                        onNextPage = onNextChapter,
+                        onPageSettled = onImagePageSettled,
+                        onEnsurePage = onEnsureImagePage,
                         modifier = Modifier.fillMaxSize().then(readerInset),
                     )
 
@@ -2116,21 +2120,131 @@ private fun ReaderProcessing(modifier: Modifier = Modifier) {
 }
 
 /**
- * Page-image (PDF) reader: the rasterized page with each OCR word overlaid as a
- * tappable region (from its normalized bbox). Pinch-zoom + pan; new/learning
- * words get a faint tint so they stand out against the page.
+ * Page-image (PDF) reader: a horizontal pager over the book's pages, so a swipe
+ * slides the current page off and the next one in — mirroring the text reader.
+ * Each page is the rasterized image with its OCR words overlaid as tappable
+ * regions (from their normalized bboxes). Neighbouring pages are prefetched into
+ * [pageCache] so they're ready to slide in; the page you're on supports
+ * pinch-zoom + pan, and new/learning words get a faint tint against the page.
  */
 @Composable
 private fun ReaderImage(
+    currentIdx: Int,
+    chapterCount: Int,
+    pageCache: Map<Int, ReaderImagePage>,
+    onWordTap: (ReaderToken, Rect) -> Unit,
+    onDismissWord: () -> Unit,
+    onPageSettled: (Int) -> Unit,
+    onEnsurePage: (Int) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val apiBase = BuildConfig.API_BASE_URL.trimEnd('/')
+    val pageCount = chapterCount.coerceAtLeast(1)
+    val pagerState = rememberPagerState(
+        initialPage = currentIdx.coerceIn(0, pageCount - 1),
+        pageCount = { pageCount },
+    )
+    // A settled swipe promotes that page to the live reader state (tokens, taps).
+    LaunchedEffect(pagerState) {
+        snapshotFlow { pagerState.settledPage }.collect { onPageSettled(it) }
+    }
+    // Follow page changes that came from outside a swipe (top-bar arrows, the TOC).
+    LaunchedEffect(currentIdx) {
+        if (currentIdx != pagerState.currentPage) pagerState.animateScrollToPage(currentIdx)
+    }
+    // Zoom belongs to the page you're on; reset it whenever the page changes.
+    var scale by remember { mutableStateOf(1f) }
+    var offset by remember { mutableStateOf(Offset.Zero) }
+    LaunchedEffect(pagerState.settledPage) {
+        scale = 1f
+        offset = Offset.Zero
+    }
+    HorizontalPager(
+        state = pagerState,
+        modifier = modifier,
+        // At 1× the pager owns horizontal drags (page flips); once zoomed in a
+        // drag pans the page instead, so paging pauses until you zoom back out.
+        userScrollEnabled = scale <= 1f,
+        // Keep the adjacent pages composed off-screen so their image is decoded
+        // into Coil's cache (and their overlay tokens prefetched) before you
+        // swipe — the next page is ready to slide in, not loading mid-swipe.
+        beyondViewportPageCount = 1,
+    ) { page ->
+        val data = pageCache[page]
+        LaunchedEffect(page) { if (data == null) onEnsurePage(page) }
+        val isCurrent = page == pagerState.currentPage
+        ImagePagerSlot(
+            data = data,
+            apiBase = apiBase,
+            interactive = isCurrent,
+            scale = if (isCurrent) scale else 1f,
+            offset = if (isCurrent) offset else Offset.Zero,
+            onTransform = { s, o -> scale = s; offset = o },
+            onWordTap = onWordTap,
+            onDismissWord = onDismissWord,
+            onRetry = { onEnsurePage(page) },
+        )
+    }
+}
+
+/** One slot in the image pager: the page once its image is ready, else a spinner
+ *  while it loads (or a retry if the fetch failed). */
+@Composable
+private fun ImagePagerSlot(
+    data: ReaderImagePage?,
+    apiBase: String,
+    interactive: Boolean,
+    scale: Float,
+    offset: Offset,
+    onTransform: (Float, Offset) -> Unit,
+    onWordTap: (ReaderToken, Rect) -> Unit,
+    onDismissWord: () -> Unit,
+    onRetry: () -> Unit,
+) {
+    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        when {
+            data?.imageUrl != null -> PageImage(
+                imageUrl = apiBase + data.imageUrl,
+                pageWidth = data.width,
+                pageHeight = data.height,
+                tokens = data.tokens,
+                interactive = interactive,
+                scale = scale,
+                offset = offset,
+                onTransform = onTransform,
+                onWordTap = onWordTap,
+                onDismissWord = onDismissWord,
+            )
+
+            data?.load == PageLoad.ERROR -> Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier.padding(24.dp),
+            ) {
+                Text("Couldn't load this page.", style = MaterialTheme.typography.bodyMedium)
+                Spacer(Modifier.height(8.dp))
+                TextButton(onClick = onRetry) { Text("Retry") }
+            }
+
+            else -> CircularProgressIndicator()
+        }
+    }
+}
+
+/** The rasterized page image with its tappable word overlay. When [interactive]
+ *  (the page you're on) a pinch zooms and, once zoomed, a drag pans — reported up
+ *  via [onTransform]; a single-finger drag at 1× is left for the pager to page. */
+@Composable
+private fun PageImage(
     imageUrl: String,
     pageWidth: Int?,
     pageHeight: Int?,
     tokens: List<ReaderToken>,
+    interactive: Boolean,
+    scale: Float,
+    offset: Offset,
+    onTransform: (Float, Offset) -> Unit,
     onWordTap: (ReaderToken, Rect) -> Unit,
     onDismissWord: () -> Unit,
-    onPrevPage: () -> Unit,
-    onNextPage: () -> Unit,
-    modifier: Modifier = Modifier,
 ) {
     val scheme = MaterialTheme.colorScheme
     val aspect = if (pageWidth != null && pageHeight != null && pageHeight > 0) {
@@ -2138,85 +2252,95 @@ private fun ReaderImage(
     } else {
         1f
     }
-    var scale by remember(imageUrl) { mutableStateOf(1f) }
-    var offset by remember(imageUrl) { mutableStateOf(Offset.Zero) }
-    // Accumulated horizontal drag while at 1× → a page swipe (reset per page).
-    val swipeAccum = remember(imageUrl) { mutableStateOf(0f) }
     var imageCoords by remember(imageUrl) { mutableStateOf<LayoutCoordinates?>(null) }
-    val onPrev by rememberUpdatedState(onPrevPage)
-    val onNext by rememberUpdatedState(onNextPage)
-    BoxWithConstraints(modifier, contentAlignment = Alignment.Center) {
-        val swipeThreshold = constraints.maxWidth * 0.22f
-        val transformState = rememberTransformableState { zoomChange, panChange, _ ->
-            scale = (scale * zoomChange).coerceIn(1f, 5f)
-            if (scale > 1f) {
-                // Zoomed in: a drag pans the page.
-                offset += panChange
-            } else {
-                // At 1×: a sustained horizontal drag flips to the prev/next page.
-                offset = Offset.Zero
-                swipeAccum.value += panChange.x
-                when {
-                    swipeAccum.value <= -swipeThreshold -> { onNext(); swipeAccum.value = 0f }
-                    swipeAccum.value >= swipeThreshold -> { onPrev(); swipeAccum.value = 0f }
-                }
-            }
-        }
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .aspectRatio(aspect)
-                .graphicsLayer(
-                    scaleX = scale,
-                    scaleY = scale,
-                    translationX = offset.x,
-                    translationY = offset.y,
-                )
-                .transformable(transformState)
-                .onGloballyPositioned { imageCoords = it }
-                .pointerInput(tokens) {
-                    detectTapGestures { tap ->
-                        val nx = tap.x / size.width
-                        val ny = tap.y / size.height
-                        val token = tokens.firstOrNull { t ->
-                            val b = t.bbox
-                            t.isWord && b != null &&
-                                nx >= b.x && nx <= b.x + b.w &&
-                                ny >= b.y && ny <= b.y + b.h
-                        }
-                        val b = token?.bbox
-                        val coords = imageCoords
-                        val rect = if (token != null && b != null && coords != null) {
-                            val w = coords.size.width.toFloat()
-                            val h = coords.size.height.toFloat()
-                            val tl = coords.localToWindow(Offset(b.x * w, b.y * h))
-                            val br = coords.localToWindow(Offset((b.x + b.w) * w, (b.y + b.h) * h))
-                            Rect(tl.x, tl.y, br.x, br.y)
-                        } else {
-                            null
-                        }
-                        if (token != null && rect != null) onWordTap(token, rect)
-                        else onDismissWord()
-                    }
-                },
-        ) {
-            AsyncImage(
-                model = imageUrl,
-                contentDescription = null,
-                modifier = Modifier.fillMaxSize(),
-                contentScale = ContentScale.FillBounds,
+    // The gesture handler is installed once (keyed on Unit); read the latest
+    // transform through snapshots so pinch/pan accumulate across recompositions.
+    val scaleNow by rememberUpdatedState(scale)
+    val offsetNow by rememberUpdatedState(offset)
+    val onTransformNow by rememberUpdatedState(onTransform)
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .aspectRatio(aspect)
+            .graphicsLayer(
+                scaleX = scale,
+                scaleY = scale,
+                translationX = offset.x,
+                translationY = offset.y,
             )
-            Canvas(Modifier.fillMaxSize()) {
-                tokens.forEach { t ->
-                    val b = t.bbox ?: return@forEach
-                    if (!t.isWord) return@forEach
-                    val tint = overlayTint(t.status, scheme) ?: return@forEach
-                    drawRect(
-                        color = tint,
-                        topLeft = Offset(b.x * size.width, b.y * size.height),
-                        size = Size(b.w * size.width, b.h * size.height),
-                    )
-                }
+            .onGloballyPositioned { imageCoords = it }
+            .then(
+                if (interactive) {
+                    Modifier.pointerInput(Unit) {
+                        awaitEachGesture {
+                            awaitFirstDown(requireUnconsumed = false)
+                            do {
+                                val event = awaitPointerEvent()
+                                val pressed = event.changes.count { it.pressed }
+                                // Consume only a pinch (2+ fingers) or a pan while
+                                // zoomed; leave the lone-finger 1× drag for paging.
+                                if (pressed >= 2 || scaleNow > 1f) {
+                                    val newScale = (scaleNow * event.calculateZoom()).coerceIn(1f, 5f)
+                                    val newOffset =
+                                        if (newScale > 1f) offsetNow + event.calculatePan() else Offset.Zero
+                                    onTransformNow(newScale, newOffset)
+                                    event.changes.forEach { if (it.positionChanged()) it.consume() }
+                                }
+                            } while (event.changes.any { it.pressed })
+                        }
+                    }
+                } else {
+                    Modifier
+                },
+            )
+            .then(
+                if (interactive) {
+                    Modifier.pointerInput(tokens) {
+                        detectTapGestures { tap ->
+                            val nx = tap.x / size.width
+                            val ny = tap.y / size.height
+                            val token = tokens.firstOrNull { t ->
+                                val b = t.bbox
+                                t.isWord && b != null &&
+                                    nx >= b.x && nx <= b.x + b.w &&
+                                    ny >= b.y && ny <= b.y + b.h
+                            }
+                            val b = token?.bbox
+                            val coords = imageCoords
+                            val rect = if (token != null && b != null && coords != null) {
+                                val w = coords.size.width.toFloat()
+                                val h = coords.size.height.toFloat()
+                                val tl = coords.localToWindow(Offset(b.x * w, b.y * h))
+                                val br = coords.localToWindow(Offset((b.x + b.w) * w, (b.y + b.h) * h))
+                                Rect(tl.x, tl.y, br.x, br.y)
+                            } else {
+                                null
+                            }
+                            if (token != null && rect != null) onWordTap(token, rect)
+                            else onDismissWord()
+                        }
+                    }
+                } else {
+                    Modifier
+                },
+            ),
+    ) {
+        AsyncImage(
+            model = imageUrl,
+            contentDescription = null,
+            modifier = Modifier.fillMaxSize(),
+            contentScale = ContentScale.FillBounds,
+        )
+        Canvas(Modifier.fillMaxSize()) {
+            tokens.forEach { t ->
+                val b = t.bbox ?: return@forEach
+                if (!t.isWord) return@forEach
+                val tint = overlayTint(t.status, scheme) ?: return@forEach
+                drawRect(
+                    color = tint,
+                    topLeft = Offset(b.x * size.width, b.y * size.height),
+                    size = Size(b.w * size.width, b.h * size.height),
+                )
             }
         }
     }
