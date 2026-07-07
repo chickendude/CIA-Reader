@@ -183,6 +183,7 @@ export class InMemoryDictionaryRepo implements DictionaryRepo {
       sourceAttribution: payload.sourceAttribution ?? null,
       sourceId: payload.sourceId,
       hidden: false,
+      isPrivate: false,
       displayRank: null,
       createdAt: nowUtc(),
       updatedAt: nowUtc(),

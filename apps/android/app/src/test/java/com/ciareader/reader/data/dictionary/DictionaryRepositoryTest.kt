@@ -174,6 +174,24 @@ class DictionaryRepositoryTest {
         assertEquals("l1", api.lastAdded?.lemmaId)
         assertEquals("my own definition", api.lastAdded?.body)
         assertNull(api.lastAdded?.parentTranslationId)
+        // Defaults to public.
+        assertEquals(false, api.lastAdded?.isPrivate)
+    }
+
+    @Test
+    fun addDefinitionForwardsIsPrivate() = runTest {
+        val api = FakeDictionaryApi()
+        val result = repo(api).addDefinition("l1", "secret", isPrivate = true)
+        assertTrue(result is Outcome.Success)
+        assertEquals(true, api.lastAdded?.isPrivate)
+    }
+
+    @Test
+    fun editDefinitionForwardsIsPrivate() = runTest {
+        val api = FakeDictionaryApi()
+        val result = repo(api).editDefinition("t1", "updated note", isPrivate = true)
+        assertTrue(result is Outcome.Success)
+        assertEquals(true, api.lastEditRequest?.isPrivate)
     }
 
     @Test
@@ -198,6 +216,16 @@ class DictionaryRepositoryTest {
         val result = repo(api).deleteDefinition("t1")
         assertTrue(result is Outcome.Success)
         assertEquals("t1", api.lastDeleted)
+    }
+
+    @Test
+    fun hideTranslationPatchesHiddenEndpointWithReason() = runTest {
+        val api = FakeDictionaryApi()
+        val result = repo(api).hideTranslation("t1", hidden = true, reason = "spam")
+        assertTrue(result is Outcome.Success)
+        assertEquals("t1", api.lastHidden?.first)
+        assertEquals(true, api.lastHidden?.second?.hidden)
+        assertEquals("spam", api.lastHidden?.second?.reason)
     }
 
     @Test
@@ -337,14 +365,22 @@ private class FakeDictionaryApi(
     }
 
     var lastEdited: Pair<String, String>? = null
+    var lastEditRequest: UpdateTranslationRequest? = null
     override suspend fun editTranslation(id: String, body: UpdateTranslationRequest): CreateTranslationResponseDto {
         lastEdited = id to body.body
+        lastEditRequest = body
         return error?.let { throw it } ?: CreateTranslationResponseDto(TranslationDto(id, body.body))
     }
 
     var lastDeleted: String? = null
     override suspend fun deleteTranslation(id: String) {
         lastDeleted = id
+        error?.let { throw it }
+    }
+
+    var lastHidden: Pair<String, HideTranslationRequest>? = null
+    override suspend fun setTranslationHidden(id: String, body: HideTranslationRequest) {
+        lastHidden = id to body
         error?.let { throw it }
     }
 

@@ -69,6 +69,9 @@ export async function buildDictionaryExport(
         eq(schema.translations.targetType, 'lemma'),
         eq(schema.lemmas.language, language),
         eq(schema.translations.hidden, false),
+        // The export is viewer-agnostic (shared offline snapshot), so no
+        // private note ever belongs in it.
+        eq(schema.translations.isPrivate, false),
       ),
     );
 

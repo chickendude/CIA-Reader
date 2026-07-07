@@ -37,6 +37,7 @@ const body = z.object({
   // edit; the parent stays in everyone else's view.
   parentTranslationId: z.string().uuid().nullish(),
   targetLanguage: z.string().min(2).max(3).optional(),
+  isPrivate: z.boolean().optional(),
 });
 
 export const POST: RequestHandler = async (event) => {
@@ -46,22 +47,30 @@ export const POST: RequestHandler = async (event) => {
     throw error(400, 'Invalid phrase id');
   }
   const input = await parseJson(event.request, body);
+  const isPrivate = input.isPrivate ?? false;
 
   try {
-    const requestLimit = await consumeRateLimit(event, user.id, {
-      scope: 'translations:create',
-      limit: MAX_PER_USER_PER_WINDOW,
-      windowMs: WINDOW_MS,
-    });
+    // Private notes skip the shared-dictionary rate-limit budget.
+    const requestLimit = isPrivate
+      ? null
+      : await consumeRateLimit(event, user.id, {
+          scope: 'translations:create',
+          limit: MAX_PER_USER_PER_WINDOW,
+          windowMs: WINDOW_MS,
+        });
     const translation = await submitUserPhraseTranslation(user.id, {
       phraseId,
       body: input.body,
       parentTranslationId: input.parentTranslationId ?? null,
       targetLanguage: input.targetLanguage,
+      isPrivate,
     });
     return json(
       { translation: publicTranslation(translation) },
-      { status: 201, headers: rateLimitHeaders(requestLimit) },
+      {
+        status: 201,
+        headers: requestLimit ? rateLimitHeaders(requestLimit) : undefined,
+      },
     );
   } catch (err) {
     if (err instanceof RequestRateLimitError || err instanceof TranslationRateLimitError) {

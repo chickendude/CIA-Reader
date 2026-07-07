@@ -1,1 +1,0 @@
-ALTER TABLE "form_lemma_overrides" ADD COLUMN "alternate_lemma_ids" uuid[];

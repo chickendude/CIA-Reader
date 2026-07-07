@@ -479,7 +479,7 @@ class ReaderScreenTest {
                         community = emptyList(),
                     ),
                     isLoading = false,
-                    onEditDefinition = { id, text -> edited = id to text },
+                    onEditDefinition = { id, text, _ -> edited = id to text },
                     onDeleteDefinition = { deleted = it },
                 )
             }
@@ -499,6 +499,111 @@ class ReaderScreenTest {
     }
 
     @Test
+    fun togglingPrivateSavesTheNoteAsPrivate() {
+        var addedPrivate: Boolean? = null
+        compose.setContent {
+            CiaReaderTheme {
+                WordDetails(
+                    token = ReaderToken(0, "etxe", true, KnownStatus.UNKNOWN, "l1", null, null, false, false, true),
+                    translations = LemmaTranslations(
+                        headword = "etxe",
+                        pos = "NOUN",
+                        gloss = null,
+                        personal = emptyList(),
+                        official = emptyList(),
+                        community = emptyList(),
+                    ),
+                    isLoading = false,
+                    onAddDefinition = { _, isPrivate -> addedPrivate = isPrivate },
+                )
+            }
+        }
+        // Open the add field, type a note, flip Private, then Enter to save.
+        compose.onNodeWithText("Add your own definition").performClick()
+        compose.onNode(hasSetTextAction()).performTextInput("my private note")
+        compose.onNodeWithText("Private (only you)").performClick()
+        compose.onNode(hasSetTextAction()).performImeAction()
+        assertEquals(true, addedPrivate)
+    }
+
+    @Test
+    fun adminCanHideACommunityTranslation() {
+        var hidden: Pair<String, Boolean>? = null
+        compose.setContent {
+            CiaReaderTheme {
+                WordDetails(
+                    token = ReaderToken(0, "etxe", true, KnownStatus.UNKNOWN, "l1", null, null, false, false, true),
+                    translations = LemmaTranslations(
+                        headword = "etxe",
+                        pos = "NOUN",
+                        gloss = null,
+                        personal = emptyList(),
+                        official = emptyList(),
+                        community = listOf(WordTranslation("bad gloss", null, "c1")),
+                    ),
+                    isLoading = false,
+                    isAdmin = true,
+                    onHideTranslation = { id, h -> hidden = id to h },
+                )
+            }
+        }
+        compose.onNodeWithContentDescription("Hide translation from readers").performClick()
+        assertEquals("c1" to true, hidden)
+    }
+
+    @Test
+    fun nonAdminSeesNoHideButton() {
+        compose.setContent {
+            CiaReaderTheme {
+                WordDetails(
+                    token = ReaderToken(0, "etxe", true, KnownStatus.UNKNOWN, "l1", null, null, false, false, true),
+                    translations = LemmaTranslations(
+                        headword = "etxe",
+                        pos = "NOUN",
+                        gloss = null,
+                        personal = emptyList(),
+                        official = emptyList(),
+                        community = listOf(WordTranslation("bad gloss", null, "c1")),
+                    ),
+                    isLoading = false,
+                    isAdmin = false,
+                )
+            }
+        }
+        compose.onNodeWithText("bad gloss").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Hide translation from readers").assertDoesNotExist()
+    }
+
+    @Test
+    fun adminUnhidesAHiddenRowFromTheReveal() {
+        var hidden: Pair<String, Boolean>? = null
+        compose.setContent {
+            CiaReaderTheme {
+                WordDetails(
+                    token = ReaderToken(0, "etxe", true, KnownStatus.UNKNOWN, "l1", null, null, false, false, true),
+                    translations = LemmaTranslations(
+                        headword = "etxe",
+                        pos = "NOUN",
+                        gloss = null,
+                        personal = emptyList(),
+                        official = emptyList(),
+                        community = listOf(WordTranslation("bad gloss", null, "c1", hidden = true)),
+                    ),
+                    isLoading = false,
+                    isAdmin = true,
+                    onHideTranslation = { id, h -> hidden = id to h },
+                )
+            }
+        }
+        // Hidden row stays out of the list until the reveal is expanded.
+        compose.onNodeWithText("bad gloss").assertDoesNotExist()
+        compose.onNodeWithText("Show 1 hidden").performClick()
+        compose.onNodeWithText("bad gloss").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Show translation to readers").performClick()
+        assertEquals("c1" to false, hidden)
+    }
+
+    @Test
     fun tappingDictionaryDefinitionSavesItAsYourOwn() {
         var saved: Pair<String?, String>? = null
         compose.setContent {
@@ -514,7 +619,7 @@ class ReaderScreenTest {
                         community = emptyList(),
                     ),
                     isLoading = false,
-                    onSaveDictionaryDefinition = { parent, text -> saved = parent to text },
+                    onSaveDictionaryDefinition = { parent, text, _ -> saved = parent to text },
                 )
             }
         }

@@ -30,6 +30,7 @@ function row(overrides: Partial<Translation>): Translation {
     sourceAttribution: null,
     sourceId: null,
     hidden: false,
+    isPrivate: false,
     displayRank: null,
     createdAt: new Date('2026-01-01T00:00:00Z'),
     updatedAt: new Date('2026-01-01T00:00:00Z'),
@@ -59,6 +60,39 @@ describe('bucketTranslations — classification', () => {
     const out = bucketTranslations(rows, null);
     expect(out.personal).toEqual([]);
     expect(out.community.map((t) => t.body).sort()).toEqual(['a', 'b']);
+  });
+});
+
+describe('bucketTranslations — privacy', () => {
+  it('shows a private note to its author but hides it from other viewers', () => {
+    const rows: Translation[] = [
+      row({ source: 'user', submittedBy: 'u1', body: 'mine-private', isPrivate: true }),
+      row({ source: 'user', submittedBy: 'u1', body: 'mine-public' }),
+    ];
+    // Author sees both, in the personal bucket.
+    const asAuthor = bucketTranslations(rows, { id: 'u1', role: 'user' });
+    expect(asAuthor.personal.map((t) => t.body).sort()).toEqual([
+      'mine-private',
+      'mine-public',
+    ]);
+    // Another user sees only the public one (in their community bucket).
+    const asOther = bucketTranslations(rows, { id: 'u2', role: 'user' });
+    expect(asOther.personal).toEqual([]);
+    expect(asOther.community.map((t) => t.body)).toEqual(['mine-public']);
+    // Anonymous sees only the public one.
+    const anon = bucketTranslations(rows, null);
+    expect(anon.community.map((t) => t.body)).toEqual(['mine-public']);
+  });
+
+  it('hides a private note even from curators/admins — it is privacy, not moderation', () => {
+    const rows: Translation[] = [
+      row({ source: 'user', submittedBy: 'u1', body: 'secret', isPrivate: true }),
+    ];
+    const asCurator = bucketTranslations(rows, { id: 'c1', role: 'curator' });
+    expect(asCurator.personal).toEqual([]);
+    expect(asCurator.community).toEqual([]);
+    const asAdmin = bucketTranslations(rows, { id: 'a1', role: 'admin' });
+    expect(asAdmin.community).toEqual([]);
   });
 });
 

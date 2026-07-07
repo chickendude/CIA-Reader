@@ -1,5 +1,5 @@
 {
-  "id": "366d570a-8d0f-4c8a-9d31-3e17c3bc119f",
+  "id": "d747006f-2829-44fd-b2af-7bc72769e2ba",
   "prevId": "a9083bd4-ce98-425b-b582-163274197eca",
   "version": "7",
   "dialect": "postgresql",
@@ -1047,12 +1047,6 @@
           "type": "uuid",
           "primaryKey": false,
           "notNull": true
-        },
-        "alternate_lemma_ids": {
-          "name": "alternate_lemma_ids",
-          "type": "uuid[]",
-          "primaryKey": false,
-          "notNull": false
         },
         "vote_count": {
           "name": "vote_count",
@@ -4759,6 +4753,13 @@
         },
         "hidden": {
           "name": "hidden",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "is_private": {
+          "name": "is_private",
           "type": "boolean",
           "primaryKey": false,
           "notNull": true,

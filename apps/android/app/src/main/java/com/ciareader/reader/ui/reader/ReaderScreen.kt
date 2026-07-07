@@ -2,6 +2,7 @@
 
 package com.ciareader.reader.ui.reader
 
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -11,6 +12,8 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.PressInteraction
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.calculatePan
+import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.text.KeyboardActions
@@ -85,7 +88,9 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.ContentDrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChanged
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
@@ -100,6 +105,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
@@ -120,8 +126,6 @@ import com.ciareader.reader.data.reader.KnownStatus
 import com.ciareader.reader.BuildConfig
 import coil.compose.AsyncImage
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.gestures.rememberTransformableState
-import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.material3.TextButton
 import androidx.compose.ui.geometry.Offset
@@ -163,6 +167,16 @@ fun ReaderScreen(
     viewModel: ReaderViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+
+    // Surface one-shot messages (e.g. a definition failed to save) as a toast.
+    // Without this, save/edit/delete failures are silent — the note appears to
+    // save optimistically but never reaches the server.
+    val context = LocalContext.current
+    LaunchedEffect(viewModel) {
+        viewModel.messages.collect { message ->
+            Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+        }
+    }
 
     // Local-only reading-time tracking: accrue active foreground time while
     // the reader is on-screen (START..STOP), flushing on background/leave.
@@ -210,6 +224,7 @@ fun ReaderScreen(
         onEditDefinition = viewModel::editDefinition,
         onDeleteDefinition = viewModel::deleteDefinition,
         onSaveDictionaryDefinition = viewModel::saveDefinitionFrom,
+        onHideTranslation = viewModel::hideTranslation,
         onTranslateSentence = viewModel::translateSentence,
         onRefreshWord = viewModel::refreshSelectedWord,
         onSetBasqueRefSource = viewModel::setBasqueRefSource,
@@ -231,6 +246,8 @@ fun ReaderScreen(
             }
         },
         onProgress = viewModel::setProgress,
+        onImagePageSettled = viewModel::onImagePageSettled,
+        onEnsureImagePage = viewModel::ensureImagePage,
     )
 }
 
@@ -246,10 +263,11 @@ internal fun ReaderScreenContent(
     onRetry: () -> Unit,
     onToggleStatus: (KnownStatus) -> Unit,
     onSelectParse: (String) -> Unit = {},
-    onAddDefinition: (String) -> Unit = {},
-    onEditDefinition: (String, String) -> Unit = { _, _ -> },
+    onAddDefinition: (String, Boolean) -> Unit = { _, _ -> },
+    onEditDefinition: (String, String, Boolean?) -> Unit = { _, _, _ -> },
     onDeleteDefinition: (String) -> Unit = {},
-    onSaveDictionaryDefinition: (String?, String) -> Unit = { _, _ -> },
+    onSaveDictionaryDefinition: (String?, String, Boolean) -> Unit = { _, _, _ -> },
+    onHideTranslation: (translationId: String, hidden: Boolean) -> Unit = { _, _ -> },
     onTranslateSentence: () -> Unit = {},
     onRefreshWord: () -> Unit = {},
     onSetBasqueRefSource: (String) -> Unit = {},
@@ -264,6 +282,8 @@ internal fun ReaderScreenContent(
     onSetLineSpacing: (Float) -> Unit = {},
     onSelectChapter: (ReaderChapterRef) -> Unit = {},
     onProgress: (Float) -> Unit = {},
+    onImagePageSettled: (Int) -> Unit = {},
+    onEnsureImagePage: (Int) -> Unit = {},
 ) {
     var showSettings by remember { mutableStateOf(false) }
     var showChapters by remember { mutableStateOf(false) }
@@ -379,14 +399,13 @@ internal fun ReaderScreenContent(
 
                 state.pageImageUrl != null && state.imageView ->
                     ReaderImage(
-                        imageUrl = BuildConfig.API_BASE_URL.trimEnd('/') + state.pageImageUrl,
-                        pageWidth = state.pageWidth,
-                        pageHeight = state.pageHeight,
-                        tokens = state.tokens,
+                        currentIdx = state.chapterIdx,
+                        chapterCount = state.chapterCount,
+                        pageCache = state.pageCache,
                         onWordTap = handleWordTap,
                         onDismissWord = closeWord,
-                        onPrevPage = onPrevChapter,
-                        onNextPage = onNextChapter,
+                        onPageSettled = onImagePageSettled,
+                        onEnsurePage = onEnsureImagePage,
                         modifier = Modifier.fillMaxSize().then(readerInset),
                     )
 
@@ -491,6 +510,8 @@ internal fun ReaderScreenContent(
                 onBasqueRefSearchInput = onBasqueRefSearchInput,
                 onBasqueRefSearch = onBasqueRefSearch,
                 onEditingChange = { wordEditing = it },
+                isAdmin = state.isAdmin,
+                onHideTranslation = onHideTranslation,
                 modifier = contentModifier,
             )
         }
@@ -1090,12 +1111,12 @@ internal fun WordDetails(
     token: ReaderToken,
     translations: LemmaTranslations?,
     isLoading: Boolean,
-    onAddDefinition: (String) -> Unit = {},
-    onEditDefinition: (String, String) -> Unit = { _, _ -> },
+    onAddDefinition: (String, Boolean) -> Unit = { _, _ -> },
+    onEditDefinition: (String, String, Boolean?) -> Unit = { _, _, _ -> },
     onDeleteDefinition: (String) -> Unit = {},
     // Fork a dictionary entry (official/community/reference/gloss) into a personal
-    // definition: (parentTranslationId or null, edited body).
-    onSaveDictionaryDefinition: (String?, String) -> Unit = { _, _ -> },
+    // definition: (parentTranslationId or null, edited body, isPrivate).
+    onSaveDictionaryDefinition: (String?, String, Boolean) -> Unit = { _, _, _ -> },
     sentenceTranslation: SentenceTranslation? = null,
     isSentenceTranslating: Boolean = false,
     sentenceTranslateError: String? = null,
@@ -1118,6 +1139,9 @@ internal fun WordDetails(
     // Fired when the inline note field opens/closes so the host can make the popup
     // focusable while editing (a focusable=false popup can't show the keyboard).
     onEditingChange: (Boolean) -> Unit = {},
+    // Admin moderation: unlocks Hide/Unhide on community dictionary entries.
+    isAdmin: Boolean = false,
+    onHideTranslation: (translationId: String, hidden: Boolean) -> Unit = { _, _ -> },
 ) {
     // The parser's chosen lemma plus any alternate candidates the parser scored.
     // Two or more selectable parses surface the switcher so a reader can view the
@@ -1177,6 +1201,8 @@ internal fun WordDetails(
                 canSave = activeParseLemmaId != null,
                 onSave = onSaveDictionaryDefinition,
                 onEditingChange = onEditingChange,
+                isAdmin = isAdmin,
+                onHide = onHideTranslation,
             )
             // Nothing in the dictionary: only say so when there's no personal note
             // either, matching the pre-existing empty-state copy.
@@ -1501,15 +1527,19 @@ private fun SentenceTranslationSection(
 @Composable
 private fun PersonalDefinitionEditor(
     notes: List<WordTranslation>,
-    onAdd: (String) -> Unit,
-    onEdit: (String, String) -> Unit,
+    onAdd: (String, Boolean) -> Unit,
+    onEdit: (String, String, Boolean?) -> Unit,
     onDelete: (String) -> Unit,
     onEditingChange: (Boolean) -> Unit,
 ) {
     // The note id being edited, "" for the add field, or null for none.
     var editingKey by remember(notes) { mutableStateOf<String?>(null) }
-    fun open(key: String) {
+    // Private-toggle state for the currently-open editor, seeded on open from the
+    // note being edited (false for a fresh add).
+    var isPrivate by remember(notes) { mutableStateOf(false) }
+    fun open(key: String, seedPrivate: Boolean) {
         editingKey = key
+        isPrivate = seedPrivate
         onEditingChange(true)
     }
     fun close() {
@@ -1521,33 +1551,51 @@ private fun PersonalDefinitionEditor(
         val id = note.id
         if (id != null && editingKey == id) {
             // Enter with text → save; Enter with the field cleared → delete it.
-            NoteEditField(
-                initial = note.body,
-                onCommit = { t ->
-                    if (t.isBlank()) onDelete(id) else onEdit(id, t)
-                    close()
-                },
-            )
+            Column {
+                NoteEditField(
+                    initial = note.body,
+                    onCommit = { t ->
+                        if (t.isBlank()) onDelete(id) else onEdit(id, t, isPrivate)
+                        close()
+                    },
+                )
+                SwitchRow("Private (only you)", isPrivate) { isPrivate = !isPrivate }
+            }
         } else {
-            Text(
-                note.body,
-                style = MaterialTheme.typography.bodyLarge,
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable(enabled = id != null) { if (id != null) open(id) }
+                    .clickable(enabled = id != null) { if (id != null) open(id, note.isPrivate) }
                     .padding(vertical = 4.dp),
-            )
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    note.body,
+                    style = MaterialTheme.typography.bodyLarge,
+                    modifier = Modifier.weight(1f),
+                )
+                if (note.isPrivate) {
+                    Text(
+                        "Private",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
         }
     }
     if (notes.isEmpty()) {
         if (editingKey == "") {
-            NoteEditField(
-                initial = "",
-                onCommit = { t ->
-                    if (t.isNotBlank()) onAdd(t)
-                    close()
-                },
-            )
+            Column {
+                NoteEditField(
+                    initial = "",
+                    onCommit = { t ->
+                        if (t.isNotBlank()) onAdd(t, isPrivate)
+                        close()
+                    },
+                )
+                SwitchRow("Private (only you)", isPrivate) { isPrivate = !isPrivate }
+            }
         } else {
             Text(
                 "Add your own definition",
@@ -1555,7 +1603,7 @@ private fun PersonalDefinitionEditor(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable { open("") }
+                    .clickable { open("", false) }
                     .padding(vertical = 4.dp),
             )
         }
@@ -1582,12 +1630,23 @@ private fun DictionaryDefinitions(
     community: List<WordTranslation>,
     glossDefault: String?,
     canSave: Boolean,
-    onSave: (parentId: String?, text: String) -> Unit,
+    // Forking a dictionary entry saves it as a public personal note (isPrivate
+    // is always false here); the reader can flip it private afterward from the
+    // "Your notes" editor above.
+    onSave: (parentId: String?, text: String, isPrivate: Boolean) -> Unit,
     onEditingChange: (Boolean) -> Unit,
+    // Admin moderation: when true, community rows get an eye-off "hide" icon;
+    // hidden rows drop out of the list, behind a "Show N hidden" reveal that
+    // offers an eye "unhide" icon. [onHide] toggles a community translation's
+    // hidden flag (translationId, nextHidden).
+    isAdmin: Boolean = false,
+    onHide: (translationId: String, hidden: Boolean) -> Unit = { _, _ -> },
 ) {
     // The entry key being edited, or null for none. Resets when the lists change
     // (e.g. after a save reconciles), mirroring PersonalDefinitionEditor.
     var editingKey by remember(official, community, glossDefault) { mutableStateOf<String?>(null) }
+    // Whether the collapsed "N hidden" list is expanded (admin, to unhide rows).
+    var showHidden by remember(community) { mutableStateOf(false) }
     fun open(key: String) {
         editingKey = key
         onEditingChange(true)
@@ -1598,7 +1657,14 @@ private fun DictionaryDefinitions(
     }
 
     @Composable
-    fun entry(key: String, parentId: String?, body: String) {
+    fun entry(
+        key: String,
+        parentId: String?,
+        body: String,
+        // Non-null only for visible community rows an admin may hide; renders a
+        // compact eye-off icon that suppresses the row for all readers.
+        hideId: String? = null,
+    ) {
         if (canSave && editingKey == key) {
             // Seed the editor with the dictionary text; Enter saves it as the
             // viewer's own. A cleared field just cancels (we never delete a
@@ -1606,20 +1672,37 @@ private fun DictionaryDefinitions(
             NoteEditField(
                 initial = body,
                 onCommit = { t ->
-                    if (t.isNotBlank()) onSave(parentId, t)
+                    if (t.isNotBlank()) onSave(parentId, t, false)
                     close()
                 },
             )
         } else {
-            Text(
-                body,
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable(enabled = canSave) { open(key) }
-                    .padding(vertical = 4.dp),
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    body,
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier
+                        .weight(1f)
+                        .clickable(enabled = canSave) { open(key) },
+                )
+                if (hideId != null) {
+                    IconButton(
+                        onClick = { onHide(hideId, true) },
+                        modifier = Modifier.size(32.dp),
+                    ) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_visibility_off),
+                            contentDescription = "Hide translation from readers",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(18.dp),
+                        )
+                    }
+                }
+            }
         }
     }
 
@@ -1635,14 +1718,96 @@ private fun DictionaryDefinitions(
     official.forEach { t -> entry(key = t.id ?: t.body, parentId = t.id, body = t.body) }
 
     if (community.isNotEmpty()) {
+        // Hidden rows drop out of the main list. Only admins ever receive them
+        // (the server withholds hidden rows from everyone else).
+        val visibleCommunity = community.filter { !it.hidden }
+        val hiddenCommunity = community.filter { it.hidden }
+
         if (official.isNotEmpty()) Spacer(Modifier.height(8.dp))
         Text(
             "Community",
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.primary,
         )
-        community.forEach { t ->
-            entry(key = "community::" + (t.id ?: t.body), parentId = t.id, body = t.body)
+        visibleCommunity.forEach { t ->
+            entry(
+                key = "community::" + (t.id ?: t.body),
+                parentId = t.id,
+                body = t.body,
+                // Only admins get the moderation icon, and only when the row
+                // has a server id to target.
+                hideId = if (isAdmin && t.id != null) t.id else null,
+            )
+        }
+
+        if (isAdmin && hiddenCommunity.isNotEmpty()) {
+            HiddenTranslations(
+                hidden = hiddenCommunity,
+                expanded = showHidden,
+                onToggle = { showHidden = !showHidden },
+                onUnhide = { id -> onHide(id, false) },
+            )
+        }
+    }
+}
+
+/** Admin moderation: a collapsed "N hidden" control that, when expanded, lists
+ *  the community translations a moderator has suppressed — each struck-through
+ *  with an eye icon to unhide (make visible to readers again). */
+@Composable
+private fun HiddenTranslations(
+    hidden: List<WordTranslation>,
+    expanded: Boolean,
+    onToggle: () -> Unit,
+    onUnhide: (translationId: String) -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onToggle() }
+            .padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            painter = painterResource(R.drawable.ic_visibility),
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(16.dp),
+        )
+        Spacer(Modifier.width(6.dp))
+        Text(
+            "${if (expanded) "Hide" else "Show"} ${hidden.size} hidden",
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+    if (expanded) {
+        hidden.forEach { t ->
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    t.body,
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textDecoration = TextDecoration.LineThrough,
+                    modifier = Modifier.weight(1f),
+                )
+                if (t.id != null) {
+                    IconButton(
+                        onClick = { onUnhide(t.id) },
+                        modifier = Modifier.size(32.dp),
+                    ) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_visibility),
+                            contentDescription = "Show translation to readers",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(18.dp),
+                        )
+                    }
+                }
+            }
         }
     }
 }
@@ -1722,7 +1887,7 @@ private fun BasqueReferenceSection(
     onSearch: (String) -> Unit,
     onEditingChange: (Boolean) -> Unit,
     canSave: Boolean = false,
-    onSave: (parentId: String?, text: String) -> Unit = { _, _ -> },
+    onSave: (parentId: String?, text: String, isPrivate: Boolean) -> Unit = { _, _, _ -> },
 ) {
     val selected = selectedSource?.takeIf { it in BASQUE_REF_ORDER } ?: BASQUE_REF_ORDER.first()
     val keyboard = LocalSoftwareKeyboardController.current
@@ -1902,7 +2067,7 @@ private fun BasqueReferenceSection(
                         onStartEdit = { open(key) },
                         // A reference entry isn't a stored translation, so it forks from null.
                         onSave = { t ->
-                            if (t.isNotBlank()) onSave(null, t)
+                            if (t.isNotBlank()) onSave(null, t, false)
                             close()
                         },
                     )
@@ -2116,21 +2281,131 @@ private fun ReaderProcessing(modifier: Modifier = Modifier) {
 }
 
 /**
- * Page-image (PDF) reader: the rasterized page with each OCR word overlaid as a
- * tappable region (from its normalized bbox). Pinch-zoom + pan; new/learning
- * words get a faint tint so they stand out against the page.
+ * Page-image (PDF) reader: a horizontal pager over the book's pages, so a swipe
+ * slides the current page off and the next one in — mirroring the text reader.
+ * Each page is the rasterized image with its OCR words overlaid as tappable
+ * regions (from their normalized bboxes). Neighbouring pages are prefetched into
+ * [pageCache] so they're ready to slide in; the page you're on supports
+ * pinch-zoom + pan, and new/learning words get a faint tint against the page.
  */
 @Composable
 private fun ReaderImage(
+    currentIdx: Int,
+    chapterCount: Int,
+    pageCache: Map<Int, ReaderImagePage>,
+    onWordTap: (ReaderToken, Rect) -> Unit,
+    onDismissWord: () -> Unit,
+    onPageSettled: (Int) -> Unit,
+    onEnsurePage: (Int) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val apiBase = BuildConfig.API_BASE_URL.trimEnd('/')
+    val pageCount = chapterCount.coerceAtLeast(1)
+    val pagerState = rememberPagerState(
+        initialPage = currentIdx.coerceIn(0, pageCount - 1),
+        pageCount = { pageCount },
+    )
+    // A settled swipe promotes that page to the live reader state (tokens, taps).
+    LaunchedEffect(pagerState) {
+        snapshotFlow { pagerState.settledPage }.collect { onPageSettled(it) }
+    }
+    // Follow page changes that came from outside a swipe (top-bar arrows, the TOC).
+    LaunchedEffect(currentIdx) {
+        if (currentIdx != pagerState.currentPage) pagerState.animateScrollToPage(currentIdx)
+    }
+    // Zoom belongs to the page you're on; reset it whenever the page changes.
+    var scale by remember { mutableStateOf(1f) }
+    var offset by remember { mutableStateOf(Offset.Zero) }
+    LaunchedEffect(pagerState.settledPage) {
+        scale = 1f
+        offset = Offset.Zero
+    }
+    HorizontalPager(
+        state = pagerState,
+        modifier = modifier,
+        // At 1× the pager owns horizontal drags (page flips); once zoomed in a
+        // drag pans the page instead, so paging pauses until you zoom back out.
+        userScrollEnabled = scale <= 1f,
+        // Keep the adjacent pages composed off-screen so their image is decoded
+        // into Coil's cache (and their overlay tokens prefetched) before you
+        // swipe — the next page is ready to slide in, not loading mid-swipe.
+        beyondViewportPageCount = 1,
+    ) { page ->
+        val data = pageCache[page]
+        LaunchedEffect(page) { if (data == null) onEnsurePage(page) }
+        val isCurrent = page == pagerState.currentPage
+        ImagePagerSlot(
+            data = data,
+            apiBase = apiBase,
+            interactive = isCurrent,
+            scale = if (isCurrent) scale else 1f,
+            offset = if (isCurrent) offset else Offset.Zero,
+            onTransform = { s, o -> scale = s; offset = o },
+            onWordTap = onWordTap,
+            onDismissWord = onDismissWord,
+            onRetry = { onEnsurePage(page) },
+        )
+    }
+}
+
+/** One slot in the image pager: the page once its image is ready, else a spinner
+ *  while it loads (or a retry if the fetch failed). */
+@Composable
+private fun ImagePagerSlot(
+    data: ReaderImagePage?,
+    apiBase: String,
+    interactive: Boolean,
+    scale: Float,
+    offset: Offset,
+    onTransform: (Float, Offset) -> Unit,
+    onWordTap: (ReaderToken, Rect) -> Unit,
+    onDismissWord: () -> Unit,
+    onRetry: () -> Unit,
+) {
+    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        when {
+            data?.imageUrl != null -> PageImage(
+                imageUrl = apiBase + data.imageUrl,
+                pageWidth = data.width,
+                pageHeight = data.height,
+                tokens = data.tokens,
+                interactive = interactive,
+                scale = scale,
+                offset = offset,
+                onTransform = onTransform,
+                onWordTap = onWordTap,
+                onDismissWord = onDismissWord,
+            )
+
+            data?.load == PageLoad.ERROR -> Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier.padding(24.dp),
+            ) {
+                Text("Couldn't load this page.", style = MaterialTheme.typography.bodyMedium)
+                Spacer(Modifier.height(8.dp))
+                TextButton(onClick = onRetry) { Text("Retry") }
+            }
+
+            else -> CircularProgressIndicator()
+        }
+    }
+}
+
+/** The rasterized page image with its tappable word overlay. When [interactive]
+ *  (the page you're on) a pinch zooms and, once zoomed, a drag pans — reported up
+ *  via [onTransform]; a single-finger drag at 1× is left for the pager to page. */
+@Composable
+private fun PageImage(
     imageUrl: String,
     pageWidth: Int?,
     pageHeight: Int?,
     tokens: List<ReaderToken>,
+    interactive: Boolean,
+    scale: Float,
+    offset: Offset,
+    onTransform: (Float, Offset) -> Unit,
     onWordTap: (ReaderToken, Rect) -> Unit,
     onDismissWord: () -> Unit,
-    onPrevPage: () -> Unit,
-    onNextPage: () -> Unit,
-    modifier: Modifier = Modifier,
 ) {
     val scheme = MaterialTheme.colorScheme
     val aspect = if (pageWidth != null && pageHeight != null && pageHeight > 0) {
@@ -2138,85 +2413,95 @@ private fun ReaderImage(
     } else {
         1f
     }
-    var scale by remember(imageUrl) { mutableStateOf(1f) }
-    var offset by remember(imageUrl) { mutableStateOf(Offset.Zero) }
-    // Accumulated horizontal drag while at 1× → a page swipe (reset per page).
-    val swipeAccum = remember(imageUrl) { mutableStateOf(0f) }
     var imageCoords by remember(imageUrl) { mutableStateOf<LayoutCoordinates?>(null) }
-    val onPrev by rememberUpdatedState(onPrevPage)
-    val onNext by rememberUpdatedState(onNextPage)
-    BoxWithConstraints(modifier, contentAlignment = Alignment.Center) {
-        val swipeThreshold = constraints.maxWidth * 0.22f
-        val transformState = rememberTransformableState { zoomChange, panChange, _ ->
-            scale = (scale * zoomChange).coerceIn(1f, 5f)
-            if (scale > 1f) {
-                // Zoomed in: a drag pans the page.
-                offset += panChange
-            } else {
-                // At 1×: a sustained horizontal drag flips to the prev/next page.
-                offset = Offset.Zero
-                swipeAccum.value += panChange.x
-                when {
-                    swipeAccum.value <= -swipeThreshold -> { onNext(); swipeAccum.value = 0f }
-                    swipeAccum.value >= swipeThreshold -> { onPrev(); swipeAccum.value = 0f }
-                }
-            }
-        }
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .aspectRatio(aspect)
-                .graphicsLayer(
-                    scaleX = scale,
-                    scaleY = scale,
-                    translationX = offset.x,
-                    translationY = offset.y,
-                )
-                .transformable(transformState)
-                .onGloballyPositioned { imageCoords = it }
-                .pointerInput(tokens) {
-                    detectTapGestures { tap ->
-                        val nx = tap.x / size.width
-                        val ny = tap.y / size.height
-                        val token = tokens.firstOrNull { t ->
-                            val b = t.bbox
-                            t.isWord && b != null &&
-                                nx >= b.x && nx <= b.x + b.w &&
-                                ny >= b.y && ny <= b.y + b.h
-                        }
-                        val b = token?.bbox
-                        val coords = imageCoords
-                        val rect = if (token != null && b != null && coords != null) {
-                            val w = coords.size.width.toFloat()
-                            val h = coords.size.height.toFloat()
-                            val tl = coords.localToWindow(Offset(b.x * w, b.y * h))
-                            val br = coords.localToWindow(Offset((b.x + b.w) * w, (b.y + b.h) * h))
-                            Rect(tl.x, tl.y, br.x, br.y)
-                        } else {
-                            null
-                        }
-                        if (token != null && rect != null) onWordTap(token, rect)
-                        else onDismissWord()
-                    }
-                },
-        ) {
-            AsyncImage(
-                model = imageUrl,
-                contentDescription = null,
-                modifier = Modifier.fillMaxSize(),
-                contentScale = ContentScale.FillBounds,
+    // The gesture handler is installed once (keyed on Unit); read the latest
+    // transform through snapshots so pinch/pan accumulate across recompositions.
+    val scaleNow by rememberUpdatedState(scale)
+    val offsetNow by rememberUpdatedState(offset)
+    val onTransformNow by rememberUpdatedState(onTransform)
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .aspectRatio(aspect)
+            .graphicsLayer(
+                scaleX = scale,
+                scaleY = scale,
+                translationX = offset.x,
+                translationY = offset.y,
             )
-            Canvas(Modifier.fillMaxSize()) {
-                tokens.forEach { t ->
-                    val b = t.bbox ?: return@forEach
-                    if (!t.isWord) return@forEach
-                    val tint = overlayTint(t.status, scheme) ?: return@forEach
-                    drawRect(
-                        color = tint,
-                        topLeft = Offset(b.x * size.width, b.y * size.height),
-                        size = Size(b.w * size.width, b.h * size.height),
-                    )
-                }
+            .onGloballyPositioned { imageCoords = it }
+            .then(
+                if (interactive) {
+                    Modifier.pointerInput(Unit) {
+                        awaitEachGesture {
+                            awaitFirstDown(requireUnconsumed = false)
+                            do {
+                                val event = awaitPointerEvent()
+                                val pressed = event.changes.count { it.pressed }
+                                // Consume only a pinch (2+ fingers) or a pan while
+                                // zoomed; leave the lone-finger 1× drag for paging.
+                                if (pressed >= 2 || scaleNow > 1f) {
+                                    val newScale = (scaleNow * event.calculateZoom()).coerceIn(1f, 5f)
+                                    val newOffset =
+                                        if (newScale > 1f) offsetNow + event.calculatePan() else Offset.Zero
+                                    onTransformNow(newScale, newOffset)
+                                    event.changes.forEach { if (it.positionChanged()) it.consume() }
+                                }
+                            } while (event.changes.any { it.pressed })
+                        }
+                    }
+                } else {
+                    Modifier
+                },
+            )
+            .then(
+                if (interactive) {
+                    Modifier.pointerInput(tokens) {
+                        detectTapGestures { tap ->
+                            val nx = tap.x / size.width
+                            val ny = tap.y / size.height
+                            val token = tokens.firstOrNull { t ->
+                                val b = t.bbox
+                                t.isWord && b != null &&
+                                    nx >= b.x && nx <= b.x + b.w &&
+                                    ny >= b.y && ny <= b.y + b.h
+                            }
+                            val b = token?.bbox
+                            val coords = imageCoords
+                            val rect = if (token != null && b != null && coords != null) {
+                                val w = coords.size.width.toFloat()
+                                val h = coords.size.height.toFloat()
+                                val tl = coords.localToWindow(Offset(b.x * w, b.y * h))
+                                val br = coords.localToWindow(Offset((b.x + b.w) * w, (b.y + b.h) * h))
+                                Rect(tl.x, tl.y, br.x, br.y)
+                            } else {
+                                null
+                            }
+                            if (token != null && rect != null) onWordTap(token, rect)
+                            else onDismissWord()
+                        }
+                    }
+                } else {
+                    Modifier
+                },
+            ),
+    ) {
+        AsyncImage(
+            model = imageUrl,
+            contentDescription = null,
+            modifier = Modifier.fillMaxSize(),
+            contentScale = ContentScale.FillBounds,
+        )
+        Canvas(Modifier.fillMaxSize()) {
+            tokens.forEach { t ->
+                val b = t.bbox ?: return@forEach
+                if (!t.isWord) return@forEach
+                val tint = overlayTint(t.status, scheme) ?: return@forEach
+                drawRect(
+                    color = tint,
+                    topLeft = Offset(b.x * size.width, b.y * size.height),
+                    size = Size(b.w * size.width, b.h * size.height),
+                )
             }
         }
     }
