@@ -393,7 +393,7 @@ describe('WordPopup — admin hide translation', () => {
   });
 
   it('clicking Hide PATCHes the hidden endpoint with hidden:true + a reason', async () => {
-    const fetchMock = vi.fn(async (input: unknown, _init?: RequestInit) => {
+    const fetchMock = vi.fn(async (input: unknown) => {
       if (String(input).includes('/hidden')) return jres({ translation: {} });
       return jres(makePayload());
     });
@@ -418,7 +418,7 @@ describe('WordPopup — admin hide translation', () => {
         String(c[0]).includes('/api/v1/admin/translations/tr-com-1/hidden'),
       );
       expect(call).toBeTruthy();
-      const init = call![1] as RequestInit;
+      const init = (call as unknown as unknown[])[1] as RequestInit;
       expect(init.method).toBe('PATCH');
       const body = JSON.parse(String(init.body));
       expect(body.hidden).toBe(true);
@@ -428,7 +428,7 @@ describe('WordPopup — admin hide translation', () => {
   });
 
   it('keeps a hidden row out of the list, behind a "Show hidden" reveal that unhides', async () => {
-    const fetchMock = vi.fn(async (input: unknown, _init?: RequestInit) => {
+    const fetchMock = vi.fn(async (input: unknown) => {
       if (String(input).includes('/hidden')) return jres({ translation: {} });
       return jres(makePayload(true));
     });
@@ -466,7 +466,7 @@ describe('WordPopup — admin hide translation', () => {
         String(c[0]).includes('/api/v1/admin/translations/tr-com-1/hidden'),
       );
       expect(call).toBeTruthy();
-      const init = call![1] as RequestInit;
+      const init = (call as unknown as unknown[])[1] as RequestInit;
       expect(JSON.parse(String(init.body)).hidden).toBe(false);
     });
   });
