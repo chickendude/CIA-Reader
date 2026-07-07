@@ -24,6 +24,10 @@ interface AuthRepository {
     suspend fun requestMagicLink(email: String): AuthResult
     suspend fun consumeMagicLink(token: String): AuthResult
     suspend fun logout()
+
+    /** The signed-in user's role ("user"/"curator"/"admin"), or null if it can't
+     *  be fetched (offline or unauthenticated). Used to gate admin-only UI. */
+    suspend fun currentRole(): String?
 }
 
 @Singleton
@@ -61,6 +65,13 @@ class AuthRepositoryImpl @Inject constructor(
         // POST /api/v1/auth/logout is a later enhancement; the bearer/refresh
         // tokens simply expire.)
         tokenStore.clear()
+    }
+
+    override suspend fun currentRole(): String? = try {
+        authApi.me().user.role
+    } catch (_: Exception) {
+        // Offline / unauthenticated / server error: treat as no elevated role.
+        null
     }
 
     /** Runs an auth call that returns tokens, persisting them on success. */

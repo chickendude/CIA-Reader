@@ -33,27 +33,37 @@ const body = z.object({
   // Optional — present for T-3.5's "customize an official" flow.
   parentTranslationId: z.string().uuid().nullish(),
   targetLanguage: z.string().min(2).max(3).optional(),
+  // A private note is visible only to its author and skips the community cap.
+  isPrivate: z.boolean().optional(),
 });
 
 export const POST: RequestHandler = async (event) => {
   const user = await requireVerifiedUser(event);
   const input = await parseJson(event.request, body);
+  const isPrivate = input.isPrivate ?? false;
 
   try {
-    const requestLimit = await consumeRateLimit(event, user.id, {
-      scope: 'translations:create',
-      limit: MAX_PER_USER_PER_WINDOW,
-      windowMs: WINDOW_MS,
-    });
+    // Private notes don't consume the shared-dictionary rate-limit budget.
+    const requestLimit = isPrivate
+      ? null
+      : await consumeRateLimit(event, user.id, {
+          scope: 'translations:create',
+          limit: MAX_PER_USER_PER_WINDOW,
+          windowMs: WINDOW_MS,
+        });
     const translation = await submitUserTranslation(user.id, {
       lemmaId: input.lemmaId,
       body: input.body,
       parentTranslationId: input.parentTranslationId ?? null,
       targetLanguage: input.targetLanguage,
+      isPrivate,
     });
     return json(
       { translation: publicTranslation(translation) },
-      { status: 201, headers: rateLimitHeaders(requestLimit) },
+      {
+        status: 201,
+        headers: requestLimit ? rateLimitHeaders(requestLimit) : undefined,
+      },
     );
   } catch (err) {
     if (err instanceof RequestRateLimitError || err instanceof TranslationRateLimitError) {

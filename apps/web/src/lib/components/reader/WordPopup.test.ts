@@ -322,6 +322,210 @@ describe('WordPopup — translation reporting (T-11.1)', () => {
   });
 });
 
+describe('WordPopup — admin hide translation', () => {
+  function makePayload(hidden = false) {
+    return {
+      lemma: { id: 'lem-1', headword: 'पानी', pos: 'NOUN', glossDefault: null },
+      translations: {
+        personal: [],
+        official: [],
+        community: [
+          {
+            id: 'tr-com-1',
+            source: 'user',
+            submittedBy: 'someone-else',
+            body: 'wrong',
+            targetLanguage: 'en',
+            sourceAttribution: null,
+            parentTranslationId: null,
+            provenance: { kind: 'community', attribution: null },
+            voteScore: 0,
+            viewerVote: null,
+            hidden,
+          },
+        ],
+      },
+    };
+  }
+
+  function jres(payload: unknown) {
+    return new Response(JSON.stringify(payload), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+  }
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('shows a Hide button on community rows for an admin', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jres(makePayload())));
+    render(WordPopup, {
+      token: makeToken({ surface: 'पानी', lemmaId: 'lem-1' }),
+      language: 'hi',
+      isOwner: false,
+      isAdmin: true,
+      onClose: vi.fn(),
+    });
+    await waitFor(() => {
+      expect(
+        document.body.querySelector('[data-testid="hide-button"]'),
+      ).not.toBeNull();
+    });
+  });
+
+  it('does not show a Hide button for a non-admin', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jres(makePayload())));
+    render(WordPopup, {
+      token: makeToken({ surface: 'पानी', lemmaId: 'lem-1' }),
+      language: 'hi',
+      isOwner: true,
+      isAdmin: false,
+      onClose: vi.fn(),
+    });
+    await waitFor(() => {
+      expect(document.body.querySelector('.community-row')).not.toBeNull();
+    });
+    expect(
+      document.body.querySelector('[data-testid="hide-button"]'),
+    ).toBeNull();
+  });
+
+  it('clicking Hide PATCHes the hidden endpoint with hidden:true + a reason', async () => {
+    const fetchMock = vi.fn(async (input: unknown) => {
+      if (String(input).includes('/hidden')) return jres({ translation: {} });
+      return jres(makePayload());
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    render(WordPopup, {
+      token: makeToken({ surface: 'पानी', lemmaId: 'lem-1' }),
+      language: 'hi',
+      isOwner: false,
+      isAdmin: true,
+      onClose: vi.fn(),
+    });
+    const btn = await waitFor(() => {
+      const b = document.body.querySelector(
+        '[data-testid="hide-button"]',
+      ) as HTMLButtonElement | null;
+      expect(b).not.toBeNull();
+      return b!;
+    });
+    btn.click();
+    await waitFor(() => {
+      const call = fetchMock.mock.calls.find((c) =>
+        String(c[0]).includes('/api/v1/admin/translations/tr-com-1/hidden'),
+      );
+      expect(call).toBeTruthy();
+      const init = (call as unknown as unknown[])[1] as RequestInit;
+      expect(init.method).toBe('PATCH');
+      const body = JSON.parse(String(init.body));
+      expect(body.hidden).toBe(true);
+      expect(typeof body.reason).toBe('string');
+      expect(body.reason.length).toBeGreaterThan(0);
+    });
+  });
+
+  it('keeps a hidden row out of the list, behind a "Show hidden" reveal that unhides', async () => {
+    const fetchMock = vi.fn(async (input: unknown) => {
+      if (String(input).includes('/hidden')) return jres({ translation: {} });
+      return jres(makePayload(true));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    render(WordPopup, {
+      token: makeToken({ surface: 'पानी', lemmaId: 'lem-1' }),
+      language: 'hi',
+      isOwner: false,
+      isAdmin: true,
+      onClose: vi.fn(),
+    });
+    // The hidden row is NOT in the main list (no inline hide/unhide button),
+    // but a collapsed reveal toggle is offered.
+    const toggle = await waitFor(() => {
+      const b = document.body.querySelector(
+        '[data-testid="hidden-reveal-toggle"]',
+      ) as HTMLButtonElement | null;
+      expect(b).not.toBeNull();
+      return b!;
+    });
+    expect(document.body.querySelector('[data-testid="hide-button"]')).toBeNull();
+    expect(document.body.querySelector('[data-testid="unhide-button"]')).toBeNull();
+    // Expand → the unhide control appears, and clicking it PATCHes hidden:false.
+    toggle.click();
+    const unhide = await waitFor(() => {
+      const b = document.body.querySelector(
+        '[data-testid="unhide-button"]',
+      ) as HTMLButtonElement | null;
+      expect(b).not.toBeNull();
+      return b!;
+    });
+    unhide.click();
+    await waitFor(() => {
+      const call = fetchMock.mock.calls.find((c) =>
+        String(c[0]).includes('/api/v1/admin/translations/tr-com-1/hidden'),
+      );
+      expect(call).toBeTruthy();
+      const init = (call as unknown as unknown[])[1] as RequestInit;
+      expect(JSON.parse(String(init.body)).hidden).toBe(false);
+    });
+  });
+
+  it('keeps hidden rows out of the visible list but shows visible ones inline', async () => {
+    const payload = {
+      lemma: { id: 'lem-1', headword: 'पानी', pos: 'NOUN', glossDefault: null },
+      translations: {
+        personal: [],
+        official: [],
+        community: [
+          {
+            id: 'tr-vis',
+            source: 'user',
+            submittedBy: 'someone-else',
+            body: 'visible one',
+            targetLanguage: 'en',
+            sourceAttribution: null,
+            parentTranslationId: null,
+            provenance: { kind: 'community', attribution: null },
+            voteScore: 0,
+            viewerVote: null,
+            hidden: false,
+          },
+          {
+            id: 'tr-hid',
+            source: 'user',
+            submittedBy: 'someone-else',
+            body: 'hidden one',
+            targetLanguage: 'en',
+            sourceAttribution: null,
+            parentTranslationId: null,
+            provenance: { kind: 'community', attribution: null },
+            voteScore: 0,
+            viewerVote: null,
+            hidden: true,
+          },
+        ],
+      },
+    };
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jres(payload)));
+    render(WordPopup, {
+      token: makeToken({ surface: 'पानी', lemmaId: 'lem-1' }),
+      language: 'hi',
+      isOwner: false,
+      isAdmin: true,
+      onClose: vi.fn(),
+    });
+    await waitFor(() => {
+      expect(document.body.textContent).toContain('visible one');
+    });
+    // The hidden row's text is not in the main list until the reveal is opened.
+    expect(document.body.textContent).not.toContain('hidden one');
+    expect(
+      document.body.querySelector('[data-testid="hidden-reveal-toggle"]'),
+    ).not.toBeNull();
+  });
+});
+
 describe('WordPopup — definition-language filter (Basque dictionary)', () => {
   function official(id: string, body: string, targetLanguage: string) {
     return {

@@ -169,7 +169,9 @@ export async function submitReport(
   const reason = validateReason(input.reason);
   const note = validateNote(input.note);
   const translation = await loadTranslation(translationId);
-  if (translation.hidden) {
+  if (translation.hidden || translation.isPrivate) {
+    // Private notes are invisible to other users, so there's nothing to
+    // report; hidden ones are already actioned.
     throw new ReportValidationError(
       `Translation ${translationId} is not reportable`,
       404,
@@ -256,7 +258,12 @@ export async function listReports(
     viewer.grantedLanguages === 'all' ? null : viewer.grantedLanguages ?? [];
   if (!isAdminViewer && (grantedLanguages ?? []).length === 0) return [];
 
-  const wherePredicates = [eq(schema.translationReports.status, status)];
+  const wherePredicates = [
+    eq(schema.translationReports.status, status),
+    // A note the author flipped to private after it was reported drops out
+    // of the queue — it's no longer visible to anyone to moderate.
+    eq(schema.translations.isPrivate, false),
+  ];
   if (filter.language) {
     if (!isViewerScopedToLanguage(viewer, filter.language)) {
       throw new ForbiddenError(

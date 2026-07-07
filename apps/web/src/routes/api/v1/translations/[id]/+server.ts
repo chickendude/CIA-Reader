@@ -22,9 +22,15 @@ import { parseJson } from '../../auth/_helpers.js';
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-const patchBody = z.object({
-  body: z.string(),
-});
+const patchBody = z
+  .object({
+    body: z.string().optional(),
+    // Toggle a note between community-visible and author-only.
+    isPrivate: z.boolean().optional(),
+  })
+  .refine((v) => v.body !== undefined || v.isPrivate !== undefined, {
+    message: 'Provide body or isPrivate to update',
+  });
 
 function mapTranslationError(err: unknown): never {
   if (err instanceof TranslationValidationError) {

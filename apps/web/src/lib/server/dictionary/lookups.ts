@@ -63,6 +63,9 @@ export type PublicTranslation = {
   sourceAttribution: string | null;
   provenance: TranslationProvenance;
   hidden: boolean;
+  /** True for the author's own private notes — surfaced so the client can
+   *  show the toggle state. Other viewers never receive private rows. */
+  isPrivate: boolean;
   voteScore: number;
   viewerVote: TranslationVoteValue | null;
   createdAt: Date;
@@ -138,6 +141,7 @@ function toPublicTranslation(
     sourceAttribution: row.sourceAttribution,
     provenance: deriveProvenance(row, viewer),
     hidden: row.hidden,
+    isPrivate: row.isPrivate,
     voteScore: row.voteScore ?? 0,
     viewerVote: row.viewerVote ?? null,
     createdAt: row.createdAt,
@@ -160,7 +164,14 @@ export function bucketTranslations(
   viewer: { id: string; role: User['role'] } | null,
 ): LemmaTranslationBuckets['translations'] {
   const canSeeHidden = viewer?.role === 'curator' || viewer?.role === 'admin';
-  const visible = rows.filter((r) => !r.hidden || canSeeHidden);
+  const visible = rows.filter((r) => {
+    // Moderation: hidden rows are curator/admin-only.
+    if (r.hidden && !canSeeHidden) return false;
+    // Privacy: a private note is visible only to its author — never to
+    // other viewers, and never to curators/admins (it's not moderation).
+    if (r.isPrivate && (!viewer || r.submittedBy !== viewer.id)) return false;
+    return true;
+  });
 
   const personal: TranslationWithVotes[] = [];
   const official: TranslationWithVotes[] = [];
@@ -360,7 +371,13 @@ export async function getLemmaTranslations(
   // personal note. A personal note is not a dictionary entry: set it aside,
   // decide the fallback on the remaining (dictionary) rows only, then merge the
   // viewer's notes back in (they live on the primary lemma, never on a sibling).
-  const primaryTyped = primaryRows as Translation[];
+  // Drop other users' private notes up front — they're never shown to this
+  // viewer, and leaving them in would keep the primary set non-empty and
+  // wrongly suppress the sibling-dictionary fallback below. The viewer's own
+  // private notes stay (they render in the personal bucket).
+  const primaryTyped = (primaryRows as Translation[]).filter(
+    (r) => !r.isPrivate || r.submittedBy === viewer?.id,
+  );
   const personalRows = viewer
     ? primaryTyped.filter((r) => r.source === 'user' && r.submittedBy === viewer.id)
     : [];

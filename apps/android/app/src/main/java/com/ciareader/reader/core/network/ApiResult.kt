@@ -22,6 +22,7 @@ fun httpMessage(code: Int): String = when (code) {
     401 -> "Please sign in again."
     403 -> "You don't have access to that."
     404 -> "Not found."
+    429 -> "You're saving too fast — wait a bit and try again."
     in 500..599 -> "The server had a problem. Please try again."
     else -> "Something went wrong ($code)."
 }

@@ -31,6 +31,13 @@ data class TranslationDto(
     val body: String,
     val targetLanguage: String? = null,
     val sourceAttribution: String? = null,
+    /** Author-only note: true when this is the viewer's own private definition.
+     *  Other viewers never receive private rows, so it's only ever set on the
+     *  personal bucket. */
+    val isPrivate: Boolean = false,
+    /** Moderator-hidden community entry. Only ever true on rows the server sends
+     *  to admins/curators; regular readers never receive hidden rows. */
+    val hidden: Boolean = false,
 )
 
 /** POST /api/v1/translations — submit the viewer's own definition for a lemma.
@@ -44,14 +51,29 @@ data class CreateTranslationRequest(
     val body: String,
     val targetLanguage: String? = null,
     val parentTranslationId: String? = null,
+    /** When true the note is author-only (hidden from the community bucket and
+     *  exempt from the submission rate limit). */
+    val isPrivate: Boolean = false,
 )
 
 @Serializable
 data class CreateTranslationResponseDto(val translation: TranslationDto? = null)
 
-/** PATCH /api/v1/translations/:id — edit the viewer's own definition. */
+/** PATCH /api/v1/translations/:id — edit the viewer's own definition, and/or
+ *  toggle its private flag. */
 @Serializable
-data class UpdateTranslationRequest(val body: String)
+data class UpdateTranslationRequest(
+    val body: String,
+    val isPrivate: Boolean? = null,
+)
+
+/** PATCH /api/v1/admin/translations/:id/hidden — admin/curator moderation:
+ *  hide or unhide a community translation. [reason] is recorded in the audit log. */
+@Serializable
+data class HideTranslationRequest(
+    val hidden: Boolean,
+    val reason: String,
+)
 
 /** GET /api/v1/admin/basque-dictionary?word= — admin-only reference dictionaries
  *  (Elhuyar / Euskaltzaindia). 403s for non-admins. */

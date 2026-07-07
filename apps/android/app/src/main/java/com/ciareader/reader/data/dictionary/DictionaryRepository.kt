@@ -11,7 +11,17 @@ import kotlinx.serialization.json.Json
 import javax.inject.Inject
 import javax.inject.Singleton
 
-data class WordTranslation(val body: String, val attribution: String?, val id: String? = null)
+data class WordTranslation(
+    val body: String,
+    val attribution: String?,
+    val id: String? = null,
+    /** True for the viewer's own private notes — drives the "Private" toggle
+     *  state in the editor. Always false for official/community entries. */
+    val isPrivate: Boolean = false,
+    /** Moderator-hidden community entry. Only ever true for admins/curators, who
+     *  still see hidden rows (struck-through) so they can unhide them. */
+    val hidden: Boolean = false,
+)
 
 /** A lemma's definitions, grouped by source (for the reader's word sheet). */
 data class LemmaTranslations(
@@ -56,13 +66,27 @@ interface DictionaryRepository {
         lemmaId: String,
         body: String,
         parentTranslationId: String? = null,
+        isPrivate: Boolean = false,
     ): Outcome<Unit>
 
-    /** Edit one of the viewer's own definitions (by its translation id). */
-    suspend fun editDefinition(translationId: String, body: String): Outcome<Unit>
+    /** Edit one of the viewer's own definitions (by its translation id).
+     *  [isPrivate] non-null toggles the note's private flag; null leaves it. */
+    suspend fun editDefinition(
+        translationId: String,
+        body: String,
+        isPrivate: Boolean? = null,
+    ): Outcome<Unit>
 
     /** Delete one of the viewer's own definitions (by its translation id). */
     suspend fun deleteDefinition(translationId: String): Outcome<Unit>
+
+    /** Admin/curator moderation: hide or unhide a community translation.
+     *  [reason] is recorded server-side in the audit log. 403 → Failure. */
+    suspend fun hideTranslation(
+        translationId: String,
+        hidden: Boolean,
+        reason: String,
+    ): Outcome<Unit>
 
     /** Admin-only Basque reference dictionaries for a word (403 → Failure).
      *  [exact] preserves case for a precise search (an autocomplete pick); the
@@ -119,19 +143,39 @@ class DictionaryRepositoryImpl @Inject constructor(
         lemmaId: String,
         body: String,
         parentTranslationId: String?,
+        isPrivate: Boolean,
     ): Outcome<Unit> =
         apiCall {
             api.addTranslation(
-                CreateTranslationRequest(lemmaId, body, parentTranslationId = parentTranslationId),
+                CreateTranslationRequest(
+                    lemmaId,
+                    body,
+                    parentTranslationId = parentTranslationId,
+                    isPrivate = isPrivate,
+                ),
             )
             Unit
         }
 
-    override suspend fun editDefinition(translationId: String, body: String): Outcome<Unit> =
-        apiCall { api.editTranslation(translationId, UpdateTranslationRequest(body)); Unit }
+    override suspend fun editDefinition(
+        translationId: String,
+        body: String,
+        isPrivate: Boolean?,
+    ): Outcome<Unit> =
+        apiCall {
+            api.editTranslation(translationId, UpdateTranslationRequest(body, isPrivate))
+            Unit
+        }
 
     override suspend fun deleteDefinition(translationId: String): Outcome<Unit> =
         apiCall { api.deleteTranslation(translationId) }
+
+    override suspend fun hideTranslation(
+        translationId: String,
+        hidden: Boolean,
+        reason: String,
+    ): Outcome<Unit> =
+        apiCall { api.setTranslationHidden(translationId, HideTranslationRequest(hidden, reason)) }
 
     // Reference lookups are stable, so cache per word for the session — reopening
     // a word shows them instantly instead of re-hitting the network.
@@ -166,7 +210,13 @@ private fun LemmaTranslationsDto.toDomain() = LemmaTranslations(
     headword = lemma.headword,
     pos = lemma.pos,
     gloss = lemma.glossDefault,
-    personal = translations.personal.map { WordTranslation(it.body, it.sourceAttribution, it.id) },
-    official = translations.official.map { WordTranslation(it.body, it.sourceAttribution, it.id) },
-    community = translations.community.map { WordTranslation(it.body, it.sourceAttribution, it.id) },
+    personal = translations.personal.map {
+        WordTranslation(it.body, it.sourceAttribution, it.id, it.isPrivate)
+    },
+    official = translations.official.map {
+        WordTranslation(it.body, it.sourceAttribution, it.id, hidden = it.hidden)
+    },
+    community = translations.community.map {
+        WordTranslation(it.body, it.sourceAttribution, it.id, hidden = it.hidden)
+    },
 )
