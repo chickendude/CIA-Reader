@@ -149,6 +149,14 @@ describe('translation votes', () => {
     );
   });
 
+  it('rejects voting on a private translation', async () => {
+    stage([translation({ isPrivate: true })]);
+
+    await expect(setTranslationVote('u1', 'tr-1', 'up')).rejects.toMatchObject({
+      status: 403,
+    });
+  });
+
   it('returns the current summary without writing', async () => {
     stage({ rows: [{ score: -1 }] });
     stage([{ value: 'down' }]);

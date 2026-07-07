@@ -24,6 +24,14 @@ interface DictionaryApi {
     @DELETE("api/v1/translations/{id}")
     suspend fun deleteTranslation(@Path("id") id: String)
 
+    /** Admin/curator moderation: hide or unhide a community translation.
+     *  403s for non-moderators. */
+    @PATCH("api/v1/admin/translations/{id}/hidden")
+    suspend fun setTranslationHidden(
+        @Path("id") id: String,
+        @Body body: HideTranslationRequest,
+    )
+
     /** Admin-only Basque reference dictionaries; 403 for non-admins.
      *  [exact] = "1" preserves case for a precise search picked from autocomplete;
      *  null (the default) lowercases the word for a lemma lookup. */

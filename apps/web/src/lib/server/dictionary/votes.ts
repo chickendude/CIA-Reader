@@ -71,6 +71,12 @@ function assertCanVote(row: Translation, userId: string): void {
       403,
     );
   }
+  if (row.isPrivate) {
+    throw new TranslationVoteError(
+      'Private translations cannot be voted on',
+      403,
+    );
+  }
 }
 
 export async function getTranslationVoteSummary(

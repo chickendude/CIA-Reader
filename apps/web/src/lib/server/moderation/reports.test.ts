@@ -313,6 +313,17 @@ describe('submitReport — validation', () => {
       expect((err as InstanceType<typeof ReportValidationError>).status).toBe(409);
     }
   });
+
+  it('refuses to report a private translation (invisible to others)', async () => {
+    stage([{ ...TRANSLATION_USER_HIDDEN_FALSE, isPrivate: true }]);
+    try {
+      await submitReport({ id: 'user-1' }, 'tr-1', { reason: 'spam' });
+      throw new Error('should have thrown');
+    } catch (err) {
+      expect(err).toBeInstanceOf(ReportValidationError);
+      expect((err as InstanceType<typeof ReportValidationError>).status).toBe(404);
+    }
+  });
 });
 
 describe('submitReport — rate limiting & dedup', () => {

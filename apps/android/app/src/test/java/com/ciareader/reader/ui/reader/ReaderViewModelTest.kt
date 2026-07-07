@@ -6,6 +6,8 @@ import com.ciareader.reader.core.settings.ReadingTimeStore
 import com.ciareader.reader.core.settings.SettingsStore
 import com.ciareader.reader.data.collection.CollectionChapter
 import com.ciareader.reader.data.collection.CollectionDetail
+import com.ciareader.reader.data.auth.AuthRepository
+import com.ciareader.reader.data.auth.AuthResult
 import com.ciareader.reader.data.collection.CollectionRepository
 import com.ciareader.reader.data.collection.CollectionSummary
 import com.ciareader.reader.data.dictionary.BasqueReference
@@ -25,6 +27,7 @@ import com.ciareader.reader.util.MainDispatcherRule
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
@@ -47,6 +50,7 @@ class ReaderViewModelTest {
         settings: SettingsStore = FakeSettingsStore(),
         collections: CollectionRepository = FakeCollectionRepository(),
         readingTime: FakeReadingTimeStore = FakeReadingTimeStore(),
+        auth: AuthRepository = FakeAuthRepository(),
         collectionId: String? = null,
         atEnd: Boolean = false,
         resume: Boolean = true,
@@ -56,6 +60,7 @@ class ReaderViewModelTest {
         settings,
         collections,
         readingTime,
+        auth,
         SavedStateHandle(
             buildMap {
                 put("textId", "t1")
@@ -676,6 +681,119 @@ class ReaderViewModelTest {
         assertEquals("l1" to "my own def", dict.lastAdded)
         assertNull(dict.lastAddedParentId)
         assertEquals(listOf("my own def"), v.state.value.wordTranslations?.personal?.map { it.body })
+    }
+
+    @Test
+    fun addDefinitionFailureEmitsMessage() = runTest(mainRule.dispatcher) {
+        val dict = FakeDictionaryRepository(
+            LemmaTranslations("नमस्ते", "INTJ", "hello", emptyList(), emptyList(), emptyList()),
+            definitionFails = true,
+        )
+        val token = ReaderToken(0, "नमस्ते", true, KnownStatus.UNKNOWN, "l1", null, null, false, false, true)
+        val repo = FakeReaderRepository(meta = meta(1), chapters = mapOf(0 to Chapter(0, listOf(token))))
+        val v = vm(repo, dict)
+        advanceUntilIdle()
+        v.onWordTap(token)
+        advanceUntilIdle()
+
+        val messages = mutableListOf<String>()
+        val job = launch { v.messages.collect { messages += it } }
+        advanceUntilIdle() // let the collector subscribe before we emit
+
+        v.addDefinition("my own def")
+        advanceUntilIdle()
+
+        assertTrue(messages.any { it.contains("Couldn't save definition") })
+        job.cancel()
+    }
+
+    @Test
+    fun addDefinitionForwardsIsPrivate() = runTest(mainRule.dispatcher) {
+        val dict = FakeDictionaryRepository(
+            LemmaTranslations("नमस्ते", "INTJ", "hello", emptyList(), emptyList(), emptyList()),
+        )
+        val token = ReaderToken(0, "नमस्ते", true, KnownStatus.UNKNOWN, "l1", null, null, false, false, true)
+        val repo = FakeReaderRepository(meta = meta(1), chapters = mapOf(0 to Chapter(0, listOf(token))))
+        val v = vm(repo, dict)
+        advanceUntilIdle()
+        v.onWordTap(token)
+        advanceUntilIdle()
+
+        v.addDefinition("secret note", isPrivate = true)
+        advanceUntilIdle()
+
+        assertEquals(true, dict.lastAddedIsPrivate)
+        // Optimistic insert reflects the private flag immediately.
+        assertEquals(
+            listOf(true),
+            v.state.value.wordTranslations?.personal?.map { it.isPrivate },
+        )
+    }
+
+    @Test
+    fun editDefinitionForwardsIsPrivateToggle() = runTest(mainRule.dispatcher) {
+        val dict = FakeDictionaryRepository(
+            LemmaTranslations(
+                "aldatu", "VERB", null,
+                listOf(WordTranslation("old note", null, "p1")), emptyList(), emptyList(),
+            ),
+        )
+        val token = ReaderToken(0, "aldatu", true, KnownStatus.UNKNOWN, "l1", null, null, false, false, true)
+        val repo = FakeReaderRepository(meta = meta(1), chapters = mapOf(0 to Chapter(0, listOf(token))))
+        val v = vm(repo, dict)
+        advanceUntilIdle()
+        v.onWordTap(token)
+        advanceUntilIdle()
+
+        v.editDefinition("p1", "new note", isPrivate = true)
+        advanceUntilIdle()
+
+        assertEquals("p1" to "new note", dict.lastEdited)
+        assertEquals(true, dict.lastEditedIsPrivate)
+    }
+
+    @Test
+    fun flagsAdminWhenRoleIsAdmin() = runTest(mainRule.dispatcher) {
+        val repo = FakeReaderRepository(meta = meta(1), chapters = mapOf(0 to Chapter(0, emptyList())))
+        val v = vm(repo, auth = FakeAuthRepository("admin"))
+        advanceUntilIdle()
+        assertTrue(v.state.value.isAdmin)
+    }
+
+    @Test
+    fun doesNotFlagAdminForRegularUser() = runTest(mainRule.dispatcher) {
+        val repo = FakeReaderRepository(meta = meta(1), chapters = mapOf(0 to Chapter(0, emptyList())))
+        val v = vm(repo, auth = FakeAuthRepository("user"))
+        advanceUntilIdle()
+        assertFalse(v.state.value.isAdmin)
+    }
+
+    @Test
+    fun hideTranslationForwardsToRepoAndMarksRow() = runTest(mainRule.dispatcher) {
+        val dict = FakeDictionaryRepository(
+            LemmaTranslations(
+                "aldatu", "VERB", null,
+                personal = emptyList(),
+                official = emptyList(),
+                community = listOf(WordTranslation("bad gloss", null, "c1")),
+            ),
+        )
+        val token = ReaderToken(0, "aldatu", true, KnownStatus.UNKNOWN, "l1", null, null, false, false, true)
+        val repo = FakeReaderRepository(meta = meta(1), chapters = mapOf(0 to Chapter(0, listOf(token))))
+        val v = vm(repo, dict, auth = FakeAuthRepository("admin"))
+        advanceUntilIdle()
+        v.onWordTap(token)
+        advanceUntilIdle()
+
+        v.hideTranslation("c1", true)
+        advanceUntilIdle()
+
+        assertEquals("c1" to true, dict.lastHidden)
+        assertEquals("Hidden from reader", dict.lastHideReason)
+        assertEquals(
+            listOf(true),
+            v.state.value.wordTranslations?.community?.map { it.hidden },
+        )
     }
 
     @Test
@@ -1327,6 +1445,9 @@ private class FakeDictionaryRepository(
     private val byLemma: Map<String, LemmaTranslations> = emptyMap(),
     /** When true, [setStatus] returns Failure so tests can exercise rollback. */
     private val statusFails: Boolean = false,
+    /** When true, [addDefinition]/[editDefinition]/[deleteDefinition] return
+     *  Failure so tests can exercise the save-error toast path. */
+    private val definitionFails: Boolean = false,
 ) : DictionaryRepository {
     var lastAdded: Pair<String, String>? = null
     var lastAddedParentId: String? = null
@@ -1345,22 +1466,46 @@ private class FakeDictionaryRepository(
     override suspend fun setStatus(lemmaId: String, status: KnownStatus): Outcome<KnownStatus> =
         if (statusFails) Outcome.Failure("offline") else Outcome.Success(status)
 
+    var lastAddedIsPrivate: Boolean? = null
     override suspend fun addDefinition(
         lemmaId: String,
         body: String,
         parentTranslationId: String?,
+        isPrivate: Boolean,
     ): Outcome<Unit> {
         lastAdded = lemmaId to body
         lastAddedParentId = parentTranslationId
-        translations = translations?.let { it.copy(personal = it.personal + WordTranslation(body, null, "p${it.personal.size + 1}")) }
+        lastAddedIsPrivate = isPrivate
+        if (definitionFails) return Outcome.Failure("offline")
+        translations = translations?.let {
+            it.copy(
+                personal = it.personal +
+                    WordTranslation(body, null, "p${it.personal.size + 1}", isPrivate),
+            )
+        }
         return Outcome.Success(Unit)
     }
 
     var lastEdited: Pair<String, String>? = null
-    override suspend fun editDefinition(translationId: String, body: String): Outcome<Unit> {
+    var lastEditedIsPrivate: Boolean? = null
+    override suspend fun editDefinition(
+        translationId: String,
+        body: String,
+        isPrivate: Boolean?,
+    ): Outcome<Unit> {
         lastEdited = translationId to body
+        lastEditedIsPrivate = isPrivate
+        if (definitionFails) return Outcome.Failure("offline")
         translations = translations?.let {
-            it.copy(personal = it.personal.map { p -> if (p.id == translationId) p.copy(body = body) else p })
+            it.copy(
+                personal = it.personal.map { p ->
+                    if (p.id == translationId) {
+                        p.copy(body = body, isPrivate = isPrivate ?: p.isPrivate)
+                    } else {
+                        p
+                    }
+                },
+            )
         }
         return Outcome.Success(Unit)
     }
@@ -1368,6 +1513,7 @@ private class FakeDictionaryRepository(
     var lastDeleted: String? = null
     override suspend fun deleteDefinition(translationId: String): Outcome<Unit> {
         lastDeleted = translationId
+        if (definitionFails) return Outcome.Failure("offline")
         translations = translations?.let { it.copy(personal = it.personal.filterNot { p -> p.id == translationId }) }
         return Outcome.Success(Unit)
     }
@@ -1380,6 +1526,35 @@ private class FakeDictionaryRepository(
 
     override suspend fun basqueReferenceAutocomplete(term: String): Outcome<List<String>> =
         Outcome.Success(basqueSuggestions)
+
+    var lastHidden: Pair<String, Boolean>? = null
+    var lastHideReason: String? = null
+    override suspend fun hideTranslation(
+        translationId: String,
+        hidden: Boolean,
+        reason: String,
+    ): Outcome<Unit> {
+        lastHidden = translationId to hidden
+        lastHideReason = reason
+        if (definitionFails) return Outcome.Failure("offline")
+        translations = translations?.let {
+            fun List<WordTranslation>.mark() =
+                map { t -> if (t.id == translationId) t.copy(hidden = hidden) else t }
+            it.copy(official = it.official.mark(), community = it.community.mark())
+        }
+        return Outcome.Success(Unit)
+    }
+}
+
+private class FakeAuthRepository(private val role: String? = null) : AuthRepository {
+    override val isAuthenticated: Flow<Boolean> = MutableStateFlow(role != null)
+    override suspend fun login(email: String, password: String): AuthResult = AuthResult.Success
+    override suspend fun register(email: String, password: String, displayName: String?): AuthResult =
+        AuthResult.Success
+    override suspend fun requestMagicLink(email: String): AuthResult = AuthResult.Success
+    override suspend fun consumeMagicLink(token: String): AuthResult = AuthResult.Success
+    override suspend fun logout() {}
+    override suspend fun currentRole(): String? = role
 }
 
 private class FakeSettingsStore(

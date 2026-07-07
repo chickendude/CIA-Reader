@@ -24,11 +24,13 @@ import type { Translation } from '../db/schema.js';
  * - `MAX_BODY_LEN`: keep submissions sentence-sized. Dictionary glosses
  *   don't need paragraphs; anything longer is usually noise or abuse.
  * - `MAX_PER_USER_PER_WINDOW` / `WINDOW_MS`: soft deterrent against
- *   translation-spam bots. Legitimate users don't submit 30+ translations
- *   per hour.
+ *   translation-spam bots. Sized for the reader's own annotation loop —
+ *   a user's personal notes are stored as the same rows other users see
+ *   in the community bucket, so this ceiling has to clear an active
+ *   study session, not just occasional community contributions.
  */
 export const MAX_BODY_LEN = 500;
-export const MAX_PER_USER_PER_WINDOW = 30;
+export const MAX_PER_USER_PER_WINDOW = 60;
 export const WINDOW_MS = 60 * 60 * 1_000; // 1 hour
 
 export type SubmitTranslationInput = {
@@ -36,6 +38,9 @@ export type SubmitTranslationInput = {
   body: string;
   parentTranslationId?: string | null;
   targetLanguage?: string;
+  /** A private note is visible only to its author and is exempt from the
+   *  submission rate limit (it can't spam the shared dictionary). */
+  isPrivate?: boolean;
 };
 
 export class TranslationValidationError extends Error {
@@ -175,6 +180,9 @@ async function assertUnderRateLimit(userId: string, now: Date): Promise<void> {
       and(
         eq(schema.translations.submittedBy, userId),
         gt(schema.translations.createdAt, since),
+        // Private notes only the author sees can't spam the shared
+        // dictionary, so they don't count toward the community cap.
+        eq(schema.translations.isPrivate, false),
       ),
     );
   if (Number(n) >= MAX_PER_USER_PER_WINDOW) {
@@ -210,7 +218,8 @@ export async function submitUserTranslation(
   const targetLemmaId = input.parentTranslationId
     ? await resolveForkTargetLemma(input.parentTranslationId, input.lemmaId)
     : input.lemmaId;
-  await assertUnderRateLimit(userId, now);
+  // Private notes are author-only, so they skip the shared-dictionary cap.
+  if (!input.isPrivate) await assertUnderRateLimit(userId, now);
 
   const [row] = await db
     .insert(schema.translations)
@@ -230,6 +239,7 @@ export async function submitUserTranslation(
       // submissions carry neither.
       sourceAttribution: null,
       sourceId: null,
+      isPrivate: input.isPrivate ?? false,
     })
     .returning();
   if (!row) throw new Error('Failed to insert translation');
@@ -245,6 +255,7 @@ export type SubmitPhraseTranslationInput = {
   body: string;
   parentTranslationId?: string | null;
   targetLanguage?: string;
+  isPrivate?: boolean;
 };
 
 async function assertPhraseExists(phraseId: string): Promise<void> {
@@ -308,7 +319,7 @@ export async function submitUserPhraseTranslation(
       input.phraseId,
     );
   }
-  await assertUnderRateLimit(userId, now);
+  if (!input.isPrivate) await assertUnderRateLimit(userId, now);
 
   const [row] = await db
     .insert(schema.translations)
@@ -325,6 +336,7 @@ export async function submitUserPhraseTranslation(
       targetLanguage,
       sourceAttribution: null,
       sourceId: null,
+      isPrivate: input.isPrivate ?? false,
     })
     .returning();
   if (!row) throw new Error('Failed to insert translation');
@@ -341,22 +353,30 @@ export async function submitUserPhraseTranslation(
  *   - New body must pass the same validation as a fresh submit.
  *
  * Not rate-limited: edits are cheap, and the real abuse vector (spam)
- * is already bounded at create time.
+ * is already bounded at create time. Toggling `isPrivate` isn't rate-limited
+ * either — flipping a note public/private is a display change, not a new
+ * submission.
  */
 export async function updateUserTranslation(
   userId: string,
   translationId: string,
-  patch: { body: string },
+  patch: { body?: string; isPrivate?: boolean },
   now: Date = new Date(),
 ): Promise<Translation> {
-  const body = normalizeBody(patch.body ?? '');
-  if (body.length === 0) {
-    throw new TranslationValidationError('Translation body cannot be empty');
+  let normalizedBody: string | undefined;
+  if (patch.body !== undefined) {
+    normalizedBody = normalizeBody(patch.body);
+    if (normalizedBody.length === 0) {
+      throw new TranslationValidationError('Translation body cannot be empty');
+    }
+    if (normalizedBody.length > MAX_BODY_LEN) {
+      throw new TranslationValidationError(
+        `Translation body exceeds ${MAX_BODY_LEN} characters`,
+      );
+    }
   }
-  if (body.length > MAX_BODY_LEN) {
-    throw new TranslationValidationError(
-      `Translation body exceeds ${MAX_BODY_LEN} characters`,
-    );
+  if (normalizedBody === undefined && patch.isPrivate === undefined) {
+    throw new TranslationValidationError('Nothing to update');
   }
   const [existing] = await db
     .select()
@@ -378,7 +398,11 @@ export async function updateUserTranslation(
   }
   const [updated] = await db
     .update(schema.translations)
-    .set({ body, updatedAt: now })
+    .set({
+      ...(normalizedBody !== undefined && { body: normalizedBody }),
+      ...(patch.isPrivate !== undefined && { isPrivate: patch.isPrivate }),
+      updatedAt: now,
+    })
     .where(eq(schema.translations.id, translationId))
     .returning();
   if (!updated) throw new Error('Failed to update translation');
@@ -433,6 +457,7 @@ export function publicTranslation(row: Translation) {
     targetLanguage: row.targetLanguage,
     sourceAttribution: row.sourceAttribution,
     hidden: row.hidden,
+    isPrivate: row.isPrivate,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };

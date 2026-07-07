@@ -677,6 +677,11 @@ export const translations = pgTable(
     sourceAttribution: text('source_attribution'),
     sourceId: text('source_id'),
     hidden: boolean('hidden').notNull().default(false),
+    // Per-note privacy: a private user note is visible only to its author —
+    // excluded from other viewers' community bucket, from moderation/export,
+    // and from the submission rate-limit count. Officials/curator rows are
+    // never private. Defaults false so existing rows stay public.
+    isPrivate: boolean('is_private').notNull().default(false),
     // Curator-set display order within a translation bucket (T-3.13).
     // NULL = use the bucket's default tiebreaker (curator > imported,
     // then createdAt). When non-null, smaller ranks sort earlier within

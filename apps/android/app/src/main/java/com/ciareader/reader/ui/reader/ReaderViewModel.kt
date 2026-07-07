@@ -4,6 +4,7 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.ciareader.reader.core.network.Outcome
+import com.ciareader.reader.data.auth.AuthRepository
 import com.ciareader.reader.core.settings.ReadingTimeStore
 import com.ciareader.reader.core.settings.SettingsStore
 import com.ciareader.reader.data.collection.CollectionRepository
@@ -18,8 +19,11 @@ import com.ciareader.reader.data.reader.SentenceTranslation
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -127,6 +131,9 @@ data class ReaderUiState(
     val fontSize: Int = SettingsStore.DEFAULT_FONT_SIZE_SP,
     val lineSpacing: Float = SettingsStore.DEFAULT_LINE_SPACING,
     val progress: Float = 0f,
+    /** The viewer is an admin — unlocks the word sheet's "Hide translation"
+     *  moderation action on community/official dictionary entries. */
+    val isAdmin: Boolean = false,
     val errorMessage: String? = null,
 ) {
     val hasPrev: Boolean get() = chapterIdx > 0
@@ -163,6 +170,7 @@ class ReaderViewModel @Inject constructor(
     private val settings: SettingsStore,
     private val collections: CollectionRepository,
     private val readingTime: ReadingTimeStore,
+    private val auth: AuthRepository,
     savedStateHandle: SavedStateHandle,
 ) : ViewModel() {
 
@@ -183,6 +191,13 @@ class ReaderViewModel @Inject constructor(
     private val _state = MutableStateFlow(ReaderUiState())
     val state: StateFlow<ReaderUiState> = _state.asStateFlow()
 
+    /** One-shot, user-facing messages (surfaced as a toast) for operations that
+     *  don't have their own error slot in the UI state — mainly definition
+     *  save/edit/delete failures, which are otherwise silent. Buffered so a
+     *  message emitted while the screen is momentarily not collecting isn't lost. */
+    private val _messages = MutableSharedFlow<String>(extraBufferCapacity = 4)
+    val messages: SharedFlow<String> = _messages.asSharedFlow()
+
     private var progressJob: Job? = null
     private var pollJob: Job? = null
     private var currentTopToken = 0
@@ -202,6 +217,17 @@ class ReaderViewModel @Inject constructor(
 
     init {
         loadInitial()
+        fetchViewerRole()
+    }
+
+    /** Best-effort: learn whether the viewer is an admin so the word sheet can
+     *  offer the "Hide bad translation" moderation action. Failure (offline,
+     *  non-admin, or unauthenticated) leaves [ReaderUiState.isAdmin] false. */
+    private fun fetchViewerRole() {
+        viewModelScope.launch {
+            val role = auth.currentRole()
+            if (role == "admin") _state.update { it.copy(isAdmin = true) }
+        }
     }
 
     private fun loadInitial() {
@@ -546,14 +572,15 @@ class ReaderViewModel @Inject constructor(
 
     /** Save the viewer's own definition for the active parse, then refresh the
      *  panel so it appears under "Your notes". */
-    fun addDefinition(text: String) = saveDefinitionFrom(parentId = null, text = text)
+    fun addDefinition(text: String, isPrivate: Boolean = false) =
+        saveDefinitionFrom(parentId = null, text = text, isPrivate = isPrivate)
 
     /** Save a dictionary entry the user edited as their own definition. [parentId]
      *  is the official/community translation it was forked from (so the server can
      *  track the lineage); null when seeded from the reference dictionary or gloss,
      *  which aren't stored translations. Behaves like [addDefinition] otherwise:
      *  optimistic insert, then reconcile against a fresh fetch. */
-    fun saveDefinitionFrom(parentId: String?, text: String) {
+    fun saveDefinitionFrom(parentId: String?, text: String, isPrivate: Boolean = false) {
         val body = text.trim()
         if (body.isEmpty()) return
         val lemmaId = _state.value.activeParseLemmaId ?: return
@@ -568,28 +595,44 @@ class ReaderViewModel @Inject constructor(
                 official = emptyList(),
                 community = emptyList(),
             )
-            s.copy(wordTranslations = lt.copy(personal = lt.personal + WordTranslation(body, null)))
+            s.copy(
+                wordTranslations = lt.copy(
+                    personal = lt.personal + WordTranslation(body, null, isPrivate = isPrivate),
+                ),
+            )
         }
         viewModelScope.launch {
-            dictionary.addDefinition(lemmaId, body, parentId)
+            val outcome = dictionary.addDefinition(lemmaId, body, parentId, isPrivate)
+            if (outcome is Outcome.Failure) _messages.tryEmit("Couldn't save definition: ${outcome.message}")
+            // Reconcile either way: on success this assigns the real id; on failure
+            // it drops the optimistic entry (if the fetch succeeds) so the panel
+            // doesn't keep showing a note the server never stored.
             refreshSelectedTranslations()
         }
     }
 
-    /** Edit one of the viewer's own notes — reflected immediately, then reconciled. */
-    fun editDefinition(translationId: String, text: String) {
+    /** Edit one of the viewer's own notes — reflected immediately, then reconciled.
+     *  [isPrivate] non-null also toggles the note's private flag. */
+    fun editDefinition(translationId: String, text: String, isPrivate: Boolean? = null) {
         val body = text.trim()
         if (body.isEmpty()) return
         _state.update { s ->
             val lt = s.wordTranslations ?: return@update s
             s.copy(
                 wordTranslations = lt.copy(
-                    personal = lt.personal.map { if (it.id == translationId) it.copy(body = body) else it },
+                    personal = lt.personal.map {
+                        if (it.id == translationId) {
+                            it.copy(body = body, isPrivate = isPrivate ?: it.isPrivate)
+                        } else {
+                            it
+                        }
+                    },
                 ),
             )
         }
         viewModelScope.launch {
-            dictionary.editDefinition(translationId, body)
+            val outcome = dictionary.editDefinition(translationId, body, isPrivate)
+            if (outcome is Outcome.Failure) _messages.tryEmit("Couldn't save edit: ${outcome.message}")
             refreshSelectedTranslations()
         }
     }
@@ -601,7 +644,31 @@ class ReaderViewModel @Inject constructor(
             s.copy(wordTranslations = lt.copy(personal = lt.personal.filterNot { it.id == translationId }))
         }
         viewModelScope.launch {
-            dictionary.deleteDefinition(translationId)
+            val outcome = dictionary.deleteDefinition(translationId)
+            if (outcome is Outcome.Failure) _messages.tryEmit("Couldn't delete definition: ${outcome.message}")
+            refreshSelectedTranslations()
+        }
+    }
+
+    /** Admin moderation: hide (or unhide) a bad community/official dictionary
+     *  entry. Reflected immediately (the row goes struck-through), then
+     *  reconciled — admins keep seeing hidden rows so the action is reversible. */
+    fun hideTranslation(translationId: String, hidden: Boolean) {
+        _state.update { s ->
+            val lt = s.wordTranslations ?: return@update s
+            fun List<WordTranslation>.mark() =
+                map { if (it.id == translationId) it.copy(hidden = hidden) else it }
+            s.copy(
+                wordTranslations = lt.copy(official = lt.official.mark(), community = lt.community.mark()),
+            )
+        }
+        viewModelScope.launch {
+            val reason = if (hidden) "Hidden from reader" else "Unhidden from reader"
+            val outcome = dictionary.hideTranslation(translationId, hidden, reason)
+            if (outcome is Outcome.Failure) {
+                val verb = if (hidden) "hide" else "unhide"
+                _messages.tryEmit("Couldn't $verb translation: ${outcome.message}")
+            }
             refreshSelectedTranslations()
         }
     }

@@ -351,6 +351,13 @@
       "when": 1782103478214,
       "tag": "0049_superb_champions",
       "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1783362341663,
+      "tag": "0050_blushing_menace",
+      "breakpoints": true
     }
   ]
 }

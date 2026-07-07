@@ -58,6 +58,9 @@
     provenance: Provenance;
     voteScore: number;
     viewerVote: 'up' | 'down' | null;
+    // Only ever true on rows the server sends to curators/admins — a community
+    // translation a moderator has suppressed for regular readers.
+    hidden: boolean;
   };
 
   type LemmaPayload = {
@@ -884,6 +887,11 @@
   let customizeError = $state<string | null>(null);
   let votingTranslationId = $state<string | null>(null);
   let voteError = $state<string | null>(null);
+  // Admin moderation: the community translation currently being hidden/unhidden.
+  let hidingTranslationId = $state<string | null>(null);
+  let hideError = $state<string | null>(null);
+  // Admin: whether the collapsed "N hidden" list is expanded (to unhide rows).
+  let showHidden = $state(false);
 
   // T-11.1 — translation report flow. The set of translations the viewer
   // has reported in this session is tracked client-side so the popup can
@@ -1379,6 +1387,38 @@
       voteError = (e as Error).message;
     } finally {
       votingTranslationId = null;
+    }
+  }
+
+  // Admin-only: hide (or unhide) a bad community translation. The reader keeps
+  // showing hidden rows to admins (struck-through) so the action is reversible;
+  // regular readers stop seeing the row entirely once it's hidden.
+  async function toggleHideTranslation(translation: PublicTranslation) {
+    if (!token?.lemmaId) return;
+    const nextHidden = !translation.hidden;
+    hidingTranslationId = translation.id;
+    hideError = null;
+    try {
+      const res = await fetch(
+        `/api/v1/admin/translations/${translation.id}/hidden`,
+        {
+          method: 'PATCH',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            hidden: nextHidden,
+            reason: nextHidden ? 'Hidden from reader' : 'Unhidden from reader',
+          }),
+        },
+      );
+      if (!res.ok) {
+        const text = await res.text().catch(() => '');
+        throw new Error(text || `PATCH failed: ${res.status}`);
+      }
+      await refetchPayload(token.lemmaId);
+    } catch (e) {
+      hideError = (e as Error).message;
+    } finally {
+      hidingTranslationId = null;
     }
   }
 
@@ -1915,6 +1955,41 @@
         </div>
       {/if}
 
+      {#snippet eyeOffIcon()}
+        <svg
+          width="16"
+          height="16"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true"
+        >
+          <path
+            d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"
+          />
+          <line x1="1" y1="1" x2="23" y2="23" />
+        </svg>
+      {/snippet}
+      {#snippet eyeIcon()}
+        <svg
+          width="16"
+          height="16"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true"
+        >
+          <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+          <circle cx="12" cy="12" r="3" />
+        </svg>
+      {/snippet}
+
       <ul class="translations">
         {#each payload.translations.personal
           .slice(1)
@@ -2041,10 +2116,10 @@
             {/if}
           </li>
         {/each}
-        {#each payload.translations.community.filter((t) => isDefLangVisible(t.targetLanguage)) as t (t.id)}
+        {#each payload.translations.community.filter((t) => isDefLangVisible(t.targetLanguage) && !t.hidden) as t (t.id)}
           <li class="community-row">
             <div class="community-body">
-              {t.body}
+              <span class="community-text">{t.body}</span>
               {#if showDefLangFilter}
                 <span class="def-lang-badge">
                   {definitionLanguageName(t.targetLanguage)}
@@ -2067,6 +2142,19 @@
                     Report
                   </button>
                 {/if}
+              {/if}
+              {#if isAdmin}
+                <button
+                  type="button"
+                  class="icon-button hide-button"
+                  data-testid="hide-button"
+                  disabled={hidingTranslationId === t.id}
+                  aria-label="Hide translation from readers"
+                  title="Hide this bad translation from all readers"
+                  onclick={() => toggleHideTranslation(t)}
+                >
+                  {@render eyeOffIcon()}
+                </button>
               {/if}
             </div>
             {#if isOwner}
@@ -2098,6 +2186,46 @@
             {/if}
           </li>
         {/each}
+        {#if isAdmin}
+          {@const hiddenRows = payload.translations.community.filter((t) => t.hidden)}
+          {#if hiddenRows.length > 0}
+            <li class="hidden-reveal">
+              <button
+                type="button"
+                class="hidden-reveal-toggle"
+                data-testid="hidden-reveal-toggle"
+                aria-expanded={showHidden}
+                onclick={() => (showHidden = !showHidden)}
+              >
+                {@render eyeIcon()}
+                {showHidden ? 'Hide' : 'Show'}
+                {hiddenRows.length} hidden
+              </button>
+              {#if showHidden}
+                <ul class="hidden-list">
+                  {#each hiddenRows as t (t.id)}
+                    <li class="community-row hidden-row">
+                      <div class="community-body">
+                        <span class="community-text">{t.body}</span>
+                        <button
+                          type="button"
+                          class="icon-button unhide-button"
+                          data-testid="unhide-button"
+                          disabled={hidingTranslationId === t.id}
+                          aria-label="Show translation to readers"
+                          title="Unhide — show this translation to all readers again"
+                          onclick={() => toggleHideTranslation(t)}
+                        >
+                          {@render eyeIcon()}
+                        </button>
+                      </div>
+                    </li>
+                  {/each}
+                </ul>
+              {/if}
+            </li>
+          {/if}
+        {/if}
         {#if allTranslations().length === 0}
           <li class="muted">No translations yet.</li>
         {:else if showDefLangFilter && totalListCount() > 0 && visibleListTranslations().length === 0}
@@ -2113,6 +2241,11 @@
       {/if}
       {#if voteError}
         <p class="err small">Could not save vote: {voteError}</p>
+      {/if}
+      {#if hideError}
+        <p class="err small" data-testid="hide-error">
+          Could not update visibility: {hideError}
+        </p>
       {/if}
 
     {/if}
@@ -3031,6 +3164,61 @@
   }
   .community-body {
     min-width: 0;
+  }
+  /* Compact icon buttons for admin moderation — an eye/eye-off toggle that
+     doesn't crowd the translation text or the official entries above. */
+  .icon-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    margin-left: 0.4rem;
+    padding: 0.15rem;
+    color: var(--ink-3, var(--color-fg-muted));
+    border: none;
+    background: transparent;
+    border-radius: 6px;
+    cursor: pointer;
+    line-height: 0;
+    vertical-align: middle;
+  }
+  .icon-button:hover {
+    color: #b91c1c;
+    background: color-mix(in oklch, #b91c1c 8%, transparent);
+  }
+  .icon-button:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
+  /* The collapsed "N hidden" control + its revealed list. */
+  .hidden-reveal {
+    list-style: none;
+    margin-top: 0.25rem;
+  }
+  .hidden-reveal-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    padding: 0.1rem 0.3rem;
+    font: inherit;
+    font-size: 0.72rem;
+    color: var(--ink-3, var(--color-fg-muted));
+    border: none;
+    background: transparent;
+    cursor: pointer;
+  }
+  .hidden-reveal-toggle:hover {
+    color: var(--ink-2, var(--color-fg));
+  }
+  .hidden-list {
+    list-style: none;
+    margin: 0.25rem 0 0;
+    padding: 0;
+  }
+  /* A hidden community row (only admins see it, in the reveal list) reads as
+     struck-out and dimmed to signal it's suppressed for readers. */
+  .community-row.hidden-row .community-text {
+    text-decoration: line-through;
+    opacity: 0.6;
   }
   .report-button {
     margin-left: 0.5rem;

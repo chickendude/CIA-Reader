@@ -28,6 +28,7 @@ vi.mock('../db/index.js', () => {
         targetLanguage: 'tr.lang',
         source: 'tr.source',
         hidden: 'tr.hidden',
+        isPrivate: 'tr.is_private',
       },
     },
   };

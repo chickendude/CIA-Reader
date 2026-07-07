@@ -377,6 +377,36 @@ describe('submitUserTranslation — rate limiting', () => {
       expect(e.limit).toBe(MAX_PER_USER_PER_WINDOW);
     }
   });
+
+  it('does NOT count against the cap for a private note (no count query, still inserts)', async () => {
+    stageSelect([{ id: 'lemma-1' }]); // lemma existence
+    // Intentionally stage NO rate-limit count — a private submit must not
+    // query it. If the service tried, nextStaged() would throw.
+    stageInsert([
+      {
+        id: 'tr-p',
+        source: 'user',
+        submittedBy: 'user-1',
+        body: 'secret',
+        isPrivate: true,
+        hidden: false,
+        createdAt: new Date('2026-04-24'),
+        updatedAt: new Date('2026-04-24'),
+      },
+    ]);
+
+    const result = await submitUserTranslation('user-1', {
+      lemmaId: 'lemma-1',
+      body: 'secret',
+      isPrivate: true,
+    });
+
+    expect(result.id).toBe('tr-p');
+    // Exactly one select (existence) — the rate-limit count was skipped.
+    expect(calls.filter((c) => c.kind === 'select')).toHaveLength(1);
+    const insertCall = calls.find((c) => c.kind === 'insert');
+    expect(insertCall?.payload).toMatchObject({ isPrivate: true });
+  });
 });
 
 describe('updateUserTranslation (T-3.5)', () => {

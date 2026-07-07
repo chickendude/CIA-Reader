@@ -136,6 +136,43 @@ describe('POST /api/v1/translations', () => {
     expect(res.headers.get('x-ratelimit-remaining')).toBe('29');
   });
 
+  it('skips the community rate limiter for a private note and echoes isPrivate', async () => {
+    submitUserTranslation.mockResolvedValueOnce({
+      id: 'tr-p',
+      targetType: 'lemma',
+      targetId: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+      source: 'user',
+      submittedBy: 'u1',
+      parentTranslationId: null,
+      body: 'secret',
+      targetLanguage: 'en',
+      sourceAttribution: null,
+      sourceId: null,
+      hidden: false,
+      isPrivate: true,
+      createdAt: new Date('2026-04-24T00:00:00Z'),
+      updatedAt: new Date('2026-04-24T00:00:00Z'),
+    });
+
+    const res = (await callPost({
+      lemmaId: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+      body: 'secret',
+      isPrivate: true,
+    })) as Response;
+
+    expect(res.status).toBe(201);
+    // The shared-dictionary rate limiter is never consulted for private notes.
+    expect(consumeRateLimit).not.toHaveBeenCalled();
+    expect(submitUserTranslation).toHaveBeenCalledWith(
+      'u1',
+      expect.objectContaining({ isPrivate: true }),
+    );
+    const json = await res.json();
+    expect(json.translation.isPrivate).toBe(true);
+    // No rate-limit headers on the exempt path.
+    expect(res.headers.get('x-ratelimit-remaining')).toBeNull();
+  });
+
   it('propagates auth failures as 401', async () => {
     const res = (await callPost(
       { lemmaId: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', body: 'x' },
