@@ -3,27 +3,19 @@
  *
  * Submits a user-authored translation against a phrase. Mirrors
  * `POST /api/v1/translations` (T-3.2) which targets lemmas — the
- * service surface is `submitUserPhraseTranslation` and the rate
- * limiter is shared with the lemma path so a spam bot can't dodge
- * caps by alternating between targets.
+ * service surface is `submitUserPhraseTranslation`. Like the lemma
+ * path, this is not rate-limited: it's the reader's own annotation
+ * loop, and shared-dictionary abuse is handled by moderation.
  */
 import { error, json } from '@sveltejs/kit';
 import { z } from 'zod';
 
 import { requireUser } from '$lib/server/auth/require-user.js';
-import {
-  RequestRateLimitError,
-  consumeRateLimit,
-  rateLimitHeaders,
-} from '$lib/server/auth/rate-limits.js';
 import { parseJson } from '../../../auth/_helpers.js';
 import {
   MAX_BODY_LEN,
-  MAX_PER_USER_PER_WINDOW,
-  WINDOW_MS,
   publicTranslation,
   submitUserPhraseTranslation,
-  TranslationRateLimitError,
   TranslationValidationError,
 } from '$lib/server/dictionary/translations.js';
 import type { RequestHandler } from './$types';
@@ -47,55 +39,17 @@ export const POST: RequestHandler = async (event) => {
     throw error(400, 'Invalid phrase id');
   }
   const input = await parseJson(event.request, body);
-  const isPrivate = input.isPrivate ?? false;
 
   try {
-    // Private notes skip the shared-dictionary rate-limit budget.
-    const requestLimit = isPrivate
-      ? null
-      : await consumeRateLimit(event, user.id, {
-          scope: 'translations:create',
-          limit: MAX_PER_USER_PER_WINDOW,
-          windowMs: WINDOW_MS,
-        });
     const translation = await submitUserPhraseTranslation(user.id, {
       phraseId,
       body: input.body,
       parentTranslationId: input.parentTranslationId ?? null,
       targetLanguage: input.targetLanguage,
-      isPrivate,
+      isPrivate: input.isPrivate ?? false,
     });
-    return json(
-      { translation: publicTranslation(translation) },
-      {
-        status: 201,
-        headers: requestLimit ? rateLimitHeaders(requestLimit) : undefined,
-      },
-    );
+    return json({ translation: publicTranslation(translation) }, { status: 201 });
   } catch (err) {
-    if (err instanceof RequestRateLimitError || err instanceof TranslationRateLimitError) {
-      return json(
-        {
-          error: 'rate_limited',
-          message: 'Too many translations submitted. Try again later.',
-          limit: err.limit,
-          retryAfterSeconds: err.retryAfterSeconds,
-        },
-        {
-          status: 429,
-          headers: rateLimitHeaders(
-            err instanceof RequestRateLimitError
-              ? err
-              : {
-                  limit: err.limit,
-                  remaining: 0,
-                  retryAfterSeconds: err.retryAfterSeconds,
-                  subjectType: 'user',
-                },
-          ),
-        },
-      );
-    }
     if (err instanceof TranslationValidationError) {
       throw error(err.status, err.message);
     }

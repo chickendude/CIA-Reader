@@ -44,9 +44,9 @@
 
   const rateLimitEnvelope = `{
   "error": "rate_limited",
-  "message": "Too many translations submitted. Try again later.",
-  "limit": 30,
-  "retryAfterSeconds": 3600
+  "message": "Too many reports submitted. Try again later.",
+  "limit": 10,
+  "retryAfterSeconds": 86400
 }`;
 
   const paginationEnvelope = `{

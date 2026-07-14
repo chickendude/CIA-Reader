@@ -1053,19 +1053,9 @@
       }),
     });
     if (!res.ok) {
-      // 429 carries a JSON body with a friendly message; everything
-      // else falls through to the raw text + status combo.
       let message = `POST failed: ${res.status}`;
-      if (res.status === 429) {
-        const errBody = (await res
-          .json()
-          .catch(() => null)) as { message?: string } | null;
-        message =
-          errBody?.message ?? 'Too many translations submitted. Try again later.';
-      } else {
-        const text = await res.text().catch(() => '');
-        if (text) message = text;
-      }
+      const text = await res.text().catch(() => '');
+      if (text) message = text;
       const err: PostError = { message, status: res.status };
       throw err;
     }

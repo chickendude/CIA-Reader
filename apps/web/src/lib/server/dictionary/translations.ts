@@ -3,43 +3,32 @@
  *
  * Wraps the minimum surface needed by the public `POST /api/v1/translations`
  * endpoint: input validation against the schema, existence checks for the
- * referenced lemma + optional parent translation, per-user rate limiting
- * against a rolling window, and the final insert.
+ * referenced lemma + optional parent translation, and the final insert.
  *
- * Rate-limit strategy is deliberately simple: count rows in `translations`
- * with `submittedBy = userId AND createdAt > now() - window`. A Postgres
- * index on `submitted_by` already exists (T-3.1) so the count is cheap
- * even once the table is large. We'll graduate to a Redis bucket in M11
- * if the DB cost becomes real; until then the simpler approach is
- * easier to reason about and leaves an auditable trail.
+ * Deliberately NOT rate-limited: saving a definition is the reader's core
+ * annotation loop, so a per-user ceiling here caps ordinary studying (an
+ * active session saves a definition for most new words). Abuse of the
+ * shared dictionary is handled downstream by moderation (hide/unhide,
+ * reports — which have their own submitter cap in `moderation/reports.ts`)
+ * rather than by throttling saves.
  */
-import { and, count, eq, gt, inArray } from 'drizzle-orm';
+import { eq, inArray } from 'drizzle-orm';
 
 import { db, schema } from '../db/index.js';
 import type { Translation } from '../db/schema.js';
 
 /**
- * Hard ceilings for user-submitted translations.
- *
- * - `MAX_BODY_LEN`: keep submissions sentence-sized. Dictionary glosses
- *   don't need paragraphs; anything longer is usually noise or abuse.
- * - `MAX_PER_USER_PER_WINDOW` / `WINDOW_MS`: soft deterrent against
- *   translation-spam bots. Sized for the reader's own annotation loop —
- *   a user's personal notes are stored as the same rows other users see
- *   in the community bucket, so this ceiling has to clear an active
- *   study session, not just occasional community contributions.
+ * `MAX_BODY_LEN`: keep submissions sentence-sized. Dictionary glosses
+ * don't need paragraphs; anything longer is usually noise or abuse.
  */
 export const MAX_BODY_LEN = 500;
-export const MAX_PER_USER_PER_WINDOW = 60;
-export const WINDOW_MS = 60 * 60 * 1_000; // 1 hour
 
 export type SubmitTranslationInput = {
   lemmaId: string;
   body: string;
   parentTranslationId?: string | null;
   targetLanguage?: string;
-  /** A private note is visible only to its author and is exempt from the
-   *  submission rate limit (it can't spam the shared dictionary). */
+  /** A private note is visible only to its author. */
   isPrivate?: boolean;
 };
 
@@ -50,16 +39,6 @@ export class TranslationValidationError extends Error {
   ) {
     super(message);
     this.name = 'TranslationValidationError';
-  }
-}
-
-export class TranslationRateLimitError extends Error {
-  constructor(
-    public readonly retryAfterSeconds: number,
-    public readonly limit: number = MAX_PER_USER_PER_WINDOW,
-  ) {
-    super('Translation submission rate limit exceeded');
-    this.name = 'TranslationRateLimitError';
   }
 }
 
@@ -171,25 +150,6 @@ async function resolveForkTargetLemma(
   );
 }
 
-async function assertUnderRateLimit(userId: string, now: Date): Promise<void> {
-  const since = new Date(now.getTime() - WINDOW_MS);
-  const [{ n } = { n: 0 }] = await db
-    .select({ n: count() })
-    .from(schema.translations)
-    .where(
-      and(
-        eq(schema.translations.submittedBy, userId),
-        gt(schema.translations.createdAt, since),
-        // Private notes only the author sees can't spam the shared
-        // dictionary, so they don't count toward the community cap.
-        eq(schema.translations.isPrivate, false),
-      ),
-    );
-  if (Number(n) >= MAX_PER_USER_PER_WINDOW) {
-    throw new TranslationRateLimitError(Math.ceil(WINDOW_MS / 1_000));
-  }
-}
-
 /**
  * Insert a new user-submitted translation.
  *
@@ -208,7 +168,6 @@ async function assertUnderRateLimit(userId: string, now: Date): Promise<void> {
 export async function submitUserTranslation(
   userId: string,
   input: SubmitTranslationInput,
-  now: Date = new Date(),
 ): Promise<Translation> {
   const { body, targetLanguage } = validateInput(input);
   await assertLemmaExists(input.lemmaId);
@@ -218,8 +177,6 @@ export async function submitUserTranslation(
   const targetLemmaId = input.parentTranslationId
     ? await resolveForkTargetLemma(input.parentTranslationId, input.lemmaId)
     : input.lemmaId;
-  // Private notes are author-only, so they skip the shared-dictionary cap.
-  if (!input.isPrivate) await assertUnderRateLimit(userId, now);
 
   const [row] = await db
     .insert(schema.translations)
@@ -296,16 +253,13 @@ async function assertParentBelongsToPhrase(
 }
 
 /**
- * Insert a new user-submitted *phrase* translation. Same rate-limit
- * window and body validation as the lemma path — sharing
- * `assertUnderRateLimit` is intentional so a translation-spam bot
- * can't dodge the cap by alternating between targets. Writes
- * `lemma_id=NULL`, `target_type='phrase'`, `target_id=phraseId`.
+ * Insert a new user-submitted *phrase* translation. Same body
+ * validation as the lemma path. Writes `lemma_id=NULL`,
+ * `target_type='phrase'`, `target_id=phraseId`.
  */
 export async function submitUserPhraseTranslation(
   userId: string,
   input: SubmitPhraseTranslationInput,
-  now: Date = new Date(),
 ): Promise<Translation> {
   const { body, targetLanguage } = validateInput({
     lemmaId: 'unused',
@@ -319,7 +273,6 @@ export async function submitUserPhraseTranslation(
       input.phraseId,
     );
   }
-  if (!input.isPrivate) await assertUnderRateLimit(userId, now);
 
   const [row] = await db
     .insert(schema.translations)
@@ -352,10 +305,8 @@ export async function submitUserPhraseTranslation(
  *   - Row's `submittedBy` must match the caller.
  *   - New body must pass the same validation as a fresh submit.
  *
- * Not rate-limited: edits are cheap, and the real abuse vector (spam)
- * is already bounded at create time. Toggling `isPrivate` isn't rate-limited
- * either — flipping a note public/private is a display change, not a new
- * submission.
+ * Toggling `isPrivate` is just a display change — flipping a note
+ * public/private, not a new submission.
  */
 export async function updateUserTranslation(
   userId: string,

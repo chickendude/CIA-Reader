@@ -94,7 +94,6 @@ afterEach(() => {
 describe('submitUserTranslation — polymorphic write shape', () => {
   it('writes only the polymorphic (target_type, target_id) pair (T-14.7a dropped lemma_id)', async () => {
     stage([{ id: 'lemma-1' }]); // existence check
-    stage([{ n: 0 }]); // rate-limit count
     stage([
       {
         id: 'tr-1',
@@ -132,7 +131,6 @@ describe('submitUserTranslation — polymorphic write shape', () => {
 describe('submitUserPhraseTranslation — happy path', () => {
   it('writes lemma_id=null + (target_type=phrase, target_id=phraseId)', async () => {
     stage([{ id: 'phr-1' }]); // phrase existence
-    stage([{ n: 0 }]); // rate-limit
     stage([
       {
         id: 'tr-1',
@@ -170,13 +168,6 @@ describe('submitUserPhraseTranslation — happy path', () => {
     ).toBeUndefined();
   });
 
-  it('rate-limit is shared with the lemma path (same submittedBy window)', async () => {
-    stage([{ id: 'phr-1' }]); // phrase existence
-    stage([{ n: 30 }]); // already at the cap from lemma submissions
-    await expect(
-      submitUserPhraseTranslation('user-1', { phraseId: 'phr-1', body: 'x' }),
-    ).rejects.toThrow();
-  });
 });
 
 describe('submitUserPhraseTranslation — validation errors', () => {

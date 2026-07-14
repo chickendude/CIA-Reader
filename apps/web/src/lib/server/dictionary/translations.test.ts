@@ -118,10 +118,8 @@ vi.mock('../db/index.js', () => ({
 
 const {
   MAX_BODY_LEN,
-  MAX_PER_USER_PER_WINDOW,
   deleteUserTranslation,
   submitUserTranslation,
-  TranslationRateLimitError,
   TranslationValidationError,
   updateUserTranslation,
 } = await import('./translations.js');
@@ -142,7 +140,6 @@ afterEach(() => {
 describe('submitUserTranslation — happy path', () => {
   it('normalizes whitespace, tags source=user, and returns the inserted row', async () => {
     stageSelect([{ id: 'lemma-1' }]); // lemma existence check
-    stageSelect([{ n: 3 }]); // rate-limit count
     const inserted = {
       id: 'tr-1',
       lemmaId: 'lemma-1',
@@ -184,7 +181,6 @@ describe('submitUserTranslation — happy path', () => {
     // T-14.7a: parent existence check now reads via the
     // polymorphic columns; staged parent row mirrors that.
     stageSelect([{ id: 'parent-1', targetType: 'lemma', targetId: 'lemma-1' }]);
-    stageSelect([{ n: 0 }]);
     stageInsert([
       {
         id: 'tr-1',
@@ -209,13 +205,12 @@ describe('submitUserTranslation — happy path', () => {
     });
 
     expect(result.parentTranslationId).toBe('parent-1');
-    // 3 selects: lemma, parent, rate-limit count.
-    expect(calls.filter((c) => c.kind === 'select')).toHaveLength(3);
+    // 2 selects: lemma, parent.
+    expect(calls.filter((c) => c.kind === 'select')).toHaveLength(2);
   });
 
   it('lowercases targetLanguage', async () => {
     stageSelect([{ id: 'lemma-1' }]);
-    stageSelect([{ n: 0 }]);
     stageInsert([
       {
         id: 'tr-1',
@@ -309,7 +304,6 @@ describe('submitUserTranslation — validation errors', () => {
       { id: 'lemma-1', headword: 'hegoalde', language: 'eu' },
       { id: 'lemma-SIB', headword: 'hegoalde', language: 'eu' },
     ]);
-    stageSelect([{ n: 0 }]); // rate-limit count
     stageInsert([
       {
         id: 'tr-1',
@@ -354,34 +348,11 @@ describe('submitUserTranslation — validation errors', () => {
   });
 });
 
-describe('submitUserTranslation — rate limiting', () => {
-  it('throws TranslationRateLimitError when the user hit the window cap', async () => {
-    stageSelect([{ id: 'lemma-1' }]);
-    stageSelect([{ n: MAX_PER_USER_PER_WINDOW }]);
-    await expect(
-      submitUserTranslation('user-1', { lemmaId: 'lemma-1', body: 'x' }),
-    ).rejects.toBeInstanceOf(TranslationRateLimitError);
-    // Rate-limit rejection means NO insert was attempted.
-    expect(insertFn).not.toHaveBeenCalled();
-  });
-
-  it('includes a retryAfterSeconds hint roughly equal to the window size', async () => {
-    stageSelect([{ id: 'lemma-1' }]);
-    stageSelect([{ n: MAX_PER_USER_PER_WINDOW + 5 }]);
-    try {
-      await submitUserTranslation('user-1', { lemmaId: 'lemma-1', body: 'x' });
-    } catch (err) {
-      expect(err).toBeInstanceOf(TranslationRateLimitError);
-      const e = err as InstanceType<typeof TranslationRateLimitError>;
-      expect(e.retryAfterSeconds).toBeGreaterThan(0);
-      expect(e.limit).toBe(MAX_PER_USER_PER_WINDOW);
-    }
-  });
-
-  it('does NOT count against the cap for a private note (no count query, still inserts)', async () => {
+describe('submitUserTranslation — private notes', () => {
+  it('stores the private flag and only queries lemma existence', async () => {
     stageSelect([{ id: 'lemma-1' }]); // lemma existence
-    // Intentionally stage NO rate-limit count — a private submit must not
-    // query it. If the service tried, nextStaged() would throw.
+    // Only the existence select is staged — a submit must not run any
+    // other query. If the service tried, nextStaged() would throw.
     stageInsert([
       {
         id: 'tr-p',
@@ -402,7 +373,7 @@ describe('submitUserTranslation — rate limiting', () => {
     });
 
     expect(result.id).toBe('tr-p');
-    // Exactly one select (existence) — the rate-limit count was skipped.
+    // Exactly one select: the lemma existence check.
     expect(calls.filter((c) => c.kind === 'select')).toHaveLength(1);
     const insertCall = calls.find((c) => c.kind === 'insert');
     expect(insertCall?.payload).toMatchObject({ isPrivate: true });
