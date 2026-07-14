@@ -149,17 +149,37 @@ jobs:
         with:
           path: ~/stanza_resources
           key: stanza-models-hi-mr-eu-v1-${{ hashFiles('services/nlp/pyproject.toml') }}
+          # A stale cache is still ~all of the model bytes; stanza validates
+          # md5s and only re-downloads what changed. Keeps the flaky network
+          # path (below) off the critical path in most runs.
+          restore-keys: |
+            stanza-models-hi-mr-eu-v1-
       - name: Download Stanza Hi + Mr + Eu models
         env:
-          # HF's Xet-backed downloads 401 for unauthenticated CI clients
-          # (cas-server.xethub.hf.co reconstruction errors); the classic
-          # HTTP path works fine without a token.
+          # HF's Xet storage backend 401s unauthenticated CI clients
+          # (cas-server/cas-bridge.xethub.hf.co); disabling it and retrying
+          # rides out transient refusals. Set an HF_TOKEN repo secret to make
+          # downloads authenticated (and this flakiness moot); the env line
+          # below is a no-op while the secret is unset.
           HF_HUB_DISABLE_XET: "1"
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
           python - <<'PY'
+          import time
+
           import stanza
+
           for lang in ("hi", "mr", "eu"):
-              stanza.download(lang, processors="tokenize,pos,lemma", verbose=False)
+              for attempt in range(5):
+                  try:
+                      stanza.download(lang, processors="tokenize,pos,lemma", verbose=False)
+                      break
+                  except Exception as exc:  # noqa: BLE001 - HF hub raises assorted types
+                      if attempt == 4:
+                          raise
+                      wait = 2**attempt * 15
+                      print(f"{lang}: download failed ({exc}); retrying in {wait}s")
+                      time.sleep(wait)
           PY
       - name: Run real-pipeline accuracy thresholds
         working-directory: services/nlp
