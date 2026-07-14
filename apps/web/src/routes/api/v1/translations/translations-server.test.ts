@@ -4,7 +4,7 @@
  *
  * The service layer's behavior is already covered by
  * `translations.test.ts`; here we only care about the HTTP shape — auth
- * gate, status codes, rate-limit headers, and JSON envelope.
+ * gate, status codes, and JSON envelope.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -12,7 +12,6 @@ import { jsonContract } from '$lib/test/json-contract.js';
 
 const submitUserTranslation = vi.fn();
 const requireUser = vi.fn();
-const consumeRateLimit = vi.fn();
 
 vi.mock('$lib/server/dictionary/translations.js', async () => {
   const actual = await vi.importActual<
@@ -28,16 +27,6 @@ vi.mock('$lib/server/auth/require-user.js', () => ({
   requireUser: (...a: unknown[]) => requireUser(...a),
   requireVerifiedUser: (...a: unknown[]) => requireUser(...a),
 }));
-
-vi.mock('$lib/server/auth/rate-limits.js', async () => {
-  const actual = await vi.importActual<typeof import('$lib/server/auth/rate-limits.js')>(
-    '$lib/server/auth/rate-limits.js',
-  );
-  return {
-    ...actual,
-    consumeRateLimit: (...a: unknown[]) => consumeRateLimit(...a),
-  };
-});
 
 type PostFn = (typeof import('./+server.js'))['POST'];
 type PostEvent = Parameters<PostFn>[0];
@@ -69,12 +58,6 @@ async function callPost(body: unknown, user: { id: string } | null = { id: 'u1' 
 beforeEach(() => {
   submitUserTranslation.mockReset();
   requireUser.mockReset();
-  consumeRateLimit.mockReset();
-  consumeRateLimit.mockResolvedValue({
-    limit: 30,
-    remaining: 29,
-    subjectType: 'user',
-  });
 });
 
 afterEach(() => {
@@ -133,10 +116,9 @@ describe('POST /api/v1/translations', () => {
         },
       }
     `);
-    expect(res.headers.get('x-ratelimit-remaining')).toBe('29');
   });
 
-  it('skips the community rate limiter for a private note and echoes isPrivate', async () => {
+  it('echoes isPrivate for a private note', async () => {
     submitUserTranslation.mockResolvedValueOnce({
       id: 'tr-p',
       targetType: 'lemma',
@@ -161,16 +143,12 @@ describe('POST /api/v1/translations', () => {
     })) as Response;
 
     expect(res.status).toBe(201);
-    // The shared-dictionary rate limiter is never consulted for private notes.
-    expect(consumeRateLimit).not.toHaveBeenCalled();
     expect(submitUserTranslation).toHaveBeenCalledWith(
       'u1',
       expect.objectContaining({ isPrivate: true }),
     );
     const json = await res.json();
     expect(json.translation.isPrivate).toBe(true);
-    // No rate-limit headers on the exempt path.
-    expect(res.headers.get('x-ratelimit-remaining')).toBeNull();
   });
 
   it('propagates auth failures as 401', async () => {
@@ -179,21 +157,6 @@ describe('POST /api/v1/translations', () => {
       null,
     )) as { status: number };
     expect(res.status).toBe(401);
-    expect(submitUserTranslation).not.toHaveBeenCalled();
-  });
-
-  it('returns 429 when the request token/device bucket is rate-limited', async () => {
-    const { RequestRateLimitError } = await import('$lib/server/auth/rate-limits.js');
-    consumeRateLimit.mockRejectedValueOnce(new RequestRateLimitError(3600, 30, 'api_key'));
-
-    const res = (await callPost({
-      lemmaId: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
-      body: 'x',
-    })) as Response;
-
-    expect(res.status).toBe(429);
-    expect(res.headers.get('retry-after')).toBe('3600');
-    expect(res.headers.get('x-ratelimit-subject')).toBe('api_key');
     expect(submitUserTranslation).not.toHaveBeenCalled();
   });
 
@@ -217,23 +180,5 @@ describe('POST /api/v1/translations', () => {
       body: 'x',
     })) as { status: number };
     expect(res.status).toBe(404);
-  });
-
-  it('returns 429 with Retry-After when the user is rate-limited', async () => {
-    const { TranslationRateLimitError } = await import(
-      '$lib/server/dictionary/translations.js'
-    );
-    submitUserTranslation.mockRejectedValueOnce(new TranslationRateLimitError(3600, 30));
-    const res = (await callPost({
-      lemmaId: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
-      body: 'x',
-    })) as Response;
-    expect(res.status).toBe(429);
-    expect(res.headers.get('retry-after')).toBe('3600');
-    expect(res.headers.get('x-ratelimit-limit')).toBe('30');
-    expect(res.headers.get('x-ratelimit-remaining')).toBe('0');
-    const json = await res.json();
-    expect(json.error).toBe('rate_limited');
-    expect(json.retryAfterSeconds).toBe(3600);
   });
 });

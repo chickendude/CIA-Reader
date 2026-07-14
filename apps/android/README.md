@@ -1,6 +1,6 @@
-# CIA Reader — Android app
+# Parhiba — Android app
 
-Native Android client (Kotlin + Jetpack Compose) for the CIA Reader. It talks
+Native Android client (Kotlin + Jetpack Compose) for Parhiba. It talks
 to the same `/api/v1/*` surface the web app uses; there is no Android-specific
 backend.
 
