@@ -409,7 +409,13 @@ internal fun ReaderScreenContent(
                         modifier = Modifier.fillMaxSize().then(readerInset),
                     )
 
-                state.pageMode ->
+                // Paginate only once the bottom progress bar has reported its
+                // height (it always measures > 0 alongside this content): pages
+                // are cut to the viewport, and a first pass at the taller
+                // pre-inset height computes the restore page against a
+                // pagination that reflows one frame later — stranding the pager
+                // one page behind the spot it just restored.
+                state.pageMode -> if (progressBarHeightPx > 0)
                     PagedChapter(
                         tokens = state.tokens,
                         romanize = state.romanize,
@@ -846,9 +852,7 @@ private fun PagedChapter(
         val total = leading + pages.size + trailing
         // Start on the saved anchor's page — the last page when coming back to a
         // chapter — otherwise the first real page.
-        val restorePage = restoreTokenIdx?.let { t ->
-            ranges.getOrNull(t)?.first?.let { c -> pages.indexOfFirst { c in it }.takeIf { it >= 0 } }
-        }
+        val restorePage = restoreTokenIdx?.let { t -> pageForToken(pages, ranges, t) }
         val pagerState = rememberPagerState(initialPage = leading + (restorePage ?: 0), pageCount = { total })
         LaunchedEffect(restoreTokenIdx) { if (restoreTokenIdx != null) onRestoreConsumed() }
         // Settling on an edge splash flips to that chapter.
@@ -866,8 +870,7 @@ private fun PagedChapter(
                 onProgress(fraction)
                 // Save the spot: the first token of the current (real) page.
                 val realPage = (p - leading).coerceIn(0, (pages.size - 1).coerceAtLeast(0))
-                val charOffset = pages.getOrNull(realPage)?.first ?: 0
-                val tokenIdx = ranges.indexOfFirst { charOffset in it }.coerceAtLeast(0)
+                val tokenIdx = pageAnchorToken(pages, ranges, realPage)
                 onRecordPosition(tokenIdx, (fraction * 100).toDouble())
             }
         }

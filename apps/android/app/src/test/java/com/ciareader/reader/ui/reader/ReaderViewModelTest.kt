@@ -29,6 +29,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -210,6 +211,49 @@ class ReaderViewModelTest {
         assertNotNull(v.state.value.wordTranslations)
         assertEquals("नमस्ते", v.state.value.wordTranslations?.headword)
         assertFalse(v.state.value.isWordLoading)
+    }
+
+    @Test
+    fun wordTapServesCachedTranslationsThenRevalidates() = runTest(mainRule.dispatcher) {
+        val w = ReaderToken(0, "नमस्ते", true, KnownStatus.UNKNOWN, "l1", null, null, false, false, true)
+        val repo = FakeReaderRepository(meta = meta(1), chapters = mapOf(0 to Chapter(0, listOf(w))))
+        val dict = FakeDictionaryRepository(
+            cached = translations("नमस्ते", "hello (cached)"),
+            refreshed = translations("नमस्ते", "hello + new community entry"),
+        )
+        val v = vm(repo, dict)
+        advanceUntilIdle()
+
+        v.onWordTap(w)
+        advanceUntilIdle()
+
+        // The cached copy renders instantly, then the background revalidation
+        // replaces it with the fresh server copy (other users' entries, the
+        // viewer's own edits from another device).
+        assertEquals(1, dict.refreshCalls)
+        assertEquals(
+            listOf("hello + new community entry"),
+            v.state.value.wordTranslations?.official?.map { it.body },
+        )
+        assertFalse(v.state.value.isWordLoading)
+    }
+
+    @Test
+    fun wordTapWithoutCacheFetchesOnceWithoutRevalidating() = runTest(mainRule.dispatcher) {
+        val w = ReaderToken(0, "नमस्ते", true, KnownStatus.UNKNOWN, "l1", null, null, false, false, true)
+        val repo = FakeReaderRepository(meta = meta(1), chapters = mapOf(0 to Chapter(0, listOf(w))))
+        val dict = FakeDictionaryRepository(translations = translations("नमस्ते", "hello"))
+        val v = vm(repo, dict)
+        advanceUntilIdle()
+
+        v.onWordTap(w)
+        advanceUntilIdle()
+
+        // A cache miss goes to translations() (fetch + persist); an immediate
+        // refresh on top would just duplicate the network call.
+        assertEquals(listOf("l1"), dict.requestedLemmaIds)
+        assertEquals(0, dict.refreshCalls)
+        assertEquals("नमस्ते", v.state.value.wordTranslations?.headword)
     }
 
     @Test
@@ -437,6 +481,56 @@ class ReaderViewModelTest {
         advanceUntilIdle()
 
         assertEquals(ReadingProgress(0, 12, 30.0), repo.lastSaved)
+    }
+
+    @Test
+    fun hidingScreenFlushesPendingProgressBeforeDebounce() = runTest(mainRule.dispatcher) {
+        val repo = FakeReaderRepository(meta = meta(1), chapters = mapOf(0 to Chapter(0, listOf(word("a")))))
+        val v = vm(repo)
+        advanceUntilIdle()
+
+        v.recordPosition(tokenIdx = 12, pctRead = 30.0)
+        // Back out of the reader before the 800ms debounce elapses. runCurrent
+        // (not advanceUntilIdle) so the debounced write can't be what lands.
+        v.onScreenHidden()
+        runCurrent()
+
+        assertEquals(ReadingProgress(0, 12, 30.0), repo.lastSaved)
+    }
+
+    @Test
+    fun hidingScreenAfterDebouncedWriteDoesNotRewrite() = runTest(mainRule.dispatcher) {
+        val repo = FakeReaderRepository(meta = meta(1), chapters = mapOf(0 to Chapter(0, listOf(word("a")))))
+        val v = vm(repo)
+        advanceUntilIdle()
+
+        v.recordPosition(tokenIdx = 12, pctRead = 30.0)
+        advanceUntilIdle() // debounce fires; nothing left pending
+        val saves = repo.saveCalls
+        v.onScreenHidden()
+        advanceUntilIdle()
+
+        assertEquals(saves, repo.saveCalls)
+    }
+
+    @Test
+    fun chapterNavDiscardsPendingPositionFromOldChapter() = runTest(mainRule.dispatcher) {
+        val repo = FakeReaderRepository(
+            meta = meta(2),
+            chapters = mapOf(0 to Chapter(0, listOf(word("a"))), 1 to Chapter(1, listOf(word("b")))),
+        )
+        val v = vm(repo)
+        advanceUntilIdle()
+
+        v.recordPosition(tokenIdx = 12, pctRead = 30.0) // debounce still pending
+        v.nextChapter()
+        advanceUntilIdle()
+        v.onScreenHidden()
+        advanceUntilIdle()
+
+        // The nav saved chapter 1's fresh start; the stale chapter-0 position
+        // must not be flushed over it on the way out.
+        assertEquals(ReadingProgress(1, 0, 0.0), repo.lastSaved)
     }
 
     @Test
@@ -1381,6 +1475,7 @@ private class FakeReaderRepository(
     private val lemmaFrequency: Int? = null,
 ) : ReaderRepository {
     var lastSaved: ReadingProgress? = null
+    var saveCalls = 0
     var lastFrequencyLemmaId: String? = null
     var lastTranslate: Triple<String, Int, String>? = null
     var translateCalls = 0
@@ -1407,6 +1502,7 @@ private class FakeReaderRepository(
         pctRead: Double,
     ): Outcome<Unit> {
         lastSaved = ReadingProgress(chapterIdx, tokenIdx, pctRead)
+        saveCalls += 1
         return Outcome.Success(Unit)
     }
 
@@ -1448,11 +1544,18 @@ private class FakeDictionaryRepository(
     /** When true, [addDefinition]/[editDefinition]/[deleteDefinition] return
      *  Failure so tests can exercise the save-error toast path. */
     private val definitionFails: Boolean = false,
+    /** Local-cache peek result: what [cachedTranslations] returns. Lets tests
+     *  drive the serve-cached-then-revalidate path in loadParse. */
+    private val cached: LemmaTranslations? = null,
+    /** What [refreshTranslations] returns when set (defaults to [translations]),
+     *  so revalidation can deliver a different copy than the cache. */
+    private val refreshed: LemmaTranslations? = null,
 ) : DictionaryRepository {
     var lastAdded: Pair<String, String>? = null
     var lastAddedParentId: String? = null
     var lastBasqueQuery: Pair<String, Boolean>? = null
     val requestedLemmaIds = mutableListOf<String>()
+    var refreshCalls = 0
 
     override suspend fun translations(lemmaId: String): Outcome<LemmaTranslations> {
         requestedLemmaIds += lemmaId
@@ -1460,8 +1563,12 @@ private class FakeDictionaryRepository(
         return hit?.let { Outcome.Success(it) } ?: Outcome.Failure("no translations")
     }
 
-    override suspend fun refreshTranslations(lemmaId: String): Outcome<LemmaTranslations> =
-        translations?.let { Outcome.Success(it) } ?: Outcome.Failure("no translations")
+    override suspend fun cachedTranslations(lemmaId: String): LemmaTranslations? = cached
+
+    override suspend fun refreshTranslations(lemmaId: String): Outcome<LemmaTranslations> {
+        refreshCalls += 1
+        return (refreshed ?: translations)?.let { Outcome.Success(it) } ?: Outcome.Failure("no translations")
+    }
 
     override suspend fun setStatus(lemmaId: String, status: KnownStatus): Outcome<KnownStatus> =
         if (statusFails) Outcome.Failure("offline") else Outcome.Success(status)

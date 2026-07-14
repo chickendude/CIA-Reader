@@ -15,9 +15,11 @@ import com.ciareader.reader.data.dictionary.WordTranslation
 import com.ciareader.reader.data.reader.KnownStatus
 import com.ciareader.reader.data.reader.ReaderRepository
 import com.ciareader.reader.data.reader.ReaderToken
+import com.ciareader.reader.data.reader.ReadingProgress
 import com.ciareader.reader.data.reader.SentenceTranslation
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -199,6 +201,12 @@ class ReaderViewModel @Inject constructor(
     val messages: SharedFlow<String> = _messages.asSharedFlow()
 
     private var progressJob: Job? = null
+
+    // The newest recorded position whose debounced write hasn't landed yet.
+    // Flushed on hide — the debounce dies with viewModelScope, so without the
+    // flush a page flip within the debounce window is lost on back-navigation
+    // and the reader reopens one page behind.
+    private var pendingProgress: ReadingProgress? = null
     private var pollJob: Job? = null
     private var currentTopToken = 0
 
@@ -301,6 +309,9 @@ class ReaderViewModel @Inject constructor(
         saveOnLoad: Boolean = false,
     ) {
         progressJob?.cancel()
+        // Never flush the old chapter's position after navigating — it would
+        // overwrite the fresh start this load saves for the new chapter.
+        pendingProgress = null
         pollJob?.cancel()
         _state.update {
             it.copy(
@@ -522,33 +533,19 @@ class ReaderViewModel @Inject constructor(
      *  alternate. */
     private fun loadParse(lemmaId: String, isPrimary: Boolean) {
         viewModelScope.launch {
-            val outcome = dictionary.translations(lemmaId)
-            var refLookupWord: String? = null
-            _state.update { s ->
-                if (s.activeParseLemmaId != lemmaId) return@update s
-                when (outcome) {
-                    is Outcome.Success -> {
-                        // Drive the reference search + lookup off the parsed lemma
-                        // ("hamarrak" → "hamar"), not the inflected surface — but only
-                        // while the box is the untouched prefill, so a manual search is
-                        // never clobbered.
-                        val headword = outcome.data.headword
-                        val useLemma = isPrimary && language == "eu" && !basqueRefDisabled &&
-                            headword.isNotBlank() && s.basqueRefSearch == s.basqueRefPrefill
-                        if (useLemma) refLookupWord = headword
-                        s.copy(
-                            isWordLoading = false,
-                            wordTranslations = outcome.data,
-                            primaryHeadword = if (isPrimary) headword else s.primaryHeadword,
-                            primaryPos = if (isPrimary) outcome.data.pos else s.primaryPos,
-                            basqueRefSearch = if (useLemma) headword else s.basqueRefSearch,
-                            basqueRefPrefill = if (useLemma) headword else s.basqueRefPrefill,
-                            // Keep the spinner up only while the lemma lookup is pending.
-                            isBasqueRefLoading = refLookupWord != null,
-                        )
-                    }
-                    is Outcome.Failure -> s.copy(isWordLoading = false, isBasqueRefLoading = false)
+            // Serve the cached copy instantly, then revalidate over the network:
+            // definitions change server-side (other users' entries, the viewer's
+            // own edits made on another device), so a cache hit must not go
+            // stale. The sheet updates in place if the fresh copy differs.
+            val cached = dictionary.cachedTranslations(lemmaId)
+            val refLookupWord: String?
+            if (cached != null) {
+                refLookupWord = applyParse(lemmaId, isPrimary, Outcome.Success(cached), wantRefLookup = true)
+                launch {
+                    applyParse(lemmaId, isPrimary, dictionary.refreshTranslations(lemmaId), wantRefLookup = false)
                 }
+            } else {
+                refLookupWord = applyParse(lemmaId, isPrimary, dictionary.translations(lemmaId), wantRefLookup = true)
             }
             // Look up the reference entries by the parsed lemma so they match the box.
             val word = refLookupWord
@@ -568,6 +565,54 @@ class ReaderViewModel @Inject constructor(
                 }
             }
         }
+    }
+
+    /** Apply a translations result to the word sheet (skipped if the user has
+     *  moved on to another parse). Returns the word the Basque reference lookup
+     *  should use, or null — computed only when [wantRefLookup], so the
+     *  background revalidation pass can update the sheet without re-triggering
+     *  the reference lookup its first pass already started. */
+    private fun applyParse(
+        lemmaId: String,
+        isPrimary: Boolean,
+        outcome: Outcome<LemmaTranslations>,
+        wantRefLookup: Boolean,
+    ): String? {
+        var refLookupWord: String? = null
+        _state.update { s ->
+            if (s.activeParseLemmaId != lemmaId) return@update s
+            when (outcome) {
+                is Outcome.Success -> {
+                    // Drive the reference search + lookup off the parsed lemma
+                    // ("hamarrak" → "hamar"), not the inflected surface — but only
+                    // while the box is the untouched prefill, so a manual search is
+                    // never clobbered.
+                    val headword = outcome.data.headword
+                    val useLemma = wantRefLookup && isPrimary && language == "eu" && !basqueRefDisabled &&
+                        headword.isNotBlank() && s.basqueRefSearch == s.basqueRefPrefill
+                    if (useLemma) refLookupWord = headword
+                    s.copy(
+                        isWordLoading = false,
+                        wordTranslations = outcome.data,
+                        primaryHeadword = if (isPrimary) headword else s.primaryHeadword,
+                        primaryPos = if (isPrimary) outcome.data.pos else s.primaryPos,
+                        basqueRefSearch = if (useLemma) headword else s.basqueRefSearch,
+                        basqueRefPrefill = if (useLemma) headword else s.basqueRefPrefill,
+                        // Keep the spinner up only while the lemma lookup is pending
+                        // (left untouched by the revalidation pass).
+                        isBasqueRefLoading = if (wantRefLookup) refLookupWord != null else s.isBasqueRefLoading,
+                    )
+                }
+                is Outcome.Failure ->
+                    if (wantRefLookup) {
+                        s.copy(isWordLoading = false, isBasqueRefLoading = false)
+                    } else {
+                        // A failed background refresh keeps the cached copy on screen.
+                        s
+                    }
+            }
+        }
+        return refLookupWord
     }
 
     /** Save the viewer's own definition for the active parse, then refresh the
@@ -880,10 +925,25 @@ class ReaderViewModel @Inject constructor(
     fun recordPosition(tokenIdx: Int, pctRead: Double) {
         val chapterIdx = _state.value.chapterIdx
         currentTopToken = tokenIdx
+        pendingProgress = ReadingProgress(chapterIdx, tokenIdx, pctRead)
         progressJob?.cancel()
         progressJob = viewModelScope.launch {
             delay(PROGRESS_DEBOUNCE_MS)
             repository.saveProgress(textId, chapterIdx, tokenIdx, pctRead)
+            pendingProgress = null
+        }
+    }
+
+    /** Write a still-debouncing position immediately (the user is leaving). */
+    private fun flushPendingProgress() {
+        val pending = pendingProgress ?: return
+        pendingProgress = null
+        progressJob?.cancel()
+        // NonCancellable: on back-navigation this flush races the ViewModel
+        // being cleared — a plain viewModelScope job is cancelled mid-request
+        // and the position never lands.
+        viewModelScope.launch(NonCancellable) {
+            repository.saveProgress(textId, pending.chapterIdx, pending.tokenIdx, pending.pctRead)
         }
     }
 
@@ -1021,6 +1081,7 @@ class ReaderViewModel @Inject constructor(
      * Reading time is LOCAL-ONLY (no server sync).
      */
     fun onScreenHidden() {
+        flushPendingProgress()
         val startedAt = readingStartedAtMs ?: return
         readingStartedAtMs = null
         val elapsed = clock() - startedAt

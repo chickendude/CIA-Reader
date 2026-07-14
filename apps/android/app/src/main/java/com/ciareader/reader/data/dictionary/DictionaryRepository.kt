@@ -2,6 +2,7 @@ package com.ciareader.reader.data.dictionary
 
 import com.ciareader.reader.core.network.Outcome
 import com.ciareader.reader.core.network.apiCall
+import com.ciareader.reader.data.local.CachedBasqueReferenceEntity
 import com.ciareader.reader.data.local.CachedLemmaEntity
 import com.ciareader.reader.data.local.ReaderCacheDao
 import com.ciareader.reader.data.reader.KnownStatus
@@ -52,6 +53,12 @@ interface DictionaryRepository {
      *  it, persists, and returns — so re-taps and offline reads are fast. */
     suspend fun translations(lemmaId: String): Outcome<LemmaTranslations>
 
+    /** Zero-network peek at the locally cached definitions (null on a miss).
+     *  Lets the UI render a cache hit instantly and then revalidate with
+     *  [refreshTranslations] — definitions change server-side (other users'
+     *  entries, the viewer's own edits made on another device). */
+    suspend fun cachedTranslations(lemmaId: String): LemmaTranslations?
+
     /** Force-fetches the latest definitions (e.g. new community suggestions),
      *  re-persisting on success; on failure falls back to the cached copy. */
     suspend fun refreshTranslations(lemmaId: String): Outcome<LemmaTranslations>
@@ -90,7 +97,9 @@ interface DictionaryRepository {
 
     /** Admin-only Basque reference dictionaries for a word (403 → Failure).
      *  [exact] preserves case for a precise search (an autocomplete pick); the
-     *  default lowercases the word for the tapped-surface lemma lookup. */
+     *  default lowercases the word for the tapped-surface lemma lookup.
+     *  External entries are immutable upstream, so results persist locally and
+     *  a word is fetched over the network at most once, ever. */
     suspend fun basqueReference(word: String, exact: Boolean = false): Outcome<List<BasqueReference>>
 
     /** Admin-only Elhuyar headword suggestions for the reference search box. */
@@ -105,14 +114,17 @@ class DictionaryRepositoryImpl @Inject constructor(
 ) : DictionaryRepository {
 
     override suspend fun translations(lemmaId: String): Outcome<LemmaTranslations> {
-        cachedTranslations(lemmaId)?.let { return Outcome.Success(it.toDomain()) }
+        cachedDto(lemmaId)?.let { return Outcome.Success(it.toDomain()) }
         return fetchAndPersist(lemmaId)
     }
+
+    override suspend fun cachedTranslations(lemmaId: String): LemmaTranslations? =
+        cachedDto(lemmaId)?.toDomain()
 
     override suspend fun refreshTranslations(lemmaId: String): Outcome<LemmaTranslations> {
         val fresh = fetchAndPersist(lemmaId)
         if (fresh is Outcome.Failure) {
-            cachedTranslations(lemmaId)?.let { return Outcome.Success(it.toDomain()) }
+            cachedDto(lemmaId)?.let { return Outcome.Success(it.toDomain()) }
         }
         return fresh
     }
@@ -128,7 +140,7 @@ class DictionaryRepositoryImpl @Inject constructor(
         }
 
     /** The cached DTO for a lemma, or null on a miss or undecodable blob. */
-    private suspend fun cachedTranslations(lemmaId: String): LemmaTranslationsDto? {
+    private suspend fun cachedDto(lemmaId: String): LemmaTranslationsDto? {
         val row = cache.lemma(lemmaId) ?: return null
         return runCatching { json.decodeFromString<LemmaTranslationsDto>(row.json) }.getOrNull()
     }
@@ -177,8 +189,9 @@ class DictionaryRepositoryImpl @Inject constructor(
     ): Outcome<Unit> =
         apiCall { api.setTranslationHidden(translationId, HideTranslationRequest(hidden, reason)) }
 
-    // Reference lookups are stable, so cache per word for the session — reopening
-    // a word shows them instantly instead of re-hitting the network.
+    // External reference entries are immutable upstream, so a word costs one
+    // network fetch ever: an in-memory map serves re-taps within the session,
+    // backed by a Room copy that survives process death and works offline.
     private val basqueCache = mutableMapOf<String, List<BasqueReference>>()
 
     override suspend fun basqueReference(word: String, exact: Boolean): Outcome<List<BasqueReference>> {
@@ -186,13 +199,27 @@ class DictionaryRepositoryImpl @Inject constructor(
         // term; lemma lookups are case-folded and share a key across re-taps.
         val key = if (exact) "exact:$word" else word.lowercase()
         basqueCache[key]?.let { return Outcome.Success(it) }
+        cachedReference(key)?.let {
+            val domain = it.toDomain()
+            basqueCache[key] = domain
+            return Outcome.Success(domain)
+        }
         val net = apiCall {
-            api.basqueReference(word, if (exact) "1" else null).results.map {
-                BasqueReference(it.source, it.label, it.pos, it.definition, it.examples)
-            }
+            val dto = api.basqueReference(word, if (exact) "1" else null)
+            cache.upsertBasqueReference(
+                CachedBasqueReferenceEntity(key, json.encodeToString(dto), System.currentTimeMillis()),
+            )
+            dto.toDomain()
         }
         if (net is Outcome.Success) basqueCache[key] = net.data
         return net
+    }
+
+    /** The cached reference DTO for a lookup key, or null on a miss or
+     *  undecodable blob (treated as never-fetched). */
+    private suspend fun cachedReference(key: String): BasqueReferenceResponseDto? {
+        val row = cache.basqueReference(key) ?: return null
+        return runCatching { json.decodeFromString<BasqueReferenceResponseDto>(row.json) }.getOrNull()
     }
 
     override suspend fun basqueReferenceAutocomplete(term: String): Outcome<List<String>> =
@@ -204,6 +231,10 @@ private fun KnownStatus.wire(): String = when (this) {
     KnownStatus.LEARNING -> "learning"
     KnownStatus.KNOWN -> "known"
     KnownStatus.IGNORED -> "ignored"
+}
+
+private fun BasqueReferenceResponseDto.toDomain() = results.map {
+    BasqueReference(it.source, it.label, it.pos, it.definition, it.examples)
 }
 
 private fun LemmaTranslationsDto.toDomain() = LemmaTranslations(

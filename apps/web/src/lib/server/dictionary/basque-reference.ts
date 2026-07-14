@@ -225,11 +225,6 @@ export function parseEuskaltzaindia(
 
 // ---- Fetch + cache ---------------------------------------------------
 
-//: How long a cached (word, source) entry stays fresh before we re-fetch.
-//: Dictionary entries change rarely and the whole point is to spare the
-//: upstream sites, so this is generous (30 days).
-export const REFERENCE_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
-
 export type ReferenceCacheEntry = {
   results: BasqueReferenceResult[];
   fetchedAt: number;
@@ -269,8 +264,11 @@ async function lookupOne(
   cache: ReferenceCache,
   preserveCase: boolean,
 ): Promise<BasqueReferenceResult[]> {
+  // A cached entry never goes stale: external dictionary content is
+  // effectively immutable, and the whole point of the cache is to spare the
+  // upstream sites' bandwidth — each (word, source) is fetched exactly once.
   const cached = await cache.get(word, source);
-  if (cached && now - cached.fetchedAt < REFERENCE_CACHE_TTL_MS) return cached.results;
+  if (cached) return cached.results;
 
   const url =
     source === 'euskaltzaindia' ? euskaltzaindiaUrl(word) : elhuyarUrl(word, { preserveCase });

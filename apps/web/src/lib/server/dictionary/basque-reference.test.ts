@@ -234,7 +234,7 @@ describe('lookupBasqueReference', () => {
     expect(store.get(key('etxe', 'euskaltzaindia'))).toBeDefined();
   });
 
-  it('serves a repeated lookup from the cache within the TTL (no second fetch)', async () => {
+  it('serves a repeated lookup from the cache (no second fetch)', async () => {
     const fetchImpl = mockFetch();
     const { cache } = memoryCache();
     await lookupBasqueReference('etxe', ['elhuyar_es'], { fetchImpl, now: 1000, cache });
@@ -242,16 +242,18 @@ describe('lookupBasqueReference', () => {
     expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 
-  it('re-fetches once the cached entry is older than the TTL', async () => {
+  it('never re-fetches a cached entry, no matter how old', async () => {
+    // External entries are immutable upstream; once stored we must not spend
+    // the providers' bandwidth again — not even years later.
     const fetchImpl = mockFetch();
     const { cache } = memoryCache();
     await lookupBasqueReference('etxe', ['elhuyar_es'], { fetchImpl, now: 0, cache });
     await lookupBasqueReference('etxe', ['elhuyar_es'], {
       fetchImpl,
-      now: 30 * DAY + 1,
+      now: 10 * 365 * DAY,
       cache,
     });
-    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 
   it('shares the cache across calls regardless of which admin triggered it', async () => {
