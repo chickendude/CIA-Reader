@@ -150,6 +150,11 @@ jobs:
           path: ~/stanza_resources
           key: stanza-models-hi-mr-eu-v1-${{ hashFiles('services/nlp/pyproject.toml') }}
       - name: Download Stanza Hi + Mr + Eu models
+        env:
+          # HF's Xet-backed downloads 401 for unauthenticated CI clients
+          # (cas-server.xethub.hf.co reconstruction errors); the classic
+          # HTTP path works fine without a token.
+          HF_HUB_DISABLE_XET: "1"
         run: |
           python - <<'PY'
           import stanza
