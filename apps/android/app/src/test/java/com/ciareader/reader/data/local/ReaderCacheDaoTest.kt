@@ -94,6 +94,15 @@ class ReaderCacheDaoTest {
     }
 
     @Test
+    fun basqueReferenceRoundTripsAndMissingIsNull() = runTest {
+        val ref = CachedBasqueReferenceEntity("etxe", json = "{\"results\":[]}", cachedAt = 1000)
+        dao.upsertBasqueReference(ref)
+        assertEquals(ref, dao.basqueReference("etxe"))
+        // Exact-search keys are distinct rows from the case-folded lemma key.
+        assertNull(dao.basqueReference("exact:etxe"))
+    }
+
+    @Test
     fun deleteRemovesAllRowsForAText() = runTest {
         dao.upsertText(CachedTextEntity("t1", "B", "hi", "ready", 1, cachedAt = 1000))
         dao.upsertChapterRefs(listOf(CachedChapterRefEntity("t1", 0, "One", 10)))

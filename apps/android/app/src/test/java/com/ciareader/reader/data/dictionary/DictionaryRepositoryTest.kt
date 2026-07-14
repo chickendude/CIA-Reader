@@ -298,6 +298,78 @@ class DictionaryRepositoryTest {
     }
 
     @Test
+    fun basqueReferenceIsServedFromRoomAcrossRepositoryInstances() = runTest {
+        val api = FakeDictionaryApi(
+            basque = BasqueReferenceResponseDto("etxe", listOf(BasqueRefDto(source = "elhuyar_es", definition = "casa"))),
+        )
+        repo(api).basqueReference("etxe") // warm: persists to Room
+
+        // A fresh repository (new process: empty in-memory map) over the same
+        // DB must serve the stored copy without a second network fetch.
+        val secondApi = FakeDictionaryApi(
+            basque = BasqueReferenceResponseDto("etxe", listOf(BasqueRefDto(source = "elhuyar_es", definition = "STALE"))),
+        )
+        val result = repo(secondApi).basqueReference("etxe")
+
+        assertEquals("casa", (result as Outcome.Success).data.single().definition)
+        assertEquals(0, secondApi.basqueCalls)
+    }
+
+    @Test
+    fun basqueReferenceServesOfflineFromRoom() = runTest {
+        val warm = FakeDictionaryApi(
+            basque = BasqueReferenceResponseDto("etxe", listOf(BasqueRefDto(source = "elhuyar_es", definition = "casa"))),
+        )
+        repo(warm).basqueReference("etxe")
+
+        val result = repo(FakeDictionaryApi(error = http(503))).basqueReference("etxe")
+
+        assertEquals("casa", (result as Outcome.Success).data.single().definition)
+    }
+
+    @Test
+    fun basqueReferencePersistsEmptyResultsAsFetched() = runTest {
+        // A word with no upstream entries still counts as fetched — the empty
+        // result is stored and never re-requested.
+        val api = FakeDictionaryApi(basque = BasqueReferenceResponseDto("zzz", emptyList()))
+        repo(api).basqueReference("zzz")
+
+        val again = repo(api).basqueReference("zzz")
+
+        assertTrue((again as Outcome.Success).data.isEmpty())
+        assertEquals(1, api.basqueCalls)
+        assertNotNull(dao.basqueReference("zzz"))
+    }
+
+    @Test
+    fun basqueReferenceExactAndLemmaKeysStoredSeparatelyInRoom() = runTest {
+        val api = FakeDictionaryApi(
+            basque = BasqueReferenceResponseDto("Afrika", listOf(BasqueRefDto(source = "elhuyar_es", definition = "África"))),
+        )
+        val repo = repo(api)
+        repo.basqueReference("Afrika")
+        repo.basqueReference("Afrika", exact = true)
+
+        assertNotNull(dao.basqueReference("afrika"))
+        assertNotNull(dao.basqueReference("exact:Afrika"))
+    }
+
+    @Test
+    fun cachedTranslationsPeeksWithoutNetwork() = runTest {
+        val api = FakeDictionaryApi(
+            translations = LemmaTranslationsDto(lemma = LemmaDto("l1", "नमस्ते", "INTJ", "hello")),
+        )
+        val repo = repo(api)
+
+        assertNull(repo.cachedTranslations("l1")) // miss: no network fallback
+        assertEquals(0, api.translationCalls)
+
+        repo.translations("l1") // warm
+        assertEquals("नमस्ते", repo.cachedTranslations("l1")?.headword)
+        assertEquals(1, api.translationCalls) // the peek never fetched
+    }
+
+    @Test
     fun basqueReferenceAutocompleteReturnsTerms() = runTest {
         val api = FakeDictionaryApi(
             autocomplete = BasqueAutocompleteResponseDto("afr", listOf("Afrika", "afrikaans")),

@@ -55,6 +55,14 @@ interface ReaderCacheDao {
     @Query("SELECT * FROM cached_lemma WHERE lemmaId = :lemmaId")
     suspend fun lemma(lemmaId: String): CachedLemmaEntity?
 
+    // External reference-dictionary lookups (immutable upstream): a cached row
+    // is served forever, so a word costs one network fetch across app restarts.
+    @Upsert
+    suspend fun upsertBasqueReference(reference: CachedBasqueReferenceEntity)
+
+    @Query("SELECT * FROM cached_basque_reference WHERE `key` = :key")
+    suspend fun basqueReference(key: String): CachedBasqueReferenceEntity?
+
     // Reading positions saved offline, awaiting upload.
     @Upsert
     suspend fun upsertPending(pending: PendingProgressEntity)

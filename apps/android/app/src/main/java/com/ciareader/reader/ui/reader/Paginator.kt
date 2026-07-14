@@ -38,3 +38,27 @@ internal fun paginateLines(
     }
     return pages
 }
+
+/**
+ * The token to persist as the reading anchor for [page]: the token whose
+ * character range contains the page's first character. Inverse of
+ * [pageForToken] — keep the two in sync or restored positions drift.
+ */
+internal fun pageAnchorToken(pages: List<IntRange>, ranges: List<IntRange>, page: Int): Int {
+    val start = pages.getOrNull(page)?.first ?: 0
+    return ranges.indexOfFirst { start in it }.coerceAtLeast(0)
+}
+
+/**
+ * The page a saved anchor token restores to. Matches on the token's LAST
+ * character so a token straddling a page boundary resolves to the page that
+ * starts inside it (the page [pageAnchorToken] recorded it for), not the page
+ * it started on. Matches by "last page starting at or before" because page
+ * ranges exclude invisible trailing whitespace — an anchor landing in the gap
+ * between two pages belongs to the page owning that gap, not to no page.
+ */
+internal fun pageForToken(pages: List<IntRange>, ranges: List<IntRange>, tokenIdx: Int): Int {
+    val range = ranges.getOrNull(tokenIdx) ?: return 0
+    val anchor = maxOf(range.first, range.last) // an empty range anchors at its start
+    return pages.indexOfLast { it.first <= anchor }.coerceAtLeast(0)
+}

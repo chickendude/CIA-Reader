@@ -58,6 +58,21 @@ data class CachedLemmaEntity(
 )
 
 /**
+ * A cached external reference-dictionary lookup (Elhuyar / Euskaltzaindia),
+ * stored as the raw server JSON in [json]. Keyed by the repository's lookup
+ * key — `exact:<term>` for case-preserving searches, else the lowercased
+ * word. Unlike [CachedLemmaEntity], which mirrors mutable user/community
+ * content, external entries are immutable upstream: a cached row is served
+ * forever and never refetched (one network fetch per word).
+ */
+@Entity(tableName = "cached_basque_reference")
+data class CachedBasqueReferenceEntity(
+    @PrimaryKey val key: String,
+    val json: String,
+    val cachedAt: Long,
+)
+
+/**
  * A reading position saved while offline, awaiting upload to the server. One
  * row per text (latest position); cleared once flushed. Unlike the content
  * tables this is genuine user state, not a server mirror — but it lives in the

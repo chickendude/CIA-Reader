@@ -3,6 +3,7 @@ package com.ciareader.reader.data.reader
 import com.ciareader.reader.core.network.Outcome
 import com.ciareader.reader.data.local.CachedChapterEntity
 import com.ciareader.reader.data.local.CachedChapterRefEntity
+import com.ciareader.reader.data.local.CachedBasqueReferenceEntity
 import com.ciareader.reader.data.local.CachedLemmaEntity
 import com.ciareader.reader.data.local.CachedTextEntity
 import com.ciareader.reader.data.local.CachedTextSize
@@ -401,6 +402,13 @@ private class FakeReaderCacheDao : ReaderCacheDao {
     }
 
     override suspend fun lemma(lemmaId: String): CachedLemmaEntity? = lemmas[lemmaId]
+
+    private val basqueRefs = mutableMapOf<String, CachedBasqueReferenceEntity>()
+    override suspend fun upsertBasqueReference(reference: CachedBasqueReferenceEntity) {
+        basqueRefs[reference.key] = reference
+    }
+
+    override suspend fun basqueReference(key: String): CachedBasqueReferenceEntity? = basqueRefs[key]
 
     private val pendingMap = mutableMapOf<String, PendingProgressEntity>()
     override suspend fun upsertPending(pending: PendingProgressEntity) {
