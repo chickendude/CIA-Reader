@@ -16,6 +16,9 @@ function fakeVideo() {
     pause: vi.fn(() => {
       paused = true;
     }),
+    play: () => {
+      paused = false;
+    },
     setTime: (s: number) => {
       t = s;
     },
@@ -54,25 +57,52 @@ describe('PlaybackController', () => {
     expect(v.seek).toHaveBeenCalledTimes(4);
   });
 
-  it('pauses on each line change and reveals the line that just ended', () => {
+  it('pauses just before the active line ends, showing that line (not the next)', () => {
     vi.useFakeTimers();
     const v = fakeVideo();
-    const revealed: string[] = [];
+    const shown: (string | null)[] = [];
     const pb = new PlaybackController(v as unknown as VideoController);
-    pb.onLinePause = (text) => revealed.push(text);
+    pb.onDisplay = (t) => shown.push(t);
     pb.setCues(cues);
-    expect(pb.toggleAutoPause()).toBe(true);
+    v.setTime(13);
+    pb.onText('two'); // offset 10000ms; cue "two" 3000–4000 → video 13–14s
+    pb.toggleAutoPause();
 
-    pb.onText('one'); // first line appears — nothing has ended yet
+    v.setTime(13.5); // mid-line
+    pb.pump();
     expect(v.pause).not.toHaveBeenCalled();
+    expect(shown.at(-1)).toBe('two');
 
-    pb.onText('two'); // 'one' just ended → pause + reveal it
+    v.setTime(13.95); // 3950ms ≥ 4000−60 → pause, still ON "two"
+    pb.pump();
     expect(v.pause).toHaveBeenCalledTimes(1);
-    expect(revealed).toEqual(['one']);
+    expect(shown.at(-1)).toBe('two');
 
-    // Adjacent cue with no gap still gets its own pause once the user resumes.
-    pb.onText('two'); // (resumed; same text re-asserted — no double pause)
+    // Once paused for this line it won't re-pause it, even after resuming.
+    v.play();
+    pb.pump();
     expect(v.pause).toHaveBeenCalledTimes(1);
+  });
+
+  it('hides the caption while a clip plays in listening mode', () => {
+    vi.useFakeTimers();
+    const v = fakeVideo();
+    const shown: (string | null)[] = [];
+    const pb = new PlaybackController(v as unknown as VideoController);
+    pb.onDisplay = (t) => shown.push(t);
+    pb.setCues(cues);
+    v.setTime(13);
+    pb.onText('two');
+    pb.toggleListening();
+
+    v.setTime(13.5); // playing, listening → caption hidden
+    pb.pump();
+    expect(shown.at(-1)).toBeNull();
+
+    v.setTime(13.95); // pauses at line end and reveals the line
+    pb.pump();
+    expect(v.pause).toHaveBeenCalledTimes(1);
+    expect(shown.at(-1)).toBe('two');
   });
 
   it('returns the surrounding subtitle lines for card context', () => {
@@ -86,21 +116,17 @@ describe('PlaybackController', () => {
     expect(pb.neighborsOf('three')).toEqual({ before: 'two', after: null });
   });
 
-  it('does not pause on the line change a seek causes', () => {
+  it('gives the mid-cue video time for a line (for card screenshots)', () => {
     vi.useFakeTimers();
     const v = fakeVideo();
     const pb = new PlaybackController(v as unknown as VideoController);
     pb.setCues(cues);
-
     v.setTime(13);
-    pb.onText('two'); // calibrate (offset 10000ms), prevLine = 'two'
-    expect(pb.toggleListening()).toBe(true);
+    pb.onText('two'); // offset 10000ms
 
-    pb.next(); // seek to 'three' — its appearance must not trigger a pause
-    pb.onText('three');
-    expect(v.pause).not.toHaveBeenCalled();
-
-    pb.onText('one'); // a real change — 'three' ended → pause
-    expect(v.pause).toHaveBeenCalledTimes(1);
+    // cue "two" 3000–4000 → mid 3500ms + 10000 offset = 13.5s
+    expect(pb.timeForLine('two')).toBeCloseTo(13.5, 5);
+    expect(pb.timeForLine('one')).toBeCloseTo(11.5, 5);
+    expect(pb.timeForLine('nope')).toBeCloseTo(13.5, 5); // unknown → active cue
   });
 });

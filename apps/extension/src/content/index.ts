@@ -44,20 +44,39 @@ const overlay = new Overlay({
     let note: string | undefined;
     if (config.captureMedia) {
       // The frame is DRM/HDCP-protected, so a <video>→canvas grab comes back
-      // black. captureVisibleTab (an OS-level tab grab) gets the real pixels;
-      // we just hide our overlay + the player's controls first, and suppress the
-      // popup's auto-close so adding a card doesn't dismiss it / resume playback.
+      // black. captureVisibleTab (an OS-level tab grab) gets the real pixels.
+      // The playhead is often NOT on the mined line (listening mode pauses at
+      // the NEXT line; pause-on-lookup may be off) — so seek to the mined line's
+      // own frame, capture, then seek back. We hide our overlay + the player's
+      // controls and suppress the popup's auto-close throughout.
+      const targetT = playback.timeForLine(card.sentence);
+      const originT = video.currentTime();
+      const wasPaused = video.isPaused();
+      const reseek = video.element != null && targetT != null && originT != null;
       overlay.beginCapture();
       setPlayerChromeHidden(true);
-      await delay(120);
-      const res = await sendMessage('CAPTURE_SCREENSHOT', {}).catch(() => ({
-        dataUrl: null,
-        error: 'capture message failed',
-      }));
-      setPlayerChromeHidden(false);
-      overlay.endCapture();
-      if (res.dataUrl) screenshot = await cropToVideo(res.dataUrl);
-      else note = `no screenshot${res.error ? ` (${res.error})` : ''}`;
+      try {
+        if (reseek && Math.abs(targetT! - originT!) > 0.4) {
+          video.pause();
+          await video.seekSettle(targetT!);
+          await delay(60);
+        } else {
+          await delay(120);
+        }
+        const res = await sendMessage('CAPTURE_SCREENSHOT', {}).catch(() => ({
+          dataUrl: null,
+          error: 'capture message failed',
+        }));
+        if (res.dataUrl) screenshot = await cropToVideo(res.dataUrl);
+        else note = `no screenshot${res.error ? ` (${res.error})` : ''}`;
+      } finally {
+        if (reseek && Math.abs(targetT! - originT!) > 0.4) {
+          await video.seekSettle(originT!);
+          if (!wasPaused) video.play();
+        }
+        setPlayerChromeHidden(false);
+        overlay.endCapture();
+      }
     }
     const { before, after } = playback.neighborsOf(card.sentence);
     const result = await sendMessage('ADD_ANKI', {
@@ -154,20 +173,20 @@ async function cropToVideo(dataUrl: string): Promise<string> {
 let seenSubs = false;
 let subAttempted = false;
 new SubtitleMirror((text) => {
-  // While paused, ignore the player clearing the line — keep it visible to read.
-  if (!text && video.isPaused()) return;
   if (text) seenSubs = true;
-  overlay.setCue(text);
+  // Calibrate the .vtt↔video offset from the player's (hidden) subtitle.
   playback.onText(text);
+  // Until calibrated, fall back to mirroring the player's subtitle directly.
+  // Once calibrated, the cue-driven loop (onDisplay) owns the caption.
+  if (!playback.isCalibrated) {
+    if (!text && video.isPaused()) return;
+    overlay.setCue(text);
+  }
 });
 
-// Listening mode hides/reveals the caption as the line plays/pauses.
-playback.onBlind = (hidden) => overlay.setCaptionHidden(hidden);
-// On auto-pause/listening pause, force-show the line from the cue data.
-playback.onLinePause = (text) => {
-  overlay.setCaptionHidden(false);
-  overlay.setCue(text);
-};
+// The caption is driven from the loaded cues (not the player's subtitle), so it
+// stays in sync and remains visible when paused.
+playback.onDisplay = (text) => overlay.setCue(text);
 
 const toggleAutoPause = () => overlay.setAutoPause(playback.toggleAutoPause());
 const toggleListening = () => overlay.setListening(playback.toggleListening());
@@ -254,9 +273,17 @@ window.addEventListener(
   'keydown',
   (e) => {
     // composedPath()[0] is the real focused element even inside our shadow root,
-    // so typing in the popup's form input isn't hijacked by playback shortcuts.
+    // so typing in the popup's inputs isn't hijacked by playback shortcuts.
     const t = (e.composedPath()[0] ?? e.target) as HTMLElement | null;
-    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) {
+      // The player's own keyboard shortcuts (Space = play/pause, etc.) can't see
+      // that our shadow-root input is focused, so they'd hijack the keystroke.
+      // Shield typing (incl. Space) from them; let Enter/Escape reach the input's
+      // own handler. We run before the player since we bind at document_start.
+      const ours = t.classList.contains('mine-input') || t.classList.contains('form-input');
+      if (ours && e.key !== 'Enter' && e.key !== 'Escape') e.stopPropagation();
+      return;
+    }
     let handled = true;
     switch (e.key) {
       case 'ArrowRight':

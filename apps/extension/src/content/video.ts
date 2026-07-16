@@ -31,6 +31,29 @@ export class VideoController {
     this.pickVideo()?.pause();
   }
 
+  play(): void {
+    void this.pickVideo()?.play();
+  }
+
+  /** Seek WITHOUT auto-playing and resolve once the frame has settled — used to
+   *  grab the mined line's exact frame for a card screenshot, then seek back. */
+  async seekSettle(seconds: number): Promise<void> {
+    const v = this.pickVideo();
+    if (!v) return;
+    await new Promise<void>((resolve) => {
+      let done = false;
+      const finish = (): void => {
+        if (done) return;
+        done = true;
+        v.removeEventListener('seeked', finish);
+        resolve();
+      };
+      v.addEventListener('seeked', finish);
+      v.currentTime = Math.max(0, seconds);
+      setTimeout(finish, 500); // fallback if no 'seeked' fires
+    });
+  }
+
   /** Pause for a word lookup. Idempotent: while a lookup is already active
    *  (moving between words keeps the popup open) it's a no-op, so the original
    *  "was playing" state isn't lost. Respects a manual pause (won't auto-resume). */
