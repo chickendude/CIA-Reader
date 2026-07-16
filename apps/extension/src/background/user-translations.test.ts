@@ -41,6 +41,14 @@ describe('UserTranslations', () => {
     expect(t).toEqual({ id: 'new', body: 'to stop', targetLanguage: 'en' });
   });
 
+  it('get-or-creates a lemma and returns its id', async () => {
+    const postJson = vi.fn().mockResolvedValue({ lemma: { id: 'lemma-new', headword: 'kaño' } });
+    const ut = new UserTranslations(client({ postJson }));
+    const id = await ut.ensureLemma('eu', 'kaño');
+    expect(postJson).toHaveBeenCalledWith('/api/v1/me/lemmas', { language: 'eu', headword: 'kaño' });
+    expect(id).toBe('lemma-new');
+  });
+
   it('edits and deletes by translation id', async () => {
     const patchJson = vi.fn().mockResolvedValue({});
     const del = vi.fn().mockResolvedValue(undefined);

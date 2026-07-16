@@ -63,6 +63,8 @@ export type Requests = {
   };
   USER_TRX_EDIT: { req: { id: string; body: string }; res: { ok: true } };
   USER_TRX_DELETE: { req: { id: string }; res: { ok: true } };
+  /** Get-or-create a lemma so an out-of-dictionary word can hold a translation. */
+  USER_LEMMA_ENSURE: { req: { language: string; headword: string }; res: { lemmaId: string } };
 };
 
 export type MessageType = keyof Requests;
