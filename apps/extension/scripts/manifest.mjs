@@ -35,7 +35,7 @@ export function buildManifest(browser) {
     name: 'Primeran Subtitle Miner',
     version: '0.0.1',
     description:
-      'Migaku-style Basque subtitle mining for Primeran: clickable subtitles, dictionary look-ups, frequency, and Anki cards.',
+      'Basque subtitle mining for Primeran: clickable subtitles, dictionary look-ups, frequency, and Anki cards.',
     permissions: ['storage', 'tabs', 'webRequest'],
     host_permissions: HOST_PERMISSIONS,
     action: {

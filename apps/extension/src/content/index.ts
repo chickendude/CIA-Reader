@@ -13,6 +13,7 @@ import type { SubtitleCue } from '../shared/subtitles';
 import { SubtitleMirror } from './mirror';
 import { Overlay } from './overlay';
 import { PlaybackController } from './playback';
+import { findEuskaraSubtitleButton } from './subtitle-menu';
 import { VideoController } from './video';
 
 // Primeran is Basque.
@@ -202,11 +203,12 @@ overlay.enableControls({
   enableSubtitles: () => void enableBasqueSubtitles(),
 });
 
-// --- Turn on Basque subtitles via the player UI (XPaths provided by Primeran) ---
+// --- Turn on Basque subtitles via the player UI ---
+// The settings menu is opened by XPath (provided by Primeran), but the option
+// inside it is found by its label: the option list varies per episode, so a
+// positional path picks the wrong language when several tracks exist.
 const SUBTITLE_BUTTON_XPATH =
   '/html/body/div[1]/div/div/div/main/div/div/div[4]/footer/span[2]/div/div[1]/button[1]/div/img';
-const EUSKARA_BUTTON_XPATH =
-  '/html/body/div[1]/div/div/div/main/div/div/div[4]/footer/div[2]/div/span/div/div[1]/div[2]/div[2]/button/div/span';
 
 function byXPath(path: string): HTMLElement | null {
   try {
@@ -222,8 +224,7 @@ async function enableBasqueSubtitles(): Promise<void> {
   const subBtn = byXPath(SUBTITLE_BUTTON_XPATH);
   (subBtn?.closest('button') ?? subBtn)?.click();
   await delay(700);
-  const eu = byXPath(EUSKARA_BUTTON_XPATH);
-  (eu?.closest('button') ?? eu)?.click();
+  findEuskaraSubtitleButton()?.click();
 }
 
 // Apply initial config (auto-pause default).

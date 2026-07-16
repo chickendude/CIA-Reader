@@ -1,6 +1,6 @@
 # Primeran Subtitle Miner (browser extension)
 
-Migaku-style Basque subtitle mining for [Primeran](https://primeran.eus): clickable
+Basque subtitle mining for [Primeran](https://primeran.eus): clickable
 subtitles, dictionary look-ups parsed to lemma form, per-episode word-frequency, and
 one-click Anki cards. A thin, **local-first** client of the CIA Reader backend.
 
