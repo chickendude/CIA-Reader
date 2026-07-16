@@ -77,6 +77,15 @@ export type LemmaIndex = {
    */
   overridesBySurface: Map<string, string>;
   /**
+   * `surface` → ordered alternate lemma ids for a curated homograph
+   * override (form_lemma_overrides.alternate_lemma_ids). Present only
+   * for surfaces whose override carries alternates (e.g. Basque
+   * `galera` → [gale]); the dispatcher expands these into the token's
+   * candidate list so the reader popup offers them as pickable tabs
+   * alongside the chosen default.
+   */
+  overrideAlternatesBySurface: Map<string, string[]>;
+  /**
    * `surface` → lemma id derived from live (non-quarantined)
    * `lemma_forms` rows. Sits between the curator-context override
    * tier and Stanza's candidates: a recorded form mapping is more
@@ -155,20 +164,26 @@ export async function loadLemmaIndex(
     .select({
       surfaceNfc: schema.formLemmaOverrides.surfaceNfc,
       chosenLemmaId: schema.formLemmaOverrides.chosenLemmaId,
+      alternateLemmaIds: schema.formLemmaOverrides.alternateLemmaIds,
       contextSignature: schema.formLemmaOverrides.contextSignature,
     })
     .from(schema.formLemmaOverrides)
     .where(eq(schema.formLemmaOverrides.language, language))) as Array<{
     surfaceNfc: string;
     chosenLemmaId: string;
+    alternateLemmaIds: string[] | null;
     contextSignature: string;
   }>;
   const overridesBySurface = new Map<string, string>();
+  const overrideAlternatesBySurface = new Map<string, string[]>();
   for (const r of overrideRows) {
     if (r.contextSignature !== '') continue; // wildcard only for now
     const key = foldSurface(r.surfaceNfc);
     if (!overridesBySurface.has(key)) {
       overridesBySurface.set(key, r.chosenLemmaId);
+      if (r.alternateLemmaIds && r.alternateLemmaIds.length > 0) {
+        overrideAlternatesBySurface.set(key, r.alternateLemmaIds);
+      }
     }
   }
   // Live `lemma_forms` surface → lemma_id mappings for this language.
@@ -204,6 +219,7 @@ export async function loadLemmaIndex(
     byHeadword,
     byNuktaStrippedHeadword,
     overridesBySurface,
+    overrideAlternatesBySurface,
     bySurface,
     romanizationBySurface,
   };
@@ -424,7 +440,24 @@ export async function persistTokens(args: {
       // the popup shows a single term.
       lemmaCandidates:
         viaSurfaceMap && lemmaId
-          ? [{ lemmaId, features: t.candidates[0]?.features ?? {}, score: 1 }]
+          ? [
+              { lemmaId, features: t.candidates[0]?.features ?? {}, score: 1 },
+              // Curated homographs: when the surface legitimately maps to more
+              // than one lemma, the override carries ordered `alternate_lemma_ids`
+              // beside the chosen default. Surface them as candidates after the
+              // default (descending score preserves the curator's most- to
+              // least-likely order) so the reader popup offers them as pickable
+              // tabs. tokens.ts drops the entry equal to the active lemma and
+              // renders the rest. Empty features — an alternate is a different
+              // lemma, not this token's parsed morphology.
+              ...(index.overrideAlternatesBySurface.get(foldSurface(t.surface)) ?? [])
+                .filter((altId) => altId !== lemmaId)
+                .map((altId, j) => ({
+                  lemmaId: altId,
+                  features: {},
+                  score: 1 - (j + 1) / 1000,
+                })),
+            ]
           : t.candidates.map((c) => ({
               lemmaId: lookupCandidate(c, index),
               features: c.features,

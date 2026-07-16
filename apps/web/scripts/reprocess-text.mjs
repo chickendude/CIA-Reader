@@ -98,20 +98,26 @@ async function main() {
     byHeadword.get(c.lemma) ??
     null;
 
-  // T-2.7 form_lemma_overrides — wildcard rows pre-loaded.
+  // T-2.7 form_lemma_overrides — wildcard rows pre-loaded. `alternate_lemma_ids`
+  // carries curated-homograph alternates the reader shows as pickable tabs.
   const overrideRows = await fetchAll(
-    "SELECT surface_nfc, chosen_lemma_id FROM form_lemma_overrides WHERE language = $1 AND context_signature = ''",
+    "SELECT surface_nfc, chosen_lemma_id, alternate_lemma_ids FROM form_lemma_overrides WHERE language = $1 AND context_signature = ''",
     text.language,
   );
   const overridesBySurface = new Map();
+  const overrideAlternatesBySurface = new Map();
   for (const r of overrideRows) {
     const key = foldSurface(r.surface_nfc);
     if (!overridesBySurface.has(key)) {
       overridesBySurface.set(key, r.chosen_lemma_id);
+      if (r.alternate_lemma_ids && r.alternate_lemma_ids.length > 0) {
+        overrideAlternatesBySurface.set(key, r.alternate_lemma_ids);
+      }
     }
   }
   console.log(
-    `[reprocess] form_lemma_overrides loaded: ${overridesBySurface.size} surfaces`,
+    `[reprocess] form_lemma_overrides loaded: ${overridesBySurface.size} surfaces` +
+      ` (${overrideAlternatesBySurface.size} with alternates)`,
   );
 
   // lemma_forms surface tier (mirrors in-process-dispatcher.ts): a recorded
@@ -240,7 +246,15 @@ async function main() {
         lemmaId,
         lemmaCandidates:
           viaOverride && lemmaId
-            ? [{ lemmaId, features: (t.candidates && t.candidates[0]?.features) || {}, score: 1 }]
+            ? [
+                { lemmaId, features: (t.candidates && t.candidates[0]?.features) || {}, score: 1 },
+                // Curated homograph alternates → pickable candidate tabs (mirrors
+                // in-process-dispatcher.ts). Appended after the chosen default,
+                // descending score to keep the curator's order.
+                ...(overrideAlternatesBySurface.get(foldSurface(t.surface)) ?? [])
+                  .filter((altId) => altId !== lemmaId)
+                  .map((altId, j) => ({ lemmaId: altId, features: {}, score: 1 - (j + 1) / 1000 })),
+              ]
             : (t.candidates ?? []).map((c) => ({
                 lemmaId: resolveCandidate(c),
                 features: c.features ?? {},

@@ -92,6 +92,7 @@ vi.mock('../db/index.js', () => ({
     formLemmaOverrides: {
       surfaceNfc: 'form_lemma_overrides.surface_nfc',
       chosenLemmaId: 'form_lemma_overrides.chosen_lemma_id',
+      alternateLemmaIds: 'form_lemma_overrides.alternate_lemma_ids',
       contextSignature: 'form_lemma_overrides.context_signature',
       language: 'form_lemma_overrides.language',
     },
@@ -404,6 +405,59 @@ describe('processTextNow', () => {
     // candidate — otherwise the reader popup shows a bogus second tab.
     expect(tokenInsert[0]!.lemmaCandidates).toEqual([
       { lemmaId: 'lemma-badia', features: {}, score: 1 },
+    ]);
+  });
+
+  it("expands an override's alternate_lemma_ids into pickable candidates", async () => {
+    // Curated homograph: `galera` legitimately maps to the chosen `galera`
+    // (loss) plus the alternate `gale` (hunger). The reader popup should
+    // offer both — the chosen default first, then the alternate as a tab.
+    stage([{ id: 'text-1', language: 'eu' }]);
+    stage([{ id: 'chap-1', body: 'Gure galera handia izan zen.' }]);
+    stage([{ id: 'lemma-galera', headword: 'galera', pos: 'NOUN' }]);
+    stage([
+      {
+        surfaceNfc: 'galera',
+        chosenLemmaId: 'lemma-galera',
+        alternateLemmaIds: ['lemma-gale'],
+        contextSignature: '',
+      },
+    ]);
+    stage([]); // lemma_forms surface preload — empty for this test.
+
+    nlpProcess.mockResolvedValueOnce({
+      language: 'eu',
+      pipeline_id: 'stanza-eu',
+      tokens: [
+        {
+          idx: 0,
+          surface: 'galera',
+          is_word: true,
+          is_ambiguous: false,
+          is_oov: false,
+          romanization: null,
+          number_forms: null,
+          candidates: [{ lemma: 'galera', pos: 'NOUN', score: 1.0, features: {} }],
+        },
+      ],
+    });
+
+    await processTextNow('text-1');
+
+    const inserts = calls.filter(
+      (c): c is Extract<Call, { kind: 'insert' }> => c.kind === 'insert',
+    );
+    const tokenInsert = inserts[0]!.values as Array<{
+      lemmaId: string | null;
+      lemmaCandidates: Array<{ lemmaId: string | null; score: number }>;
+    }>;
+    expect(tokenInsert[0]!.lemmaId).toBe('lemma-galera');
+    // Chosen default first (score 1), then the curated alternate just below
+    // it (descending score keeps the curator's order). tokens.ts drops the
+    // active lemma and renders `gale` as a pickable parse tab.
+    expect(tokenInsert[0]!.lemmaCandidates).toEqual([
+      { lemmaId: 'lemma-galera', features: {}, score: 1 },
+      { lemmaId: 'lemma-gale', features: {}, score: 0.999 },
     ]);
   });
 

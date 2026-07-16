@@ -1705,6 +1705,14 @@ export const formLemmaOverrides = pgTable(
     chosenLemmaId: uuid('chosen_lemma_id')
       .notNull()
       .references(() => lemmas.id, { onDelete: 'cascade' }),
+    // Curated homograph support: when a surface legitimately has more
+    // than one valid lemma (e.g. Basque `galera` = galera/gale, `ilaran`
+    // = ilara/ilar), `chosen_lemma_id` is the default/most-common pick
+    // and these are the alternates the reader offers as pickable tabs.
+    // Ordered most- to least-likely. Null for the common single-lemma
+    // case. No FK (Postgres array elements can't reference) — the
+    // dispatcher validates ids against its loaded lemma index.
+    alternateLemmaIds: uuid('alternate_lemma_ids').array(),
     voteCount: integer('vote_count').notNull().default(1),
     promotedAt: timestamp('promoted_at', { withTimezone: true })
       .notNull()
