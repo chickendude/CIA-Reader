@@ -197,6 +197,60 @@ no sweat-of-the-brow), so the underlying PD dictionary text is what we
 import, with attribution to DSAL as the digitizer on every row. Each
 dictionary's own copyright status is assessed in its ledger row.
 
+## Scan verification (transcription workbench)
+
+Longer term the project does not want to *rely* on DSAL's transcription
+at all. The imported DSAL rows are treated as **drafts**: they go live
+immediately (with the DSAL attribution above), and curators
+progressively verify each entry against the **public-domain page
+scans** in the transcription workbench (`/moderation/transcribe`,
+curator/admin-gated). The workbench shows the printed entry on the
+scan (with a drag-drawn crop saved to `lemma_scan_refs`), the
+Indic-script headword typed/confirmed on the left, and the editable
+English senses on the right (prefilled from the draft; raw page OCR as
+a copy source).
+
+**Verify = curator edit + `curator_locked` + own attribution.**
+Verifying updates the lemma + senses, sets `curator_locked = true`
+(the import runner never touches locked rows, so verification is
+permanent), and rewrites the attribution to:
+
+> `Transcribed from <citation>, p. <N>, from the public-domain scan —
+> CIA Reader transcription`
+
+Verified rows deliberately do not mention DSAL: the published text is
+the curator's transcription of the public-domain printed page (the
+draft was a starting point, the scan is the authority). Verification
+state is derivable — unverified = `dsal:<dict>:` source_id prefix +
+not locked — and audited as `transcription_verify` rows in
+`lemma_edit_history`. Entries the draft import missed are added in the
+workbench under `transcribe:<dict>:<page>:<n>` source ids.
+
+**Scan ingestion** (operator, requires poppler — `brew install
+poppler` / `apt install poppler-utils`):
+
+```
+pnpm scan:ingest <slug> <volume.pdf> --volume N --page-offset K \
+  --source-url <archive.org URL> [--printed-start A --printed-end B]
+```
+
+Printed page = pdf page index + offset; verify the calibration with
+the queue page's "view printed page N" check. Pages are stored as
+~200 DPI grayscale JPEG under `scans/<slug>/v<NN>/` (curator-gated
+`/scan-assets` route — scans of the still-US-copyrighted Praharaj
+volumes must not be public URLs). Page OCR runs on demand through the
+NLP service's raw mode (Google Vision, ~$1.5/1000 pages, cached
+per page forever).
+
+**Scan sources** (recorded per volume on `scan_volumes.source_url`):
+
+| Dictionary | Scan source |
+|---|---|
+| Praharaj | [archive.org `Purnachandra.Odia.Bhashakosha.Complete`](https://archive.org/details/Purnachandra.Odia.Bhashakosha.Complete) — all 7 volumes |
+| Molesworth (1857) | To record at ingest (archive.org / Google Books — confirm it is the 1857 *Marathi and English* 2nd ed., not the English–Marathi Candy volume or the Padmanji compendium) |
+| Vaze (1911) | To record at ingest |
+| Platts (1884) | To record at ingest |
+
 ## Cross-source duplication
 
 Multiple sources may ship the same `(language, headword, pos)` triple —

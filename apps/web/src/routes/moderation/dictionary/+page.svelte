@@ -37,6 +37,7 @@
     <nav class="mod-nav" aria-label="Moderation sections">
       <a href="/moderation/translations">Translation reports →</a>
       <a href="/moderation/parses">Parse reports →</a>
+      <a href="/moderation/transcribe">Transcribe →</a>
       <a href="/moderation/stats">Stats →</a>
       {#if data.isAdmin}
         <a href="/moderation/dictionary/bulk">Bulk tools →</a>
