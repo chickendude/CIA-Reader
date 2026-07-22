@@ -165,7 +165,14 @@ function dropHeadwordElement(bodyHtml: string): string {
 const MARATHI_POS_RE = /<\/hw>\s*<i>([^<]{1,20})<\/i>/;
 
 function parseMarathiBlock(block: EntryBlock): Omit<DsalRecord, 'ord' | 'slug'> | null {
-  const hw = block.anchorText.normalize('NFC');
+  // Vaze/Molesworth comma-join alternate spellings into one entry head
+  // ("खोरी, खोरें") — the first form is the primary headword, the rest
+  // are alternates the importer surfaces as matchable forms.
+  const parts = block.anchorText
+    .split(/\s*,\s*/)
+    .map((p) => p.normalize('NFC').trim())
+    .filter(Boolean);
+  const hw = parts[0] ?? '';
   if (!hw) return null;
   const posMatch = MARATHI_POS_RE.exec(block.bodyHtml);
   let body = dropHeadwordElement(block.bodyHtml);
@@ -176,6 +183,7 @@ function parseMarathiBlock(block: EntryBlock): Omit<DsalRecord, 'ord' | 'slug'> 
     hw,
     senses: splitNumberedSenses(text),
   };
+  if (parts.length > 1) rec.hwAlt = parts.slice(1);
   if (block.anchorTail) rec.translit = block.anchorTail;
   if (posMatch) rec.posRaw = posMatch[1]!.trim();
   if (block.page !== undefined) rec.page = block.page;

@@ -58,6 +58,11 @@ vi.mock('../db/index.js', () => ({
       translationId: 'translation_votes.translation_id',
       value: 'translation_votes.value',
     },
+    lemmaForms: {
+      lemmaId: 'lemma_forms.lemma_id',
+      surface: 'lemma_forms.surface',
+      quarantinedAt: 'lemma_forms.quarantined_at',
+    },
   },
 }));
 
@@ -159,10 +164,31 @@ describe('getLemmaTranslations (T-3.14 sibling fallback)', () => {
     stage([]); // primary empty
     stage([]); // exact-headword sibling join empty
     stage([]); // #318: nukta-stripped sibling join empty
+    stage([]); // form-surface join empty
     const out = await getLemmaTranslations('lemma-1', null);
     expect(out.translations.personal).toEqual([]);
     expect(out.translations.official).toEqual([]);
     expect(out.translations.community).toEqual([]);
+  });
+
+  it('falls back to lemma_forms surfaces when every headword tier is empty', async () => {
+    // Repro: खोरे. Vaze's entry is keyed खोरी with the archaic खोरें and
+    // modernized खोरे recorded as forms; the reader's stub lemma खोरे has
+    // no translations and no headword sibling. The forms tier finds the
+    // entry, deduping the fan-out from matching several form rows.
+    stage([lemmaRow({ id: 'lemma-stub', language: 'mr', headword: 'खोरे', pos: 'NOUN' })]);
+    stage([]); // primary translations empty
+    stage([]); // exact-headword siblings empty
+    stage([]); // nukta-stripped siblings empty
+    stage([
+      { translation: translationRow({ id: 'tr-v', lemmaId: 'lemma-vaze', body: 'A narrow valley.' }) },
+      // Same translation reached via a second matching form row.
+      { translation: translationRow({ id: 'tr-v', lemmaId: 'lemma-vaze', body: 'A narrow valley.' }) },
+    ]);
+    const out = await getLemmaTranslations('lemma-stub', null);
+    expect(out.lemma.headword).toBe('खोरे');
+    expect(out.translations.official.map((t) => t.body)).toEqual(['A narrow valley.']);
+    expect(selectFn).toHaveBeenCalledTimes(5);
   });
 
   it('falls back to nukta-stripped siblings when exact-headword siblings are empty (#318)', async () => {

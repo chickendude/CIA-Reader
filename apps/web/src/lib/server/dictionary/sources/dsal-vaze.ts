@@ -10,7 +10,7 @@
  *
  * Acquired via `pnpm dsal:scrape dsal-vaze && pnpm dsal:parse dsal-vaze`.
  */
-import { MARATHI_POS_MAP, makeDsalSource } from './dsal.js';
+import { MARATHI_POS_MAP, makeDsalSource, marathiSpellingVariants } from './dsal.js';
 
 export const dsalVazeSource = makeDsalSource({
   name: 'dsal-vaze',
@@ -20,6 +20,7 @@ export const dsalVazeSource = makeDsalSource({
     'Vaze, The Aryabhushan School Dictionary, Marathi–English (1911), via DSAL, University of Chicago — public domain',
   license: 'PublicDomain',
   posMap: MARATHI_POS_MAP,
+  formVariants: marathiSpellingVariants,
   envVar: 'DSAL_VAZE_FILE',
   defaultPath: 'data/dictionaries/dsal-vaze/raw.jsonl',
 });

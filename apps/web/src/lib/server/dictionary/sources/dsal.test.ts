@@ -15,6 +15,7 @@ import {
   dsalRecordToImportEntry,
   dsalSourceId,
   mapDsalPos,
+  marathiSpellingVariants,
   trimGloss,
 } from './dsal.js';
 import { runDictionaryImport } from '../runner.js';
@@ -75,6 +76,67 @@ describe('mapDsalPos', () => {
     expect(mapDsalPos('v.t.', PLATTS_POS_MAP)).toBe('VERB');
     expect(mapDsalPos('adj.', PLATTS_POS_MAP)).toBe('ADJ');
     expect(mapDsalPos('intj.', PLATTS_POS_MAP)).toBe('INTJ');
+  });
+});
+
+describe('marathiSpellingVariants', () => {
+  it('surfaces comma-joined alternates and folds only the FINAL anusvara', () => {
+    expect(
+      marathiSpellingVariants({
+        slug: 'dsal-vaze',
+        hw: 'खोरी',
+        hwAlt: ['खोरें'],
+        senses: ['A narrow valley.'],
+        page: 185,
+        ord: 0,
+      }),
+    ).toEqual(['खोरी', 'खोरें', 'खोरे']);
+  });
+
+  it('modernizes anusvara-final single headwords (1911 neuter ending)', () => {
+    expect(
+      marathiSpellingVariants({
+        slug: 'dsal-vaze',
+        hw: 'खोरणें',
+        senses: ['Poke or stir.'],
+        page: 185,
+        ord: 0,
+      }),
+    ).toEqual(['खोरणें', 'खोरणे']);
+  });
+
+  it('leaves word-internal anusvara untouched', () => {
+    expect(
+      marathiSpellingVariants({
+        slug: 'dsal-vaze',
+        hw: 'चांगला',
+        senses: ['Good.'],
+        page: 100,
+        ord: 0,
+      }),
+    ).toEqual(['चांगला']);
+  });
+});
+
+describe('formVariants emission', () => {
+  it('emits deduped variant forms, dropping the headword itself', () => {
+    const entry = dsalRecordToImportEntry(
+      {
+        slug: 'dsal-vaze',
+        hw: 'खोरी',
+        hwAlt: ['खोरें'],
+        senses: ['A narrow valley.'],
+        page: 185,
+        ord: 0,
+      },
+      { ...OPTS, name: 'dsal-vaze', formVariants: marathiSpellingVariants },
+    )!;
+    expect(entry.headword).toBe('खोरी');
+    expect(entry.forms).toEqual([{ surface: 'खोरें' }, { surface: 'खोरे' }]);
+  });
+
+  it('emits no forms without a formVariants hook (Platts/Praharaj default)', () => {
+    expect(dsalRecordToImportEntry(rec({}), OPTS)!.forms).toBeUndefined();
   });
 });
 

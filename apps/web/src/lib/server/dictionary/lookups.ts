@@ -22,7 +22,7 @@
  *                     lands. Hidden rows excluded for anonymous + non-
  *                     curator viewers.
  */
-import { and, eq, ne, sql } from 'drizzle-orm';
+import { and, eq, isNull, ne, sql } from 'drizzle-orm';
 
 import { stripNukta } from '@ciareader/shared-types';
 
@@ -435,6 +435,42 @@ export async function getLemmaTranslations(
         ),
       );
     rows = joinedStripped.map((r) => r.translation as Translation);
+  }
+  if (rows.length === 0) {
+    // Third tier: lemma_forms surfaces. The dictionary entry may live
+    // under a different headword entirely and carry this word only as
+    // a recorded form — e.g. the DSAL Marathi imports surface archaic
+    // alternates and modernized spellings as forms (Vaze's entry is
+    // खोरी with forms खोरें/खोरे; a reader clicking खोरे resolves here).
+    // Mirrors the dispatcher's form tier, including its
+    // quarantined-rows filter; last so exact headword matches keep
+    // winning. Matters most for tokens processed BEFORE the form
+    // existed — their persisted lemma_id points at an empty stub that
+    // only this lookup-time tier can rescue without a re-process.
+    const joinedForms = await db
+      .select({ translation: schema.translations })
+      .from(schema.translations)
+      .innerJoin(schema.lemmas, eq(schema.translations.targetId, schema.lemmas.id))
+      .innerJoin(schema.lemmaForms, eq(schema.lemmaForms.lemmaId, schema.lemmas.id))
+      .where(
+        and(
+          eq(schema.translations.targetType, 'lemma'),
+          eq(schema.lemmas.language, lemmaTyped.language),
+          eq(schema.lemmaForms.surface, lemmaTyped.headword),
+          isNull(schema.lemmaForms.quarantinedAt),
+          ne(schema.lemmas.id, lemmaId),
+        ),
+      );
+    // The double join can fan out (same translation via several form
+    // rows) — dedupe by translation id.
+    const seen = new Set<string>();
+    rows = [];
+    for (const r of joinedForms) {
+      const t = r.translation as Translation;
+      if (seen.has(t.id)) continue;
+      seen.add(t.id);
+      rows.push(t);
+    }
   }
 
   // Re-attach the viewer's own notes from the primary lemma. They were held
