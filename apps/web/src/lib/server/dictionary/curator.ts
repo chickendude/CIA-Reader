@@ -962,3 +962,110 @@ export async function getLemmaEditorView(
   }>;
   return { lemma, translations, forms, history };
 }
+
+// -----------------------------------------------------------------------
+// createLemma — the transcription workbench's create path.
+// -----------------------------------------------------------------------
+
+export type CreateLemmaInput = {
+  language: Lemma['language'];
+  headword: string;
+  pos: string;
+  script: string;
+  glossDefault?: string | null;
+  source?: Lemma['source'];
+  sourceAttribution: string;
+  /** Stable id under the caller's own scheme (the workbench uses
+   *  `transcribe:<dict>:<page>:<n>`). Must never collide with an
+   *  importer prefix — that's what keeps re-imports structurally unable
+   *  to touch these rows. */
+  sourceId?: string | null;
+  /** Default true: rows created by hand start protected from imports. */
+  curatorLocked?: boolean;
+  translations?: Array<{ body: string; targetLanguage?: string }>;
+};
+
+/**
+ * Create a brand-new lemma (+ its translations) from the editor UI.
+ *
+ * Until now lemma creation only existed inside the import runner, the
+ * `source='user'` personal path, and `splitLemma`; the transcription
+ * workbench needs a curator path for entries the imported draft missed
+ * entirely. Audited as `lemma_create` with `before: null` (mirrors
+ * splitLemma's created-side audit row).
+ */
+export async function createLemma(
+  editor: Editor,
+  input: CreateLemmaInput,
+  reason: string,
+  now: Date = new Date(),
+): Promise<Lemma> {
+  await requireCanEditDictionary(editor, input.language);
+
+  const headword = normalizeHeadword(input.headword);
+  if (headword.length === 0) throw new CuratorValidationError('headword cannot be empty');
+  if (headword.length > 128) throw new CuratorValidationError('headword exceeds 128 characters');
+  if (input.pos.trim().length === 0) throw new CuratorValidationError('pos cannot be empty');
+  if (!/^[A-Z][a-z]{3}$/.test(input.script)) {
+    throw new CuratorValidationError('script must be an ISO 15924 code');
+  }
+  const bodies = (input.translations ?? []).map((t) => ({
+    body: t.body.trim(),
+    targetLanguage: t.targetLanguage ?? 'en',
+  }));
+  if (bodies.some((t) => t.body.length === 0)) {
+    throw new CuratorValidationError('translation bodies cannot be empty');
+  }
+
+  const source = input.source ?? 'official_dictionary';
+  const [created] = await db
+    .insert(schema.lemmas)
+    .values({
+      language: input.language,
+      headword,
+      pos: input.pos.trim(),
+      script: input.script,
+      glossDefault: input.glossDefault ?? bodies[0]?.body ?? null,
+      source,
+      sourceAttribution: input.sourceAttribution,
+      sourceId: input.sourceId ?? null,
+      curatorLocked: input.curatorLocked ?? true,
+      createdAt: now,
+      updatedAt: now,
+    })
+    .returning();
+  if (!created) throw new Error('Failed to create lemma');
+  const lemma = created as Lemma;
+
+  const insertedTranslations: Translation[] = [];
+  for (let i = 0; i < bodies.length; i += 1) {
+    const t = bodies[i]!;
+    const [row] = await db
+      .insert(schema.translations)
+      .values({
+        targetType: 'lemma',
+        targetId: lemma.id,
+        source,
+        body: t.body,
+        targetLanguage: t.targetLanguage,
+        sourceAttribution: input.sourceAttribution,
+        sourceId: input.sourceId ? `${input.sourceId}:s${i}` : null,
+        displayRank: i,
+      })
+      .returning();
+    if (row) insertedTranslations.push(row as Translation);
+  }
+
+  await recordLemmaEdit({
+    lemmaId: lemma.id,
+    editorId: editor.id,
+    changeType: 'lemma_create',
+    change: {
+      before: null,
+      after: snapshotLemma(lemma),
+      translations: insertedTranslations.map(snapshotTranslation),
+    },
+    reason,
+  });
+  return lemma;
+}

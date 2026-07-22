@@ -17,6 +17,8 @@ import {
   mapDsalPos,
   trimGloss,
 } from './dsal.js';
+import { runDictionaryImport } from '../runner.js';
+import { InMemoryDictionaryRepo } from '../test-support.js';
 import { dsalMolesworthSource } from './dsal-molesworth.js';
 import { dsalPlattsSource } from './dsal-platts.js';
 import {
@@ -175,6 +177,37 @@ describe('makeDsalSource streaming (via dsal-molesworth)', () => {
     expect(entries.find((e) => e.headword === 'धांवणें')!.pos).toBe('VERB');
     expect(entries.find((e) => e.headword === 'अर्थात्')!.pos).toBe('ADV');
     expect(entries.find((e) => e.headword === 'पाऊणकी')!.pos).toBe('X');
+  });
+});
+
+describe('re-import over a verified (curator-locked) lemma', () => {
+  it('changes nothing — the workbench verification is permanent', async () => {
+    process.env.DSAL_MOLESWORTH_FILE = FIXTURE;
+    try {
+      const repo = new InMemoryDictionaryRepo();
+      // First import lands the drafts.
+      const first = await runDictionaryImport(repo, dsalMolesworthSource);
+      expect(first.lemmasCreated).toBeGreaterThan(0);
+
+      // A curator verifies विज्ञान against the scan: text corrected,
+      // attribution replaced, row locked — as verifyTranscription does.
+      const verified = [...repo.lemmas.values()].find((l) => l.headword === 'विज्ञान')!;
+      verified.headword = 'विज्ञान';
+      verified.glossDefault = 'Verified gloss from the scan';
+      verified.sourceAttribution = 'Transcribed from Molesworth (1857) — CIA Reader transcription';
+      verified.curatorLocked = true;
+
+      const second = await runDictionaryImport(repo, dsalMolesworthSource);
+      expect(second.lemmasSkippedCuratorLocked).toBe(1);
+      expect(second.lemmasCreated).toBe(0);
+
+      const after = [...repo.lemmas.values()].find((l) => l.headword === 'विज्ञान')!;
+      expect(after.glossDefault).toBe('Verified gloss from the scan');
+      expect(after.sourceAttribution).toContain('CIA Reader transcription');
+      expect(after.curatorLocked).toBe(true);
+    } finally {
+      delete process.env.DSAL_MOLESWORTH_FILE;
+    }
   });
 });
 
