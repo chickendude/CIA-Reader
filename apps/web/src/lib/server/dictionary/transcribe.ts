@@ -259,6 +259,12 @@ export async function verifyTranscription(
  *  (`dsal:<dict>:<hw>:<page>:<ord>`); hash-fallback ids sort last. */
 const printedPageSql = sql<number | null>`(substring(${schema.lemmas.sourceId} from ':(\\d+):\\d+$'))::int`;
 
+/** TS twin of `printedPageSql` for single rows already in hand. */
+export function printedPageFromSourceId(sourceId: string | null): number | null {
+  const m = /:(\d+):\d+$/.exec(sourceId ?? '');
+  return m ? Number(m[1]) : null;
+}
+
 export async function listTranscriptionQueue(
   config: ScanDictionaryConfig,
   opts: { fromPrintedPage?: number; limit?: number } = {},
