@@ -986,6 +986,13 @@ export const lemmaEditChangeType = pgEnum('lemma_edit_change_type', [
   'phrase_hide',
   'phrase_unhide',
   'phrase_merge',
+  // Transcription workbench: a curator created a brand-new lemma (an
+  // entry the imported draft missed — `change.before` is null), or
+  // verified an imported draft against the public-domain page scan
+  // (`change` carries lemma + sense before/after plus the scan page id
+  // and crop bbox the curator confirmed against).
+  'lemma_create',
+  'transcription_verify',
 ]);
 
 export const lemmaEditHistory = pgTable(
@@ -2268,9 +2275,149 @@ export const audioAlignments = pgTable(
   }),
 );
 
+/* ------------------------------------------------------------------ */
+/* Dictionary scan transcription (workbench)                           */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Public-domain dictionary page scans backing the transcription
+ * workbench. The imported DSAL rows are drafts; curators verify each
+ * entry against these scans, at which point the lemma flips to
+ * `curator_locked` with an own-transcription attribution (verification
+ * state is derivable — no flag columns here or on `lemmas`).
+ *
+ * One `scan_volumes` row per ingested source PDF (see
+ * scripts/ingest-scan.ts). It doubles as the calibration record:
+ * printed page number = pdf page index + `page_offset`, valid within
+ * [printed_page_start, printed_page_end] (Praharaj's seven volumes
+ * share one continuous printed-page range, so resolution picks the
+ * volume by range). `source_url` is the provenance note (archive.org
+ * identifier) the ledger in docs/dictionary-sources.md points at.
+ */
+export const scanVolumes = pgTable(
+  'scan_volumes',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    dictionarySlug: text('dictionary_slug').notNull(),
+    volumeNumber: integer('volume_number').notNull().default(1),
+    sourceUrl: text('source_url').notNull(),
+    sourceNote: text('source_note'),
+    pageCount: integer('page_count').notNull(),
+    pageOffset: integer('page_offset').notNull().default(0),
+    printedPageStart: integer('printed_page_start'),
+    printedPageEnd: integer('printed_page_end'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    slugVolumeUq: unique('scan_volumes_slug_volume_uq').on(t.dictionarySlug, t.volumeNumber),
+  }),
+);
+
+export const scanOcrStatus = pgEnum('scan_ocr_status', ['pending', 'ok', 'failed']);
+
+/**
+ * One row per rasterized scan page. The OCR columns are a cache: the
+ * first time the workbench opens a page it runs the raw Vision OCR
+ * once and stores text + word boxes here (`ocr_words` is
+ * `[{s, x, y, w, h}]`, boxes normalized 0..1 of the page dimensions —
+ * the same convention as `text_tokens.bbox`).
+ */
+export const scanPages = pgTable(
+  'scan_pages',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    volumeId: uuid('volume_id')
+      .notNull()
+      .references(() => scanVolumes.id, { onDelete: 'cascade' }),
+    pdfPageIndex: integer('pdf_page_index').notNull(),
+    /** Printed page number; null for front/back matter outside the calibrated range. */
+    printedPage: integer('printed_page'),
+    imageKey: text('image_key').notNull(),
+    imageMime: text('image_mime').notNull(),
+    width: integer('width').notNull(),
+    height: integer('height').notNull(),
+    ocrStatus: scanOcrStatus('ocr_status').notNull().default('pending'),
+    ocrEngine: text('ocr_engine'),
+    ocrText: text('ocr_text'),
+    ocrWords: jsonb('ocr_words').$type<ScanOcrWord[]>(),
+    ocrAt: timestamp('ocr_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    volumePageUq: unique('scan_pages_volume_page_uq').on(t.volumeId, t.pdfPageIndex),
+    volumePrintedIdx: index('scan_pages_volume_printed_idx').on(t.volumeId, t.printedPage),
+  }),
+);
+
+export type ScanOcrWord = { s: string; x: number; y: number; w: number; h: number };
+
+/** Normalized 0..1 rectangle, matching the reader overlay convention. */
+export type ScanCrop = { x: number; y: number; w: number; h: number };
+
+/**
+ * Where on the scans a lemma's printed entry lives — recorded when a
+ * curator verifies (or re-points) an entry. The curator's choice is
+ * ground truth: calibration drift in `scan_volumes.page_offset` never
+ * invalidates a saved ref.
+ */
+export const lemmaScanRefs = pgTable(
+  'lemma_scan_refs',
+  {
+    lemmaId: uuid('lemma_id')
+      .primaryKey()
+      .references(() => lemmas.id, { onDelete: 'cascade' }),
+    scanPageId: uuid('scan_page_id')
+      .notNull()
+      .references(() => scanPages.id, { onDelete: 'cascade' }),
+    crop: jsonb('crop').$type<ScanCrop>().notNull(),
+    createdBy: uuid('created_by').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    pageIdx: index('lemma_scan_refs_page_idx').on(t.scanPageId),
+  }),
+);
+
+export const transcriptionIssueStatus = pgEnum('transcription_issue_status', [
+  'open',
+  'resolved',
+]);
+
+/**
+ * "Flag a problem" state for the transcription queue (unreadable scan,
+ * draft/scan mismatch, missing page, …). An open issue excludes the
+ * entry from the default queue until a curator resolves it. Skip, by
+ * contrast, is ephemeral client navigation and stores nothing.
+ */
+export const transcriptionIssues = pgTable(
+  'transcription_issues',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    dictionarySlug: text('dictionary_slug').notNull(),
+    lemmaId: uuid('lemma_id').references(() => lemmas.id, { onDelete: 'cascade' }),
+    scanPageId: uuid('scan_page_id').references(() => scanPages.id, { onDelete: 'set null' }),
+    note: text('note').notNull(),
+    status: transcriptionIssueStatus('status').notNull().default('open'),
+    createdBy: uuid('created_by').references(() => users.id, { onDelete: 'set null' }),
+    resolvedBy: uuid('resolved_by').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    slugStatusIdx: index('transcription_issues_slug_status_idx').on(t.dictionarySlug, t.status),
+    lemmaIdx: index('transcription_issues_lemma_idx').on(t.lemmaId),
+  }),
+);
+
 export type AudioFile = InferSelectModel<typeof audioFiles>;
 export type UserAudioListening = InferSelectModel<typeof userAudioListening>;
 export type AudioAlignment = InferSelectModel<typeof audioAlignments>;
 export type Paradigm = InferSelectModel<typeof paradigms>;
 export type ParadigmSlot = InferSelectModel<typeof paradigmSlots>;
 export type GrammarFeature = InferSelectModel<typeof grammarFeatures>;
+export type ScanVolume = InferSelectModel<typeof scanVolumes>;
+export type ScanPage = InferSelectModel<typeof scanPages>;
+export type LemmaScanRef = InferSelectModel<typeof lemmaScanRefs>;
+export type TranscriptionIssue = InferSelectModel<typeof transcriptionIssues>;
