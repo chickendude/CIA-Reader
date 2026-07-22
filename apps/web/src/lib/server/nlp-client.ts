@@ -155,6 +155,13 @@ export interface OcrOptions {
   mime?: string;
   /** 'vision' (default) or 'vision_llm' (on-demand AI proofread). */
   engine?: 'vision' | 'vision_llm';
+  /**
+   * 'pipeline' (default): today's behavior — language required, tokens
+   * carry lemma candidates. 'raw' (transcription workbench): skips the
+   * language pipeline, returns whitespace tokens + boxes; `language`
+   * may be '' since dictionary scan pages mix scripts.
+   */
+  mode?: 'pipeline' | 'raw';
   /** When the page came from a PDF text layer, the extracted runs —
    *  Python uses them instead of calling Vision. */
   bornDigital?: BornDigitalPayload | null;
@@ -229,6 +236,7 @@ export const nlpClient = {
     form.set('width', String(opts.width));
     form.set('height', String(opts.height));
     form.set('engine', opts.engine ?? 'vision');
+    if (opts.mode) form.set('mode', opts.mode);
     if (opts.bornDigital) {
       form.set('born_digital', JSON.stringify(opts.bornDigital));
     }

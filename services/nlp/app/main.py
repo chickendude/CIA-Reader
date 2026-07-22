@@ -17,6 +17,7 @@ from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from app.languages import LANGUAGES, SUPPORTED_LANGUAGE_CODES, is_supported_language
 from app.ocr.align import OcrPage, assign_token_boxes
 from app.ocr.borndigital import build_born_digital_page
+from app.ocr.raw import raw_tokenize
 from app.ocr.vision import run_vision_ocr
 from app.phrases import get_detector
 from app.pipelines import get_pipeline
@@ -110,11 +111,12 @@ def _page_from_layout(payload: dict) -> OcrPage:
 
 @app.post("/ocr", response_model=OcrResponse)
 async def ocr(
-    language: str = Form(...),
+    language: str = Form(""),
     width: int = Form(...),
     height: int = Form(...),
     image: UploadFile = File(...),
     engine: str = Form("vision"),
+    mode: str = Form("pipeline"),
     born_digital: str | None = Form(None),
     layout: str | None = Form(None),
 ) -> OcrResponse:
@@ -125,8 +127,17 @@ async def ocr(
     pixel dimensions. The response mirrors ``/process`` so the web side
     reuses its lemma-resolution + persist path, with a ``bbox`` per token
     and the reconstructed page ``body``.
+
+    ``mode='raw'`` (transcription workbench) skips the language registry
+    and pipeline entirely: dictionary scan pages mix scripts, and the
+    workbench only needs the OCR text with word boxes, not lemma
+    candidates. ``language`` may then be omitted. Page acquisition
+    (Vision / born-digital / layout replay) is identical in both modes,
+    so a cached layout never pays Vision twice regardless of mode.
     """
-    if not is_supported_language(language):
+    if mode not in ("pipeline", "raw"):
+        raise HTTPException(status_code=400, detail=f"Unknown mode '{mode}'")
+    if mode == "pipeline" and not is_supported_language(language):
         supported = list(SUPPORTED_LANGUAGE_CODES)
         raise HTTPException(
             status_code=400,
@@ -158,6 +169,22 @@ async def ocr(
         # engine 'vision_llm' (the on-demand AI proofread) lands in a
         # follow-up; for now every scanned page goes through Vision.
         page = run_vision_ocr(image_bytes)
+
+    if mode == "raw":
+        raw_tokens = raw_tokenize(page.text)
+        raw_boxes = assign_token_boxes(raw_tokens, page)
+        return OcrResponse(
+            language=language or "raw",
+            pipeline_id="raw",
+            width=width,
+            height=height,
+            body=page.text,
+            tokens=[
+                OcrToken(**t.model_dump(), bbox=b)
+                for t, b in zip(raw_tokens, raw_boxes, strict=True)
+            ],
+            proposed_phrases=[],
+        )
 
     pipeline = get_pipeline(language)
     result = pipeline.process(page.text)
