@@ -130,6 +130,37 @@ definition language, all shown by default and individually toggleable. A separat
 admin-only verification panel surfaces Elhuyar / Euskaltzaindia lookups as a curation aid
 (reference-only, never stored) — see the Basque rejected sources above.
 
+## DSAL scraping
+
+The Digital Dictionaries of South Asia (DSAL, dsal.uchicago.edu) offers
+no bulk download, but its query CGI returns every match for a
+beginning-with query in a single response (no pagination). The
+`dsal-*` sources are therefore acquired by an **operator-run** scraper —
+never by CI, `fetch-dictionary-sources.sh`, or the admin Re-fetch button
+(those only verify the parsed artifact exists and point here):
+
+```
+pnpm dsal:scrape <slug>     # one request per initial letter, cached under
+                            #   data/dictionaries/<slug>/scrape/ (gitignored)
+pnpm dsal:parse <slug>      # offline: HTML → raw.jsonl (re-runnable, no network)
+pnpm dictionary:import <slug>
+```
+
+Politeness parameters (see `src/lib/server/dictionary/dsal/scrape.ts`):
+serial requests with a jittered ≥2 s delay, a User-Agent carrying a
+contact address, retry-with-backoff on transient errors, and a hard
+abort on 403/429. A full sweep is ~50 requests per dictionary (~200
+total across all four).
+
+Completeness checks are built into the parse step: every results page
+declares its own "N results" count (compared against parsed entry
+blocks per letter), and the final deduped total is checked against a
+per-dictionary expected range. Both mismatches surface as warnings
+before anyone imports.
+
+Because the raw HTML responses are cached, parser fixes are a re-parse,
+never a re-scrape.
+
 ## Cross-source duplication
 
 Multiple sources may ship the same `(language, headword, pos)` triple —

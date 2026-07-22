@@ -167,6 +167,35 @@ fetch_kaikki_en_translations() {
     --speed-limit 102400
 }
 
+manual_dump_check() {
+  # Sources whose artifact is produced by an operator-run pipeline (the
+  # DSAL scraper) or a registration-gated manual download. Verifies the
+  # file is in place; if not, prints the command/doc pointer and fails
+  # so the admin UI records an instructive error instead of scraping.
+  local slug="$1"
+  local expected="$2"
+  local doc_url="$3"
+  local out="$DATA_ROOT/$slug"
+  mkdir -p "$out"
+  if [[ -s "$out/$expected" ]]; then
+    echo "[fetch] $slug  manual artifact present at $out/$expected ($(wc -l <"$out/$expected") lines, $(du -h "$out/$expected" | cut -f1))"
+    return
+  fi
+  echo "[fetch] $slug  requires an operator-run step — see $doc_url"
+  echo "[fetch] $slug  expected file: $out/$expected"
+  return 1
+}
+
+dsal_check() {
+  # DSAL dictionaries are scraped by a polite operator-run crawler, never
+  # from this script (a multi-minute crawl of a third-party university
+  # server must stay a deliberate operator action, not a fetch-all side
+  # effect or an admin-UI button).
+  local slug="$1"
+  manual_dump_check "$slug" raw.jsonl \
+    "docs/dictionary-sources.md (DSAL scraping section) — run: pnpm dsal:scrape $slug && pnpm dsal:parse $slug"
+}
+
 case "${1-all}" in
   all)
     fetch_kaikki kaikki-hindi Hindi
@@ -198,6 +227,9 @@ case "${1-all}" in
   kaikki-en-translations)
     fetch_kaikki_en_translations
     ;;
+  dsal-molesworth|dsal-vaze|dsal-platts|dsal-praharaj)
+    dsal_check "$1"
+    ;;
   # Hebrew + Aramaic are NOT dictionary import sources — we never put them
   # in the Yiddish lemma table. They are detection aids for the Yiddish
   # loshn-koydesh romanization generator (services/nlp/scripts/
@@ -218,6 +250,7 @@ case "${1-all}" in
   *)
     echo "unknown source: $1" >&2
     echo "available: kaikki-hindi, kaikki-marathi, kaikki-odia, kaikki-yiddish, kaikki-basque, kaikki-basque-es, kaikki-en-translations" >&2
+    echo "  operator-scraped (checked only, never fetched here): dsal-molesworth, dsal-vaze, dsal-platts, dsal-praharaj" >&2
     echo "  loshn-koydesh detection aids (not imported): kaikki-hebrew, kaikki-aramaic, loshn-koydesh-aids" >&2
     exit 1
     ;;

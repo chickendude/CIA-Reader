@@ -47,6 +47,8 @@ coverage.lcov
 # checked-in fixtures, prod runs the fetch step on demand.
 apps/web/data/dictionaries/*/raw.*
 apps/web/data/dictionaries/*/raw_*
+# DSAL scrape cache (scripts/scrape-dsal.ts): raw HTML responses + manifest.
+apps/web/data/dictionaries/*/scrape/
 
 # Playwright (e2e tests)
 apps/web/e2e/.auth/
