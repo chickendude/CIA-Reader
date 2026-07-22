@@ -32,7 +32,8 @@ coverage; Dbnary fills in glosses and translations.
 | Source | Publisher | License | Status |
 |---|---|---|---|
 | Marathi WordNet | CFILT, IIT Bombay | Research use, distributable with attribution | Planned |
-| *Molesworth's A Dictionary, Marathi and English* (1857) | Public domain (DDSA) | Public domain | Planned — historical orthography will need light normalization |
+| [*Molesworth's A Dictionary, Marathi and English* (1857)](https://dsal.uchicago.edu/dictionaries/molesworth/) | Public domain (via DSAL) | Public domain | **Registered** (`dsal-molesworth`) — ~60k entries, acquired via `pnpm dsal:scrape dsal-molesworth && pnpm dsal:parse dsal-molesworth` (see "DSAL scraping"). `source_id = dsal:molesworth:<raw hw>:<page>:<ord>` keys on the 1857 print artifact so DSAL-side OCR corrections update rows in place. Headwords keep the 1857 orthography (NFC only) — nukta-strip matching absorbs common variants; a curator-reviewed spelling-fixup table plugs into the importer's normalizer seam later. POS markers are gender-based (`m`/`f`/`n` = noun) |
+| [*Vaze's The Aryabhushan School Dictionary* (1911)](https://dsal.uchicago.edu/dictionaries/vaze/) | Public domain (via DSAL) | Public domain | **Registered** (`dsal-vaze`) — concise modern glosses complementing Molesworth's archaic long entries; same acquisition + source_id scheme (`dsal:vaze:…`) |
 | Dbnary Marathi-English | GETALP / Univ. Grenoble Alpes | CC-BY-SA 3.0 | Planned |
 | [Wiktionary Marathi (via Kaikki.org)](https://kaikki.org/dictionary/Marathi/) | Wiktionary contributors | CC-BY-SA 3.0 | **Imported (T-3.10, 2026-04-28)** — fetched via `scripts/fetch-dictionary-sources.sh kaikki-marathi`; thinner than Hindi (~5k entries) but a solid bootstrap before Marathi WordNet + Molesworth land |
 | [Wiktionary English Translations sections (via Kaikki.org)](https://kaikki.org/dictionary/English/) | Wiktionary contributors | CC-BY-SA 3.0 | **Imported (T-3.10, 2026-04-28)** — inverted from English entries' `translations[]`; the highest-leverage Marathi expansion since English Wiktionary's Translations sections substantially out-cover the Marathi sub-corpus |
@@ -160,6 +161,14 @@ before anyone imports.
 
 Because the raw HTML responses are cached, parser fixes are a re-parse,
 never a re-scrape.
+
+**Licensing position.** DSAL's pages blanket-claim CC BY-NC-ND on their
+digitizations — including the 1857 Molesworth. The project's recorded
+position (since #382) is that a faithful digitization of a
+public-domain text creates no new US copyright (Feist: no originality,
+no sweat-of-the-brow), so the underlying PD dictionary text is what we
+import, with attribution to DSAL as the digitizer on every row. Each
+dictionary's own copyright status is assessed in its ledger row.
 
 ## Cross-source duplication
 
