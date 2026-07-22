@@ -13,7 +13,7 @@
  * variants, and a curator-reviewed spelling-fixup table can plug into
  * the factory's `normalizer` seam later without changing source_ids.
  */
-import { MARATHI_POS_MAP, makeDsalSource } from './dsal.js';
+import { MARATHI_POS_MAP, makeDsalSource, marathiSpellingVariants } from './dsal.js';
 
 export const dsalMolesworthSource = makeDsalSource({
   name: 'dsal-molesworth',
@@ -23,6 +23,7 @@ export const dsalMolesworthSource = makeDsalSource({
     'Molesworth, A Dictionary, Marathi and English (1857), via DSAL, University of Chicago — public domain',
   license: 'PublicDomain',
   posMap: MARATHI_POS_MAP,
+  formVariants: marathiSpellingVariants,
   envVar: 'DSAL_MOLESWORTH_FILE',
   defaultPath: 'data/dictionaries/dsal-molesworth/raw.jsonl',
 });

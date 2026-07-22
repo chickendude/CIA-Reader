@@ -118,6 +118,28 @@ export function mapDsalPos(posRaw: string | undefined, posMap: Record<string, st
 }
 
 /**
+ * Marathi spelling variants for the reader's form-matching tier.
+ *
+ * Two archaic-orthography gaps this closes (found live: खोरे "valley"
+ * missed Vaze's "खोरी, खोरें" entry):
+ *  - comma-joined alternate headwords (parsed into `hwAlt`) become
+ *    matchable surfaces;
+ *  - 1911-era word-final anusvara (the neuter ending: खोरें, खोरणें)
+ *    gets its modern anusvara-less twin (खोरे, खोरणे). Only the FINAL
+ *    anusvara is folded — anusvara is phonemic elsewhere in the word.
+ */
+export function marathiSpellingVariants(rec: DsalRecord): string[] {
+  const variants: string[] = [];
+  for (const candidate of [rec.hw, ...(rec.hwAlt ?? [])]) {
+    const surface = candidate.normalize('NFC').trim();
+    if (!surface) continue;
+    variants.push(surface);
+    if (surface.endsWith('ं')) variants.push(surface.slice(0, -1));
+  }
+  return variants;
+}
+
+/**
  * First sense trimmed to a tooltip-sized gloss at a word boundary.
  * Molesworth first senses run to paragraphs; the full text stays in
  * the translation body.
@@ -154,6 +176,15 @@ export type DsalSourceOptions = {
    */
   glossLanguageFor?: (senseBody: string) => string | undefined;
   normalizer?: OrthographicNormalizer;
+  /**
+   * Additional native-script surfaces to emit as `lemma_forms` so the
+   * reader's form-matching tier finds the entry under spellings the
+   * headword itself doesn't carry (comma-joined alternates, modernized
+   * orthography). Surfaces equal to the headword are dropped. Only
+   * same-script variants belong here — Perso-Arabic/roman alternates
+   * stay in the JSONL's `hwAlt` and are never emitted.
+   */
+  formVariants?: (rec: DsalRecord) => string[];
   /** Env var overriding the JSONL path (tests point it at a fixture). */
   envVar: string;
   /** Default path relative to apps/web, e.g. 'data/dictionaries/dsal-molesworth/raw.jsonl'. */
@@ -178,7 +209,7 @@ export function dsalRecordToImportEntry(
   rec: DsalRecord,
   opts: Pick<
     DsalSourceOptions,
-    'name' | 'script' | 'posMap' | 'mapPos' | 'glossLanguageFor' | 'normalizer'
+    'name' | 'script' | 'posMap' | 'mapPos' | 'glossLanguageFor' | 'normalizer' | 'formVariants'
   >,
 ): ImportEntry | null {
   const normalizer = opts.normalizer ?? NFC_ONLY_NORMALIZER;
@@ -197,23 +228,37 @@ export function dsalRecordToImportEntry(
   }
   if (translations.length === 0) return null;
 
-  return {
+  const entry: ImportEntry = {
     sourceId,
     headword,
     pos: (opts.mapPos ? opts.mapPos(rec.posRaw) : mapDsalPos(rec.posRaw, opts.posMap)) ?? 'X',
     script: opts.script,
     glossDefault: trimGloss(translations[0]!.body),
     translations,
-    // No forms: the scraped alternates (Perso-Arabic spellings, roman
-    // transliterations) would pollute native-script surface matching.
+    // No forms by default: raw scraped alternates (Perso-Arabic
+    // spellings, roman transliterations) would pollute native-script
+    // surface matching. Dictionaries opt into curated same-script
+    // variants via `formVariants` (e.g. marathiSpellingVariants).
   };
+  if (opts.formVariants) {
+    const seen = new Set<string>([headword]);
+    const forms = [];
+    for (const variant of opts.formVariants(rec)) {
+      const surface = variant.normalize('NFC').trim();
+      if (!surface || seen.has(surface)) continue;
+      seen.add(surface);
+      forms.push({ surface });
+    }
+    if (forms.length > 0) entry.forms = forms;
+  }
+  return entry;
 }
 
 async function* streamDsalSource(
   filePath: string,
   opts: Pick<
     DsalSourceOptions,
-    'name' | 'script' | 'posMap' | 'mapPos' | 'glossLanguageFor' | 'normalizer'
+    'name' | 'script' | 'posMap' | 'mapPos' | 'glossLanguageFor' | 'normalizer' | 'formVariants'
   >,
 ): AsyncIterable<ImportEntry> {
   const stream = createReadStream(filePath, { encoding: 'utf-8' });

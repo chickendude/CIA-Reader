@@ -160,6 +160,25 @@ describe('parseDsalResultsHtml — Praharaj', () => {
   });
 });
 
+describe('parseDsalResultsHtml — comma-joined Marathi headwords', () => {
+  it('splits alternates into hwAlt with the first form as the headword', () => {
+    // Real shape from Vaze: entry head "खोरी, खोरें" (one entry, two
+    // spellings). Reconstructed minimal block.
+    const html =
+      "<div class='container mb-3 rounded border shadow-sm py-3'>&nbsp;&nbsp;" +
+      '1) <a href="/cgi-bin/app/vaze_query.py?qs=खोरी&searchhws=yes&matchtype=exact">खोरी, खोरें</a> khōrī' +
+      ' (<a href="/cgi-bin/app/vaze_query.py?page=185">p. 185</a>)' +
+      "<div class='px-4'><hw><b>खोरी, खोरें</b></hw> <i>f</i> A narrow valley.</span> </div></div>";
+    const outcome = parseDsalResultsHtml(html, DSAL_DICTIONARIES['dsal-vaze']);
+    expect(outcome.stats.parsed).toBe(1);
+    const rec = outcome.records[0]!;
+    expect(rec.hw).toBe('खोरी');
+    expect(rec.hwAlt).toEqual(['खोरें']);
+    expect(rec.posRaw).toBe('f');
+    expect(rec.senses).toEqual(['A narrow valley.']);
+  });
+});
+
 describe('parseDsalResultsHtml — resilience', () => {
   it('returns empty output for a page with no entry blocks', () => {
     const outcome = parseDsalResultsHtml('<html><body>No results</body></html>', DSAL_DICTIONARIES['dsal-molesworth']);
