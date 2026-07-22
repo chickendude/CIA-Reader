@@ -1074,6 +1074,13 @@ export type LemmaEditChangePayload = {
   // history viewer can render either side as a list.
   translationOrderBefore?: Array<{ translationId: string; displayRank: number | null }>;
   translationOrderAfter?: Array<{ translationId: string; displayRank: number | null }>;
+  // Transcription workbench: `lemma_create` snapshots the translations
+  // created with the lemma; `transcription_verify` records the scan
+  // page + crop the curator verified the entry against (before/after
+  // carry the lemma + sense diff).
+  translations?: Array<Record<string, unknown>>;
+  scanPageId?: string;
+  crop?: { x: number; y: number; w: number; h: number };
 };
 
 /**
