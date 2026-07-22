@@ -19,6 +19,12 @@ import {
 } from './dsal.js';
 import { dsalMolesworthSource } from './dsal-molesworth.js';
 import { dsalPlattsSource } from './dsal-platts.js';
+import {
+  dsalPraharajSource,
+  latinShare,
+  mapPraharajPos,
+  praharajGlossLanguage,
+} from './dsal-praharaj.js';
 import { dsalVazeSource } from './dsal-vaze.js';
 import { findSource } from './index.js';
 import type { DsalRecord } from '../dsal/records.js';
@@ -186,6 +192,74 @@ describe('registry wiring', () => {
     expect(findSource('dsal-platts')).toBe(dsalPlattsSource);
     expect(dsalPlattsSource.language).toBe('hi');
     expect(dsalPlattsSource.license).toBe('PublicDomain');
+  });
+
+  it('exposes Praharaj as an Odia source with its qualified license string', () => {
+    expect(findSource('dsal-praharaj')).toBe(dsalPraharajSource);
+    expect(dsalPraharajSource.language).toBe('or');
+    expect(dsalPraharajSource.license).toContain('PublicDomain-IN-EU');
+  });
+});
+
+describe('mapPraharajPos', () => {
+  it('token-searches the gramGrp marker past the etymology prefix', () => {
+    expect(mapPraharajPos('ସଂ. ବି. (ଅଭି+ଧା ଧାତୁ+ଭାବ. ଅନ)')).toBe('NOUN');
+    expect(mapPraharajPos('ଦେ. ବିଣ.')).toBe('ADJ');
+    expect(mapPraharajPos('ସଂ. କ୍ରି.')).toBe('VERB');
+    expect(mapPraharajPos('କ୍ରି. ବିଣ.')).toBe('ADV');
+    expect(mapPraharajPos('ସର୍ବ.')).toBe('PRON');
+  });
+
+  it('returns null for unrecognized or missing markers', () => {
+    expect(mapPraharajPos('ସଂ.')).toBeNull();
+    expect(mapPraharajPos(undefined)).toBeNull();
+  });
+});
+
+describe('praharajGlossLanguage', () => {
+  it('tags English-bearing senses en and pure-Odia senses or', () => {
+    expect(praharajGlossLanguage('Vocabulary; dictionary; lexicon.')).toBe('en');
+    expect(praharajGlossLanguage('କଥନ — 1. Speaking.')).toBe('en');
+    expect(praharajGlossLanguage('ପୁତ୍ରଙ୍କର ଅଭିଧାନ ବିଧାନ କରିବେ। ଆନନ୍ଦଚନ୍ଦ୍ର. ଭକ୍ତ ପ୍ରହ୍ଲାଦ।')).toBe('or');
+    expect(
+      praharajGlossLanguage('ଯେଉଁ ପୁସ୍ତକରେ ଶବ୍ଦର ଅର୍ଥ ଥାଏ; ଶବ୍ଦାର୍ଥକୋଷ; ଡିକ୍ସିନାରୀ — 3. Vocabulary.'),
+    ).toBe('or');
+  });
+
+  it('latinShare ignores digits and punctuation', () => {
+    expect(latinShare('1. 2. 3.')).toBe(0);
+    expect(latinShare('abc')).toBe(1);
+  });
+});
+
+describe('Praharaj record conversion', () => {
+  it('emits per-sense definition languages through the factory', () => {
+    const entry = dsalRecordToImportEntry(
+      {
+        slug: 'dsal-praharaj',
+        hw: 'ଅଭିଧାନ',
+        translit: 'Abhidhāna',
+        posRaw: 'ସଂ. ବି. (ଅଭି+ଧା ଧାତୁ+ଭାବ. ଅନ)',
+        senses: [
+          'କଥନ — 1. Speaking.',
+          'ପୁତ୍ରଙ୍କର ଅଭିଧାନ ବିଧାନ କରିବେ। ଆନନ୍ଦଚନ୍ଦ୍ର।',
+        ],
+        page: 495,
+        ord: 0,
+      },
+      {
+        name: 'dsal-praharaj',
+        script: 'Orya',
+        posMap: {},
+        mapPos: mapPraharajPos,
+        glossLanguageFor: praharajGlossLanguage,
+      },
+    )!;
+    expect(entry.headword).toBe('ଅଭିଧାନ');
+    expect(entry.pos).toBe('NOUN');
+    expect(entry.sourceId).toBe('dsal:praharaj:ଅଭିଧାନ:495:0');
+    expect(entry.translations[0]!.targetLanguage).toBe('en');
+    expect(entry.translations[1]!.targetLanguage).toBe('or');
   });
 });
 

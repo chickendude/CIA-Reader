@@ -50,6 +50,7 @@ launch.
 |---|---|---|---|
 | Odia WordNet | ISI Kolkata | Research use, distributable with attribution | Planned — the seed for T-2.3a's custom pipeline already draws from this |
 | OdiaNLP resources | Community / various | Mixed (MIT / CC-BY) | Planned — curated subset only, per-entry license check required |
+| [*Praharaj, Purnnachandra Ordia Bhashakosha* (1931–40)](https://dsal.uchicago.edu/dictionaries/praharaj/) | Utkal Sahitya Press (via DSAL) | Public domain in India & EU (US: see below) | **Registered** (`dsal-praharaj`) — the ~9,500-page, 7-volume lexicon (~120k+ entries), by far the largest Odia source. Definitions are bilingual: each sense is tagged `en` or `or` by Latin-letter share (≥0.5 → `en`), so the popup's definition-language chips separate them; verse quotations ride along as `or`. POS token-searched from the `<gramGrp>` marker (ବି noun, ବିଣ adj, କ୍ରି verb, କ୍ରି+ବିଣ adverb, ସର୍ବ pron). Acquisition per "DSAL scraping" |
 | [Wiktionary Odia (via Kaikki.org)](https://kaikki.org/dictionary/Odia/) | Wiktionary contributors | CC-BY-SA 3.0 | **Imported (T-3.10, 2026-04-28)** — fetched via `scripts/fetch-dictionary-sources.sh kaikki-odia`; the smallest Kaikki dump of the three MVP languages (~2k entries) but the first real Odia lexical data — proves the script-aware path works end-to-end with `Orya` |
 | [Wiktionary English Translations sections (via Kaikki.org)](https://kaikki.org/dictionary/English/) | Wiktionary contributors | CC-BY-SA 3.0 | **Imported (T-3.10, 2026-04-28)** — inverted from English entries' `translations[]`; biggest Odia coverage uplift since Wiktionary's Odia sub-corpus is tiny but the English-side Translations sections include Odia targets generously |
 
@@ -61,6 +62,30 @@ community submissions (T-6.3) to fill gaps post-launch.
 
 The Odia dictionary browse page (T-3.6) will carry a visible
 **"coverage: sparse"** notice so users calibrate expectations.
+(The Praharaj import changes this materially — revisit the notice once
+the full import lands.)
+
+### Praharaj copyright status
+
+Recorded 2026-07-22, decision: **import now, status documented.**
+
+- **India**: public domain since ~2007 (G. C. Praharaj d. 1946; term is
+  author's life + 60 years).
+- **EU**: public domain (life + 70).
+- **US**: the URAA (17 U.S.C. §104A) restored copyright in foreign works
+  still protected in their source country on 1996-01-01, which Praharaj
+  was in India. Restored term is 95 years from publication, per volume:
+  vol. 1 (1931) enters US public domain **2027-01-01**; the final volume
+  (1940) in **2036**. So strictly, the text is still US-copyrighted for
+  a few more months to ~10 years depending on volume.
+- **DSAL** claims CC BY-NC-ND on its digitization (as it does even for
+  the 1857 Molesworth — see the licensing-position note under "DSAL
+  scraping"); the underlying text's status is what matters, and no
+  separate US rightsholder is known to be enforcing (DSAL itself
+  distributes the full text in free mobile apps; third-party scrapes
+  circulate on Kaggle).
+
+Revisit this entry as volumes roll into US public domain from Jan 2027.
 
 ## Yiddish
 
