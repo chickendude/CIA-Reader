@@ -22,6 +22,7 @@
     "dictionary:import": "tsx scripts/import-dictionary.ts",
     "dsal:scrape": "tsx scripts/scrape-dsal.ts",
     "dsal:parse": "tsx scripts/parse-dsal.ts",
+    "scan:ingest": "tsx scripts/ingest-scan.ts",
     "dictionary:update": "tsx scripts/update-dictionary.ts",
     "aggregate-corrections": "tsx scripts/aggregate-corrections.ts",
     "seed-admin": "tsx scripts/seed-admin.ts"

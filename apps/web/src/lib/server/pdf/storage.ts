@@ -23,6 +23,11 @@ import path from 'node:path';
 export interface PdfStorage {
   /** Writes the page image blob under `key`. */
   put(key: string, body: Uint8Array, mime: string): Promise<void>;
+  /** Reads a blob back. Throws when the key doesn't exist. Needed by
+   *  server-side consumers (the scan OCR service reads page images to
+   *  post them to the NLP service); the reader itself never calls this
+   *  — it fetches `urlFor(key)`. */
+  get(key: string): Promise<Uint8Array>;
   delete(key: string): Promise<void>;
   /** Returns the URL the reader should fetch. May be a local
    *  /pdf-assets/<key> path (dev) or a presigned S3 URL (prod). */
@@ -40,6 +45,10 @@ class LocalPdfStorage implements PdfStorage {
     await fs.mkdir(path.dirname(file), { recursive: true });
     await fs.writeFile(file, body);
   }
+  async get(key: string): Promise<Uint8Array> {
+    const file = path.join(LOCAL_ROOT, key);
+    return new Uint8Array(await fs.readFile(file));
+  }
   async delete(key: string): Promise<void> {
     const file = path.join(LOCAL_ROOT, key);
     try {
@@ -49,7 +58,7 @@ class LocalPdfStorage implements PdfStorage {
     }
   }
   urlFor(key: string): string {
-    return `/pdf-assets/${key}`;
+    return isScanKey(key) ? `/scan-assets/${key}` : `/pdf-assets/${key}`;
   }
 }
 
@@ -108,6 +117,29 @@ export function isAllowedPageImageMime(mime: string): boolean {
  *  is well under 1MB; 8MB leaves generous headroom for dense colour
  *  scans while keeping a single page from pinning memory. */
 export const MAX_PAGE_IMAGE_BYTES = 8 * 1024 * 1024;
+
+/**
+ * Storage key for a dictionary scan page image (transcription
+ * workbench). Keyed by (dictionary, volume, pdf page index) so a
+ * re-ingest of the same volume overwrites in place, mirroring
+ * `pageImageStorageKey`'s idempotency rationale.
+ */
+export function scanPageStorageKey(
+  dictionarySlug: string,
+  volumeNumber: number,
+  pdfPageIndex: number,
+  mime: string,
+): string {
+  const ext = extForMime(mime);
+  const vol = String(volumeNumber).padStart(2, '0');
+  return `scans/${dictionarySlug}/v${vol}/pages/${pdfPageIndex}.${ext}`;
+}
+
+/** Scan-page keys live under their own prefix with their own (curator-
+ *  gated) serving route — `textIdFromPageKey` would rightly 404 them. */
+export function isScanKey(key: string): boolean {
+  return key.startsWith('scans/');
+}
 
 /** Extract the owning text id from a `texts/<uuid>/pages/...` key so the
  *  serving route can run a `canReadText` gate. Returns null for any key
