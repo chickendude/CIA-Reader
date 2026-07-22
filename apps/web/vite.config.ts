@@ -7,8 +7,8 @@ export default defineConfig(({ mode }) => {
   // gitignored apps/web/.env works, not just shell exports. The
   // project-wide default stays 5173 — README, CI, the extension's
   // default apiBaseUrl, and the Docker-internal prod port all assume
-  // it. Keep APP_BASE_URL in sync when overriding (magic-link emails
-  // embed it).
+  // it. APP_BASE_URL (magic-link emails) derives from the same
+  // variable in src/lib/server/env.ts, so one setting moves both.
   const env = loadEnv(mode, process.cwd(), '');
   const port = Number(env.WEB_PORT ?? 5173);
 
