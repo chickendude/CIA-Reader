@@ -141,6 +141,13 @@ export type DsalSourceOptions = {
   /** Raw printed POS marker → UD tag. Unmapped markers become 'X'. */
   posMap: Record<string, string>;
   /**
+   * Full override for POS resolution when table lookup + first-token
+   * cleanup doesn't fit the dictionary's marker shape (Praharaj embeds
+   * the POS abbreviation after an etymology prefix, e.g. `ସଂ. ବି. (…)`).
+   * Wins over `posMap` when provided.
+   */
+  mapPos?: (posRaw: string | undefined) => string | null;
+  /**
    * Per-sense definition language (ISO 639-1) — Praharaj glosses mix
    * English and Odia. Omit for all-English dictionaries (the runner
    * defaults `targetLanguage` to 'en').
@@ -169,7 +176,10 @@ export function dsalSourceId(name: string, rec: DsalRecord): string {
 
 export function dsalRecordToImportEntry(
   rec: DsalRecord,
-  opts: Pick<DsalSourceOptions, 'name' | 'script' | 'posMap' | 'glossLanguageFor' | 'normalizer'>,
+  opts: Pick<
+    DsalSourceOptions,
+    'name' | 'script' | 'posMap' | 'mapPos' | 'glossLanguageFor' | 'normalizer'
+  >,
 ): ImportEntry | null {
   const normalizer = opts.normalizer ?? NFC_ONLY_NORMALIZER;
   const headword = normalizer.toModern(rec.hw);
@@ -190,7 +200,7 @@ export function dsalRecordToImportEntry(
   return {
     sourceId,
     headword,
-    pos: mapDsalPos(rec.posRaw, opts.posMap) ?? 'X',
+    pos: (opts.mapPos ? opts.mapPos(rec.posRaw) : mapDsalPos(rec.posRaw, opts.posMap)) ?? 'X',
     script: opts.script,
     glossDefault: trimGloss(translations[0]!.body),
     translations,
@@ -201,7 +211,10 @@ export function dsalRecordToImportEntry(
 
 async function* streamDsalSource(
   filePath: string,
-  opts: Pick<DsalSourceOptions, 'name' | 'script' | 'posMap' | 'glossLanguageFor' | 'normalizer'>,
+  opts: Pick<
+    DsalSourceOptions,
+    'name' | 'script' | 'posMap' | 'mapPos' | 'glossLanguageFor' | 'normalizer'
+  >,
 ): AsyncIterable<ImportEntry> {
   const stream = createReadStream(filePath, { encoding: 'utf-8' });
   const rl = createInterface({ input: stream, crlfDelay: Infinity });
