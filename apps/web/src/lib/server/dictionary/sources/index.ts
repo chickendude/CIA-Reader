@@ -15,6 +15,7 @@
 import type { DictionaryImportSource } from '../types.js';
 
 import { dsalMolesworthSource } from './dsal-molesworth.js';
+import { dsalPlattsSource } from './dsal-platts.js';
 import { dsalVazeSource } from './dsal-vaze.js';
 import { hindiSeedSource } from './hindi-seed.js';
 import { kaikkiBasqueEsSource } from './kaikki-basque-es.js';
@@ -37,6 +38,7 @@ export type RegistryEntry = {
 export const dictionarySources: RegistryEntry[] = [
   { name: hindiSeedSource.name, source: hindiSeedSource },
   { name: kaikkiHindiSource.name, source: kaikkiHindiSource },
+  { name: dsalPlattsSource.name, source: dsalPlattsSource },
   { name: kaikkiMarathiSource.name, source: kaikkiMarathiSource },
   { name: dsalMolesworthSource.name, source: dsalMolesworthSource },
   { name: dsalVazeSource.name, source: dsalVazeSource },

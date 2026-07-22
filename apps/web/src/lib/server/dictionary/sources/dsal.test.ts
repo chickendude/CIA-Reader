@@ -11,12 +11,14 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   MARATHI_POS_MAP,
   NFC_ONLY_NORMALIZER,
+  PLATTS_POS_MAP,
   dsalRecordToImportEntry,
   dsalSourceId,
   mapDsalPos,
   trimGloss,
 } from './dsal.js';
 import { dsalMolesworthSource } from './dsal-molesworth.js';
+import { dsalPlattsSource } from './dsal-platts.js';
 import { dsalVazeSource } from './dsal-vaze.js';
 import { findSource } from './index.js';
 import type { DsalRecord } from '../dsal/records.js';
@@ -56,6 +58,15 @@ describe('mapDsalPos', () => {
   it('returns null for unknown or missing markers', () => {
     expect(mapDsalPos('zzz', MARATHI_POS_MAP)).toBeNull();
     expect(mapDsalPos(undefined, MARATHI_POS_MAP)).toBeNull();
+  });
+
+  it('maps Platts gendered substantive and valency-verb abbreviations', () => {
+    expect(mapDsalPos('s.m.', PLATTS_POS_MAP)).toBe('NOUN');
+    expect(mapDsalPos('s.f.', PLATTS_POS_MAP)).toBe('NOUN');
+    expect(mapDsalPos('v.n.', PLATTS_POS_MAP)).toBe('VERB');
+    expect(mapDsalPos('v.t.', PLATTS_POS_MAP)).toBe('VERB');
+    expect(mapDsalPos('adj.', PLATTS_POS_MAP)).toBe('ADJ');
+    expect(mapDsalPos('intj.', PLATTS_POS_MAP)).toBe('INTJ');
   });
 });
 
@@ -169,5 +180,33 @@ describe('registry wiring', () => {
       expect(source.license).toBe('PublicDomain');
       expect(source.sourceAttribution).toContain('via DSAL, University of Chicago');
     }
+  });
+
+  it('exposes Platts as a Hindi source over Devanagari headwords', () => {
+    expect(findSource('dsal-platts')).toBe(dsalPlattsSource);
+    expect(dsalPlattsSource.language).toBe('hi');
+    expect(dsalPlattsSource.license).toBe('PublicDomain');
+  });
+});
+
+describe('Platts record conversion', () => {
+  it('imports the Devanagari headword; Perso-Arabic alternates never become forms', () => {
+    const entry = dsalRecordToImportEntry(
+      {
+        slug: 'dsal-platts',
+        hw: 'कमल',
+        hwAlt: ['کمل'],
+        translit: 'kamal',
+        posRaw: 's.m.',
+        senses: ['s.m. The lotus, Nelumbium speciosum.'],
+        page: 849,
+        ord: 0,
+      },
+      { name: 'dsal-platts', script: 'Deva', posMap: PLATTS_POS_MAP },
+    )!;
+    expect(entry.headword).toBe('कमल');
+    expect(entry.pos).toBe('NOUN');
+    expect(entry.sourceId).toBe('dsal:platts:कमल:849:0');
+    expect(entry.forms).toBeUndefined();
   });
 });

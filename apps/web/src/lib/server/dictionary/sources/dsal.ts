@@ -80,6 +80,28 @@ export const MARATHI_POS_MAP: Record<string, string> = {
 };
 
 /**
+ * POS map for Platts (1884). Platts marks substantives with gendered
+ * abbreviations (`s.m.` / `s.f.`) and verbs by valency (`v.n.` neuter
+ * i.e. intransitive, `v.t.` transitive). `mapDsalPos` strips trailing
+ * dots, so keys are dot-less at the end but keep internal dots.
+ */
+export const PLATTS_POS_MAP: Record<string, string> = {
+  's.m': 'NOUN',
+  's.f': 'NOUN',
+  adj: 'ADJ',
+  adv: 'ADV',
+  'v.n': 'VERB',
+  'v.t': 'VERB',
+  intj: 'INTJ',
+  interj: 'INTJ',
+  prep: 'ADP',
+  postpn: 'ADP',
+  pron: 'PRON',
+  conj: 'CCONJ',
+  part: 'PART',
+};
+
+/**
  * Map a raw printed POS marker through a per-dictionary table: try the
  * whole marker, then its first token (`v i` → `v`), lowercased and
  * with trailing dots dropped. Returns null when unrecognized — the
