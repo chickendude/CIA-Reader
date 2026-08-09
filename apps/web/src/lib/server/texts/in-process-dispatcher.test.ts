@@ -496,6 +496,52 @@ describe('processTextNow', () => {
     expect(tokenInsert[0]!.surface).toBe('Badiara');
   });
 
+  it('prefers a vetted (import) form over a paradigm-generated form for a homograph surface', async () => {
+    // `hartzen` is a paradigm-`generator` form of the rare noun `hartz`
+    // (bear, genitive) but also an `import` form of the common verb
+    // `hartu`. The query orders curator/import ahead of generator, so
+    // the first-win loop keeps the vetted `hartu` mapping. We stage the
+    // rows in that priority order to mirror the ORDER BY.
+    stage([{ id: 'text-1', language: 'eu' }]);
+    stage([{ id: 'chap-1', body: 'Zerbait hartzen ari da.' }]);
+    stage([
+      { id: 'lemma-hartu', headword: 'hartu', pos: 'VERB' },
+      { id: 'lemma-hartz', headword: 'hartz', pos: 'NOUN' },
+    ]);
+    stage([]); // overrides — empty
+    // Import (hartu) first, generator (hartz) second — the ORDER BY shape.
+    stage([
+      { surface: 'hartzen', lemmaId: 'lemma-hartu' },
+      { surface: 'hartzen', lemmaId: 'lemma-hartz' },
+    ]);
+
+    nlpProcess.mockResolvedValueOnce({
+      language: 'eu',
+      pipeline_id: 'stanza-eu',
+      tokens: [
+        {
+          idx: 0,
+          surface: 'hartzen',
+          is_word: true,
+          is_ambiguous: false,
+          is_oov: false,
+          romanization: null,
+          number_forms: null,
+          candidates: [{ lemma: 'hartu', pos: 'VERB', score: 1.0, features: {} }],
+        },
+      ],
+    });
+
+    await processTextNow('text-1');
+
+    const inserts = calls.filter(
+      (c): c is Extract<Call, { kind: 'insert' }> => c.kind === 'insert',
+    );
+    const tokenInsert = inserts[0]!.values as Array<{ lemmaId: string | null }>;
+    // Vetted import form wins — not the rare noun's generated declension.
+    expect(tokenInsert[0]!.lemmaId).toBe('lemma-hartu');
+  });
+
   it('prefers a dictionary-recorded romanization over the pipeline output', async () => {
     // Yiddish loshn-koydesh: the NLP service's rule-based romanizer
     // reads שבת letter-by-letter ("shbs"); a curator recorded the

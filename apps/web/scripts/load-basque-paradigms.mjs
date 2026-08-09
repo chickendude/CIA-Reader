@@ -1,18 +1,33 @@
-// Loader: seed Basque declension paradigms (derived from Wiktionary by
-// scrape-basque-paradigms.mjs → derive-basque-suffixes.mjs →
-// clean-basque-paradigms.mjs) into the existing paradigms/paradigm_slots
-// tables, assign a starter set of lemmas their (paradigm, stem), and
-// regenerate lemma_forms. The dispatcher's lemma_forms → lemma tier then
-// resolves every inflected surface (badian, badietara, mendebalerantz…)
-// to its lemma — on top of Stanza, which still handles everything else.
+// Deployable seed: Basque declension paradigms + inflected forms.
 //
-// Idempotent: paradigms/slots upsert on their natural keys; each lemma's
-// non-curator forms are wiped and regenerated (mirrors regenerateForms).
+// Upserts the 13 derived paradigms (data/basque-paradigms.json) into the
+// paradigms/paradigm_slots tables, assigns each Basque noun/adjective its
+// (paradigm, stem) from data/basque-lemma-assignments.json (+ a seed list
+// of the reported words), and (re)generates ~140k lemma_forms. The
+// dispatcher's lemma_forms → lemma tier then resolves every inflected
+// surface (badian, badietara, mendebalerantz…) to its lemma, on top of
+// Stanza which still handles everything else.
 //
-// Usage:  node apps/web/scripts/load-basque-paradigms.mjs
+// Idempotent + prod-safe: paradigms/slots upsert on their natural keys;
+// prior 'generator' forms for eu are wiped and regenerated (curator /
+// import / pipeline forms are preserved). A generated form whose surface
+// is a *different* lemma's headword (homograph, e.g. `bizirik`) is
+// quarantined so it can't shadow the standalone lexeme.
+//
+// Deploy sequence (paradigms attach to existing dictionary lemmas):
+//   1. pnpm dictionary:import          # ensure the eu dictionary is loaded
+//   2. pnpm seed:basque-paradigms      # this script
+//   3. reprocess eu texts              # admin reprocess-batch endpoint,
+//                                      # or scripts/reprocess-text.mjs <id>
+//
+// Regenerate the assignment data from a fresh scrape:
+//   node scripts/scrape-basque-paradigms.mjs                 # → buckets.json
+//   node scripts/build-basque-assignments.mjs buckets.json   # → data/*.json
+//
+// Usage:  pnpm --filter @ciareader/web seed:basque-paradigms
 
 import { config as loadEnv } from 'dotenv';
-import { readFileSync } from 'node:fs';
+import { readFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 import postgres from 'postgres';
@@ -80,9 +95,11 @@ function slotMeta(tag) {
   return { slotKey: tag.replace(/\|/g, '_'), features };
 }
 
-// Starter lemma assignments — the reported over-strips (the ambiguous
-// galera/ilaran are handled by the multi-lemma override work, not here).
-const ASSIGN = [
+// Seed lemma assignments — the reported over-strips + validation exemplars.
+// These carry glosses and (for tap-r) an explicit stem, and are always
+// applied even if the bulk scrape missed them. The bulk vocabulary is loaded
+// from data/basque-lemma-assignments.json and merged below (seed wins).
+const SEED_ASSIGN = [
   { hw: 'badia', pos: 'NOUN', label: 'inan a-stem', gloss: 'bay' },
   { hw: 'mendebal', pos: 'NOUN', label: 'inan C-stem', gloss: 'west' },
   { hw: 'espainiera', pos: 'NOUN', label: 'inan sg-only a-stem', gloss: 'Spanish (language)' },
@@ -102,6 +119,20 @@ const ASSIGN = [
   { hw: 'bizi', pos: 'ADJ', label: 'adjective V-stem', gloss: 'alive; living' },
   { hw: 'bilbotar', pos: 'ADJ', label: 'adjective C-stem', gloss: 'of Bilbao' }, // -tar demonym → bilbotarr
 ];
+
+// Merge the bulk scrape-derived assignments with the seed list. Seed entries
+// win (glosses + explicit tap stems). Keyed on headword|pos. Each entry:
+// { hw, pos, label, stem?, gloss? }.
+const GLOSS = Object.fromEntries(SEED_ASSIGN.filter((a) => a.gloss).map((a) => [`${a.hw}|${a.pos}`, a.gloss]));
+const ASSIGN_FILE = resolve(DIR, 'data', 'basque-lemma-assignments.json');
+const BULK = existsSync(ASSIGN_FILE) ? JSON.parse(readFileSync(ASSIGN_FILE, 'utf8')) : [];
+const merged = new Map();
+for (const a of BULK) merged.set(`${a.hw}|${a.pos}`, { ...a });
+for (const a of SEED_ASSIGN) {
+  const key = `${a.hw}|${a.pos}`;
+  merged.set(key, { hw: a.hw, pos: a.pos, label: a.label, stem: a.stem ?? merged.get(key)?.stem, gloss: a.gloss });
+}
+const ASSIGN = [...merged.values()];
 
 async function upsertParadigm(label, pos, suffixes) {
   const [{ id }] = await sql`
@@ -137,51 +168,81 @@ async function ensureLemma(headword, pos, gloss) {
 }
 
 async function main() {
-  // 1. Upsert the enabled paradigms + slots; keep a name→{id,suffixes} map.
+  const t0 = Date.now();
+  // 1. Upsert paradigms + slots; cache each paradigm's slots.
   const byLabel = new Map();
+  const slotsByPara = new Map();
   for (const p of PARADIGMS) {
     const pos = LOAD[p.label];
     if (!pos) continue;
-    const { id, slotCount } = await upsertParadigm(p.label, pos, p.suffixes);
-    byLabel.set(p.label, { id, pos, suffixes: p.suffixes });
-    console.log(`  paradigm "Basque ${p.label}" (${pos}) — ${slotCount} slots`);
+    const { id } = await upsertParadigm(p.label, pos, p.suffixes);
+    byLabel.set(p.label, { id, pos });
+    slotsByPara.set(p.label, await sql`SELECT id, features, suffix FROM paradigm_slots WHERE paradigm_id=${id}`);
   }
+  console.log(`  ${byLabel.size} paradigms upserted`);
 
-  // 2. Assign lemmas + regenerate their forms.
-  let totalForms = 0;
+  // 2. Pre-load canonical (headword,pos)→id + the headword set (for the
+  //    homograph guard). DISTINCT ON keeps the oldest row per (headword,pos)
+  //    so re-runs are stable despite the dictionary's Kaikki duplicates.
+  const lemRows = await sql`SELECT DISTINCT ON (headword, pos) id, headword, pos FROM lemmas WHERE language='eu' ORDER BY headword, pos, created_at ASC`;
+  const idByKey = new Map();
+  const headwordSet = new Set();
+  for (const r of lemRows) { idByKey.set(`${r.headword}|${r.pos}`, r.id); headwordSet.add(r.headword); }
+  console.log(`  ${idByKey.size} eu lemma slots, ${headwordSet.size} distinct headwords`);
+
+  // 3. Wipe prior generator forms for eu (idempotent); keep curator/import/pipeline.
+  const del = await sql`DELETE FROM lemma_forms WHERE created_by='generator' AND lemma_id IN (SELECT id FROM lemmas WHERE language='eu')`;
+  console.log(`  cleared ${del.count ?? 0} prior generator forms`);
+
+  // 4. Assign paradigm+stem per lemma and generate forms (batched insert).
+  let created = 0, forms = 0, quarantined = 0, skipped = 0;
+  const rowBuf = [];
+  async function flush() {
+    if (!rowBuf.length) return;
+    await sql`INSERT INTO lemma_forms ${sql(rowBuf, 'lemma_id', 'surface', 'features', 'created_by', 'paradigm_slot_id', 'quarantined_at', 'quarantine_reason')}`;
+    rowBuf.length = 0;
+  }
   for (const a of ASSIGN) {
     const para = byLabel.get(a.label);
-    if (!para) { console.log(`  ! ${a.hw}: paradigm "${a.label}" not loaded`); continue; }
-    const lemmaId = await ensureLemma(a.hw, a.pos, a.gloss);
+    if (!para) { skipped++; continue; }
+    let id = idByKey.get(`${a.hw}|${a.pos}`);
+    if (!id) {
+      id = await ensureLemma(a.hw, a.pos, GLOSS[`${a.hw}|${a.pos}`]);
+      idByKey.set(`${a.hw}|${a.pos}`, id);
+      headwordSet.add(a.hw);
+      created++;
+    }
     const stem = stemFor(a.label, a.hw, a.stem);
-    await sql`UPDATE lemmas SET paradigm_id=${para.id}, stem=${stem}, updated_at=NOW() WHERE id=${lemmaId}`;
-
-    // Wipe non-curator forms across ALL duplicate rows of this (headword,
-    // pos) — the dictionary's per-source dupes mean a prior run may have
-    // generated forms on a sibling row; clean them so no stale surfaces
-    // linger. Then generate stem+suffix on the chosen row (deduped).
-    await sql`
-      DELETE FROM lemma_forms
-      WHERE created_by <> 'curator'
-        AND lemma_id IN (
-          SELECT id FROM lemmas WHERE language='eu' AND headword=${a.hw} AND pos=${a.pos}
-        )`;
-    const slotIds = await sql`SELECT id, slot_key, features, suffix FROM paradigm_slots WHERE paradigm_id=${para.id}`;
+    await sql`UPDATE lemmas SET paradigm_id=${para.id}, stem=${stem}, updated_at=NOW() WHERE id=${id}`;
     const seen = new Set();
-    let n = 0;
-    for (const s of slotIds) {
+    for (const s of slotsByPara.get(a.label)) {
       const surface = (stem + s.suffix).normalize('NFC');
       if (seen.has(surface)) continue;
       seen.add(surface);
-      await sql`
-        INSERT INTO lemma_forms (lemma_id, surface, features, romanization, created_by, paradigm_slot_id, created_at)
-        VALUES (${lemmaId}, ${surface}, ${sql.json(s.features)}, NULL, 'generator', ${s.id}, NOW())`;
-      n++;
+      // Homograph guard: quarantine a generated form whose surface is a
+      // DIFFERENT lemma's dictionary headword (e.g. `bizirik` = adverb, also
+      // `bizi`'s partitive) so it can't shadow the standalone lexeme. Kept
+      // (not deleted) so a curator can review; the dispatcher filters
+      // quarantined rows out of resolution.
+      const collide = headwordSet.has(surface) && surface !== a.hw;
+      rowBuf.push({
+        lemma_id: id,
+        surface,
+        features: s.features,
+        created_by: 'generator',
+        paradigm_slot_id: s.id,
+        quarantined_at: collide ? new Date() : null,
+        quarantine_reason: collide ? 'homograph: surface is another lemma headword' : null,
+      });
+      if (collide) quarantined++; else forms++;
+      if (rowBuf.length >= 1000) await flush();
     }
-    totalForms += n;
-    console.log(`  ${a.hw.padEnd(14)} [${a.label}] stem="${stem}" → ${n} forms`);
   }
-  console.log(`\n[done] ${byLabel.size} paradigms, ${ASSIGN.length} lemmas, ${totalForms} forms`);
+  await flush();
+  console.log(
+    `\n[done] ${ASSIGN.length} assignments (${created} new lemmas), ` +
+      `${forms} forms + ${quarantined} quarantined (homograph), ${skipped} skipped — ${Math.round((Date.now() - t0) / 1000)}s`,
+  );
   await sql.end();
 }
 

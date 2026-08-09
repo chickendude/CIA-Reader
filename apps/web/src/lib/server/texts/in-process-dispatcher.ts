@@ -33,7 +33,7 @@
  * duplicates into the canonical with-nukta row and the tier becomes
  * a no-op.
  */
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, eq, isNull, sql } from 'drizzle-orm';
 
 import { LANGUAGES, stripNukta, type LanguageCode } from '@ciareader/shared-types';
 
@@ -176,6 +176,15 @@ export async function loadLemmaIndex(
   // load cheap and excludes quarantined junk rows automatically (the
   // index has `WHERE quarantined_at IS NULL`); we still ask for it
   // explicitly here so the planner has no excuse to use a wider scan.
+  // Source-priority tiebreak (homograph guard): when one surface is a
+  // recorded form of more than one lemma (e.g. Basque `hartzen` =
+  // `hartz` genitive vs. the far commoner verb `hartu`), prefer a
+  // curator/import form — vetted for a specific lemma — over a
+  // paradigm-`generator` form, which is derived and, for a rare noun,
+  // likelier to be a false homograph. Ordering the query means the
+  // first-win loop below keeps the highest-priority row. There is no
+  // frequency signal to lean on (eu `frequency_rank` is unpopulated), so
+  // provenance is the best available tiebreak.
   const formRows = (await db
     .select({
       surface: schema.lemmaForms.surface,
@@ -189,6 +198,14 @@ export async function loadLemmaIndex(
         eq(schema.lemmas.language, language),
         isNull(schema.lemmaForms.quarantinedAt),
       ),
+    )
+    .orderBy(
+      sql`CASE ${schema.lemmaForms.createdBy}
+            WHEN 'curator' THEN 0
+            WHEN 'import' THEN 1
+            WHEN 'pipeline' THEN 2
+            ELSE 3
+          END`,
     )) as Array<{ surface: string; lemmaId: string; romanization: string | null }>;
   const bySurface = new Map<string, string>();
   const romanizationBySurface = new Map<string, string>();
