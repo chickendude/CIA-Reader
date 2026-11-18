@@ -24,6 +24,7 @@
     entries,
     currentIndex,
     nextLocked = false,
+    footer = false,
   }: {
     entries: ReaderTocEntry[];
     currentIndex: number;
@@ -31,6 +32,7 @@
      *  The next arrow then routes through `?skipLock=1` + shows a hint,
      *  mirroring the previous cross-text strip. TOC jumps stay free. */
     nextLocked?: boolean;
+    footer?: boolean;
   } = $props();
 
   const current = $derived(entries[currentIndex] ?? entries[0] ?? null);
@@ -127,7 +129,7 @@
   }
 </script>
 
-<div class="chapter-nav" data-testid="chapter-nav">
+<div class="chapter-nav" class:footer data-testid="chapter-nav">
   {#if hasMultiple}
     {#if prev}
       <a
@@ -145,11 +147,12 @@
       type="button"
       class="chapter-nav-trigger"
       bind:this={triggerEl}
+      aria-label={footer ? `Choose chapter, ${current?.title}, chapter ${currentIndex + 1} of ${entries.length}` : undefined}
       aria-haspopup="menu"
       aria-expanded={open}
       onclick={() => (open = !open)}
     >
-      <span class="chapter-nav-title" dir="auto">{current?.title ?? ''}</span>
+      <span class="chapter-nav-title" dir="auto">{footer ? `Ch. ${currentIndex + 1} / ${entries.length}` : current?.title ?? ''}</span>
       <span class="chapter-nav-caret" aria-hidden="true">▾</span>
     </button>
 
@@ -380,5 +383,17 @@
     flex-shrink: 0;
     color: var(--accent-ink, var(--color-accent));
     font-size: 0.7rem;
+  }
+  .footer .chapter-nav-arrow { display: none; }
+  .footer .chapter-nav-trigger { min-height: 40px; font: inherit; }
+  .footer .chapter-nav-menu {
+    top: auto;
+    bottom: calc(100% + 4px);
+    left: auto;
+    right: 0;
+    transform: none;
+    width: min(22rem, calc(100vw - 2rem));
+    min-width: 0;
+    box-sizing: border-box;
   }
 </style>

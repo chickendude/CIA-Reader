@@ -117,7 +117,7 @@
   class="tip"
   role="tooltip"
   aria-hidden="false"
-  onmouseleave={() => onClose?.()}
+  onpointerleave={(event) => { if (event.pointerType !== 'touch') onClose?.(); }}
   use:portal
   style:top="{placement.top}px"
   style:left="{placement.left}px"
@@ -149,7 +149,7 @@
   {:else if language === 'hi' && token.lemmaId}
     {#each hindiCandidates as candidate (candidate.lemmaId)}
       <section class="tip-candidate" data-lemma-id={candidate.lemmaId}>
-        <div class="tip-head">{#if hindiCandidates.length > 1 || candidate.headword !== token.surface}<span class="tip-w">{candidate.headword}</span>{/if}<PosPill pos={candidate.pos} />{#if candidate.selectedBy === 'ai'}<small>AI selected</small>{/if}</div>
+        <div class="tip-head">{#if hindiCandidates.length > 1 || candidate.headword !== token.surface}<span class="tip-w">{candidate.headword}</span>{/if}<PosPill pos={candidate.pos} /></div>
         {#if candidate.personalGloss || candidate.glossDefault}
           <div class="tip-def"><DefinitionMeanings text={candidate.personalGloss || candidate.glossDefault || ''} /></div>
         {:else}

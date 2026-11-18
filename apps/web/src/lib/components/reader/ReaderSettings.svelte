@@ -35,6 +35,9 @@
 
   interface Props {
     open: boolean;
+    showRomanization?: boolean;
+    onRomanizationChange?: (show: boolean) => void;
+    processingTools?: import('svelte').Snippet;
     onClose: () => void;
     language: LanguageCode;
     settings: ReaderSettings;
@@ -59,6 +62,9 @@
 
   let {
     open,
+    showRomanization,
+    onRomanizationChange,
+    processingTools,
     onClose,
     language,
     settings,
@@ -123,7 +129,16 @@
     }
   }
 
+  const displayedScript = $derived(showRomanization === false ? 'native'
+    : showRomanization && local.scriptPreference === 'native' ? 'native_with_romanization' : local.scriptPreference);
+
+  function selectScript(scriptPreference: ReaderSettings['scriptPreference']) {
+    onRomanizationChange?.(scriptPreference !== 'native');
+    commit({ ...local, scriptPreference });
+  }
+
   function reset() {
+    onRomanizationChange?.(DEFAULT_READER_SETTINGS.scriptPreference !== 'native');
     commit({ ...DEFAULT_READER_SETTINGS });
   }
 </script>
@@ -286,18 +301,18 @@
         <div class="rs-seg" role="group" aria-label="Script preference">
           <button
             type="button"
-            data-active={local.scriptPreference === 'native' ? '1' : '0'}
-            onclick={() => commit({ ...local, scriptPreference: 'native' })}
+            data-active={displayedScript === 'native' ? '1' : '0'}
+            onclick={() => selectScript('native')}
           >Native</button>
           <button
             type="button"
-            data-active={local.scriptPreference === 'native_with_romanization' ? '1' : '0'}
-            onclick={() => commit({ ...local, scriptPreference: 'native_with_romanization' })}
+            data-active={displayedScript === 'native_with_romanization' ? '1' : '0'}
+            onclick={() => selectScript('native_with_romanization')}
           >Both</button>
           <button
             type="button"
-            data-active={local.scriptPreference === 'romanization_only' ? '1' : '0'}
-            onclick={() => commit({ ...local, scriptPreference: 'romanization_only' })}
+            data-active={displayedScript === 'romanization_only' ? '1' : '0'}
+            onclick={() => selectScript('romanization_only')}
           >Roman</button>
         </div>
       </div>
@@ -349,6 +364,8 @@
       <p class="rs-hint">Tints words with no definition yet so you can spot gaps.</p>
     </section>
     {/if}
+
+    {#if processingTools}{@render processingTools()}{/if}
 
     <footer class="rs-foot">
       <button type="button" class="rs-reset" onclick={reset}>Reset to defaults</button>

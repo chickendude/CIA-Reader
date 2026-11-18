@@ -39,6 +39,7 @@
 
   let {
     chapters,
+    chapterPicker,
     chapterIdx,
     initialTokenIdx = 0,
     textId,
@@ -59,6 +60,7 @@
     bookWordsTotal = 0,
     startAtEndOfChapter = false,
   }: {
+    chapterPicker?: import('svelte').Snippet;
     chapters: ChapterView[];
     chapterIdx: number;
     initialTokenIdx?: number;
@@ -624,7 +626,7 @@
         <div class="reader-page-content" bind:this={contentEl}>
           {#if current}
             {#if !titleInBody}
-              <header class="chapter-h">
+              <header class="chapter-h" class:part-heading={!!chapterPicker && current.title === `Part ${current.idx + 1}`}>
                 {current.title ?? `Chapter ${current.idx + 1}`}
               </header>
             {/if}
@@ -682,7 +684,10 @@
     <span class="pager-pct" aria-label="Progress through the book">
       {formatPctRange(startPct, endPct, pctPrecision)}
     </span>
-    <span class="pager-chapter">Ch. {counterCurrent} / {counterTotal}</span>
+    <div class="pager-chapter">
+      <span class:desktop-counter={!!chapterPicker}>Ch. {counterCurrent} / {counterTotal}</span>
+      {#if chapterPicker}{@render chapterPicker()}{/if}
+    </div>
   </div>
   <div class="reader-foot-bar">
     <i class="read" style="width: {endPct}%"></i>
@@ -959,5 +964,10 @@
     .reader-page-track {
       transition: none;
     }
+  }
+  @media (max-width: 639px) {
+    .desktop-counter, .part-heading { display: none; }
+    .reader-foot { z-index: 9; padding-block: .1rem .4rem; }
+    .reader-foot-meta { align-items: center; margin-bottom: 0; }
   }
 </style>

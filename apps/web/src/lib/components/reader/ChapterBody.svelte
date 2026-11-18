@@ -17,6 +17,7 @@
   import TokenSpan from './TokenSpan.svelte';
   import WordPopup from './WordPopup.svelte';
   import WordTooltip from './WordTooltip.svelte';
+  import { WordPreview } from './word-preview.svelte.js';
   import CorrectionToast from './CorrectionToast.svelte';
   import { LongPressDetector } from './touch-gestures.js';
   import { LANGUAGES, type LanguageCode } from '@ciareader/shared-types';
@@ -81,7 +82,7 @@
       contextOverrides = new Map(contextOverrides).set(next.id,next);
       const corrections = new Map(lemmaCorrections); corrections.delete(next.id); lemmaCorrections = corrections;
       if (activeToken?.id === next.id) activeToken = next;
-      if (hoverToken?.id === next.id) hoverToken = next;
+      if (preview.token?.id === next.id) preview.token = next;
     };
     window.addEventListener('hindi-context-choice-changed',update);
     return () => window.removeEventListener('hindi-context-choice-changed',update);
@@ -315,15 +316,7 @@
     return phraseSpanById.get(phraseId) ?? null;
   }
 
-  let hoverToken = $state<ServerToken | null>(null);
-  let hoverRect = $state<{
-    top: number;
-    left: number;
-    bottom: number;
-    right: number;
-    width: number;
-    height: number;
-  } | null>(null);
+  const preview = new WordPreview();
 
   function findToken(target: HTMLElement | null): {
     token: ServerToken;
@@ -392,6 +385,16 @@
       return;
     }
 
+    if (longPressOpened) {
+      longPressOpened = false;
+      return;
+    }
+    if (preview.firstTap(event, found)) {
+      closePopup();
+      seekAudioForToken(found.token.id);
+      return;
+    }
+
     // T-14.3a: shift-click range select. When the user clicks
     // a second token while holding shift and an existing
     // anchor (`activeToken`) is set, treat the pair as a
@@ -415,8 +418,7 @@
         // standard body still renders below the phrase-create
         // section. The user can compare the proposed phrase
         // against the underlying lemma.
-        hoverToken = null;
-        hoverRect = null;
+        preview.close();
         return;
       }
       // selectionError is set inside buildPendingSelection;
@@ -441,8 +443,7 @@
     // click cancels the create flow.
     pendingSelection = null;
     // Hide the hover tooltip so it doesn't double up with the panel.
-    hoverToken = null;
-    hoverRect = null;
+    preview.close();
     // T-9.4: tap-to-seek. If audio is loaded for this text and the
     // tapped token has an alignment row, seek the player to that
     // word's startMs and pause so the user can read at their own
@@ -472,25 +473,17 @@
   // the user might want a quick re-read of the gloss without taking
   // their eyes off the chapter to read the side panel.
   function showHoverTooltip(event: Event) {
+    if ('pointerType' in event && event.pointerType === 'touch') return;
     const found = findToken(event.target as HTMLElement);
     if (!found) {
-      hoverToken = null;
-      hoverRect = null;
+      preview.close();
       return;
     }
-    const rect = found.el.getBoundingClientRect();
-    hoverToken = found.token;
-    hoverRect = {
-      top: rect.top,
-      left: rect.left,
-      bottom: rect.bottom,
-      right: rect.right,
-      width: rect.width,
-      height: rect.height,
-    };
+    preview.show(found);
   }
 
   function hideHoverTooltip(event: Event) {
+    if ('pointerType' in event && event.pointerType === 'touch') return;
     // Only clear if the cursor / focus genuinely leaves the chapter
     // region — moving between two adjacent words shouldn't flicker
     // the tooltip off and on.
@@ -500,8 +493,7 @@
       return;
     }
     if (related?.closest?.('[role=tooltip]')) return;
-    hoverToken = null;
-    hoverRect = null;
+    preview.close();
   }
 
   function closePopup() {
@@ -533,10 +525,12 @@
   // 500ms hold over a word fires the same WordPopup the click
   // handler does. The detector cancels on movement so a scroll-y
   // touch never triggers a spurious popup.
+  let longPressOpened = false;
   const longPress = new LongPressDetector((point) => {
     const target = document.elementFromPoint(point.x, point.y);
     const found = findToken(target as HTMLElement | null);
     if (!found) return;
+    longPressOpened = true;
     const rect = found.el.getBoundingClientRect();
     activeToken = found.token;
     activeRect = {
@@ -546,8 +540,7 @@
       right: rect.right,
     };
     activePhrase = findPhrase(target as HTMLElement | null);
-    hoverToken = null;
-    hoverRect = null;
+    preview.close();
   });
 
   function onTouchStart(e: TouchEvent) {
@@ -644,8 +637,9 @@
   dir={textDirection}
   onmousedown={onChapterMousedown}
   onclick={onChapterClick}
-  onmouseover={showHoverTooltip}
-  onmouseout={hideHoverTooltip}
+  onpointerdown={(event) => { longPressOpened = false; preview.rememberPointer(event); }}
+  onpointerover={showHoverTooltip}
+  onpointerout={hideHoverTooltip}
   onfocusin={showHoverTooltip}
   onfocusout={hideHoverTooltip}
   ontouchstart={onTouchStart}
@@ -697,8 +691,8 @@
   {/if}
 </div>
 
-{#if hoverToken && hoverRect}
-  <WordTooltip token={hoverToken} anchorRect={hoverRect} {language} onClose={() => { hoverToken = null; hoverRect = null; }} />
+{#if preview.token && preview.rect}
+  <WordTooltip token={preview.token} anchorRect={preview.rect} {language} onClose={preview.close} />
 {/if}
 
 <!-- WordPopup mounts unconditionally so the side panel can stay

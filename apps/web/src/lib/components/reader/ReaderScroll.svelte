@@ -30,6 +30,7 @@
 
   import WordPopup from './WordPopup.svelte';
   import WordTooltip from './WordTooltip.svelte';
+  import { WordPreview } from './word-preview.svelte.js';
 
   let {
     chapters,
@@ -281,15 +282,7 @@
 
   // T-5.29: hover wiring matches ChapterBody (used by ReaderPage) so
   // both modes show the WordTooltip on word hover.
-  let hoverToken = $state<ServerToken | null>(null);
-  let hoverRect = $state<{
-    top: number;
-    left: number;
-    bottom: number;
-    right: number;
-    width: number;
-    height: number;
-  } | null>(null);
+  const preview = new WordPreview();
 
   function findToken(target: HTMLElement | null): {
     token: ServerToken;
@@ -308,6 +301,11 @@
   function onArticleClick(event: MouseEvent) {
     const found = findToken(event.target as HTMLElement);
     if (!found) return;
+    seekAudioForToken(found.token.id);
+    if (preview.firstTap(event, found)) {
+      closePopup();
+      return;
+    }
     const rect = found.el.getBoundingClientRect();
     activeToken = found.token;
     activeRect = {
@@ -316,13 +314,15 @@
       bottom: rect.bottom,
       right: rect.right,
     };
-    hoverToken = null;
-    hoverRect = null;
+    preview.close();
+  }
+
+  function seekAudioForToken(tokenId: string) {
     // T-9.4: tap-to-seek. Same flow as ChapterBody — audio
     // alignment + player handle, no-op when neither is present.
     void (async () => {
       const { getAlignmentStartMs, getAudioController } = await import('./audio-bus.js');
-      const startMs = getAlignmentStartMs(found.token.id);
+      const startMs = getAlignmentStartMs(tokenId);
       if (startMs == null) return;
       const ctrl = getAudioController();
       if (!ctrl) return;
@@ -332,37 +332,27 @@
   }
 
   function showHoverTooltip(event: Event) {
+    if ('pointerType' in event && event.pointerType === 'touch') return;
     const found = findToken(event.target as HTMLElement);
     if (!found) {
-      hoverToken = null;
-      hoverRect = null;
+      preview.close();
       return;
     }
     if (activeToken && activeToken.id === found.token.id) {
-      hoverToken = null;
-      hoverRect = null;
+      preview.close();
       return;
     }
-    const rect = found.el.getBoundingClientRect();
-    hoverToken = found.token;
-    hoverRect = {
-      top: rect.top,
-      left: rect.left,
-      bottom: rect.bottom,
-      right: rect.right,
-      width: rect.width,
-      height: rect.height,
-    };
+    preview.show(found);
   }
 
   function hideHoverTooltip(event: Event) {
+    if ('pointerType' in event && event.pointerType === 'touch') return;
     const related = 'relatedTarget' in event ? (event.relatedTarget as HTMLElement | null) : null;
     if (related && (event.currentTarget as HTMLElement).contains(related)) {
       return;
     }
     if (related?.closest?.('[role=tooltip]')) return;
-    hoverToken = null;
-    hoverRect = null;
+    preview.close();
   }
 
   function closePopup() {
@@ -380,7 +370,7 @@
       contextOverrides = new Map(contextOverrides).set(next.id,next);
       const corrections = new Map(lemmaCorrections); corrections.delete(next.id); lemmaCorrections = corrections;
       if (activeToken?.id === next.id) activeToken = next;
-      if (hoverToken?.id === next.id) hoverToken = next;
+      if (preview.token?.id === next.id) preview.token = next;
     };
     window.addEventListener('hindi-context-choice-changed',update);
     return () => window.removeEventListener('hindi-context-choice-changed',update);
@@ -482,8 +472,9 @@
     <article
       bind:this={articleEl}
       onclick={onArticleClick}
-      onmouseover={showHoverTooltip}
-      onmouseout={hideHoverTooltip}
+      onpointerdown={preview.rememberPointer}
+      onpointerover={showHoverTooltip}
+      onpointerout={hideHoverTooltip}
       onfocusin={showHoverTooltip}
       onfocusout={hideHoverTooltip}
     >
@@ -517,8 +508,8 @@
   </button>
 </div>
 
-{#if hoverToken && hoverRect}
-  <WordTooltip token={hoverToken} anchorRect={hoverRect} {language} onClose={() => { hoverToken = null; hoverRect = null; }} />
+{#if preview.token && preview.rect}
+  <WordTooltip token={preview.token} anchorRect={preview.rect} {language} onClose={preview.close} />
 {/if}
 
 {#if activeToken && activeRect}

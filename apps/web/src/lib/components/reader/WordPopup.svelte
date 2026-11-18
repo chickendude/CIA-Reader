@@ -1723,7 +1723,7 @@
             />
             {#if payload}
               <PosPill pos={payload.lemma.pos} class="sp-pos-pill" />
-              {#if token.selectedBy}<small>{token.selectedBy === 'ai' ? 'AI selected' : 'Confirmed'}</small>
+              {#if token.selectedBy === 'human'}<small>Confirmed</small>
               {:else if token.selectionStatus === 'needs_review'}<small>Selection needs review</small>{/if}
             {/if}
             {#if bookFrequency !== null && bookFrequency > 0}

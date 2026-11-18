@@ -117,7 +117,7 @@
       const body = (await res.json()) as { tokensWritten: number };
       reprocessFeedback = {
         kind: 'ok',
-        text: `Reprocessed — ${body.tokensWritten} words written.`,
+        text: `Reprocessed ${body.tokensWritten.toLocaleString()} tokens.`,
       };
       // Refresh the page-data so the new tokens render in place
       // without a full reload.
@@ -175,6 +175,16 @@
     return () => setFlagUndefinedAttribute(false);
   });
 
+  function anchorFromData(): ProgressAnchor {
+    return {
+      chapterIdx: data.anchor.chapterIdx,
+      tokenIdx: data.anchor.tokenIdx,
+      pctRead: computePctRead(data.chapters, data.anchor.chapterIdx, data.anchor.tokenIdx),
+    };
+  }
+
+  let currentProgressAnchor = $state<ProgressAnchor>(untrack(anchorFromData));
+
   // Chapter table-of-contents model — drives the shared chapter
   // selector dropdown + the page footer's whole-book progress. Handles
   // both layouts uniformly: multi-chapter texts (jump via ?chapter=N)
@@ -188,7 +198,7 @@
         title: c.title,
         tokenCount: c.tokenCount,
       })),
-      currentChapterIdx: data.anchor.chapterIdx,
+      currentChapterIdx: currentProgressAnchor.chapterIdx,
       collection: data.collectionContext
         ? {
             chapters: data.collectionContext.chapters,
@@ -211,15 +221,6 @@
     }[liveStatus] ?? liveStatus,
   );
 
-  function anchorFromData(): ProgressAnchor {
-    return {
-      chapterIdx: data.anchor.chapterIdx,
-      tokenIdx: data.anchor.tokenIdx,
-      pctRead: computePctRead(data.chapters, data.anchor.chapterIdx, data.anchor.tokenIdx),
-    };
-  }
-
-  let currentProgressAnchor = $state<ProgressAnchor>(untrack(anchorFromData));
   let lastUrlAnchorKey = '';
 
   function mirrorAnchorToUrl(anchor: ProgressAnchor) {
@@ -268,8 +269,8 @@
     });
   }
 
-  function toggleRomanization() {
-    showRomanization = !showRomanization;
+  function setRomanization(show: boolean) {
+    showRomanization = show;
     // Mirror the new state into the URL so a refresh / share keeps
     // the toggle on, but `replaceState: true` + `noScroll: true`
     // means the address bar updates in place — no rerun of the
@@ -412,6 +413,35 @@
   <title>{data.text.title} — CIA Reader</title>
 </svelte:head>
 
+{#snippet processButton()}
+  {#if data.isAdmin || (data.isOwner && liveStatus === 'failed')}
+        <button
+          type="button"
+          class="reprocess-toggle"
+          onclick={reprocessText}
+          disabled={reprocessing}
+          title={data.isAdmin
+            ? 'Re-run the NLP pipeline on this text (admin)'
+            : 'Retry processing this text'}
+          data-testid={data.isAdmin ? 'admin-reprocess' : 'owner-retry'}
+        >
+          {reprocessing
+            ? data.isAdmin
+              ? 'Reprocessing…'
+              : 'Retrying…'
+            : data.isAdmin
+              ? 'Reprocess'
+              : 'Retry'}
+        </button>
+  {/if}
+{/snippet}
+
+{#snippet mobileChapterPicker()}
+  <div class="mobile-picker">
+    <ChapterNav entries={toc.entries} currentIndex={toc.currentIndex} footer />
+  </div>
+{/snippet}
+
 <div class="reader" data-mode={isPdf ? 'pdf' : data.mode} style={readerStyle}>
   <header class="reader-top" bind:this={readerTopEl}>
     <div class="reader-top-left">
@@ -445,7 +475,7 @@
       {/if}
     </div>
 
-    <div class="reader-top-center">
+    <div class="reader-top-center" class:has-status={liveStatus !== 'ready'}>
       {#if toc.entries.length > 1}
         <ChapterNav
           entries={toc.entries}
@@ -469,7 +499,7 @@
           type="button"
           class="roman-toggle"
           data-active={showRomanization ? '1' : '0'}
-          onclick={toggleRomanization}
+          onclick={() => setRomanization(!showRomanization)}
           aria-pressed={showRomanization}
           title="Toggle romanization"
         >
@@ -477,30 +507,7 @@
         </button>
       {/if}
 
-      {#if data.isAdmin || (data.isOwner && liveStatus === 'failed')}
-        <!-- T-11.3: owners get a Retry button when their own text
-             is in the failed state, so a botched upload isn't a
-             dead end. Admins keep the always-on Reprocess affordance
-             for diagnostics + dictionary-update reprocessing. -->
-        <button
-          type="button"
-          class="reprocess-toggle"
-          onclick={reprocessText}
-          disabled={reprocessing}
-          title={data.isAdmin
-            ? 'Re-run the NLP pipeline on this text (admin)'
-            : 'Retry processing this text'}
-          data-testid={data.isAdmin ? 'admin-reprocess' : 'owner-retry'}
-        >
-          {reprocessing
-            ? data.isAdmin
-              ? 'Reprocessing…'
-              : 'Retrying…'
-            : data.isAdmin
-              ? 'Reprocess'
-              : 'Retry'}
-        </button>
-      {/if}
+      <span class="desktop-tools">{@render processButton()}</span>
 
       <button
         type="button"
@@ -538,7 +545,7 @@
     <p class="err" role="alert">Processing error: {liveError}</p>
   {/if}
 
-  {#if reprocessFeedback}
+  {#if reprocessFeedback && !settingsOpen}
     <p
       class="reprocess-feedback"
       class:err={reprocessFeedback.kind === 'err'}
@@ -562,6 +569,7 @@
     />
   {:else if data.mode === 'page'}
     <ReaderPage
+      chapterPicker={toc.entries.length > 1 ? mobileChapterPicker : undefined}
       chapters={data.chapters}
       chapterIdx={data.anchor.chapterIdx}
       initialTokenIdx={data.anchor.tokenIdx}
@@ -610,6 +618,9 @@
     />
   {/if}
 
+  {#if (isPdf || data.mode !== 'page') && toc.entries.length > 1}
+    <footer class="mobile-chapter-footer" aria-label="Chapter navigation">{@render mobileChapterPicker()}</footer>
+  {/if}
   {#if data.audio}
     <AudioPlayer audio={data.audio} canRecordListening={data.canPersistSettings} />
     <AlignmentHighlighter />
@@ -629,9 +640,22 @@
   }}
   canPersist={data.canPersistSettings}
   isAdmin={data.isAdmin}
+  {showRomanization}
+  onRomanizationChange={setRomanization}
   {flagUndefined}
   onFlagUndefinedChange={setFlagUndefined}
-/>
+>
+  {#snippet processingTools()}
+    {#if data.isAdmin || (data.isOwner && liveStatus === 'failed')}
+      <section class="mobile-processing">
+        <h3>Text processing</h3>
+        <p>Run the parser on every chapter to refresh word forms and dictionary matches.</p>
+        {@render processButton()}
+        {#if reprocessFeedback}<p role="status">{reprocessFeedback.text}</p>{/if}
+      </section>
+    {/if}
+  {/snippet}
+</ReaderSettings>
 
 <style>
   /* CIAR design reader chrome (T-5.9). Paper background + serif title.
@@ -849,5 +873,19 @@
     border-radius: 8px;
     padding: 0.75rem 1rem;
     margin: 1rem 1.25rem 0;
+  }
+  .mobile-picker, .mobile-chapter-footer, .mobile-processing { display: none; }
+  @media (max-width: 639px) {
+    .reader-top { grid-template-columns: minmax(0, 1fr) auto; align-items: center; padding: .25rem .75rem; }
+    .reader-close, .settings-toggle { width: 44px; height: 44px; }
+    .reader-book { max-width: none; }
+    .reader-top-center, .reader-top-center :global(.chapter-nav), .roman-toggle, .desktop-tools { display: none; }
+    .reader-top-center.has-status { display: flex; grid-column: 1 / -1; grid-row: 2; justify-content: start; }
+    .mobile-picker, .mobile-processing { display: block; }
+    .mobile-processing p { font-size: .875rem; }
+    .mobile-chapter-footer {
+      position: sticky; bottom: 0; z-index: 9; display: flex; justify-content: flex-end;
+      padding: 0 .75rem env(safe-area-inset-bottom, 0px); background: var(--paper); border-top: 1px solid var(--rule);
+    }
   }
 </style>
