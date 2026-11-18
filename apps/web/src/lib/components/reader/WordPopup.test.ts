@@ -2244,6 +2244,23 @@ describe('Mobile word definitions', () => {
     expect(view.queryByRole('button', { name: 'Choose definition' })).toBeNull();
   });
 
+  it('pairs a dictionary headword with its own reading for a conjugated token', async () => {
+    const media = window.matchMedia('(min-width: 960px)');
+    vi.spyOn(window, 'matchMedia').mockReturnValue({ ...media, matches: false });
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json({
+      lemma: { id: 'go', headword: 'जाना', romanization: 'jānā', pos: 'VERB', glossDefault: 'to go' },
+      translations: { personal: [], official: [], community: [] },
+    })));
+    const token = makeToken({ surface: 'गई', romanization: 'gaī', lemmaId: 'go', headword: 'जाना',
+      pos: 'VERB', selectedBy: 'human' });
+    const view = render(WordPopup, { token, language: 'hi', isOwner: true, onClose: vi.fn() });
+    const reading = await view.findByText('jānā');
+    expect((view.getByTestId('headword-input') as HTMLInputElement).value).toBe('जाना');
+    expect(reading.closest('h2')).toBe(view.getByTestId('headword-input').closest('h2'));
+    expect(view.queryByText('gaī')).toBeNull();
+    expect(view.queryByText('Confirmed')).toBeNull();
+  });
+
   it('lets an admin replace the choice for this occurrence', async () => {
     const view = openMobile(true);
     view.getByRole('button', { name: 'Choose definition' }).click();

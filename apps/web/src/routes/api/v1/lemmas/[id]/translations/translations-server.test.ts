@@ -9,6 +9,10 @@ import { jsonContract } from '$lib/test/json-contract.js';
 const getLemmaTranslations = vi.fn();
 const resolveUser = vi.fn();
 
+vi.mock('$lib/server/dictionary/lemma-forms.js', () => ({
+  getHeadwordRomanization: vi.fn().mockResolvedValue('pānī'),
+}));
+
 vi.mock('$lib/server/dictionary/lookups.js', async () => {
   const actual = await vi.importActual<typeof import('$lib/server/dictionary/lookups.js')>(
     '$lib/server/dictionary/lookups.js',
@@ -107,6 +111,7 @@ describe('GET /api/v1/lemmas/:id/translations', () => {
           "id": "string",
           "language": "string",
           "pos": "string",
+          "romanization": "string",
           "script": "string",
         },
         "translations": {

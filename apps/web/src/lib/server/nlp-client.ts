@@ -236,8 +236,9 @@ export const nlpClient = {
     }
     return result;
   },
-  romanize(language: string, surfaces: string[]): Promise<RomanizeResponse> {
+  romanize(language: string, surfaces: string[], signal?: AbortSignal): Promise<RomanizeResponse> {
     return request<RomanizeResponse>('/romanize', {
+      signal,
       method: 'POST',
       body: JSON.stringify({ language, surfaces }),
     });

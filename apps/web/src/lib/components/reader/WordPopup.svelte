@@ -70,6 +70,7 @@
     lemma: {
       id: string;
       headword: string;
+      romanization: string | null;
       pos: string;
       glossDefault: string | null;
     };
@@ -707,7 +708,7 @@
   // in-progress edit. Re-seeds when the popup rebinds to another token because
   // the token-change effect clears `headwordEdited`.
   $effect(() => {
-    const seed = payload?.lemma.headword ?? token?.surface ?? '';
+    const seed = payload?.lemma.headword ?? token?.headword ?? token?.surface ?? '';
     untrack(() => {
       if (!headwordEdited) headwordInput = seed;
     });
@@ -1708,29 +1709,37 @@
                  Translations section. After a pause it also re-runs the admin
                  reference lookup for the typed word. Lets you recover when the
                  NLP parsed the wrong lemma. -->
-            <input
-              class="sp-word-input"
-              data-testid="headword-input"
-              type="text"
-              autocomplete="off"
-              spellcheck="false"
-              aria-label="Headword — edit to search the dictionary"
-              value={headwordInput}
-              oninput={(e) => onHeadwordInput((e.currentTarget as HTMLInputElement).value)}
-              onkeydown={(e) => {
-                if (e.key === 'Escape') {
-                  internalResults = [];
-                } else if (e.key === 'Enter' && internalResults[0]) {
-                  // Load the top suggestion without forcing a click.
-                  e.preventDefault();
-                  void selectInternalLemma(internalResults[0]);
-                }
-              }}
-            />
+            <span class="sp-entry-name">
+              <span class="sp-headword-field">
+                <span class="sp-headword-measure" aria-hidden="true">{headwordInput}</span>
+                <input
+                  class="sp-word-input"
+                  data-testid="headword-input"
+                  size="1"
+                  type="text"
+                  autocomplete="off"
+                  spellcheck="false"
+                  aria-label="Headword, edit to search the dictionary"
+                  value={headwordInput}
+                  oninput={(e) => onHeadwordInput((e.currentTarget as HTMLInputElement).value)}
+                  onkeydown={(e) => {
+                    if (e.key === 'Escape') {
+                      internalResults = [];
+                    } else if (e.key === 'Enter' && internalResults[0]) {
+                      // Load the top suggestion without forcing a click.
+                      e.preventDefault();
+                      void selectInternalLemma(internalResults[0]);
+                    }
+                  }}
+                />
+              </span>
+              {#if payload?.lemma.romanization && headwordInput === payload.lemma.headword}
+                <span class="sp-roman">{payload.lemma.romanization}</span>
+              {/if}
+            </span>
             {#if payload}
               <PosPill pos={payload.lemma.pos} class="sp-pos-pill" />
-              {#if token.selectedBy === 'human'}<small>Confirmed</small>
-              {:else if token.selectionStatus === 'needs_review'}<small>Selection needs review</small>{/if}
+              {#if token.selectionStatus === 'needs_review'}<small>Selection needs review</small>{/if}
             {/if}
             {#if bookFrequency !== null && bookFrequency > 0}
               <span
@@ -1795,9 +1804,6 @@
           Reprocess this text to see written-out number forms in each language.
         </p>
       {:else}
-        {#if token.romanization}
-          <p class="sp-roman">{token.romanization}</p>
-        {/if}
         {#if !isDesktop && token.lemmaId}
           <div class="compact-definition" data-testid="selected-definition">
             {#if payload?.translations.personal[0]}
@@ -2539,8 +2545,24 @@
     line-height: 1.1;
     color: var(--ink, var(--color-fg));
   }
+  .sp-word:has(.sp-entry-name) { flex-wrap: wrap; }
+  .sp-entry-name {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 0.45rem;
+    max-width: 100%;
+    min-width: 0;
+  }
+  .sp-headword-field {
+    display: inline-grid;
+    min-width: 1ch;
+    max-width: 100%;
+  }
+  .sp-headword-measure, .sp-word-input { grid-area: 1 / 1; }
+  .sp-headword-measure { visibility: hidden; white-space: pre; }
   .sp-word-input {
-    flex: 1;
+    width: 100%;
+    box-sizing: border-box;
     min-width: 0;
     border: 0;
     border-bottom: 1px dashed transparent;
@@ -2666,7 +2688,8 @@
     .word-actions .sp-status button { min-height: 44px; }
   }
   .sp-roman {
-    margin: 0 0 0.85rem;
+    overflow-wrap: anywhere;
+    font-weight: normal;
     font-family: var(--font-mono-display, var(--font-mono));
     font-size: 0.78rem;
     color: var(--ink-3, var(--color-fg-muted));

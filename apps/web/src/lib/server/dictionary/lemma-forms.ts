@@ -24,16 +24,37 @@
  * All writes accept a Drizzle transaction handle so callers in
  * `curator.ts` can compose them with audit-row inserts.
  */
-import { and, asc, desc, eq, ilike, isNull, ne, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, ilike, isNotNull, isNull, ne, or, sql } from 'drizzle-orm';
 
 import { db, schema } from '../db/index.js';
 import { nlpClient } from '../nlp-client.js';
-import type { LanguageCode } from '@ciareader/shared-types';
+import { LANGUAGES, type LanguageCode } from '@ciareader/shared-types';
 import type { Lemma, LemmaForm } from '../db/schema.js';
 
 import { generateForms, listLemmasUsingParadigm, loadParadigm } from './paradigms.js';
 
 export type DbLike = typeof db;
+
+export async function getHeadwordRomanization(lemma: Pick<Lemma, 'id' | 'language' | 'headword'>) {
+  if (!LANGUAGES[lemma.language].defaultRomanization) return null;
+
+  const forms = schema.lemmaForms;
+  const [recorded] = await db.select({ reading: forms.romanization })
+    .from(forms)
+    .where(and(eq(forms.lemmaId, lemma.id), eq(forms.surface, lemma.headword),
+      isNull(forms.quarantinedAt), isNotNull(forms.romanization), ne(forms.romanization, '')))
+    .orderBy(desc(sql`${forms.createdBy} = 'curator'`), desc(forms.createdAt), forms.id)
+    .limit(1);
+  if (recorded?.reading) return recorded.reading;
+
+  try {
+    const result = await nlpClient.romanize(lemma.language, [lemma.headword], AbortSignal.timeout(1500));
+    return result.romanizations[0] ?? null;
+  } catch {
+    // A dictionary entry can still be read when the romanizer is unavailable.
+    return null;
+  }
+}
 
 export type LemmaFormRow = {
   id: string;

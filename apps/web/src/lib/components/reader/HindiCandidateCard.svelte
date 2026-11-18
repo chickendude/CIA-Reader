@@ -90,7 +90,6 @@
   <header>
     <span class="headword">{candidate.headword}</span>
     <PosPill pos={candidate.pos} />
-    {#if candidate.selectedBy === 'human'}<small>Confirmed</small>{/if}
     {#if frequency !== null}<span class="frequency" title="Occurrences in this book"
         >{frequency.toLocaleString()}×</span
       >{/if}
