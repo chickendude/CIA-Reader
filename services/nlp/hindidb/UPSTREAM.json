@@ -1,0 +1,21 @@
+{
+  "source": "HindiDB local project",
+  "snapshot": "2026-11-17",
+  "parser_version": "0.4.2",
+  "original_sha256": {
+    "__init__.py": "89c4d3e09ad4909f483dd255af79779beb62020f7bbcbf92e27ba39d25ddd72a",
+    "parser.py": "b17d091c022a891e0e95d9a6991ef9f5a170d57ae635a5445cff66e3518b24c3",
+    "lexicon.py": "8225b5bdd756205f7551b4637aa6df91b05ec618715fc9234aa9e1f9da7ecf4f",
+    "morphology.py": "947144ea33c51683c2b86fc26f13a63c25f7d8cb438284a48d09ea4af69b55d1",
+    "examples.py": "738c96c1a7e7f96f91f9e16f1919b2443d7c5dbe8a2de6f0e1f938c8ce8b97e9",
+    "constructions.py": "49e1680ca1bd917cee6d74529d36f7d7c3aea149e5db0b83fbebc1d1279c90f3",
+    "text.py": "5b3613a655af38369b9f3264a81d00f9869382c6e28114f089929b3e686ad50f",
+    "spelling.py": "54873051ed29df216d2245f7a74ecdd03307ceb1c575bc227c812f6fce5ca7d1",
+    "entry_groups.py": "1da2c0704455552d7567e1f1f64acc3045f916cf3806756cf5127eb2b8d3da08",
+    "headwords.py": "a36c54fee65d9d38a8ef25d7d348797c2cff4ff42b7b17fe5bb162cd86383378",
+    "phrase_forms.py": "1d38efc53e0d5c0568aafedf12e7b05e5cfeb5150e5f6ef3cd93fd10450230e4",
+    "form_inventory.py": "652f008217e1a998976d90bfccb9cf9ef4708cabe1e8c3f6a2bb4eb1bdf33497",
+    "planner.py": "dec873d6407e72c39fdee4676b320aa22a12d8c58c2a4a0bca87aff28ee7c4a5",
+    "data/seed.json": "7d83a4493eef48bdc8ffe5c490badb6e9aba4837d62a946d1689f90aaf21a3c5"
+  }
+}
