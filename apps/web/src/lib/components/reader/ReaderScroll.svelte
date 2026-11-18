@@ -8,6 +8,7 @@
   per-paragraph TokenSpan render so all three modes share styles.
 -->
 <script lang="ts">
+  import { looksLikeNumberToken } from './types.js';
   import { onMount, tick } from 'svelte';
 
   import TokenSpan from './TokenSpan.svelte';
@@ -76,13 +77,14 @@
   const correctedTokens = $derived.by(() => {
     if (!current?.tokens) return null;
     if (
-      statusOverrides.size === 0 &&
+      statusOverrides.size === 0 && definitionOverrides.size === 0 && contextOverrides.size === 0 &&
       lemmaCorrections.size === 0 &&
       personalGlossOverrides.size === 0
     ) {
       return current.tokens;
     }
     return current.tokens.map((t) => {
+      t = contextOverrides.get(t.id) ?? t;
       const correctedLemmaId = lemmaCorrections.get(t.id);
       let next = t;
       if (correctedLemmaId && correctedLemmaId !== t.lemmaId) {
@@ -107,6 +109,16 @@
           personalGloss: personalGlossOverrides.get(next.lemmaId) ?? null,
         };
       }
+      if (next.lemmaId && definitionOverrides.has(next.lemmaId)) {
+        next = { ...next, glossDefault: definitionOverrides.get(next.lemmaId) ?? null };
+      }
+      next = { ...next, candidates: next.candidates.map((candidate) => ({
+        ...candidate,
+        glossDefault: definitionOverrides.get(candidate.lemmaId) ?? candidate.glossDefault,
+        status: statusOverrides.get(candidate.lemmaId) ?? candidate.status,
+        personalGloss: personalGlossOverrides.has(candidate.lemmaId)
+          ? personalGlossOverrides.get(candidate.lemmaId) ?? null : candidate.personalGloss,
+      })) };
       return next;
     });
   });
@@ -289,7 +301,7 @@
     const tokenId = span.getAttribute('data-token-id');
     if (!tokenId) return null;
     const token = tokensById.get(tokenId);
-    if (!token || !token.isWord) return null;
+    if (!token || (!token.isWord && !token.numberForms && !looksLikeNumberToken(token.surface))) return null;
     return { token, el: span };
   }
 
@@ -348,6 +360,7 @@
     if (related && (event.currentTarget as HTMLElement).contains(related)) {
       return;
     }
+    if (related?.closest?.('[role=tooltip]')) return;
     hoverToken = null;
     hoverRect = null;
   }
@@ -358,6 +371,29 @@
   }
 
   let statusOverrides = $state(new Map<string, ServerToken['status']>());
+  let definitionOverrides = $state(new Map<string, string>());
+  let contextOverrides = $state(new Map<string, ServerToken>());
+  $effect(() => {
+    const update = (event: Event) => {
+      const next = (event as CustomEvent<ServerToken>).detail;
+      if (next.chapterId !== current?.id) return;
+      contextOverrides = new Map(contextOverrides).set(next.id,next);
+      const corrections = new Map(lemmaCorrections); corrections.delete(next.id); lemmaCorrections = corrections;
+      if (activeToken?.id === next.id) activeToken = next;
+      if (hoverToken?.id === next.id) hoverToken = next;
+    };
+    window.addEventListener('hindi-context-choice-changed',update);
+    return () => window.removeEventListener('hindi-context-choice-changed',update);
+  });
+  $effect(() => {
+    const update = (event: Event) => {
+      const { lemmaId, body } = (event as CustomEvent<{ lemmaId: string; body: string }>).detail;
+      definitionOverrides = new Map(definitionOverrides).set(lemmaId, body);
+    };
+    window.addEventListener('dictionary-definition-changed', update);
+    return () => window.removeEventListener('dictionary-definition-changed', update);
+  });
+
   function onStatusChange(lemmaId: string, status: ServerToken['status']) {
     const next = new Map(statusOverrides);
     next.set(lemmaId, status);
@@ -482,7 +518,7 @@
 </div>
 
 {#if hoverToken && hoverRect}
-  <WordTooltip token={hoverToken} anchorRect={hoverRect} {language} />
+  <WordTooltip token={hoverToken} anchorRect={hoverRect} {language} onClose={() => { hoverToken = null; hoverRect = null; }} />
 {/if}
 
 {#if activeToken && activeRect}

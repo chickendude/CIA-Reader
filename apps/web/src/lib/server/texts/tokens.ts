@@ -17,6 +17,7 @@ import type { LanguageCode } from '@ciareader/shared-types';
 
 import { db, schema } from '../db/index.js';
 import type { TextToken, TokenCorrection, UserKnownLemma } from '../db/schema.js';
+import { loadHindiContextChoices, canVerifyHindiContext, contextVersion } from './hindi-context.js';
 
 /**
  * One candidate in the disambiguation list (T-6.1). Set on
@@ -29,10 +30,13 @@ import type { TextToken, TokenCorrection, UserKnownLemma } from '../db/schema.js
  * resolvable picks render.
  */
 export type RenderedCandidate = {
+  selectedBy?: 'ai' | 'human';
   lemmaId: string;
   headword: string;
   pos: string;
   glossDefault: string | null;
+  personalGloss?: string | null;
+  status?: 'known' | 'learning' | 'ignored' | 'unknown';
   /** Worker-time score (higher = more confident). Surfaced in
    *  attribute form so the popup can sort or label without re-running
    *  the math client-side. */
@@ -69,6 +73,10 @@ export type RenderedNumberForms = {
 };
 
 export type RenderedToken = {
+  canVerifyContext?: boolean;
+  contextVersion?: string;
+  selectedBy?: 'ai' | 'human';
+  selectionStatus?: string;
   id: string;
   idx: number;
   /** Owning chapter id — lets the reader capture the mined sentence when a
@@ -79,6 +87,8 @@ export type RenderedToken = {
   isAmbiguous: boolean;
   isOov: boolean;
   lemmaId: string | null;
+  headword?: string;
+  pos?: string;
   romanization: string | null;
   /** Canonical short gloss for the lemma — surfaced in the hover
    *  tooltip (T-5.18) so a reader can scan a paragraph without
@@ -262,7 +272,7 @@ export async function loadChapterTokens(
         headword: r.headword,
         pos: r.pos,
       });
-      if (!r.glossDefault) {
+      if (!r.glossDefault && r.language !== 'hi') {
         lemmaHeadwords.push({
           id: r.id,
           language: r.language,
@@ -346,7 +356,15 @@ export async function loadChapterTokens(
     }
   }
 
+  const choices = [...lemmaMetaById.values()].some((entry) => entry.language === 'hi')
+    ? await loadHindiContextChoices(chapterId) : new Map();
+  const canVerifyContext = [...lemmaMetaById.values()].some((entry) => entry.language === 'hi')
+    ? await canVerifyHindiContext(chapterId, viewerId) : false;
+  let sourceOffset = 0;
   return tokens.map((t) => {
+    const choice = choices.get(sourceOffset);
+    sourceOffset += [...t.surface].length;
+    const selected = choice?.selectedLemmaIds.find((id: string) => t.lemmaCandidates.some((candidate) => candidate.lemmaId === id));
     // T-6.4: apply the viewer's persistent correction here so the
     // chosen lemma drives every downstream concern (status colour,
     // gloss tooltip, candidate list).
@@ -354,7 +372,7 @@ export async function loadChapterTokens(
     const correctedLemmaId =
       correction && correction.chosenLemmaId
         ? correction.chosenLemmaId
-        : t.lemmaId;
+        : selected ?? t.lemmaId;
     // mark_proper_noun / mark_foreign / mark_not_a_word: the user
     // declared this surface isn't a learnable word. Drop the lemma
     // tie + suppress is_oov / is_ambiguous so the reader stops
@@ -394,10 +412,13 @@ export async function loadChapterTokens(
       if (!meta) return;
       seen.add(lemmaId);
       candidates.push({
+        selectedBy: choice?.selectedOrigins[lemmaId],
         lemmaId,
         headword: meta.headword,
         pos: meta.pos,
         glossDefault: glossByLemma.get(lemmaId) ?? null,
+        personalGloss: personalGlossByLemma.get(lemmaId) ?? null,
+        status: statusByLemma.get(lemmaId) ?? 'unknown',
         score,
         features,
       });
@@ -445,6 +466,10 @@ export async function loadChapterTokens(
       : null;
 
     return {
+      canVerifyContext,
+      contextVersion: contextVersion(t.lemmaCandidates.flatMap(c=>c.lemmaId?[c.lemmaId]:[]),choice),
+      selectedBy: effectiveLemmaId ? choice?.selectedOrigins[effectiveLemmaId] : undefined,
+      selectionStatus: choice?.status,
       id: t.id,
       idx: t.idx,
       chapterId,
@@ -456,13 +481,15 @@ export async function loadChapterTokens(
       // from the dictionary".
       isOov: isMarkedNonWord ? false : t.isOov,
       lemmaId: effectiveLemmaId,
+      headword: effectiveLemmaId ? lemmaMetaById.get(effectiveLemmaId)?.headword : undefined,
+      pos: effectiveLemmaId ? lemmaMetaById.get(effectiveLemmaId)?.pos : undefined,
       romanization: t.romanization,
       glossDefault: effectiveGloss,
       personalGloss: effectiveLemmaId
         ? personalGlossByLemma.get(effectiveLemmaId) ?? null
         : null,
       candidates,
-      features: t.features,
+      features: t.lemmaCandidates.find((candidate) => candidate.lemmaId === effectiveLemmaId)?.features ?? t.features,
       numberForms: renderedNumberForms,
       status,
       bbox: t.bbox ?? null,

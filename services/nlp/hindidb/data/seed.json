@@ -1,0 +1,1820 @@
+{
+  "version": 1,
+  "source": "HindiDB authored developmental seed; not independently reviewed",
+  "review_status": "provisional",
+  "entries": [
+    {
+      "lemma": "वाला",
+      "pos": "NOUN",
+      "paradigm": "noun_mf_aa_ii",
+      "source": "HindiDB user-reviewed nominal declension: वाले → वाला; masculine वाला/वाले/वालों and feminine वाली/वालियाँ/वालियों. Explicitly assigned paired ā/ī noun pattern, 2026-10-14. Citation meaning: https://en.wiktionary.org/wiki/वाला#Hindi. Does not infer gender counterparts for other nouns or split arbitrary suffix compounds."
+    },
+    {
+      "lemma": "वाला",
+      "pos": "ADJ",
+      "paradigm": "adj_aa",
+      "dictionary_links": [{"word": "-वाला", "source_pos": "adj"}],
+      "source": "HindiDB user-reviewed standalone adjectival वाला/वाले/वाली, 2026-10-14; https://en.wiktionary.org/wiki/-वाला#Hindi. Keep the nominal use and its lexical ID separately; do not import nominal plural endings into this adjective."
+    },
+    {
+      "lemma": "लड़का",
+      "pos": "NOUN",
+      "paradigm": "noun_m_aa"
+    },
+    {
+      "lemma": "बच्चा",
+      "pos": "NOUN",
+      "paradigm": "noun_m_aa"
+    },
+    {
+      "lemma": "कमरा",
+      "pos": "NOUN",
+      "paradigm": "noun_m_aa"
+    },
+    {
+      "lemma": "दरवाज़ा",
+      "pos": "NOUN",
+      "paradigm": "noun_m_aa"
+    },
+    {
+      "lemma": "बेटा",
+      "pos": "NOUN",
+      "paradigm": "noun_m_aa"
+    },
+    {
+      "lemma": "घोड़ा",
+      "pos": "NOUN",
+      "paradigm": "noun_m_aa"
+    },
+    {
+      "lemma": "रास्ता",
+      "pos": "NOUN",
+      "paradigm": "noun_m_aa"
+    },
+    {
+      "lemma": "कपड़ा",
+      "pos": "NOUN",
+      "paradigm": "noun_m_aa"
+    },
+    {
+      "lemma": "जूता",
+      "pos": "NOUN",
+      "paradigm": "noun_m_aa"
+    },
+    {
+      "lemma": "पैसा",
+      "pos": "NOUN",
+      "paradigm": "noun_m_aa"
+    },
+    {
+      "lemma": "घर",
+      "pos": "NOUN",
+      "paradigm": "noun_m_consonant"
+    },
+    {
+      "lemma": "काम",
+      "pos": "NOUN",
+      "paradigm": "noun_m_consonant"
+    },
+    {
+      "lemma": "दिन",
+      "pos": "NOUN",
+      "paradigm": "noun_m_consonant"
+    },
+    {
+      "lemma": "आदमी",
+      "pos": "NOUN",
+      "paradigm": "invariant",
+      "forms": [
+        "आदमियों"
+      ]
+    },
+    {
+      "lemma": "पेड़",
+      "pos": "NOUN",
+      "paradigm": "noun_m_consonant"
+    },
+    {
+      "lemma": "दोस्त",
+      "pos": "NOUN",
+      "paradigm": "noun_m_consonant"
+    },
+    {
+      "lemma": "शब्द",
+      "pos": "NOUN",
+      "paradigm": "noun_m_consonant"
+    },
+    {
+      "lemma": "शहर",
+      "pos": "NOUN",
+      "paradigm": "noun_m_consonant"
+    },
+    {
+      "lemma": "देश",
+      "pos": "NOUN",
+      "paradigm": "noun_m_consonant"
+    },
+    {
+      "lemma": "सवाल",
+      "pos": "NOUN",
+      "paradigm": "noun_m_consonant"
+    },
+    {
+      "lemma": "जवाब",
+      "pos": "NOUN",
+      "paradigm": "noun_m_consonant"
+    },
+    {
+      "lemma": "समय",
+      "pos": "NOUN",
+      "paradigm": "noun_m_consonant"
+    },
+    {
+      "lemma": "हाथ",
+      "pos": "NOUN",
+      "paradigm": "noun_m_consonant"
+    },
+    {
+      "lemma": "फूल",
+      "pos": "NOUN",
+      "paradigm": "noun_m_consonant"
+    },
+    {
+      "lemma": "साल",
+      "pos": "NOUN",
+      "paradigm": "noun_m_consonant"
+    },
+    {
+      "lemma": "नाम",
+      "pos": "NOUN",
+      "paradigm": "noun_m_consonant"
+    },
+    {
+      "lemma": "पानी",
+      "pos": "NOUN",
+      "paradigm": "invariant",
+      "forms": [
+        "पानियों"
+      ]
+    },
+    {
+      "lemma": "खाना",
+      "pos": "NOUN",
+      "paradigm": "noun_m_aa"
+    },
+    {
+      "lemma": "सोना",
+      "pos": "NOUN",
+      "paradigm": "noun_m_aa"
+    },
+    {
+      "lemma": "किताब",
+      "pos": "NOUN",
+      "paradigm": "noun_f_consonant"
+    },
+    {
+      "lemma": "बात",
+      "pos": "NOUN",
+      "paradigm": "noun_f_consonant"
+    },
+    {
+      "lemma": "रात",
+      "pos": "NOUN",
+      "paradigm": "noun_f_consonant"
+    },
+    {
+      "lemma": "सड़क",
+      "pos": "NOUN",
+      "paradigm": "noun_f_consonant"
+    },
+    {
+      "lemma": "आँख",
+      "pos": "NOUN",
+      "paradigm": "noun_f_consonant"
+    },
+    {
+      "lemma": "आवाज़",
+      "pos": "NOUN",
+      "paradigm": "noun_f_consonant"
+    },
+    {
+      "lemma": "मदद",
+      "pos": "NOUN",
+      "paradigm": "noun_f_consonant"
+    },
+    {
+      "lemma": "भूख",
+      "pos": "NOUN",
+      "paradigm": "noun_f_consonant"
+    },
+    {
+      "lemma": "चीज़",
+      "pos": "NOUN",
+      "paradigm": "noun_f_consonant"
+    },
+    {
+      "lemma": "बहन",
+      "pos": "NOUN",
+      "paradigm": "noun_f_consonant"
+    },
+    {
+      "lemma": "मेज़",
+      "pos": "NOUN",
+      "paradigm": "noun_f_consonant"
+    },
+    {
+      "lemma": "लड़की",
+      "pos": "NOUN",
+      "paradigm": "noun_f_ii"
+    },
+    {
+      "lemma": "कहानी",
+      "pos": "NOUN",
+      "paradigm": "noun_f_ii"
+    },
+    {
+      "lemma": "कुर्सी",
+      "pos": "NOUN",
+      "paradigm": "noun_f_ii",
+      "dictionary_links": [
+        {
+          "word": "कुर्सी",
+          "source_pos": "noun",
+          "note": "Explicit lexical definition link across dictionary POS/spelling conventions; preserve this entry ID and its existing morphology."
+        }
+      ]
+    },
+    {
+      "lemma": "रोटी",
+      "pos": "NOUN",
+      "paradigm": "noun_f_ii"
+    },
+    {
+      "lemma": "बेटी",
+      "pos": "NOUN",
+      "paradigm": "noun_f_ii"
+    },
+    {
+      "lemma": "नदी",
+      "pos": "NOUN",
+      "paradigm": "noun_f_ii"
+    },
+    {
+      "lemma": "खिड़की",
+      "pos": "NOUN",
+      "paradigm": "noun_f_ii"
+    },
+    {
+      "lemma": "चाबी",
+      "pos": "NOUN",
+      "paradigm": "noun_f_ii"
+    },
+    {
+      "lemma": "ज़िंदगी",
+      "pos": "NOUN",
+      "paradigm": "noun_f_ii"
+    },
+    {
+      "lemma": "भाषा",
+      "pos": "NOUN",
+      "paradigm": "noun_f_aa"
+    },
+    {
+      "lemma": "आशा",
+      "pos": "NOUN",
+      "paradigm": "noun_f_aa"
+    },
+    {
+      "lemma": "अच्छा",
+      "pos": "ADJ",
+      "paradigm": "adj_aa"
+    },
+    {
+      "lemma": "बड़ा",
+      "pos": "ADJ",
+      "paradigm": "adj_aa"
+    },
+    {
+      "lemma": "छोटा",
+      "pos": "ADJ",
+      "paradigm": "adj_aa"
+    },
+    {
+      "lemma": "नया",
+      "pos": "ADJ",
+      "paradigm": "adj_aa",
+      "forms": [
+        "नई",
+        "नए"
+      ]
+    },
+    {
+      "lemma": "पुराना",
+      "pos": "ADJ",
+      "paradigm": "adj_aa"
+    },
+    {
+      "lemma": "काला",
+      "pos": "ADJ",
+      "paradigm": "adj_aa"
+    },
+    {
+      "lemma": "लंबा",
+      "pos": "ADJ",
+      "paradigm": "adj_aa"
+    },
+    {
+      "lemma": "पूरा",
+      "pos": "ADJ",
+      "paradigm": "adj_aa"
+    },
+    {
+      "lemma": "सीधा",
+      "pos": "ADJ",
+      "paradigm": "adj_aa"
+    },
+    {
+      "lemma": "सुंदर",
+      "pos": "ADJ",
+      "paradigm": "invariant"
+    },
+    {
+      "lemma": "खुश",
+      "pos": "ADJ",
+      "paradigm": "invariant"
+    },
+    {
+      "lemma": "साफ़",
+      "pos": "ADJ",
+      "paradigm": "invariant"
+    },
+    {
+      "lemma": "तेज़",
+      "pos": "ADJ",
+      "paradigm": "invariant"
+    },
+    {
+      "lemma": "लाल",
+      "pos": "ADJ",
+      "paradigm": "invariant"
+    },
+    {
+      "lemma": "ख़ुश",
+      "pos": "ADJ",
+      "paradigm": "invariant"
+    },
+    {
+      "lemma": "आज",
+      "pos": "ADV",
+      "paradigm": "invariant"
+    },
+    {
+      "lemma": "कल",
+      "pos": "ADV",
+      "paradigm": "invariant"
+    },
+    {
+      "lemma": "अब",
+      "pos": "ADV",
+      "paradigm": "invariant"
+    },
+    {
+      "lemma": "यहाँ",
+      "pos": "ADV",
+      "paradigm": "invariant"
+    },
+    {
+      "lemma": "वहाँ",
+      "pos": "ADV",
+      "paradigm": "invariant"
+    },
+    {
+      "lemma": "फिर",
+      "pos": "ADV",
+      "paradigm": "invariant"
+    },
+    {
+      "lemma": "बहुत",
+      "pos": "ADV",
+      "paradigm": "invariant"
+    },
+    {
+      "lemma": "थोड़ा",
+      "pos": "ADV",
+      "paradigm": "invariant"
+    },
+    {
+      "lemma": "जल्दी",
+      "pos": "ADV",
+      "paradigm": "invariant"
+    },
+    {
+      "lemma": "धीरे",
+      "pos": "ADV",
+      "paradigm": "invariant"
+    },
+    {
+      "lemma": "हमेशा",
+      "pos": "ADV",
+      "paradigm": "invariant"
+    },
+    {
+      "lemma": "कभी",
+      "pos": "ADV",
+      "paradigm": "invariant"
+    },
+    {
+      "lemma": "कहाँ",
+      "pos": "ADV",
+      "paradigm": "invariant"
+    },
+    {
+      "lemma": "क्यों",
+      "pos": "ADV",
+      "paradigm": "invariant"
+    },
+    {
+      "lemma": "कैसे",
+      "pos": "ADV",
+      "paradigm": "invariant"
+    },
+    {
+      "lemma": "नहीं",
+      "pos": "PART",
+      "paradigm": "invariant",
+      "source": "https://universaldependencies.org/treebanks/hi_hdtb/index.html",
+      "classification_note": "Negative particle; aligns with the Wiktionary particle entry. Corrects the provisional seed ADV classification, not a distinct lexical sense."
+    },
+    {
+      "lemma": "ने",
+      "pos": "ADP",
+      "paradigm": "invariant"
+    },
+    {
+      "lemma": "को",
+      "pos": "ADP",
+      "paradigm": "invariant"
+    },
+    {
+      "lemma": "से",
+      "pos": "ADP",
+      "paradigm": "invariant"
+    },
+    {
+      "lemma": "में",
+      "pos": "ADP",
+      "paradigm": "invariant"
+    },
+    {
+      "lemma": "पर",
+      "pos": "ADP",
+      "paradigm": "invariant"
+    },
+    {
+      "lemma": "तक",
+      "pos": "ADP",
+      "paradigm": "invariant"
+    },
+    {
+      "lemma": "लिए",
+      "pos": "ADP",
+      "paradigm": "invariant"
+    },
+    {
+      "lemma": "साथ",
+      "pos": "ADP",
+      "paradigm": "invariant"
+    },
+    {
+      "lemma": "बिना",
+      "pos": "ADP",
+      "paradigm": "invariant"
+    },
+    {
+      "lemma": "द्वारा",
+      "pos": "ADP",
+      "paradigm": "invariant"
+    },
+    {
+      "lemma": "और",
+      "pos": "CCONJ",
+      "paradigm": "invariant"
+    },
+    {
+      "lemma": "लेकिन",
+      "pos": "CCONJ",
+      "paradigm": "invariant"
+    },
+    {
+      "lemma": "या",
+      "pos": "CCONJ",
+      "paradigm": "invariant"
+    },
+    {
+      "lemma": "मगर",
+      "pos": "CCONJ",
+      "paradigm": "invariant"
+    },
+    {
+      "lemma": "कि",
+      "pos": "SCONJ",
+      "paradigm": "invariant",
+      "dictionary_links": [
+        {
+          "word": "कि",
+          "source_pos": "conj",
+          "note": "Explicit lexical definition link across dictionary POS conventions; preserve this entry ID and its existing morphology."
+        }
+      ]
+    },
+    {
+      "lemma": "अगर",
+      "pos": "SCONJ",
+      "paradigm": "invariant",
+      "dictionary_links": [
+        {
+          "word": "अगर",
+          "source_pos": "conj",
+          "note": "Explicit lexical definition link across dictionary POS/spelling conventions; preserve this entry ID and its existing morphology."
+        }
+      ]
+    },
+    {
+      "lemma": "क्योंकि",
+      "pos": "SCONJ",
+      "paradigm": "invariant",
+      "dictionary_links": [
+        {
+          "word": "क्योंकि",
+          "source_pos": "conj",
+          "note": "Explicit lexical definition link across dictionary POS/spelling conventions; preserve this entry ID and its existing morphology."
+        }
+      ]
+    },
+    {
+      "lemma": "जब",
+      "pos": "SCONJ",
+      "paradigm": "invariant",
+      "dictionary_links": [
+        {
+          "word": "जब",
+          "source_pos": "adv",
+          "note": "Explicit lexical definition link across dictionary POS conventions; preserve this entry ID and its existing morphology."
+        }
+      ]
+    },
+    {
+      "lemma": "भी",
+      "pos": "PART",
+      "paradigm": "invariant"
+    },
+    {
+      "lemma": "ही",
+      "pos": "PART",
+      "paradigm": "invariant"
+    },
+    {
+      "lemma": "तो",
+      "pos": "PART",
+      "paradigm": "invariant"
+    },
+    {
+      "lemma": "मत",
+      "pos": "PART",
+      "paradigm": "invariant"
+    },
+    {
+      "lemma": "हाँ",
+      "pos": "PART",
+      "paradigm": "invariant"
+    },
+    {
+      "lemma": "एक",
+      "pos": "NUM",
+      "paradigm": "invariant"
+    },
+    {
+      "lemma": "दो",
+      "pos": "NUM",
+      "paradigm": "invariant"
+    },
+    {
+      "lemma": "तीन",
+      "pos": "NUM",
+      "paradigm": "invariant"
+    },
+    {
+      "lemma": "चार",
+      "pos": "NUM",
+      "paradigm": "invariant"
+    },
+    {
+      "lemma": "पाँच",
+      "pos": "NUM",
+      "paradigm": "invariant"
+    },
+    {
+      "lemma": "सब",
+      "pos": "PRON",
+      "paradigm": "invariant"
+    },
+    {
+      "lemma": "कुछ",
+      "pos": "PRON",
+      "paradigm": "invariant"
+    },
+    {
+      "lemma": "कोई",
+      "pos": "PRON",
+      "paradigm": "invariant"
+    },
+    {
+      "lemma": "पढ़ना",
+      "pos": "VERB",
+      "paradigm": "verb_consonant"
+    },
+    {
+      "lemma": "लिखना",
+      "pos": "VERB",
+      "paradigm": "verb_consonant"
+    },
+    {
+      "lemma": "देखना",
+      "pos": "VERB",
+      "paradigm": "verb_consonant"
+    },
+    {
+      "lemma": "बोलना",
+      "pos": "VERB",
+      "paradigm": "verb_consonant"
+    },
+    {
+      "lemma": "चलना",
+      "pos": "VERB",
+      "paradigm": "verb_consonant"
+    },
+    {
+      "lemma": "समझना",
+      "pos": "VERB",
+      "paradigm": "verb_consonant"
+    },
+    {
+      "lemma": "पूछना",
+      "pos": "VERB",
+      "paradigm": "verb_consonant"
+    },
+    {
+      "lemma": "रखना",
+      "pos": "VERB",
+      "paradigm": "verb_consonant"
+    },
+    {
+      "lemma": "मिलना",
+      "pos": "VERB",
+      "paradigm": "verb_consonant"
+    },
+    {
+      "lemma": "बैठना",
+      "pos": "VERB",
+      "paradigm": "verb_consonant"
+    },
+    {
+      "lemma": "उठना",
+      "pos": "VERB",
+      "paradigm": "verb_consonant"
+    },
+    {
+      "lemma": "खोलना",
+      "pos": "VERB",
+      "paradigm": "verb_consonant"
+    },
+    {
+      "lemma": "सुनना",
+      "pos": "VERB",
+      "paradigm": "verb_consonant"
+    },
+    {
+      "lemma": "मरना",
+      "pos": "VERB",
+      "paradigm": "verb_consonant"
+    },
+    {
+      "lemma": "चाहना",
+      "pos": "VERB",
+      "paradigm": "verb_consonant"
+    },
+    {
+      "lemma": "हँसना",
+      "pos": "VERB",
+      "paradigm": "verb_consonant"
+    },
+    {
+      "lemma": "पहुँचाना",
+      "pos": "VERB",
+      "paradigm": "verb_aa"
+    },
+    {
+      "lemma": "पकड़ना",
+      "pos": "VERB",
+      "paradigm": "verb_consonant"
+    },
+    {
+      "lemma": "छोड़ना",
+      "pos": "VERB",
+      "paradigm": "verb_consonant"
+    },
+    {
+      "lemma": "लगना",
+      "pos": "VERB",
+      "paradigm": "verb_consonant"
+    },
+    {
+      "lemma": "डालना",
+      "pos": "VERB",
+      "paradigm": "verb_consonant"
+    },
+    {
+      "lemma": "भूलना",
+      "pos": "VERB",
+      "paradigm": "verb_consonant"
+    },
+    {
+      "lemma": "निकलना",
+      "pos": "VERB",
+      "paradigm": "verb_consonant"
+    },
+    {
+      "lemma": "का",
+      "pos": "ADP",
+      "paradigm": "invariant",
+      "forms": [
+        "के",
+        "की"
+      ]
+    },
+    {
+      "lemma": "मैं",
+      "pos": "PRON",
+      "paradigm": "invariant",
+      "forms": [
+        "मुझे",
+        "मुझ",
+        "मुझसे",
+        "मुझको",
+        "मैंने"
+      ]
+    },
+    {
+      "lemma": "तू",
+      "pos": "PRON",
+      "paradigm": "invariant",
+      "forms": [
+        "तुझे",
+        "तुझ",
+        "तुझसे",
+        "तुझको",
+        "तूने"
+      ]
+    },
+    {
+      "lemma": "तुम",
+      "pos": "PRON",
+      "paradigm": "invariant",
+      "forms": [
+        "तुम्हें",
+        "तुमने",
+        "तुमको",
+        "तुमसे"
+      ]
+    },
+    {
+      "lemma": "हम",
+      "pos": "PRON",
+      "paradigm": "invariant",
+      "forms": [
+        "हमें",
+        "हमने",
+        "हमको",
+        "हमसे"
+      ]
+    },
+    {
+      "lemma": "आप",
+      "pos": "PRON",
+      "paradigm": "invariant",
+      "forms": [
+        "आपने",
+        "आपको",
+        "आपसे"
+      ]
+    },
+    {
+      "lemma": "वह",
+      "pos": "PRON",
+      "paradigm": "invariant",
+      "forms": [
+        "वे",
+        "वो",
+        "उस",
+        "उन",
+        "उसे",
+        "उन्हें",
+        "उसने",
+        "उन्होंने",
+        "उसको",
+        "उनको",
+        "उससे",
+        "उनसे"
+      ]
+    },
+    {
+      "lemma": "यह",
+      "pos": "PRON",
+      "paradigm": "invariant",
+      "forms": [
+        "ये",
+        "इस",
+        "इन",
+        "इसे",
+        "इन्हें",
+        "इसने",
+        "इन्होंने",
+        "इसको",
+        "इनको",
+        "इससे",
+        "इनसे"
+      ]
+    },
+    {
+      "lemma": "कौन",
+      "pos": "PRON",
+      "paradigm": "invariant",
+      "forms": [
+        "किस",
+        "किन",
+        "किसे",
+        "किन्हें",
+        "किसने",
+        "किन्होंने",
+        "किसको",
+        "किनको"
+      ]
+    },
+    {
+      "lemma": "अपना",
+      "pos": "DET",
+      "paradigm": "adj_aa",
+      "dictionary_links": [
+        {
+          "word": "अपना",
+          "source_pos": "pron",
+          "note": "Explicit lexical definition link across dictionary POS conventions; preserve this entry ID and its existing morphology."
+        }
+      ]
+    },
+    {
+      "lemma": "मेरा",
+      "pos": "DET",
+      "paradigm": "adj_aa",
+      "dictionary_links": [
+        {
+          "word": "मेरा",
+          "source_pos": "pron",
+          "note": "Explicit lexical definition link across dictionary POS/spelling conventions; preserve this entry ID and its existing morphology."
+        }
+      ]
+    },
+    {
+      "lemma": "तेरा",
+      "pos": "DET",
+      "paradigm": "adj_aa"
+    },
+    {
+      "lemma": "करना",
+      "pos": "VERB",
+      "paradigm": "verb_explicit",
+      "forms": [
+        "किया",
+        "किए",
+        "किये",
+        "की",
+        "कीं",
+        "करूँ",
+        "करे",
+        "करो",
+        "करें",
+        "करूँगा",
+        "करूँगी",
+        "करेगा",
+        "करेगी",
+        "करोगे",
+        "करोगी",
+        "करेंगे",
+        "करेंगी",
+        "कीजिए",
+        "कीजिये",
+        "करिए",
+        "करिये"
+      ]
+    },
+    {
+      "lemma": "जाना",
+      "pos": "VERB",
+      "paradigm": "verb_explicit",
+      "forms": [
+        "गया",
+        "गए",
+        "गये",
+        "गई",
+        "गयी",
+        "गईं",
+        "गयीं",
+        "जाऊँ",
+        "जाए",
+        "जाये",
+        "जाओ",
+        "जाएँ",
+        "जायें",
+        "जाऊँगा",
+        "जाऊँगी",
+        "जाएगा",
+        "जायेगा",
+        "जाएगी",
+        "जायेगी",
+        "जाओगे",
+        "जाओगी",
+        "जाएँगे",
+        "जाएँगी",
+        "जाइए",
+        "जाइये"
+      ]
+    },
+    {
+      "lemma": "आना",
+      "pos": "VERB",
+      "paradigm": "verb_explicit",
+      "forms": [
+        "आया",
+        "आए",
+        "आये",
+        "आई",
+        "आईं",
+        "आऊँ",
+        "आएँ",
+        "आयें",
+        "आओ",
+        "आऊँगा",
+        "आऊँगी",
+        "आएगा",
+        "आएगी",
+        "आओगे",
+        "आओगी",
+        "आएँगे",
+        "आएँगी",
+        "आइए",
+        "आइये"
+      ]
+    },
+    {
+      "lemma": "खाना",
+      "pos": "VERB",
+      "paradigm": "verb_explicit",
+      "forms": [
+        "खाया",
+        "खाए",
+        "खाये",
+        "खाई",
+        "खाईं",
+        "खाऊँ",
+        "खाओ",
+        "खाएँ",
+        "खाऊँगा",
+        "खाऊँगी",
+        "खाएगा",
+        "खाएगी",
+        "खाओगे",
+        "खाओगी",
+        "खाएँगे",
+        "खाएँगी",
+        "खाइए",
+        "खाइये"
+      ]
+    },
+    {
+      "lemma": "पीना",
+      "pos": "VERB",
+      "paradigm": "verb_explicit",
+      "forms": [
+        "पिया",
+        "पिए",
+        "पिये",
+        "पी",
+        "पीं",
+        "पिऊँ",
+        "पियो",
+        "पिओ",
+        "पिएँ",
+        "पियें",
+        "पिऊँगा",
+        "पिऊँगी",
+        "पिएगा",
+        "पिएगी",
+        "पिएँगे",
+        "पिएँगी",
+        "पीजिए",
+        "पीजिये"
+      ]
+    },
+    {
+      "lemma": "लेना",
+      "pos": "VERB",
+      "paradigm": "verb_explicit",
+      "forms": [
+        "लिया",
+        "लिए",
+        "लिये",
+        "ली",
+        "लीं",
+        "लूँ",
+        "ले",
+        "लो",
+        "लें",
+        "लूँगा",
+        "लूँगी",
+        "लेगा",
+        "लेगी",
+        "लोगे",
+        "लोगी",
+        "लेंगे",
+        "लेंगी",
+        "लीजिए",
+        "लीजिये"
+      ]
+    },
+    {
+      "lemma": "देना",
+      "pos": "VERB",
+      "paradigm": "verb_explicit",
+      "forms": [
+        "दिया",
+        "दिए",
+        "दिये",
+        "दी",
+        "दीं",
+        "दूँ",
+        "दे",
+        "दो",
+        "दें",
+        "दूँगा",
+        "दूँगी",
+        "देगा",
+        "देगी",
+        "दोगे",
+        "दोगी",
+        "देंगे",
+        "देंगी",
+        "दीजिए",
+        "दीजिये"
+      ]
+    },
+    {
+      "lemma": "होना",
+      "pos": "VERB",
+      "paradigm": "verb_explicit",
+      "forms": [
+        "हुआ",
+        "हुए",
+        "हुये",
+        "हुई",
+        "हुईं",
+        "हूँ",
+        "है",
+        "हैं",
+        "था",
+        "थे",
+        "थी",
+        "थीं",
+        "हो",
+        "हों",
+        "होऊँ",
+        "होए",
+        "होओ",
+        "होएँ",
+        "हूँगा",
+        "हूँगी",
+        "होगा",
+        "होगी",
+        "होगे",
+        "होंगे",
+        "होंगी",
+        "होइए"
+      ]
+    },
+    {
+      "lemma": "रहना",
+      "pos": "VERB",
+      "paradigm": "verb_explicit",
+      "forms": [
+        "रहा",
+        "रहे",
+        "रही",
+        "रहीं",
+        "रहूँ",
+        "रहो",
+        "रहें",
+        "रहूँगा",
+        "रहूँगी",
+        "रहेगा",
+        "रहेगी",
+        "रहोगे",
+        "रहोगी",
+        "रहेंगे",
+        "रहेंगी",
+        "रहिए",
+        "रहिये"
+      ]
+    },
+    {
+      "lemma": "सोना",
+      "pos": "VERB",
+      "paradigm": "verb_explicit",
+      "forms": [
+        "सोया",
+        "सोए",
+        "सोये",
+        "सोई",
+        "सोईं",
+        "सोऊँ",
+        "सोओ",
+        "सोएँ",
+        "सोऊँगा",
+        "सोऊँगी",
+        "सोएगा",
+        "सोएगी",
+        "सोएँगे",
+        "सोएँगी",
+        "सोइए"
+      ]
+    },
+    {
+      "lemma": "मदद करना",
+      "pos": "VERB",
+      "paradigm": "verb_explicit",
+      "forms": [
+        "मदद किया",
+        "मदद किए",
+        "मदद किये",
+        "मदद की",
+        "मदद कीं",
+        "मदद करूँ",
+        "मदद करे",
+        "मदद करो",
+        "मदद करें",
+        "मदद करूँगा",
+        "मदद करूँगी",
+        "मदद करेगा",
+        "मदद करेगी",
+        "मदद करोगे",
+        "मदद करोगी",
+        "मदद करेंगे",
+        "मदद करेंगी",
+        "मदद कीजिए",
+        "मदद कीजिये",
+        "मदद करिए",
+        "मदद करिये"
+      ]
+    },
+    {
+      "lemma": "बात करना",
+      "pos": "VERB",
+      "paradigm": "verb_explicit",
+      "forms": [
+        "बात किया",
+        "बात किए",
+        "बात किये",
+        "बात की",
+        "बात कीं",
+        "बात करूँ",
+        "बात करे",
+        "बात करो",
+        "बात करें",
+        "बात करूँगा",
+        "बात करूँगी",
+        "बात करेगा",
+        "बात करेगी",
+        "बात करोगे",
+        "बात करोगी",
+        "बात करेंगे",
+        "बात करेंगी",
+        "बात कीजिए",
+        "बात कीजिये",
+        "बात करिए",
+        "बात करिये"
+      ]
+    },
+    {
+      "lemma": "याद करना",
+      "pos": "VERB",
+      "paradigm": "verb_explicit",
+      "forms": [
+        "याद किया",
+        "याद किए",
+        "याद किये",
+        "याद की",
+        "याद कीं",
+        "याद करूँ",
+        "याद करे",
+        "याद करो",
+        "याद करें",
+        "याद करूँगा",
+        "याद करूँगी",
+        "याद करेगा",
+        "याद करेगी",
+        "याद करोगे",
+        "याद करोगी",
+        "याद करेंगे",
+        "याद करेंगी",
+        "याद कीजिए",
+        "याद कीजिये",
+        "याद करिए",
+        "याद करिये"
+      ]
+    },
+    {
+      "lemma": "इंतज़ार करना",
+      "pos": "VERB",
+      "paradigm": "verb_explicit",
+      "forms": [
+        "इंतज़ार किया",
+        "इंतज़ार किए",
+        "इंतज़ार किये",
+        "इंतज़ार की",
+        "इंतज़ार कीं",
+        "इंतज़ार करूँ",
+        "इंतज़ार करे",
+        "इंतज़ार करो",
+        "इंतज़ार करें",
+        "इंतज़ार करूँगा",
+        "इंतज़ार करूँगी",
+        "इंतज़ार करेगा",
+        "इंतज़ार करेगी",
+        "इंतज़ार करोगे",
+        "इंतज़ार करोगी",
+        "इंतज़ार करेंगे",
+        "इंतज़ार करेंगी",
+        "इंतज़ार कीजिए",
+        "इंतज़ार कीजिये",
+        "इंतज़ार करिए",
+        "इंतज़ार करिये"
+      ]
+    },
+    {
+      "lemma": "पसंद करना",
+      "pos": "VERB",
+      "paradigm": "verb_explicit",
+      "forms": [
+        "पसंद किया",
+        "पसंद किए",
+        "पसंद किये",
+        "पसंद की",
+        "पसंद कीं",
+        "पसंद करूँ",
+        "पसंद करे",
+        "पसंद करो",
+        "पसंद करें",
+        "पसंद करूँगा",
+        "पसंद करूँगी",
+        "पसंद करेगा",
+        "पसंद करेगी",
+        "पसंद करोगे",
+        "पसंद करोगी",
+        "पसंद करेंगे",
+        "पसंद करेंगी",
+        "पसंद कीजिए",
+        "पसंद कीजिये",
+        "पसंद करिए",
+        "पसंद करिये"
+      ]
+    },
+    {
+      "lemma": "पता होना",
+      "pos": "VERB",
+      "paradigm": "verb_explicit",
+      "forms": [
+        "पता हुआ",
+        "पता हुए",
+        "पता हुये",
+        "पता हुई",
+        "पता हुईं",
+        "पता हूँ",
+        "पता है",
+        "पता हैं",
+        "पता था",
+        "पता थे",
+        "पता थी",
+        "पता थीं",
+        "पता हो",
+        "पता हों",
+        "पता होऊँ",
+        "पता होए",
+        "पता होओ",
+        "पता होएँ",
+        "पता हूँगा",
+        "पता हूँगी",
+        "पता होगा",
+        "पता होगी",
+        "पता होगे",
+        "पता होंगे",
+        "पता होंगी",
+        "पता होइए"
+      ]
+    },
+    {
+      "lemma": "शुरू करना",
+      "pos": "VERB",
+      "paradigm": "verb_explicit",
+      "forms": [
+        "शुरू किया",
+        "शुरू किए",
+        "शुरू किये",
+        "शुरू की",
+        "शुरू कीं",
+        "शुरू करूँ",
+        "शुरू करे",
+        "शुरू करो",
+        "शुरू करें",
+        "शुरू करूँगा",
+        "शुरू करूँगी",
+        "शुरू करेगा",
+        "शुरू करेगी",
+        "शुरू करोगे",
+        "शुरू करोगी",
+        "शुरू करेंगे",
+        "शुरू करेंगी",
+        "शुरू कीजिए",
+        "शुरू कीजिये",
+        "शुरू करिए",
+        "शुरू करिये"
+      ]
+    },
+    {
+      "lemma": "शुरू होना",
+      "pos": "VERB",
+      "paradigm": "verb_explicit",
+      "forms": [
+        "शुरू हुआ",
+        "शुरू हुए",
+        "शुरू हुये",
+        "शुरू हुई",
+        "शुरू हुईं",
+        "शुरू हूँ",
+        "शुरू है",
+        "शुरू हैं",
+        "शुरू था",
+        "शुरू थे",
+        "शुरू थी",
+        "शुरू थीं",
+        "शुरू हो",
+        "शुरू हों",
+        "शुरू होऊँ",
+        "शुरू होए",
+        "शुरू होओ",
+        "शुरू होएँ",
+        "शुरू हूँगा",
+        "शुरू हूँगी",
+        "शुरू होगा",
+        "शुरू होगी",
+        "शुरू होगे",
+        "शुरू होंगे",
+        "शुरू होंगी",
+        "शुरू होइए"
+      ]
+    },
+    {
+      "lemma": "खा लेना",
+      "pos": "VERB",
+      "paradigm": "verb_explicit",
+      "forms": [
+        "खा लिया",
+        "खा लिए",
+        "खा लिये",
+        "खा ली",
+        "खा लीं",
+        "खा लूँ",
+        "खा ले",
+        "खा लो",
+        "खा लें",
+        "खा लूँगा",
+        "खा लूँगी",
+        "खा लेगा",
+        "खा लेगी",
+        "खा लोगे",
+        "खा लोगी",
+        "खा लेंगे",
+        "खा लेंगी",
+        "खा लीजिए",
+        "खा लीजिये"
+      ]
+    },
+    {
+      "lemma": "कर देना",
+      "pos": "VERB",
+      "paradigm": "verb_explicit",
+      "forms": [
+        "कर दिया",
+        "कर दिए",
+        "कर दिये",
+        "कर दी",
+        "कर दीं",
+        "कर दूँ",
+        "कर दे",
+        "कर दो",
+        "कर दें",
+        "कर दूँगा",
+        "कर दूँगी",
+        "कर देगा",
+        "कर देगी",
+        "कर दोगे",
+        "कर दोगी",
+        "कर देंगे",
+        "कर देंगी",
+        "कर दीजिए",
+        "कर दीजिये"
+      ]
+    },
+    {
+      "lemma": "कर लेना",
+      "pos": "VERB",
+      "paradigm": "verb_explicit",
+      "forms": [
+        "कर लिया",
+        "कर लिए",
+        "कर लिये",
+        "कर ली",
+        "कर लीं",
+        "कर लूँ",
+        "कर ले",
+        "कर लो",
+        "कर लें",
+        "कर लूँगा",
+        "कर लूँगी",
+        "कर लेगा",
+        "कर लेगी",
+        "कर लोगे",
+        "कर लोगी",
+        "कर लेंगे",
+        "कर लेंगी",
+        "कर लीजिए",
+        "कर लीजिये"
+      ]
+    },
+    {
+      "lemma": "देख लेना",
+      "pos": "VERB",
+      "paradigm": "verb_explicit",
+      "forms": [
+        "देख लिया",
+        "देख लिए",
+        "देख लिये",
+        "देख ली",
+        "देख लीं",
+        "देख लूँ",
+        "देख ले",
+        "देख लो",
+        "देख लें",
+        "देख लूँगा",
+        "देख लूँगी",
+        "देख लेगा",
+        "देख लेगी",
+        "देख लोगे",
+        "देख लोगी",
+        "देख लेंगे",
+        "देख लेंगी",
+        "देख लीजिए",
+        "देख लीजिये"
+      ]
+    },
+    {
+      "lemma": "दे देना",
+      "pos": "VERB",
+      "paradigm": "verb_explicit",
+      "forms": [
+        "दे दिया",
+        "दे दिए",
+        "दे दिये",
+        "दे दी",
+        "दे दीं",
+        "दे दूँ",
+        "दे दे",
+        "दे दो",
+        "दे दें",
+        "दे दूँगा",
+        "दे दूँगी",
+        "दे देगा",
+        "दे देगी",
+        "दे दोगे",
+        "दे दोगी",
+        "दे देंगे",
+        "दे देंगी",
+        "दे दीजिए",
+        "दे दीजिये"
+      ]
+    },
+    {
+      "lemma": "ले लेना",
+      "pos": "VERB",
+      "paradigm": "verb_explicit",
+      "forms": [
+        "ले लिया",
+        "ले लिए",
+        "ले लिये",
+        "ले ली",
+        "ले लीं",
+        "ले लूँ",
+        "ले ले",
+        "ले लो",
+        "ले लें",
+        "ले लूँगा",
+        "ले लूँगी",
+        "ले लेगा",
+        "ले लेगी",
+        "ले लोगे",
+        "ले लोगी",
+        "ले लेंगे",
+        "ले लेंगी",
+        "ले लीजिए",
+        "ले लीजिये"
+      ]
+    },
+    {
+      "lemma": "पढ़ लेना",
+      "pos": "VERB",
+      "paradigm": "verb_explicit",
+      "forms": [
+        "पढ़ लिया",
+        "पढ़ लिए",
+        "पढ़ लिये",
+        "पढ़ ली",
+        "पढ़ लीं",
+        "पढ़ लूँ",
+        "पढ़ ले",
+        "पढ़ लो",
+        "पढ़ लें",
+        "पढ़ लूँगा",
+        "पढ़ लूँगी",
+        "पढ़ लेगा",
+        "पढ़ लेगी",
+        "पढ़ लोगे",
+        "पढ़ लोगी",
+        "पढ़ लेंगे",
+        "पढ़ लेंगी",
+        "पढ़ लीजिए",
+        "पढ़ लीजिये"
+      ]
+    },
+    {
+      "lemma": "लिख देना",
+      "pos": "VERB",
+      "paradigm": "verb_explicit",
+      "forms": [
+        "लिख दिया",
+        "लिख दिए",
+        "लिख दिये",
+        "लिख दी",
+        "लिख दीं",
+        "लिख दूँ",
+        "लिख दे",
+        "लिख दो",
+        "लिख दें",
+        "लिख दूँगा",
+        "लिख दूँगी",
+        "लिख देगा",
+        "लिख देगी",
+        "लिख दोगे",
+        "लिख दोगी",
+        "लिख देंगे",
+        "लिख देंगी",
+        "लिख दीजिए",
+        "लिख दीजिये"
+      ]
+    },
+    {
+      "lemma": "निकल जाना",
+      "pos": "VERB",
+      "paradigm": "verb_explicit",
+      "forms": [
+        "निकल गया",
+        "निकल गए",
+        "निकल गये",
+        "निकल गई",
+        "निकल गयी",
+        "निकल गईं",
+        "निकल गयीं",
+        "निकल जाऊँ",
+        "निकल जाए",
+        "निकल जाये",
+        "निकल जाओ",
+        "निकल जाएँ",
+        "निकल जायें",
+        "निकल जाऊँगा",
+        "निकल जाऊँगी",
+        "निकल जाएगा",
+        "निकल जायेगा",
+        "निकल जाएगी",
+        "निकल जायेगी",
+        "निकल जाओगे",
+        "निकल जाओगी",
+        "निकल जाएँगे",
+        "निकल जाएँगी",
+        "निकल जाइए",
+        "निकल जाइये"
+      ]
+    },
+    {
+      "lemma": "के लिए",
+      "pos": "ADP",
+      "paradigm": "invariant"
+    },
+    {
+      "lemma": "के साथ",
+      "pos": "ADP",
+      "paradigm": "invariant"
+    },
+    {
+      "lemma": "के पास",
+      "pos": "ADP",
+      "paradigm": "invariant"
+    },
+    {
+      "lemma": "के बाद",
+      "pos": "ADP",
+      "paradigm": "invariant"
+    },
+    {
+      "lemma": "के पहले",
+      "pos": "ADP",
+      "paradigm": "invariant"
+    },
+    {
+      "lemma": "की ओर",
+      "pos": "ADP",
+      "paradigm": "invariant"
+    },
+    {
+      "lemma": "तुम्हारा",
+      "pos": "DET",
+      "paradigm": "adj_aa",
+      "dictionary_links": [
+        {
+          "word": "तुम्हारा",
+          "source_pos": "pron",
+          "note": "Explicit lexical definition link across dictionary POS conventions; preserve this entry ID and its existing morphology."
+        }
+      ]
+    },
+    {
+      "lemma": "हमारा",
+      "pos": "DET",
+      "paradigm": "adj_aa",
+      "dictionary_links": [
+        {
+          "word": "हमारा",
+          "source_pos": "pron",
+          "note": "Explicit lexical definition link across dictionary POS/spelling conventions; preserve this entry ID and its existing morphology."
+        }
+      ]
+    },
+    {
+      "lemma": "कल",
+      "pos": "NOUN",
+      "paradigm": "noun_m_consonant"
+    },
+    {
+      "lemma": "पर",
+      "pos": "NOUN",
+      "paradigm": "noun_m_consonant"
+    },
+    {
+      "lemma": "दीया",
+      "pos": "NOUN",
+      "paradigm": "noun_m_aa",
+      "forms": [
+        "दिया",
+        "दिये",
+        "दियों",
+        "दियो"
+      ],
+      "dictionary_links": [
+        {
+          "word": "दीया",
+          "source_pos": "noun",
+          "note": "Explicit lexical definition link across dictionary POS/spelling conventions; preserve this entry ID and its existing morphology."
+        }
+      ]
+    },
+    {
+      "lemma": "चलाना",
+      "pos": "VERB",
+      "paradigm": "verb_explicit",
+      "forms": [
+        "चलाया",
+        "चलाए",
+        "चलाये",
+        "चलाई",
+        "चलाईं",
+        "चलाओ",
+        "चलाएँ",
+        "चलाएगा",
+        "चलाएगी"
+      ]
+    },
+    {
+      "lemma": "खुलना",
+      "pos": "VERB",
+      "paradigm": "verb_consonant"
+    },
+    {
+      "lemma": "जलना",
+      "pos": "VERB",
+      "paradigm": "verb_consonant"
+    },
+    {
+      "lemma": "सुबह",
+      "pos": "NOUN",
+      "paradigm": "noun_f_consonant"
+    },
+    {
+      "lemma": "स्कूल",
+      "pos": "NOUN",
+      "paradigm": "noun_m_consonant"
+    },
+    {
+      "lemma": "अध्यापक",
+      "pos": "NOUN",
+      "paradigm": "noun_m_consonant"
+    },
+    {
+      "lemma": "पता",
+      "pos": "NOUN",
+      "paradigm": "noun_m_aa"
+    },
+    {
+      "lemma": "हवा",
+      "pos": "NOUN",
+      "paradigm": "noun_f_aa"
+    },
+    {
+      "lemma": "बाहर",
+      "pos": "ADV",
+      "paradigm": "invariant"
+    },
+    {
+      "lemma": "पीछे",
+      "pos": "ADV",
+      "paradigm": "invariant"
+    },
+    {
+      "lemma": "जल",
+      "pos": "NOUN",
+      "paradigm": "noun_m_consonant"
+    },
+    {
+      "lemma": "देर",
+      "pos": "NOUN",
+      "paradigm": "noun_f_consonant"
+    },
+    {
+      "lemma": "बंद",
+      "pos": "ADJ",
+      "paradigm": "invariant"
+    },
+    {
+      "lemma": "बंद करना",
+      "pos": "VERB",
+      "paradigm": "verb_explicit",
+      "forms": [
+        "बंद किया",
+        "बंद किए",
+        "बंद किये",
+        "बंद की",
+        "बंद कीं",
+        "बंद करूँ",
+        "बंद करे",
+        "बंद करो",
+        "बंद करें",
+        "बंद करूँगा",
+        "बंद करूँगी",
+        "बंद करेगा",
+        "बंद करेगी",
+        "बंद करोगे",
+        "बंद करोगी",
+        "बंद करेंगे",
+        "बंद करेंगी",
+        "बंद कीजिए",
+        "बंद कीजिये",
+        "बंद करिए",
+        "बंद करिये"
+      ]
+    }
+  ]
+}

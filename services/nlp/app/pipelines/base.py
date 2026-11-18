@@ -18,6 +18,7 @@ from app.schemas import Token
 class PipelineResult:
     pipeline_id: str
     tokens: list[Token]
+    hindi_analysis: dict | None = None
 
 
 class Pipeline(ABC):

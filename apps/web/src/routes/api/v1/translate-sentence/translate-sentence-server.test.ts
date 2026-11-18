@@ -2,6 +2,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const requireUser = vi.fn();
+const canReadChapter = vi.hoisted(() => vi.fn().mockResolvedValue(true));
+vi.mock('$lib/server/auth/can-read.js', () => ({ canReadChapter }));
 const sentenceAround = vi.fn();
 const getCachedTranslation = vi.fn();
 const setCachedTranslation = vi.fn();
@@ -51,6 +53,7 @@ async function callPost(body: unknown, user: typeof USER | null = USER) {
 }
 
 beforeEach(() => {
+  canReadChapter.mockResolvedValue(true);
   requireUser.mockReset();
   sentenceAround.mockReset();
   getCachedTranslation.mockReset();
@@ -64,6 +67,12 @@ afterEach(() => vi.resetModules());
 const VALID = { chapterId: UUID, tokenIdx: 5, language: 'eu' };
 
 describe('POST /api/v1/translate-sentence', () => {
+  it('does not expose a restricted chapter through sentence translation', async () => {
+    canReadChapter.mockResolvedValueOnce(false);
+    expect((await callPost(VALID)).status).toBe(404);
+    expect(sentenceAround).not.toHaveBeenCalled();
+    expect(translateSentence).not.toHaveBeenCalled();
+  });
   it('serves a cache hit without calling OpenAI', async () => {
     getCachedTranslation.mockResolvedValueOnce('A house.');
     const res = (await callPost(VALID)) as Response;

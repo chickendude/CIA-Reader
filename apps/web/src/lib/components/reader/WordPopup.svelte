@@ -25,6 +25,9 @@
   import PosPill from './PosPill.svelte';
   import ReportTranslationModal from './ReportTranslationModal.svelte';
   import { getFeaturePills } from './feature-labels.js';
+  import HindiCandidateCard from './HindiCandidateCard.svelte';
+  import EditableDefinition from './EditableDefinition.svelte';
+  import ContextChoiceButton from './ContextChoiceButton.svelte';
   import { customizableOfficialIds } from './customize-eligibility.js';
   import {
     definitionLanguageName,
@@ -64,6 +67,7 @@
   };
 
   type LemmaPayload = {
+    canEdit?: boolean;
     lemma: {
       id: string;
       headword: string;
@@ -1719,6 +1723,8 @@
             />
             {#if payload}
               <PosPill pos={payload.lemma.pos} class="sp-pos-pill" />
+              {#if token.selectedBy}<small>{token.selectedBy === 'ai' ? 'AI selected' : 'Confirmed'}</small>
+              {:else if token.selectionStatus === 'needs_review'}<small>Selection needs review</small>{/if}
             {/if}
             {#if bookFrequency !== null && bookFrequency > 0}
               <span
@@ -1813,9 +1819,11 @@
     </header>
 
     {#if !isNumberToken}
-    {#if isOwner && token.lemmaId && payload}
+    {#if isOwner && token.lemmaId && payload && (payload.canEdit || payload.translations.personal.length > 0)}
       <section class="sp-primary" data-testid="primary-translation">
-        {#if editingPrimary}
+        {#if !payload.canEdit}
+          <div>{payload.translations.personal[0]?.body ?? ''}</div>
+        {:else if editingPrimary}
           <form
             class="sp-primary-form"
             onsubmit={(e) => {
@@ -1858,6 +1866,9 @@
           </button>
         {/if}
       </section>
+    {/if}
+    {#if language === 'hi' && token.lemmaId}
+      <ContextChoiceButton {token} lemmaId={token.lemmaId} label={`${token.headword ?? token.surface} ${token.pos ?? ''}`} selectedBy={token.selectedBy} />
     {/if}
     {#if isOwner && token.lemmaId}
       <div class="sp-status" role="group" aria-label="Mark status">
@@ -2016,7 +2027,7 @@
                     {definitionLanguageName(t.targetLanguage)}
                   </span>
                 {/if}
-                {#if isOwner}
+                {#if isOwner && payload.canEdit}
                   <div class="personal-actions">
                     <button
                       type="button"
@@ -2050,13 +2061,14 @@
         {#each payload.translations.official.filter((t) => isDefLangVisible(t.targetLanguage)) as t (t.id)}
           <li class="official-row">
             <div class="official-body">
-              {t.body}
+              <EditableDefinition text={t.body} translationId={t.id} lemmaId={payload.lemma.id} canEdit={payload.canEdit ?? false}
+                onSave={(body) => { if (payload) payload = { ...payload, translations: { ...payload.translations, official: payload.translations.official.map((row) => row.id === t.id ? { ...row, body } : row) } }; }} />
               {#if showDefLangFilter}
                 <span class="def-lang-badge">
                   {definitionLanguageName(t.targetLanguage)}
                 </span>
               {/if}
-              {#if customizableIds().has(t.id)}
+              {#if payload.canEdit && customizableIds().has(t.id)}
                 <button
                   type="button"
                   class="customize-toggle"
@@ -2249,7 +2261,7 @@
          POST). On the pending path the popup closes via the
          chapter-level onPhraseCreated callback rather than
          re-rendering its own translations list. -->
-    {#if isOwner && (payload || pendingSelection)}
+    {#if isOwner && payload?.canEdit && (payload || pendingSelection)}
       {#if showAddForm}
         <form
           class="add-form"
@@ -2401,7 +2413,13 @@
       </button>
     {/if}
 
-    {#if token.isAmbiguous && token.candidates.length > 0}
+    {#if language === 'hi' && token.candidates.length > 0}
+      <div class="hindi-candidates" data-testid="hindi-candidates">
+        {#each token.candidates as candidate (candidate.lemmaId)}
+          <HindiCandidateCard {candidate} {token} {textId} {isOwner} {onStatusChange} />
+        {/each}
+      </div>
+    {:else if token.isAmbiguous && token.candidates.length > 0}
       <button
         type="button"
         class="alt-toggle"
@@ -2591,6 +2609,7 @@
     border-radius: 4px;
   }
   .sp-close {
+    z-index: 1;
     position: absolute;
     top: -0.25rem;
     right: -0.25rem;
@@ -3356,9 +3375,10 @@
     cursor: pointer;
     text-align: center;
   }
-  .add-toggle:hover {
+  .add-toggle:hover,
+  .add-toggle:focus-visible {
     border-color: var(--accent, var(--color-accent));
-    color: var(--accent-ink, var(--color-accent));
+    color: var(--ink, var(--color-fg));
     border-style: solid;
   }
   .add-form {

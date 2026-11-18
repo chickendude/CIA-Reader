@@ -80,6 +80,7 @@ export const TABS: readonly Tab[] = [
     icon: 'words',
     section: 'Track',
   },
+  { id: 'dictionary', label: 'Dictionary', href: '/dictionary', auth: 'any', match: ['/dictionary'], icon: 'library', section: 'Read' },
   {
     id: 'profile',
     label: 'Profile',

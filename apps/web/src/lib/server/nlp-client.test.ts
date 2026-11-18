@@ -49,6 +49,13 @@ describe('nlpClient', () => {
     expect(JSON.parse(String(init?.body))).toEqual({ language: 'hi', text: 'मैं' });
   });
 
+  it('rejects the old Hindi service so it cannot overwrite HindiDB analyses', async () => {
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({
+      language: 'hi', pipeline_id: 'stanza-hi', tokens: [],
+    }), { status: 200 }));
+    await expect(nlpClient.process('hi', 'जो')).rejects.toThrow('Restart the NLP service');
+  });
+
   it('throws with the response body when the NLP service returns non-2xx', async () => {
     fetchMock.mockResolvedValueOnce(
       new Response('unsupported language', { status: 400, statusText: 'Bad Request' }),

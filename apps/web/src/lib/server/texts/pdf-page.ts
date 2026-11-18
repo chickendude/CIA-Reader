@@ -136,6 +136,7 @@ export async function processPdfPage(
       index,
       tokens: ocr.tokens,
       proposedPhrases: ocr.proposed_phrases,
+      hindiAnalysis: ocr.hindi_analysis,
     });
 
     // A page counts as done once it has an image key. Mark the text
@@ -247,6 +248,7 @@ export async function reprocessPdfText(textId: string): Promise<number> {
         index,
         tokens: ocr.tokens,
         proposedPhrases: ocr.proposed_phrases,
+      hindiAnalysis: ocr.hindi_analysis,
       });
     }
     await markTextReady(textId);

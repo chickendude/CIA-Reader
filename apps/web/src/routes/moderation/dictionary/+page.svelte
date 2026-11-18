@@ -35,6 +35,7 @@
       <p class="sub">No language grants. Ask an admin for curator rights.</p>
     {/if}
     <nav class="mod-nav" aria-label="Moderation sections">
+      <a href="/moderation/hindi">Hindi unparsed words and context review →</a>
       <a href="/moderation/translations">Translation reports →</a>
       <a href="/moderation/parses">Parse reports →</a>
       <a href="/moderation/transcribe">Transcribe →</a>

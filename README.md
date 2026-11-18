@@ -19,10 +19,90 @@ scripts/              One-off tooling (issue bootstrap, etc.)
 
 ## Local development
 
+### Linux without Docker
+
+Use the native scripts below to run a local copy of Parhiba. Docker is only
+used **on the web server** to export its existing database.
+
+Prerequisites: **Node 22.13+**, **pnpm 9**, **Python 3.11+**,
+**PostgreSQL 16+** client/server tools, **Valkey or Redis**, and
+[Mailpit](https://mailpit.axllent.org/docs/install/) on your `PATH`. On Fedora,
+the database, Redis-compatible server, and Python packages can be installed with:
+
+```bash
+sudo dnf install postgresql postgresql-server valkey python3
+```
+
+Install Mailpit separately using its linked installation instructions. You do
+not need to initialize or enable a system-wide PostgreSQL/Valkey service; the
+launcher runs project-specific processes as your normal user.
+Project-local binaries in `.local/bin` are also supported; the launcher adds
+that directory to its `PATH` automatically.
+
+From the repository root:
+
+```bash
+# One-time dependencies and CPU-only NLP models (a substantial download).
+./scripts/dev-local.sh install
+
+# SSH to the web server and download a fresh database snapshot.
+./scripts/download-parhiba-db.sh
+
+# Use the exact archive path printed by the download command.
+./scripts/dev-local.sh restore .local/backups/parhiba-TIMESTAMP.dump
+
+# Apply pending local migrations and start all services.
+./scripts/dev-local.sh start
+```
+
+The installer reuses `services/nlp/.venv` if present. Otherwise it creates the
+venv using `python3` from your `PATH`; set `PYTHON=/path/to/python` to choose a
+different interpreter for a new venv. It checks that Python actually runs
+before downloading dependencies. Activation is optional for the scripts; for
+interactive Python work use `source services/nlp/.venv/bin/activate`.
+
+The native web app is at **http://localhost:6660**. Login/verification emails are
+captured by Mailpit at **http://localhost:8025**, so you can use your existing
+account email without sending real mail. PostgreSQL uses an isolated cluster
+under `.local/postgres`, listening on `127.0.0.1:55432`. The launcher uses
+local-only service URLs and a separate local auth secret. It does not copy
+production environment variables or API credentials. Optional translation and
+new scanned-page OCR need their own API credentials to work locally.
+
+Ctrl-C stops web, NLP, Valkey/Redis, and Mailpit. Stop PostgreSQL separately with
+`./scripts/dev-local.sh db-down`. Logs are in `.local/logs/` and
+`.local/postgres.log`. Ports and the local database name can be edited in the
+generated `.local/env`; keep the database port unchanged after initialization.
+The cluster uses trust authentication on loopback for single-user development.
+
+The download script defaults to `root@parhiba.com` and `/opt/ciareader`, uses
+your SSH config/keys, and accepts overrides:
+
+```bash
+./scripts/download-parhiba-db.sh --host user@server --path /opt/ciareader
+```
+
+It streams a consistent custom-format `pg_dump` over SSH, validates the archive,
+and saves it with owner-only permissions. It does not restart services or
+change the production database. Archives and all native runtime data are
+gitignored under `.local/`. The dump contains the entire database, including
+accounts and private content; keep it private. **Audio files and PDF page images
+are stored outside PostgreSQL and are not included**; existing text/dictionary
+data works, but those media files must be transferred separately into
+`.local/audio` and `.local/pdf`. NLP models are downloaded by `install`.
+
+Restore always creates a new database and refuses to overwrite an existing one.
+For another snapshot, stop the local apps, choose a new `LOCAL_DB_NAME` in
+`.local/env`, and run `restore` again. A failed restore leaves an empty database
+with the attempted name; choose another name before retrying. Local changes do
+not sync back to Parhiba. Restore dumps only from a server you trust.
+
+### Docker Compose
+
 Requirements:
 
 - **Docker Desktop** (or Docker Engine + Compose v2)
-- **Node.js** 20.x and **pnpm** 9.x (only needed if you want to run the web app outside Docker)
+- **Node.js** 22.13+ and **pnpm** 9.x (only needed if you want to run the web app outside Docker)
 - **Python** 3.11+ (only needed if you want to run NLP tests outside Docker)
 
 Start everything:

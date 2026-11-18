@@ -50,6 +50,29 @@ afterEach(() => {
 // T-5.28: WordTooltip portals its DOM to <body>, so we query the
 // document body rather than the testing-library `container`.
 describe('WordTooltip — gloss display (T-5.18)', () => {
+  it('shows only the selected entry when a Hindi occurrence has been confirmed', () => {
+    render(WordTooltip, {token:makeToken({surface:'एक',headword:'एक',pos:'NUM',glossDefault:'one (1), a',selectedBy:'human',candidates:[
+      {lemmaId:'adj',headword:'एक',pos:'ADJ',glossDefault:'sole, only; united',score:1,features:{}},
+    ]}),anchorRect:ANCHOR,language:'hi'});
+    expect(document.body.querySelectorAll('.tip-candidate')).toHaveLength(1);
+    expect(document.body.textContent).toContain('one (1), a');
+    expect(document.body.textContent).not.toContain('sole, only');
+  });
+  it('shows every Hindi POS candidate, including meanings beyond the primary entry', () => {
+    render(WordTooltip, { token: makeToken({
+      surface: 'हिन्दी', headword: 'हिंदी', pos: 'ADJ', glossDefault: 'Indian',
+      isAmbiguous: true, candidates: [
+        { lemmaId: 'proper', headword: 'हिंदी', pos: 'PROPN', glossDefault: 'Modern Standard Hindi; The Central Zone of Indo-Aryan languages', score: 1, features: {} },
+        { lemmaId: 'noun', headword: 'हिंदी', pos: 'NOUN', glossDefault: 'an Indian; a person of India', score: 1, features: {} },
+      ],
+    }), anchorRect: ANCHOR, language: 'hi' });
+    const cards = document.body.querySelectorAll('.tip-candidate');
+    expect(cards).toHaveLength(3);
+    expect(cards[0]?.textContent).toContain('Indian');
+    expect(cards[1]?.querySelectorAll('ol > li')).toHaveLength(2);
+    expect(cards[1]?.textContent).toContain('Modern Standard Hindi');
+    expect(cards[2]?.textContent).toContain('a person of India');
+  });
   it("shows the lemma's glossDefault when present", () => {
     render(WordTooltip, {
       token: makeToken({ glossDefault: 'morning, dawn' }),

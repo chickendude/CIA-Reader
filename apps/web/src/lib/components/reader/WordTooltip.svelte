@@ -9,6 +9,8 @@
   full side panel (WordPopup), which does fetch.
 -->
 <script lang="ts">
+  import DefinitionMeanings from './DefinitionMeanings.svelte';
+  import PosPill from './PosPill.svelte';
   import type { LanguageCode } from '@ciareader/shared-types';
   import {
     looksLikeNumberToken,
@@ -27,23 +29,28 @@
      *  backward-compat with callers that haven't been updated yet —
      *  when absent, number tokens fall back to the empty-state copy. */
     language?: LanguageCode;
+    onClose?: () => void;
   }
 
-  let { token, anchorRect, language }: Props = $props();
+  let { token, anchorRect, language, onClose }: Props = $props();
+  const hindiCandidates = $derived.by(() => {
+    const all = [{ lemmaId: token.lemmaId, headword: token.headword ?? token.surface, pos: token.pos ?? '',
+      glossDefault: token.glossDefault, personalGloss: token.personalGloss, selectedBy: token.selectedBy }, ...token.candidates];
+    const selected = all.filter(candidate => candidate.selectedBy);
+    return selected.length ? selected : all;
+  });
 
-  const numberForm = $derived<ServerNumberLanguageForm | null>(
-    token.numberForms && language
-      ? language === 'hi'
-        ? token.numberForms.hi
-        : language === 'mr'
-          ? token.numberForms.mr
-          : language === 'or'
-            ? token.numberForms.odia
-            : language === 'eu'
-              ? token.numberForms.eu
-              : null
-      : null,
-  );
+  const numberForm = $derived.by<ServerNumberLanguageForm | null>(() => {
+    if (!token.numberForms) return null;
+
+    switch (language) {
+      case 'hi': return token.numberForms.hi;
+      case 'mr': return token.numberForms.mr;
+      case 'or': return token.numberForms.odia;
+      case 'eu': return token.numberForms.eu;
+      default: return null;
+    }
+  });
 
   // T-2.8: legacy data fallback. The chapter was processed before the
   // worker started writing number_forms, so we have no spelled-out
@@ -110,6 +117,7 @@
   class="tip"
   role="tooltip"
   aria-hidden="false"
+  onmouseleave={() => onClose?.()}
   use:portal
   style:top="{placement.top}px"
   style:left="{placement.left}px"
@@ -138,6 +146,17 @@
     </div>
   {:else if isLegacyNumber}
     <div class="tip-def empty" data-testid="legacy-number">Number</div>
+  {:else if language === 'hi' && token.lemmaId}
+    {#each hindiCandidates as candidate (candidate.lemmaId)}
+      <section class="tip-candidate" data-lemma-id={candidate.lemmaId}>
+        <div class="tip-head">{#if hindiCandidates.length > 1 || candidate.headword !== token.surface}<span class="tip-w">{candidate.headword}</span>{/if}<PosPill pos={candidate.pos} />{#if candidate.selectedBy === 'ai'}<small>AI selected</small>{/if}</div>
+        {#if candidate.personalGloss || candidate.glossDefault}
+          <div class="tip-def"><DefinitionMeanings text={candidate.personalGloss || candidate.glossDefault || ''} /></div>
+        {:else}
+          <div class="tip-def empty">No translations</div>
+        {/if}
+      </section>
+    {/each}
   {:else if token.isOov && !token.personalGloss}
     <!-- T-5.20: surface the top translation when we have one, fall
          back to an italic "No translations" otherwise so the user
@@ -150,10 +169,10 @@
     <div class="tip-def empty">No dictionary match</div>
   {:else if token.personalGloss}
     <div class="tip-def" data-testid="tip-personal">
-      {token.personalGloss}
+      <DefinitionMeanings text={token.personalGloss} />
     </div>
   {:else if token.glossDefault}
-    <div class="tip-def">{token.glossDefault}</div>
+    <div class="tip-def"><DefinitionMeanings text={token.glossDefault} /></div>
   {:else}
     <div class="tip-def empty">No translations</div>
   {/if}
@@ -172,8 +191,10 @@
     padding: 0.55rem 0.75rem;
     font-size: 0.78rem;
     font-family: var(--font-sans, system-ui, sans-serif);
-    max-width: 280px;
-    pointer-events: none;
+    max-width: min(28rem, calc(100vw - 24px));
+    max-height: 70vh;
+    overflow-y: auto;
+    pointer-events: auto;
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.22);
     line-height: 1.4;
     animation: fade-in 120ms ease-out;
@@ -184,6 +205,11 @@
     gap: 0.5rem;
     margin-bottom: 0.25rem;
     flex-wrap: wrap;
+  }
+  .tip-candidate + .tip-candidate {
+    border-top: 1px solid color-mix(in oklch, var(--paper, #fdfaf3) 20%, transparent);
+    margin-top: 0.6rem;
+    padding-top: 0.6rem;
   }
   .tip-w {
     font-family: var(--font-serif-dev, var(--font-serif, serif));
@@ -200,13 +226,6 @@
     color: color-mix(in oklch, var(--paper, #fdfaf3) 88%, transparent);
     font-size: 0.78rem;
     line-height: 1.35;
-    /* Long glosses (e.g. multi-meaning lemmas) get clamped to two
-     * lines — the side panel still shows the full text on click. */
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    line-clamp: 2;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
   }
   /* T-2.8: small romanization stripe inside the gloss row for
    * number tokens. Same colour ramp as the head romanization. */

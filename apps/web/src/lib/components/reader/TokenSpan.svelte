@@ -14,7 +14,7 @@
   inline.
 -->
 <script lang="ts">
-  import { statusToCode, type ServerToken } from './types.js';
+  import { looksLikeNumberToken, statusToCode, type ServerToken } from './types.js';
 
   let {
     token,
@@ -34,10 +34,9 @@
   // sees them as "no dictionary match yet" not "you don't know this
   // word."
   const cssClass = $derived.by(() => {
-    if (!token.isWord) return '';
+    if (!token.isWord && !token.numberForms && !looksLikeNumberToken(token.surface)) return '';
     const classes: string[] = ['word'];
     if (token.isOov) classes.push('oov');
-    if (token.isAmbiguous) classes.push('ambiguous');
     if (isAnchor) classes.push('anchor');
     // #435: tag words whose lemma has no definition yet. The class is
     // inert until an admin flips `data-flag-undefined` on <html> from
@@ -60,7 +59,7 @@
   );
 </script>
 
-{#if !token.isWord}{token.surface}{:else if showRuby}<ruby
+{#if !token.isWord && !token.numberForms && !looksLikeNumberToken(token.surface)}{token.surface}{:else if showRuby}<ruby
     class={cssClass}
     data-token-id={token.id}
     data-token-idx={token.idx}
@@ -97,13 +96,6 @@
     background: transparent;
     border-bottom: 1px dashed var(--color-fg-muted);
     border-radius: 0;
-  }
-  .ambiguous::after {
-    content: '·';
-    color: var(--accent, var(--color-accent));
-    margin-left: 0.05em;
-    vertical-align: super;
-    font-size: 0.7em;
   }
   /* T-9.3: karaoke-style highlight on the word currently being
      spoken in the audio. Higher contrast than hover/anchor so the

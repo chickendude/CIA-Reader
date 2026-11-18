@@ -24,6 +24,14 @@ const deleteForm = vi.fn();
 const setLemmaParadigm = vi.fn();
 const regenerateForms = vi.fn();
 const listParadigmsForLemma = vi.fn();
+const getHindiEntry = vi.fn();
+const saveHindiMorphology = vi.fn();
+
+vi.mock('$lib/server/dictionary/hindidb.js', () => ({
+  getHindiEntry: (...a: unknown[]) => getHindiEntry(...a),
+  saveHindiMorphology: (...a: unknown[]) => saveHindiMorphology(...a),
+  hindiPatternPreviews: vi.fn().mockResolvedValue([]),
+}));
 
 vi.mock('$lib/server/dictionary/curator.js', async () => {
   const actual = await vi.importActual<
@@ -91,6 +99,8 @@ async function callAction(
 }
 
 beforeEach(() => {
+  getHindiEntry.mockReset().mockResolvedValue(null);
+  saveHindiMorphology.mockReset();
   getLemmaEditorView.mockReset();
   updateLemma.mockReset();
   setLemmaLock.mockReset();

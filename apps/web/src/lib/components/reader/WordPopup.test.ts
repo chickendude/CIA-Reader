@@ -1250,6 +1250,7 @@ describe('WordPopup — feature pills', () => {
 describe('WordPopup — add-translation form (no buttons, focus, refetch)', () => {
   function emptyPayload() {
     return {
+      canEdit: true,
       lemma: { id: 'lem-1', headword: 'पानी', pos: 'NOUN', glossDefault: null },
       translations: { personal: [], official: [], community: [] },
     };
@@ -1257,6 +1258,7 @@ describe('WordPopup — add-translation form (no buttons, focus, refetch)', () =
 
   function payloadWith(personal: { id: string; body: string }[]) {
     return {
+      canEdit: true,
       lemma: { id: 'lem-1', headword: 'पानी', pos: 'NOUN', glossDefault: null },
       translations: {
         personal: personal.map((p) => ({
@@ -1426,6 +1428,7 @@ describe('WordPopup — edit + delete personal translations', () => {
 
   function payloadOf(personal: { id: string; body: string }[]) {
     return {
+      canEdit: true,
       lemma: { id: 'lem-1', headword: 'पानी', pos: 'NOUN', glossDefault: null },
       translations: {
         personal: personal.map((p) => personalRow(p.id, p.body)),
@@ -1704,6 +1707,7 @@ describe('WordPopup — primary translation editor (above status buttons)', () =
 
   function payloadOf(personal: { id: string; body: string }[]) {
     return {
+      canEdit: true,
       lemma: { id: 'lem-1', headword: 'पानी', pos: 'NOUN', glossDefault: null },
       translations: {
         personal: personal.map((p) => personalRow(p.id, p.body)),
@@ -1985,6 +1989,7 @@ describe('WordPopup — primary translation editor (above status buttons)', () =
 describe('WordPopup — POS pill in header', () => {
   function payloadOf(pos: string) {
     return {
+      canEdit: true,
       lemma: { id: 'lem-1', headword: 'पानी', pos, glossDefault: null },
       translations: { personal: [], official: [], community: [] },
     };
@@ -2043,13 +2048,15 @@ describe('WordPopup — editable headword search', () => {
       }
       if (url.includes('/api/v1/lemmas/lem-pena/translations')) {
         return jres({
-          lemma: { id: 'lem-pena', headword: 'pena', pos: 'NOUN', glossDefault: 'sorrow' },
+          canEdit: true,
+      lemma: { id: 'lem-pena', headword: 'pena', pos: 'NOUN', glossDefault: 'sorrow' },
           translations: { personal: [], official: [], community: [] },
         });
       }
       // Initial token payload (mis-parsed PROPN) + anything else.
       return jres({
-        lemma: { id: 'lem-1', headword: 'Pena', pos: 'PROPN', glossDefault: null },
+        canEdit: true,
+      lemma: { id: 'lem-1', headword: 'Pena', pos: 'PROPN', glossDefault: null },
         translations: { personal: [], official: [], community: [] },
       });
     });
@@ -2100,12 +2107,14 @@ describe('WordPopup — editable headword search', () => {
       }
       if (url.includes('/api/v1/lemmas/lem-pena/translations')) {
         return jres({
-          lemma: { id: 'lem-pena', headword: 'pena', pos: 'NOUN', glossDefault: 'sorrow' },
+          canEdit: true,
+      lemma: { id: 'lem-pena', headword: 'pena', pos: 'NOUN', glossDefault: 'sorrow' },
           translations: { personal: [], official: [], community: [] },
         });
       }
       return jres({
-        lemma: { id: 'lem-1', headword: 'Pena', pos: 'PROPN', glossDefault: null },
+        canEdit: true,
+      lemma: { id: 'lem-1', headword: 'Pena', pos: 'PROPN', glossDefault: null },
         translations: { personal: [], official: [], community: [] },
       });
     });
@@ -2150,12 +2159,14 @@ describe('WordPopup — editable headword search', () => {
       }
       if (url.includes('/api/v1/lemmas/lem-pena/translations')) {
         return jres({
-          lemma: { id: 'lem-pena', headword: 'pena', pos: 'NOUN', glossDefault: 'sorrow' },
+          canEdit: true,
+      lemma: { id: 'lem-pena', headword: 'pena', pos: 'NOUN', glossDefault: 'sorrow' },
           translations: { personal: [], official: [], community: [] },
         });
       }
       return jres({
-        lemma: { id: 'lem-1', headword: 'Pena', pos: 'PROPN', glossDefault: null },
+        canEdit: true,
+      lemma: { id: 'lem-1', headword: 'Pena', pos: 'PROPN', glossDefault: null },
         translations: { personal: [], official: [], community: [] },
       });
     });

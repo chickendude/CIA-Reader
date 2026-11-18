@@ -6,6 +6,8 @@ import { jsonContract } from '$lib/test/json-contract.js';
 const setKnownLemmaStatus = vi.fn();
 const requireUser = vi.fn();
 const sentenceAround = vi.fn();
+const canReadChapter = vi.hoisted(() => vi.fn().mockResolvedValue(true));
+vi.mock('$lib/server/auth/can-read.js', () => ({ canReadChapter }));
 
 vi.mock('$lib/server/texts/tokens.js', async () => {
   const actual = await vi.importActual<typeof import('$lib/server/texts/tokens.js')>(
@@ -59,6 +61,7 @@ async function callPatch(
 }
 
 beforeEach(() => {
+  canReadChapter.mockResolvedValue(true);
   setKnownLemmaStatus.mockReset();
   requireUser.mockReset();
   sentenceAround.mockReset();
@@ -170,5 +173,14 @@ describe('PATCH /api/v1/me/known-lemmas/:lemmaId', () => {
       lemmaId: VALID_ID,
       status: 'learning',
     });
+  });
+
+  it('does not mine sentences from a book the user cannot read', async () => {
+    canReadChapter.mockResolvedValueOnce(false);
+    setKnownLemmaStatus.mockResolvedValueOnce({ userId: USER.id, lemmaId: VALID_ID,
+      status: 'learning', updatedAt: new Date() });
+    await callPatch({ status: 'learning', chapterId: VALID_ID, tokenIdx: 5 });
+    expect(sentenceAround).not.toHaveBeenCalled();
+    expect(setKnownLemmaStatus).toHaveBeenCalledWith({ userId: USER.id, lemmaId: VALID_ID, status: 'learning' });
   });
 });

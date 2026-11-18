@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { patternLabel } from '$lib/dictionary/hindi-patterns.js';
+  import EditableDefinition from '$lib/components/reader/EditableDefinition.svelte';
   import ScriptAwareInput from '$lib/components/input/ScriptAwareInput.svelte';
   import type { PageData } from './$types';
   let { data }: { data: PageData } = $props();
@@ -23,7 +25,7 @@
 </script>
 
 <svelte:head>
-  <title>{data.language.displayName} dictionary — CIA Reader</title>
+  <title>{data.language.displayName} dictionary | CIA Reader</title>
   <meta
     name="description"
     content="Browse {data.language.displayName} lemmas, glosses, and translations in CIA Reader."
@@ -34,13 +36,19 @@
   <header>
     <h1>
       {data.language.nativeName}
-      <span class="muted">— {data.language.displayName} dictionary</span>
+      <span class="muted">{data.language.displayName} dictionary</span>
     </h1>
     <p class="sub">
       {data.totalCount.toLocaleString()} lemmas indexed
-      {#if data.query.q}· matching <strong>{data.query.q}</strong>{/if}
+      {#if data.query.q} matching <strong>{data.query.q}</strong>{/if}
     </p>
   </header>
+  {#if data.user?.role === 'admin' || data.user?.role === 'curator'}
+    <nav aria-label="Dictionary staff tools">
+      {#if data.canEdit}<a href={`/moderation/dictionary?language=${data.language.code}`}>Edit dictionary</a>{/if}
+      {#if data.language.code === 'hi'} <a href="/moderation/hindi">Unparsed words and context review</a>{/if}
+    </nav>
+  {/if}
 
   <form method="get" class="search" data-testid="dictionary-search-form">
     <!-- T-3.12: ScriptAwareInput renders an `<input name="q">` whose
@@ -106,7 +114,7 @@
       a different word than they typed.
     -->
     <p class="nukta-fallback" role="status">
-      No exact matches for <strong>{data.query.q}</strong> — showing
+      No exact matches for <strong>{data.query.q}</strong>. Showing
       nukta-agnostic results.
     </p>
   {/if}
@@ -116,6 +124,7 @@
   {:else}
     <ol class="lemmas">
       {#each data.lemmas as lemma (lemma.id)}
+        {@const definitionId = data.definitionIds[lemma.id]}
         <li>
           <div class="row">
             <span class="headword">{lemma.headword}</span>
@@ -124,12 +133,25 @@
               <span class="rank muted">#{lemma.frequencyRank}</span>
             {/if}
           </div>
-          {#if lemma.glossDefault}
+          {#if data.canEdit && definitionId}
+            <EditableDefinition text={lemma.glossDefault ?? ''} translationId={definitionId}
+              lemmaId={lemma.id} canEdit />
+          {:else if lemma.glossDefault}
             <div class="gloss">{lemma.glossDefault}</div>
           {/if}
-          {#if lemma.sourceAttribution}
-            <div class="attrib muted">Source: {lemma.sourceAttribution}</div>
-          {/if}
+          <div class="entry-tools">
+            {#if data.language.code === 'hi'}
+              <span>{patternLabel(data.patterns[lemma.id] ?? 'invariant')}</span>
+            {:else if lemma.sourceAttribution}
+              <span>Source: {lemma.sourceAttribution}</span>
+            {/if}
+            {#if data.canEdit}
+              <a href={`/moderation/dictionary/${lemma.id}`}>Edit entry</a>
+              {#if data.language.code === 'hi'}
+                <a href={`/moderation/dictionary/${lemma.id}#inflection`}>Edit inflection</a>
+              {/if}
+            {/if}
+          </div>
         </li>
       {/each}
     </ol>
@@ -226,7 +248,8 @@
     margin-top: 0.25rem;
     color: var(--color-fg);
   }
-  .attrib {
+  .entry-tools, nav[aria-label="Dictionary staff tools"] {
+    display: flex; flex-wrap: wrap; gap: .75rem;
     margin-top: 0.15rem;
     font-size: 0.8rem;
   }

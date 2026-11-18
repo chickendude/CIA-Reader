@@ -384,7 +384,7 @@ export async function getLemmaTranslations(
   let rows: Translation[] = personalRows.length
     ? primaryTyped.filter((r) => !personalRows.includes(r))
     : primaryTyped;
-  if (rows.length === 0) {
+  if (rows.length === 0 && lemmaTyped.language !== 'hi') {
     const joined = await db
       .select({ translation: schema.translations })
       .from(schema.translations)
@@ -405,7 +405,7 @@ export async function getLemmaTranslations(
       );
     rows = joined.map((r) => r.translation as Translation);
   }
-  if (rows.length === 0) {
+  if (rows.length === 0 && lemmaTyped.language !== 'hi') {
     // #318: Run the nukta-stripped tier even when the linked
     // lemma's own headword has no nukta. The strict tier above
     // matched on `headword = X`, so it missed any sibling whose

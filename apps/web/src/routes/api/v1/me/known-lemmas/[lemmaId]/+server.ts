@@ -14,6 +14,7 @@ import { error, json } from '@sveltejs/kit';
 import { z } from 'zod';
 
 import { requireUser } from '$lib/server/auth/require-user.js';
+import { canReadChapter } from '$lib/server/auth/can-read.js';
 import { sentenceAround } from '$lib/server/texts/sentences.js';
 import { setKnownLemmaStatus } from '$lib/server/texts/tokens.js';
 import type { RequestHandler } from './$types';
@@ -46,7 +47,7 @@ export const PATCH: RequestHandler = async (event) => {
 
   // Reconstruct the mined sentence when the reader supplied context.
   let mined: { minedSentence: string; minedChapterId: string; minedTokenIdx: number } | undefined;
-  if (parsed.chapterId !== undefined && parsed.tokenIdx !== undefined) {
+  if (parsed.chapterId !== undefined && parsed.tokenIdx !== undefined && await canReadChapter(user, parsed.chapterId)) {
     try {
       const sentence = await sentenceAround(parsed.chapterId, parsed.tokenIdx);
       if (sentence) {

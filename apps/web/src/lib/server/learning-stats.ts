@@ -99,7 +99,7 @@ export async function getLanguageStats(
   const encountered = unwrapRows<{ n: number }>(
     await db.execute(sql`
       SELECT COUNT(DISTINCT tt.lemma_id)::int AS n
-      FROM text_tokens tt
+      FROM vocabulary_occurrences tt
       INNER JOIN text_chapters ch ON ch.id = tt.chapter_id
       INNER JOIN texts tx ON tx.id = ch.text_id
       WHERE tx.owner_id = ${userId}
@@ -203,7 +203,7 @@ export async function languageComprehensionPct(
         )::int AS known
       FROM texts tx
       INNER JOIN text_chapters ch ON ch.text_id = tx.id
-      INNER JOIN text_tokens tt ON tt.chapter_id = ch.id
+      INNER JOIN vocabulary_occurrences tt ON tt.chapter_id = ch.id
       LEFT JOIN user_known_lemmas ukl
         ON ukl.lemma_id = tt.lemma_id AND ukl.user_id = ${userId}
       WHERE tx.owner_id = ${userId}
@@ -248,6 +248,10 @@ export type TextStats = {
   language: LanguageCode;
   uniqueLemmas: number;
   totalWords: number;
+  learningCoveragePct: number;
+  unresolvedWords: number;
+  uniqueKnownPct: number;
+  analysisStale: boolean;
   estimatedComprehensionPct: number;
   listeningMinutes: number;
 };
@@ -276,6 +280,11 @@ export async function listTextStats(
     language: LanguageCode;
     unique_lemmas: number;
     total_words: number;
+    physical_words: number;
+    learning_words: number;
+    unresolved_words: number;
+    unique_known: number;
+    analysis_stale: boolean;
     known_words: number;
     listened_ms: number | string | null;
   }>(
@@ -284,8 +293,17 @@ export async function listTextStats(
         tx.id AS text_id,
         tx.title AS title,
         tx.language AS language,
-        COUNT(DISTINCT tt.lemma_id) FILTER (WHERE tt.lemma_id IS NOT NULL)::int AS unique_lemmas,
+        COUNT(DISTINCT COALESCE(hg.lemma_id, tt.lemma_id)) FILTER (WHERE tt.lemma_id IS NOT NULL)::int AS unique_lemmas,
         COUNT(*) FILTER (WHERE tt.is_word = true)::int AS total_words,
+        COALESCE((SELECT SUM(a.source_words)::int FROM hindi_chapter_analyses a
+          JOIN text_chapters ac ON ac.id=a.chapter_id WHERE ac.text_id=tx.id),
+          COUNT(*) FILTER (WHERE tt.is_word = true)::int) AS physical_words,
+        COUNT(*) FILTER (WHERE tt.is_word AND ukl.status = 'learning')::int AS learning_words,
+        COUNT(DISTINCT COALESCE(hg.lemma_id, tt.lemma_id)) FILTER (WHERE ug.status = 'known')::int AS unique_known,
+        COALESCE((SELECT SUM(a.unresolved_words)::int FROM hindi_chapter_analyses a
+          JOIN text_chapters ac ON ac.id=a.chapter_id WHERE ac.text_id=tx.id), 0) AS unresolved_words,
+        EXISTS(SELECT 1 FROM hindi_chapter_analyses a JOIN text_chapters ac ON ac.id=a.chapter_id
+          JOIN hindi_dictionary_state ds ON ds.id=1 WHERE ac.text_id=tx.id AND a.revision<>ds.revision) AS analysis_stale,
         COUNT(*) FILTER (
           WHERE tt.is_word = true
             AND tt.lemma_id IS NOT NULL
@@ -299,7 +317,11 @@ export async function listTextStats(
         ) AS listened_ms
       FROM texts tx
       INNER JOIN text_chapters ch ON ch.text_id = tx.id
-      INNER JOIN text_tokens tt ON tt.chapter_id = ch.id
+      LEFT JOIN vocabulary_occurrences tt ON tt.chapter_id = ch.id
+      LEFT JOIN hindi_entries he ON he.lemma_id=tt.lemma_id
+      LEFT JOIN hindi_entries hg ON hg.external_id=he.entry->>'group_primary'
+      LEFT JOIN user_known_lemmas ug
+        ON ug.lemma_id=COALESCE(hg.lemma_id,tt.lemma_id) AND ug.user_id=${userId}
       LEFT JOIN user_known_lemmas ukl
         ON ukl.lemma_id = tt.lemma_id AND ukl.user_id = ${userId}
       WHERE tx.owner_id = ${userId}
@@ -315,7 +337,11 @@ export async function listTextStats(
     title: r.title,
     language: r.language,
     uniqueLemmas: r.unique_lemmas,
-    totalWords: r.total_words,
+    totalWords: r.physical_words ?? r.total_words,
+    learningCoveragePct: r.total_words ? Math.round(((r.known_words + (r.learning_words ?? 0)) / r.total_words) * 100) : 0,
+    unresolvedWords: r.unresolved_words ?? 0,
+    uniqueKnownPct: r.unique_lemmas ? Math.round(((r.unique_known ?? 0) / r.unique_lemmas) * 100) : 0,
+    analysisStale: r.analysis_stale ?? false,
     estimatedComprehensionPct:
       r.total_words === 0
         ? 0
@@ -352,7 +378,7 @@ export async function estimatedComprehensionForTexts(
             AND ukl.status = 'known'
         )::int AS known
       FROM text_chapters ch
-      INNER JOIN text_tokens tt ON tt.chapter_id = ch.id
+      INNER JOIN vocabulary_occurrences tt ON tt.chapter_id = ch.id
       LEFT JOIN user_known_lemmas ukl
         ON ukl.lemma_id = tt.lemma_id AND ukl.user_id = ${userId}
       WHERE ch.text_id IN (${sql.join(
@@ -399,7 +425,7 @@ export async function bookComprehensionPct(
             AND ukl.status = 'known'
         )::int AS known
       FROM text_chapters ch
-      INNER JOIN text_tokens tt ON tt.chapter_id = ch.id
+      INNER JOIN vocabulary_occurrences tt ON tt.chapter_id = ch.id
       LEFT JOIN user_known_lemmas ukl
         ON ukl.lemma_id = tt.lemma_id AND ukl.user_id = ${userId}
       WHERE ch.text_id IN (${sql.join(
@@ -432,7 +458,7 @@ export async function estimatedComprehensionForText(
             AND tt.lemma_id IS NOT NULL
             AND ukl.status = 'known'
         )::int AS known
-      FROM text_tokens tt
+      FROM vocabulary_occurrences tt
       INNER JOIN text_chapters ch ON ch.id = tt.chapter_id
       LEFT JOIN user_known_lemmas ukl
         ON ukl.lemma_id = tt.lemma_id AND ukl.user_id = ${userId}
@@ -448,6 +474,11 @@ export type CollectionStats = {
   collectionId: string;
   title: string;
   textCount: number;
+  totalWords: number;
+  uniqueLemmas: number;
+  learningCoveragePct: number;
+  unresolvedWords: number;
+  analysisStale: boolean;
   estimatedComprehensionPct: number;
   listeningMinutes: number;
 };
@@ -475,7 +506,7 @@ export async function estimatedComprehensionForCollections(
         )::int AS known
       FROM collection_items ci
       INNER JOIN text_chapters ch ON ch.text_id = ci.text_id
-      INNER JOIN text_tokens tt ON tt.chapter_id = ch.id
+      INNER JOIN vocabulary_occurrences tt ON tt.chapter_id = ch.id
       LEFT JOIN user_known_lemmas ukl
         ON ukl.lemma_id = tt.lemma_id AND ukl.user_id = ${userId}
       WHERE ci.collection_id IN (${sql.join(
@@ -513,6 +544,11 @@ export async function listCollectionStats(
     title: string;
     text_count: number;
     total_words: number;
+    physical_words: number;
+    unique_lemmas: number;
+    learning_words: number;
+    unresolved_words: number;
+    analysis_stale: boolean;
     known_words: number;
     listened_ms: number | string | null;
   }>(
@@ -521,6 +557,17 @@ export async function listCollectionStats(
         c.id AS collection_id,
         c.title AS title,
         COUNT(DISTINCT ci.text_id)::int AS text_count,
+        COUNT(DISTINCT COALESCE(hg.lemma_id, tt.lemma_id))::int AS unique_lemmas,
+        COUNT(*) FILTER (WHERE tt.is_word AND ukl.status='learning')::int AS learning_words,
+        COALESCE((SELECT SUM(a.source_words)::int FROM hindi_chapter_analyses a
+          JOIN text_chapters ac ON ac.id=a.chapter_id JOIN collection_items ai ON ai.text_id=ac.text_id
+          WHERE ai.collection_id=c.id), COUNT(*) FILTER (WHERE tt.is_word)::int) AS physical_words,
+        COALESCE((SELECT SUM(a.unresolved_words)::int FROM hindi_chapter_analyses a
+          JOIN text_chapters ac ON ac.id=a.chapter_id JOIN collection_items ai ON ai.text_id=ac.text_id
+          WHERE ai.collection_id=c.id), 0) AS unresolved_words,
+        EXISTS(SELECT 1 FROM hindi_chapter_analyses a JOIN text_chapters ac ON ac.id=a.chapter_id
+          JOIN collection_items ai ON ai.text_id=ac.text_id JOIN hindi_dictionary_state ds ON ds.id=1
+          WHERE ai.collection_id=c.id AND a.revision<>ds.revision) AS analysis_stale,
         COUNT(*) FILTER (WHERE tt.is_word = true)::int AS total_words,
         COUNT(*) FILTER (
           WHERE tt.is_word = true
@@ -537,7 +584,11 @@ export async function listCollectionStats(
       FROM collections c
       INNER JOIN collection_items ci ON ci.collection_id = c.id
       INNER JOIN text_chapters ch ON ch.text_id = ci.text_id
-      INNER JOIN text_tokens tt ON tt.chapter_id = ch.id
+      LEFT JOIN vocabulary_occurrences tt ON tt.chapter_id = ch.id
+      LEFT JOIN hindi_entries he ON he.lemma_id=tt.lemma_id
+      LEFT JOIN hindi_entries hg ON hg.external_id=he.entry->>'group_primary'
+      LEFT JOIN user_known_lemmas ug
+        ON ug.lemma_id=COALESCE(hg.lemma_id,tt.lemma_id) AND ug.user_id=${userId}
       LEFT JOIN user_known_lemmas ukl
         ON ukl.lemma_id = tt.lemma_id AND ukl.user_id = ${userId}
       WHERE c.owner_id = ${userId}
@@ -552,6 +603,11 @@ export async function listCollectionStats(
     collectionId: r.collection_id,
     title: r.title,
     textCount: r.text_count,
+    totalWords: r.physical_words ?? r.total_words,
+    uniqueLemmas: r.unique_lemmas ?? 0,
+    learningCoveragePct: r.total_words ? Math.round(((r.known_words + (r.learning_words ?? 0)) / r.total_words) * 100) : 0,
+    unresolvedWords: r.unresolved_words ?? 0,
+    analysisStale: r.analysis_stale ?? false,
     estimatedComprehensionPct:
       r.total_words === 0
         ? 0

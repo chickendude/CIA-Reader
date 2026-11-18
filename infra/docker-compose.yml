@@ -55,6 +55,7 @@ services:
       - "${NLP_HOST_PORT:-8000}:8000"
     environment:
       PYTHONPATH: /opt/shared-types:/srv/nlp
+      DATABASE_URL: postgres://ciareader:ciareader@postgres:5432/ciareader
       # Google Cloud Vision creds for the PDF OCR scanned-page path. Empty
       # by default — the born-digital path needs no creds, so dev works
       # without GCP. To OCR scans, drop a service-account JSON under

@@ -42,9 +42,11 @@ import pytest  # noqa: E402
 from app import pipelines  # noqa: E402
 from app.pipelines.basque import BasquePipeline  # noqa: E402
 from app.pipelines.hindi import HindiPipeline  # noqa: E402
+from app.pipelines.hindidb import HindiDBPipeline  # noqa: E402
 from app.pipelines.marathi import MarathiPipeline  # noqa: E402
 from app.pipelines.odia import OdiaPipeline  # noqa: E402
 from app.pipelines.odia.lemmas import default_lemma_table  # noqa: E402
+from hindidb.lexicon import Lexicon  # noqa: E402
 
 
 @dataclass
@@ -96,6 +98,7 @@ def _fake_real_factories():
     need specific UPOS / features / fallback behavior.
     """
     originals = {
+        "hindidb-hi": pipelines._PIPELINE_FACTORIES.get("hindidb-hi"),
         "stanza-hi": pipelines._PIPELINE_FACTORIES.get("stanza-hi"),
         "stanza-mr": pipelines._PIPELINE_FACTORIES.get("stanza-mr"),
         "custom-or": pipelines._PIPELINE_FACTORIES.get("custom-or"),
@@ -104,6 +107,13 @@ def _fake_real_factories():
 
     def _hi_factory() -> HindiPipeline:
         return HindiPipeline(nlp=_WhitespaceFakeStanza())
+
+    class SeedProvider:
+        def load(self):
+            lexicon = Lexicon()
+            return lexicon, {key: key for key in lexicon.entries}, 1
+
+    pipelines._PIPELINE_FACTORIES["hindidb-hi"] = lambda: HindiDBPipeline(SeedProvider())
 
     def _mr_factory() -> MarathiPipeline:
         return MarathiPipeline(

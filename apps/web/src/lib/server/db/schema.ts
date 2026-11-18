@@ -1,6 +1,7 @@
 import {
   type AnyPgColumn,
   boolean,
+  bigint,
   index,
   integer,
   jsonb,
@@ -1147,6 +1148,8 @@ export const texts = pgTable(
     sourceType: textSourceType('source_type').notNull(),
     status: textStatus('status').notNull().default('pending'),
     visibility: textVisibility('visibility').notNull().default('private'),
+    // Catalog metadata and vocabulary remain public; source text requires staff.
+    staffOnly: boolean('staff_only').notNull().default(false),
     statusError: text('status_error'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
@@ -2428,3 +2431,67 @@ export type ScanVolume = InferSelectModel<typeof scanVolumes>;
 export type ScanPage = InferSelectModel<typeof scanPages>;
 export type LemmaScanRef = InferSelectModel<typeof lemmaScanRefs>;
 export type TranscriptionIssue = InferSelectModel<typeof transcriptionIssues>;
+
+/** Lossless HindiDB entry metadata. Current identity/forms live in lemmas/lemma_forms. */
+export const hindiEntries = pgTable('hindi_entries', {
+  lemmaId: uuid('lemma_id').primaryKey().references(() => lemmas.id, { onDelete: 'cascade' }),
+  externalId: text('external_id').notNull().unique(),
+  entry: jsonb('entry').$type<Record<string, unknown>>().notNull(),
+});
+
+export const hindiDictionaryState = pgTable('hindi_dictionary_state', {
+  id: integer('id').primaryKey().default(1),
+  revision: bigint('revision', { mode: 'number' }).notNull().default(1),
+  metadata: jsonb('metadata').$type<Record<string, unknown>>().notNull().default({}),
+});
+
+export const hindiChapterAnalyses = pgTable('hindi_chapter_analyses', {
+  chapterId: uuid('chapter_id').primaryKey().references(() => textChapters.id, { onDelete: 'cascade' }),
+  revision: bigint('revision', { mode: 'number' }).notNull(),
+  parserVersion: text('parser_version').notNull(),
+  sourceWords: integer('source_words').notNull(),
+  unresolvedWords: integer('unresolved_words').notNull(),
+  stats: jsonb('stats').$type<Record<string, unknown>>().notNull(),
+});
+
+/** Every supported candidate at a source span, including overlapping compounds. */
+export const hindiOccurrences = pgTable('hindi_occurrences', {
+  chapterId: uuid('chapter_id').notNull().references(() => textChapters.id, { onDelete: 'cascade' }),
+  startIdx: integer('start_idx').notNull(),
+  endIdx: integer('end_idx').notNull(),
+  lemmaId: uuid('lemma_id').notNull().references(() => lemmas.id, { onDelete: 'cascade' }),
+  sourceStart: integer('source_start').notNull(),
+  sourceEnd: integer('source_end').notNull(),
+  rules: jsonb('rules').$type<string[]>().notNull(),
+}, (t) => ({
+  pk: primaryKey({ columns: [t.chapterId, t.startIdx, t.endIdx, t.lemmaId] }),
+  lemmaIdx: index('hindi_occurrences_lemma_idx').on(t.lemmaId, t.chapterId),
+}));
+
+export const hindiImportedBooks = pgTable('hindi_imported_books', {
+  sourceVersionId: text('source_version_id').primaryKey(),
+  textId: uuid('text_id').notNull().references(() => texts.id, { onDelete: 'cascade' }),
+  contentHash: text('content_hash').notNull(),
+  metadata: jsonb('metadata').$type<Record<string, unknown>>().notNull(),
+});
+
+export const officialTextCopies = pgTable('official_text_copies', {
+  sourceTextId: uuid('source_text_id').notNull().references(() => texts.id, { onDelete: 'cascade' }),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  textId: uuid('text_id').notNull().references(() => texts.id, { onDelete: 'cascade' }),
+}, (t) => ({ pk: primaryKey({ columns: [t.sourceTextId, t.userId] }) }));
+
+/** Context choices never remove the parser's other supported candidates. */
+export const hindiContextChoices = pgTable('hindi_context_choices', {
+  chapterId: uuid('chapter_id').notNull().references(() => textChapters.id, { onDelete: 'cascade' }),
+  sourceOccurrenceId: text('source_occurrence_id').notNull(),
+  sourceStart: integer('source_start').notNull(),
+  sourceEnd: integer('source_end').notNull(),
+  selectedLemmaIds: jsonb('selected_lemma_ids').$type<string[]>().notNull(),
+  candidateLemmaIds: jsonb('candidate_lemma_ids').$type<string[]>().notNull(),
+  origin: text('origin').notNull(),
+  status: text('status').notNull(),
+  metadata: jsonb('metadata').$type<Record<string, unknown>>().notNull(),
+}, (t) => ({
+  pk: primaryKey({ columns: [t.chapterId, t.sourceOccurrenceId] }),
+}));

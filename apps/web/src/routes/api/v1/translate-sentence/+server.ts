@@ -16,6 +16,7 @@ import { error, json } from '@sveltejs/kit';
 import { z } from 'zod';
 
 import { requireUser } from '$lib/server/auth/require-user.js';
+import { canReadChapter } from '$lib/server/auth/can-read.js';
 import { OPENAI_MODEL } from '$lib/server/env.js';
 import {
   OpenAiNotConfiguredError,
@@ -39,7 +40,7 @@ const body = z.object({
 });
 
 export const POST: RequestHandler = async (event) => {
-  await requireUser(event);
+  const user = await requireUser(event);
 
   let parsed: z.infer<typeof body>;
   try {
@@ -51,6 +52,7 @@ export const POST: RequestHandler = async (event) => {
     throw error(400, 'Invalid JSON body');
   }
 
+  if (!(await canReadChapter(user, parsed.chapterId))) throw error(404, 'Chapter not found');
   const sentence = await sentenceAround(parsed.chapterId, parsed.tokenIdx);
   if (!sentence) throw error(422, 'Could not find a sentence for that token');
 

@@ -356,7 +356,7 @@ describe('updateTranslation', () => {
       updateTranslation(
         ADMIN,
         'tr-1',
-        { body: 'x'.repeat(600) },
+        { body: 'x'.repeat(50_001) },
         'too long',
       ),
     ).rejects.toBeInstanceOf(CuratorValidationError);

@@ -12,6 +12,7 @@
 import { error, json } from '@sveltejs/kit';
 
 import { resolveUser } from '$lib/server/auth/require-user.js';
+import { canEditDictionary } from '$lib/server/dictionary/permissions.js';
 import {
   getLemmaTranslations,
   LemmaNotFoundError,
@@ -30,7 +31,7 @@ export const GET: RequestHandler = async (event) => {
 
   try {
     const result = await getLemmaTranslations(id, viewer);
-    return json(result);
+    return json({ ...result, canEdit: await canEditDictionary(user, result.lemma.language) });
   } catch (err) {
     if (err instanceof LemmaNotFoundError) throw error(404, 'Lemma not found');
     throw err;
