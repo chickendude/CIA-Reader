@@ -246,8 +246,8 @@ describe.skipIf(!url)('HindiDB PostgreSQL integration (always rolls back)', () =
           expect(firstPage.total).toBe(2);
           expect(firstPage.rows[0]).toMatchObject({
             word: missing, count: 3, samples: [
-              { book: text!.id, count: 2, token: 1 },
-              { book: secondBook!.id, count: 1, token: 0 },
+              { book: text!.id, count: 2, token: 1, context: { before: 'खाना', match: missing, after: missing } },
+              { book: secondBook!.id, count: 1, token: 0, context: { before: '', match: missing, after: missing + 'अ' } },
             ],
           });
           expect((await workshopQueue(user!.id, null, 'unresolved', missing, 1, 1)).rows[0]?.word)

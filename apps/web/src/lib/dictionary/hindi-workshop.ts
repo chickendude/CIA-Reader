@@ -69,7 +69,13 @@ export type ReviewItem = {
   word: string;
   kind: string;
   count: number;
-  samples: { book: string; chapter: number; token: number; context: string; count: number }[];
+  samples: {
+    book: string;
+    chapter: number;
+    token: number;
+    context: { before: string; match: string; after: string };
+    count: number;
+  }[];
 };
 export type Reference = { provider: string; label: string; source_url: string };
 

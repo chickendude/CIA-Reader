@@ -1,5 +1,7 @@
 <script lang="ts">
   import Pagination from '$lib/components/input/Pagination.svelte';
+  import { goto } from '$app/navigation';
+  import { page } from '$app/state';
   import { untrack } from 'svelte';
   import {
     emptyDraft,
@@ -24,11 +26,37 @@
     untrack(() => ((data.initial || data.browse) && !reviewOnly ? 'dictionary' : 'review')),
   );
   let query = $state(''),
-    book = $state(''),
     kind = $state(untrack(() => (reviewOnly ? 'unresolved' : ''))),
     offset = $state(0),
     refresh = $state(0);
   const limit = 40;
+  const bookPreference = $derived(`parhiba.hindi.reviewBook.${page.data.user?.id}`);
+  let rememberedBook = $state('');
+  $effect(() => {
+    try {
+      rememberedBook = localStorage.getItem(bookPreference) ?? '';
+    } catch {
+      rememberedBook = '';
+    }
+  });
+  const book = $derived.by(() => {
+    const requested = page.url.searchParams.get('textId') ?? rememberedBook;
+    return data.books.find((item) => item.id === requested)?.id ?? '';
+  });
+
+  function selectBook(selected: string) {
+    const url = new URL(page.url);
+    url.searchParams.set('textId', selected);
+    void goto(url, { replaceState: true, keepFocus: true, noScroll: true });
+    offset = 0;
+    if (active) void open(null);
+    rememberedBook = selected;
+    try {
+      localStorage.setItem(bookPreference, selected);
+    } catch {
+      message = 'Your browser could not save the selected book for next time.';
+    }
+  }
   let rows = $state<Match[]>([]),
     queue = $state<ReviewItem[]>([]),
     total = $state(0),
@@ -209,11 +237,8 @@
       {#if tab === 'review'}
         <select
           aria-label="Review book"
-          bind:value={book}
-          onchange={() => {
-            offset = 0;
-            if (active) void open(null);
-          }}
+          value={book}
+          onchange={(event) => selectBook(event.currentTarget.value)}
           ><option value="">All books</option>{#each data.books as b}<option value={b.id}
               >{b.title}</option
             >{/each}</select
@@ -242,7 +267,6 @@
       />
       <div class="controls">
         <Button
-          variant="primary"
           disabled={working}
           onclick={() => open(null, query.match(/\p{Script=Devanagari}/u) ? query : '')}
         >New entry</Button>
@@ -309,7 +333,7 @@
               '&token=' +
               sample.token}>{data.books.find((b) => b.id === sample?.book)?.title}</a
           >
-          <p lang="hi">{sample.context}</p>
+          <p lang="hi">{sample.context.before}<mark>{sample.context.match}</mark>{sample.context.after}</p>
           {#if active.kind !== 'missing-definition'}<button disabled={working} onclick={ignore}
               >{active.kind === 'ignored' ? 'Restore in this book' : 'Ignore in this book'}</button
             >{/if}
@@ -428,6 +452,11 @@
   .context {
     padding: 0.6rem;
     border-bottom: 1px solid var(--rule);
+  }
+  .context mark {
+    background: var(--accent-soft);
+    color: var(--ink);
+    border-bottom: 2px solid var(--accent);
   }
   small {
     font-size: 0.75rem;
