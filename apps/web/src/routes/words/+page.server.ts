@@ -1,115 +1,99 @@
-/**
- * Words manager loader (T-10.6, scoped by language in #436).
- *
- * Lists the caller's vocabulary — every lemma they've touched — for the
- * current language (the site is split by language; the rail switcher picks
- * it), narrowed by an optional status bucket and an optional free-text
- * query. Joined against `lemmas` so we read headword + POS + gloss in a
- * single query.
- *
- * Auth required. Anonymous visitors are bounced to /login with a
- * `next` param so they return here after signing in.
- */
-import { and, desc, eq, ilike, or as orWhere, type SQL } from 'drizzle-orm';
+import { and, count, desc, eq, ilike, inArray, ne, or } from 'drizzle-orm';
 import { error, redirect } from '@sveltejs/kit';
 
 import { db } from '$lib/server/db/index.js';
 import { lemmas, userKnownLemmas } from '$lib/server/db/schema.js';
-import { LANGUAGES, type LanguageCode } from '@ciareader/shared-types';
-import type { PageServerLoad } from './$types';
-
-export type WordsStatus = 'all' | 'unknown' | 'learning' | 'known' | 'ignored';
-
-const VALID_STATUSES: readonly WordsStatus[] = [
-  'all',
-  'unknown',
-  'learning',
-  'known',
-  'ignored',
-];
+import type { Actions, PageServerLoad } from './$types';
+import { encodeStatuses, WORD_STATUSES, type WordStatus } from './word-statuses';
 
 const ROW_LIMIT = 200;
+const DEFAULT_STATUSES: WordStatus[] = ['learning', 'known'];
 
-export type WordRow = {
-  lemmaId: string;
-  language: LanguageCode;
-  headword: string;
-  pos: string;
-  glossDefault: string | null;
-  status: 'unknown' | 'learning' | 'known' | 'ignored';
-  updatedAt: Date;
-};
-
-function readStatus(raw: string | null): WordsStatus {
-  if (!raw) return 'all';
-  if (!VALID_STATUSES.includes(raw as WordsStatus)) {
-    throw error(400, `Unknown status '${raw}'`);
-  }
-  return raw as WordsStatus;
+function parseStatuses(raw: string): WordStatus[] | undefined {
+  if (raw === 'all' || raw === 'unknown') return [...WORD_STATUSES];
+  if (raw === 'none') return [];
+  const values = raw.split(',');
+  if (!values.every((value) => WORD_STATUSES.some((status) => status === value))) return undefined;
+  return WORD_STATUSES.filter((status) => values.includes(status));
 }
 
-export const load: PageServerLoad = async ({ url, locals, parent }) => {
+function preferenceCookie(userId: string): string {
+  return `words_statuses_${userId}`;
+}
+
+export const load: PageServerLoad = async ({ url, locals, parent, cookies }) => {
   if (!locals.user) {
-    throw redirect(
-      303,
-      `/login?next=${encodeURIComponent(url.pathname + url.search)}`,
-    );
+    throw redirect(303, `/login?next=${encodeURIComponent(url.pathname + url.search)}`);
   }
 
-  // The current language drives the page (#436) — the rail switcher sets it.
-  const { currentLanguage } = await parent();
-  const language = (currentLanguage as LanguageCode | null) ?? null;
-  const status = readStatus(url.searchParams.get('status'));
+  const { currentLanguage: language } = await parent();
+  if (!language) throw redirect(303, '/');
+
+  const requested = url.searchParams.get('status');
+  const statuses = requested
+    ? parseStatuses(requested)
+    : parseStatuses(cookies.get(preferenceCookie(locals.user.id)) ?? '') ?? DEFAULT_STATUSES;
+  if (!statuses) throw error(400, `Unknown status '${requested}'`);
+
   const q = (url.searchParams.get('q') ?? '').trim();
-
-  const conditions: SQL[] = [eq(userKnownLemmas.userId, locals.user.id)];
-  if (language) conditions.push(eq(lemmas.language, language));
-  if (status !== 'all') conditions.push(eq(userKnownLemmas.status, status));
-  if (q.length > 0) {
-    const pattern = `%${q}%`;
-    const search = orWhere(
-      ilike(lemmas.headword, pattern),
-      ilike(lemmas.glossDefault, pattern),
-    );
-    if (search) conditions.push(search);
-  }
-
-  const rawRows = await db
-    .select({
+  const pattern = `%${q}%`;
+  const scope = and(
+    eq(userKnownLemmas.userId, locals.user.id),
+    eq(lemmas.language, language),
+    q ? or(ilike(lemmas.headword, pattern), ilike(lemmas.glossDefault, pattern)) : undefined,
+  );
+  const joinLemma = eq(lemmas.id, userKnownLemmas.lemmaId);
+  const [rows, totals] = await Promise.all([
+    db.select({
       lemmaId: userKnownLemmas.lemmaId,
-      language: lemmas.language,
       headword: lemmas.headword,
       pos: lemmas.pos,
       glossDefault: lemmas.glossDefault,
       status: userKnownLemmas.status,
       updatedAt: userKnownLemmas.updatedAt,
     })
-    .from(userKnownLemmas)
-    .innerJoin(lemmas, eq(lemmas.id, userKnownLemmas.lemmaId))
-    .where(and(...conditions))
-    .orderBy(desc(userKnownLemmas.updatedAt))
-    .limit(ROW_LIMIT);
+      .from(userKnownLemmas)
+      .innerJoin(lemmas, joinLemma)
+      .where(and(scope, inArray(userKnownLemmas.status, statuses)))
+      .orderBy(desc(userKnownLemmas.updatedAt))
+      .limit(ROW_LIMIT + 1),
+    db.select({ status: userKnownLemmas.status, total: count() })
+      .from(userKnownLemmas)
+      .innerJoin(lemmas, joinLemma)
+      .where(and(scope, ne(userKnownLemmas.status, 'unknown')))
+      .groupBy(userKnownLemmas.status),
+  ]);
 
-  const rows: WordRow[] = rawRows.map((r) => ({
-    lemmaId: r.lemmaId,
-    language: r.language as LanguageCode,
-    headword: r.headword,
-    pos: r.pos,
-    glossDefault: r.glossDefault,
-    status: r.status,
-    updatedAt: r.updatedAt,
-  }));
-
+  const counts = { learning: 0, known: 0, ignored: 0 };
+  for (const { status, total } of totals) {
+    if (status !== 'unknown') counts[status] = total;
+  }
   return {
-    rows,
-    truncated: rawRows.length === ROW_LIMIT,
-    filters: {
-      language,
-      status,
-      q,
-    },
-    // Native name of the active language for the heading. No per-page
-    // picker anymore — switching languages happens in the rail (#436).
-    languageName: language ? LANGUAGES[language].nativeName : null,
+    rows: rows.slice(0, ROW_LIMIT),
+    truncated: rows.length > ROW_LIMIT,
+    counts,
+    filters: { language, statuses, q },
   };
 };
+
+export const actions = {
+  filter: async ({ locals, request, cookies, url }) => {
+    if (!locals.user) throw redirect(303, '/login?next=/words');
+    const form = await request.formData();
+    const raw = form.get('status');
+    const selected = typeof raw === 'string' && parseStatuses(raw);
+    if (!selected) throw error(400, 'Invalid status selection');
+
+    const status = encodeStatuses(selected);
+    cookies.set(preferenceCookie(locals.user.id), status, {
+      path: '/words',
+      maxAge: 60 * 60 * 24 * 365,
+      sameSite: 'lax',
+      secure: url.protocol === 'https:',
+    });
+    const params = new URLSearchParams({ status });
+    const q = form.get('q');
+    if (typeof q === 'string' && q.trim()) params.set('q', q.trim());
+    throw redirect(303, `/words?${params}`);
+  },
+} satisfies Actions;

@@ -1,11 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { PgDialect } from 'drizzle-orm/pg-core';
+import type { SQL } from 'drizzle-orm';
 
 // Mock the drizzle query chain so we can assert on what the loader
 // asks for (auth-gated, language filter, status filter, search) without
 // hitting a real database.
 type StubRow = {
   lemmaId: string;
-  language: string;
   headword: string;
   pos: string;
   glossDefault: string | null;
@@ -14,6 +15,8 @@ type StubRow = {
 };
 
 const queryRows = vi.fn<() => Promise<StubRow[]>>();
+const queryCounts = vi.fn<() => Promise<{ status: StubRow['status']; total: number }[]>>();
+const whereClause = vi.fn<(clause: SQL) => void>();
 
 vi.mock('$lib/server/db/index.js', () => ({
   db: {
@@ -23,8 +26,10 @@ vi.mock('$lib/server/db/index.js', () => ({
           return {
             innerJoin() {
               return {
-                where() {
+                where(clause: SQL) {
+                  whereClause(clause);
                   return {
+                    groupBy: () => queryCounts(),
                     orderBy() {
                       return {
                         limit: () => queryRows(),
@@ -45,6 +50,9 @@ describe('words +page.server.ts load', () => {
   beforeEach(() => {
     queryRows.mockReset();
     queryRows.mockResolvedValue([]);
+    queryCounts.mockReset();
+    queryCounts.mockResolvedValue([]);
+    whereClause.mockClear();
   });
 
   afterEach(() => {
@@ -55,6 +63,7 @@ describe('words +page.server.ts load', () => {
     locals: { user: { id: string } | null };
     url: URL;
     currentLanguage: string | null;
+    preference: string;
   };
 
   async function callLoad(input: Partial<LoadInput> = {}) {
@@ -68,6 +77,7 @@ describe('words +page.server.ts load', () => {
       url,
       locals,
       parent: async () => ({ currentLanguage }),
+      cookies: { get: () => input.preference },
     } as unknown as Parameters<typeof load>[0]);
   }
 
@@ -87,7 +97,6 @@ describe('words +page.server.ts load', () => {
     queryRows.mockResolvedValue([
       {
         lemmaId: 'L1',
-        language: 'hi',
         headword: 'प्रभात',
         pos: 'noun',
         glossDefault: 'dawn',
@@ -98,14 +107,67 @@ describe('words +page.server.ts load', () => {
     const data = await callLoad({});
     expect(data?.rows).toHaveLength(1);
     expect(data?.rows[0]?.headword).toBe('प्रभात');
-    expect(data?.filters).toEqual({ language: 'hi', status: 'all', q: '' });
+    expect(data?.filters).toEqual({ language: 'hi', statuses: ['learning', 'known'], q: '' });
     expect(data?.truncated).toBe(false);
   });
 
-  it('scopes the list to the current language (#436)', async () => {
-    const data = await callLoad({ currentLanguage: 'mr' });
+  it('counts every matching status, including deselected words beyond the display limit', async () => {
+    queryCounts.mockResolvedValue([
+      { status: 'learning', total: 17 },
+      { status: 'ignored', total: 250 },
+    ]);
+    const data = await callLoad({ currentLanguage: 'mr', url: new URL('http://x/words?q=test') });
     expect(data?.filters.language).toBe('mr');
-    expect(data?.languageName).toBe('मराठी');
+    expect(data?.counts).toEqual({ learning: 17, known: 0, ignored: 250 });
+    const dialect = new PgDialect();
+    const list = dialect.sqlToQuery(whereClause.mock.calls[0]![0]);
+    const counts = dialect.sqlToQuery(whereClause.mock.calls[1]![0]);
+    for (const query of [list, counts]) {
+      expect(query.sql).toContain('"lemmas"."language" = $2');
+      expect(query.params.slice(0, 4)).toEqual(['u1', 'mr', '%test%', '%test%']);
+    }
+    expect(list.params.slice(4)).toEqual(['learning', 'known']);
+    expect(counts.sql).toContain('"user_known_lemmas"."status" <> $5');
+    expect(counts.params[4]).toBe('unknown');
+  });
+
+  it('directs the user to choose a language before querying vocabulary', async () => {
+    await expect(callLoad({ currentLanguage: null })).rejects.toMatchObject({
+      status: 303,
+      location: '/',
+    });
+    expect(queryRows).not.toHaveBeenCalled();
+  });
+
+  it('opens old New filter links on All and preserves the search', async () => {
+    const data = await callLoad({ url: new URL('http://x/words?status=unknown&q=dawn') });
+    expect(data?.filters).toEqual({ language: 'hi', statuses: ['learning', 'known', 'ignored'], q: 'dawn' });
+  });
+
+  it.each([
+    { value: 'all', selected: ['learning', 'known', 'ignored'] },
+    { value: 'none', selected: [] },
+    { value: 'learning,ignored', selected: ['learning', 'ignored'] },
+  ])('remembers $value when Words is reopened', async ({ value, selected }) => {
+    const { actions } = await import('./+page.server.js');
+    const set = vi.fn();
+    const url = new URL('http://x/words?/filter');
+    const request = new Request(url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ status: value, q: 'dawn' }).toString(),
+    });
+    await expect(actions.filter({
+      locals: { user: { id: 'u1' } }, cookies: { set }, request, url,
+    } as unknown as Parameters<typeof actions.filter>[0])).rejects.toMatchObject({
+      status: 303, location: `/words?${new URLSearchParams({ status: value, q: 'dawn' })}`,
+    });
+    expect(set).toHaveBeenCalledWith('words_statuses_u1', value, expect.objectContaining({ maxAge: expect.any(Number) }));
+    const data = await callLoad({ preference: set.mock.calls[0]![1] });
+    expect(data?.filters.statuses).toEqual(selected);
+    if (!selected.length) {
+      expect(new PgDialect().sqlToQuery(whereClause.mock.calls[0]![0]).sql).toContain('false');
+    }
   });
 
   it("rejects an unknown status with 400", async () => {
@@ -121,11 +183,10 @@ describe('words +page.server.ts load', () => {
     expect(data?.filters.q).toBe('mood');
   });
 
-  it('flags truncation when the query returns the row limit', async () => {
+  it.each([200, 201])('reports whether more than 200 matches exist (%i matches)', async (count) => {
     queryRows.mockResolvedValue(
-      Array.from({ length: 200 }, (_, i) => ({
+      Array.from({ length: count }, (_, i) => ({
         lemmaId: `L${i}`,
-        language: 'hi',
         headword: `word${i}`,
         pos: 'noun',
         glossDefault: null,
@@ -134,6 +195,7 @@ describe('words +page.server.ts load', () => {
       })),
     );
     const data = await callLoad({});
-    expect(data?.truncated).toBe(true);
+    expect(data?.rows).toHaveLength(200);
+    expect(data?.truncated).toBe(count > 200);
   });
 });
