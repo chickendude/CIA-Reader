@@ -1,7 +1,6 @@
 <script lang="ts">
   import { untrack } from 'svelte';
   import EditableDefinition from './EditableDefinition.svelte';
-  import ContextChoiceButton from './ContextChoiceButton.svelte';
   import PosPill from './PosPill.svelte';
   import type { ServerCandidate, ServerToken } from './types.js';
 
@@ -96,7 +95,6 @@
         >{frequency.toLocaleString()}×</span
       >{/if}
   </header>
-  <ContextChoiceButton {token} lemmaId={candidate.lemmaId} label={`${candidate.headword} ${candidate.pos}`} selectedBy={candidate.selectedBy} />
   {#if canonical && canEdit}
     <EditableDefinition
       text={canonical.body}

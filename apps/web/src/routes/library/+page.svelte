@@ -6,7 +6,7 @@
   with a card grid — cover gradients picked deterministically per
   text id (so a user's library doesn't reshuffle), kind tag (book vs
   single — single for everything until M8 collections), status badge,
-  and a leading "Add a text" tile on the Your tab.
+  and an "Add a text" tile on the Your tab.
 -->
 <script lang="ts">
   import { goto, invalidateAll } from '$app/navigation';
@@ -151,18 +151,6 @@
   </header>
 
   <div class="lib-grid">
-    {#if data.tab === 'your' && data.isAuthenticated}
-      <a
-        class="card upload-card"
-        href="/upload"
-      >
-        <div class="upload-card-body">
-          <div class="big" aria-hidden="true">+</div>
-          <div class="label">Add a text or EPUB</div>
-          <div class="sub">.txt, .epub, .html, paste from clipboard</div>
-        </div>
-      </a>
-    {/if}
     {#if data.tab === 'collections' && data.isAuthenticated}
       <a class="card upload-card" href="/collections/new">
         <div class="upload-card-body">
@@ -239,11 +227,12 @@
       {#each data.page.cards as card (card.id)}
         {@const pct = data.textComprehension?.[card.id] ?? null}
         <div class="lib-card-wrap">
-          <a class="card lib-card" href={data.tab === 'official' ? `/library/${card.id}` : `/reader/${card.id}`}>
+          <a class="card lib-card" href={card.chapterCount != null ? `/collections/${card.id}` : data.tab === 'official' ? `/library/${card.id}` : `/reader/${card.id}`}>
             <div class={`lib-cover cover-${coverForId(card.id)}`}>
               <div class="cover-title">{card.title}</div>
               <div class="cover-chips">
-                <span class="chip status-{card.status}">{card.status}</span>
+                {#if card.chapterCount != null}<span class="chip">chapter book</span>
+                {:else}<span class="chip status-{card.status}">{card.status}</span>{/if}
                 {#if card.visibility !== 'private'}
                   <span class="chip">{card.visibility}</span>
                 {/if}
@@ -257,7 +246,7 @@
             <div class="body">
               <div class="kind-row">
                 <span class="kind-tag">{card.sourceType}</span>
-                <span class="kind-meta">{card.language}</span>
+                <span class="kind-meta">{card.chapterCount != null ? `${card.chapterCount} ${card.chapterCount === 1 ? 'chapter' : 'chapters'}` : card.language}</span>
               </div>
               <div class="title-dev">{card.title}</div>
             </div>
@@ -268,7 +257,7 @@
               class="lib-card-del"
               aria-label="Delete {card.title}"
               title="Delete"
-              onclick={() => askDeleteText(card.id, card.title)}
+              onclick={() => card.chapterCount != null ? askDeleteCollection(card.id, card.title) : askDeleteText(card.id, card.title)}
             >×</button>
             {#if data.user?.role === 'admin' && card.status === 'ready' && card.visibility !== 'official'}
               <button class="publish-book" disabled={publishing !== null} onclick={() => void publishBook(card.id)}>
@@ -278,6 +267,18 @@
           {/if}
         </div>
       {/each}
+    {/if}
+    {#if data.tab === 'your' && data.isAuthenticated}
+      <a
+        class="card upload-card"
+        href="/upload"
+      >
+        <div class="upload-card-body">
+          <div class="big" aria-hidden="true">+</div>
+          <div class="label">Add a text or EPUB</div>
+          <div class="sub">.txt, .epub, .html, paste from clipboard</div>
+        </div>
+      </a>
     {/if}
   </div>
 

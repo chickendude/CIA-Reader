@@ -421,6 +421,13 @@
       "when": 1794957233781,
       "tag": "0059_official_book_access",
       "breakpoints": true
+    },
+    {
+      "idx": 60,
+      "version": "7",
+      "when": 1794961000000,
+      "tag": "0060_library_last_opened",
+      "breakpoints": true
     }
   ]
 }

@@ -18,9 +18,9 @@ import {
   DEFAULT_PAGE_SIZE,
   MAX_PAGE_SIZE,
   listOfficialTexts,
-  listOwnedTexts,
+  listPersonalLibrary,
   listSharedTexts,
-  type ListPage,
+  type LibraryGridCard,
 } from '$lib/server/texts/library.js';
 import {
   listCollectionsForUser,
@@ -77,7 +77,7 @@ export const load: PageServerLoad = async ({ url, locals, parent }) => {
   );
   const offset = Math.max(readInt(url, 'offset', 0), 0);
 
-  let page: ListPage = {
+  let page: { cards: LibraryGridCard[]; totalCount: number; limit: number; offset: number } = {
     cards: [],
     totalCount: 0,
     limit,
@@ -111,33 +111,10 @@ export const load: PageServerLoad = async ({ url, locals, parent }) => {
   let textComprehension = new Map<string, number | null>();
 
   if (tab === 'your') {
-    page = await listOwnedTexts(
+    page = await listPersonalLibrary(
       { id: locals.user!.id },
       { limit, offset, language: language ?? undefined },
     );
-    // Surface chapter-book collections as library cards. We don't
-    // paginate these — a learner has at most a handful of imported
-    // books — they sit above the paginated texts.
-    const ownedCollections = await listCollectionsForUser(locals.user!.id);
-    const filtered = ownedCollections.filter(
-      (row) =>
-        row.collection.kind === 'chapter_book' &&
-        (!language || row.collection.language === language),
-    );
-    const compMap = await estimatedComprehensionForCollections(
-      locals.user!.id,
-      filtered.map((m) => m.collection.id),
-    );
-    chapterBookCards = filtered.map((row) => ({
-      id: row.collection.id,
-      title: row.collection.title,
-      kind: row.collection.kind,
-      language: row.collection.language,
-      visibility: row.collection.visibility,
-      coverUrl: row.collection.coverUrl,
-      textCount: row.textCount,
-      estimatedComprehensionPct: compMap.get(row.collection.id) ?? null,
-    }));
   } else if (tab === 'shared') {
     page = await listSharedTexts({ id: locals.user!.id }, { limit, offset });
   } else if (tab === 'collections') {
@@ -221,10 +198,13 @@ export const load: PageServerLoad = async ({ url, locals, parent }) => {
   // official tabs. We only call when the viewer is signed in;
   // anonymous browsers of the official catalog see no badge.
   if (locals.user && page.cards.length > 0) {
-    textComprehension = await estimatedComprehensionForTexts(
-      locals.user.id,
-      page.cards.map((c) => c.id),
-    );
+    const textIds = page.cards.filter((c) => c.chapterCount == null).map((c) => c.id);
+    const bookIds = page.cards.filter((c) => c.chapterCount != null).map((c) => c.id);
+    const [texts, books] = await Promise.all([
+      estimatedComprehensionForTexts(locals.user.id, textIds),
+      bookIds.length ? estimatedComprehensionForCollections(locals.user.id, bookIds) : [],
+    ]);
+    textComprehension = new Map([...texts, ...books]);
   }
 
   return {

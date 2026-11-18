@@ -76,6 +76,18 @@
     readerSettings = data.readerSettings;
   });
   let settingsOpen = $state(false);
+  const mobileArrowsKey = 'reader.hideMobilePageArrows';
+  let hideMobileArrows = $state(false);
+
+  function setMobileArrowsHidden(hidden: boolean) {
+    hideMobileArrows = hidden;
+    try {
+      if (hidden) localStorage.setItem(mobileArrowsKey, '1');
+      else localStorage.removeItem(mobileArrowsKey);
+    } catch {
+      // The preference still applies for this visit when storage is unavailable.
+    }
+  }
 
   // #435: admin-only overlay that tints words whose lemma has no
   // definition yet. The flag is hydrated from localStorage on mount
@@ -294,8 +306,24 @@
   // baking a fixed pixel value into either component.
   let readerTopEl: HTMLElement | null = $state(null);
 
+  // Only a mounted reader counts as an open. Library link preloads run the server loader.
+  let recordedOpen = '';
+  $effect(() => {
+    const id = data.text.id;
+    if (data.canPersistSettings && id !== recordedOpen) {
+      recordedOpen = id;
+      void fetch(`/api/v1/me/text-progress/${id}`, { method: 'POST', keepalive: true })
+        .catch(() => {});
+    }
+  });
+
   onMount(() => {
     liveStatus = data.text.status;
+    try {
+      hideMobileArrows = localStorage.getItem(mobileArrowsKey) === '1';
+    } catch {
+      // Use the default when storage is unavailable.
+    }
 
     // #435: restore the admin's overlay preference. Read after mount
     // (not during SSR) so the localStorage access is browser-only; the
@@ -442,7 +470,7 @@
   </div>
 {/snippet}
 
-<div class="reader" data-mode={isPdf ? 'pdf' : data.mode} style={readerStyle}>
+<div class="reader" class:hide-mobile-arrows={hideMobileArrows} data-mode={isPdf ? 'pdf' : data.mode} style={readerStyle}>
   <header class="reader-top" bind:this={readerTopEl}>
     <div class="reader-top-left">
       <a class="reader-close" href="/library" aria-label="Close reader" title="Close reader">
@@ -642,6 +670,8 @@
   isAdmin={data.isAdmin}
   {showRomanization}
   onRomanizationChange={setRomanization}
+  {hideMobileArrows}
+  onMobileArrowsChange={isPdf || data.mode !== 'continuous' ? setMobileArrowsHidden : undefined}
   {flagUndefined}
   onFlagUndefinedChange={setFlagUndefined}
 >
@@ -876,6 +906,15 @@
   }
   .mobile-picker, .mobile-chapter-footer, .mobile-processing { display: none; }
   @media (max-width: 639px) {
+    .reader :global(.reader-page-wrap),
+    .reader :global(.reader-scroll-inner) { touch-action: pan-y pinch-zoom; }
+    .hide-mobile-arrows :global(.page-arrow) { display: none; }
+    .hide-mobile-arrows :global(.reader-page-viewport),
+    .hide-mobile-arrows :global(.reader-scroll-inner),
+    .hide-mobile-arrows :global(.reader-image .page-body) {
+      padding-left: max(0.75rem, env(safe-area-inset-left));
+      padding-right: max(0.75rem, env(safe-area-inset-right));
+    }
     .reader-top { grid-template-columns: minmax(0, 1fr) auto; align-items: center; padding: .25rem .75rem; }
     .reader-close, .settings-toggle { width: 44px; height: 44px; }
     .reader-book { max-width: none; }

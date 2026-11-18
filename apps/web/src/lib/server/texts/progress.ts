@@ -24,6 +24,28 @@ export class ProgressNotAccessibleError extends Error {
   }
 }
 
+async function requireReadableText(userId: string, textId: string) {
+  const [text] = await db
+    .select()
+    .from(schema.texts)
+    .where(eq(schema.texts.id, textId))
+    .limit(1);
+  if (!text) throw new ProgressNotAccessibleError();
+  const ok = await canReadText({ id: userId }, text as Text);
+  if (!ok) throw new ProgressNotAccessibleError();
+}
+
+export async function recordTextOpened(userId: string, textId: string) {
+  await requireReadableText(userId, textId);
+  const lastOpenedAt = new Date();
+  await db.insert(schema.userTextProgress)
+    .values({ userId, textId, lastOpenedAt })
+    .onConflictDoUpdate({
+      target: [schema.userTextProgress.userId, schema.userTextProgress.textId],
+      set: { lastOpenedAt },
+    });
+}
+
 export async function setTextProgress(args: {
   userId: string;
   textId: string;
@@ -36,14 +58,7 @@ export async function setTextProgress(args: {
 
   // Authorization runs through canReadText so we can't be tricked
   // into writing progress for a text the viewer can't actually read.
-  const [text] = await db
-    .select()
-    .from(schema.texts)
-    .where(eq(schema.texts.id, args.textId))
-    .limit(1);
-  if (!text) throw new ProgressNotAccessibleError();
-  const ok = await canReadText({ id: args.userId }, text as Text);
-  if (!ok) throw new ProgressNotAccessibleError();
+  await requireReadableText(args.userId, args.textId);
 
   // Clamp inputs defensively — a bad client shouldn't be able to
   // store nonsense.
@@ -51,50 +66,16 @@ export async function setTextProgress(args: {
   const lastTokenIdx = Math.max(0, Math.floor(args.lastTokenIdx));
   const pctRead = Math.max(0, Math.min(100, Number(args.pctRead) || 0));
 
-  const existing = (await db
-    .select()
-    .from(schema.userTextProgress)
-    .where(
-      and(
-        eq(schema.userTextProgress.userId, args.userId),
-        eq(schema.userTextProgress.textId, args.textId),
-      ),
-    )
-    .limit(1)) as UserTextProgress[];
-
-  if (existing.length > 0) {
-    const [updated] = (await db
-      .update(schema.userTextProgress)
-      .set({
-        lastChapterIdx,
-        lastTokenIdx,
-        pctRead,
-        updatedAt: now,
-      })
-      .where(
-        and(
-          eq(schema.userTextProgress.userId, args.userId),
-          eq(schema.userTextProgress.textId, args.textId),
-        ),
-      )
-      .returning()) as UserTextProgress[];
-    if (!updated) throw new Error('Failed to update user_text_progress');
-    return updated;
-  }
-
-  const [inserted] = (await db
-    .insert(schema.userTextProgress)
-    .values({
-      userId: args.userId,
-      textId: args.textId,
-      lastChapterIdx,
-      lastTokenIdx,
-      pctRead,
-      updatedAt: now,
+  const anchor = { lastChapterIdx, lastTokenIdx, pctRead, updatedAt: now };
+  const [saved] = await db.insert(schema.userTextProgress)
+    .values({ userId: args.userId, textId: args.textId, ...anchor })
+    .onConflictDoUpdate({
+      target: [schema.userTextProgress.userId, schema.userTextProgress.textId],
+      set: anchor,
     })
-    .returning()) as UserTextProgress[];
-  if (!inserted) throw new Error('Failed to insert user_text_progress');
-  return inserted;
+    .returning();
+  if (!saved) throw new Error('Failed to save reading progress');
+  return saved;
 }
 
 export async function getTextProgress(

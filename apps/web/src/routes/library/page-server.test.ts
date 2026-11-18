@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const listOwnedTexts = vi.fn();
+const listPersonalLibrary = vi.fn();
 const listSharedTexts = vi.fn();
 const listOfficialTexts = vi.fn();
 const listCollectionsForUser = vi.fn();
@@ -15,7 +15,7 @@ vi.mock('$lib/server/texts/library.js', async () => {
   );
   return {
     ...actual,
-    listOwnedTexts: (...a: unknown[]) => listOwnedTexts(...a),
+    listPersonalLibrary: (...a: unknown[]) => listPersonalLibrary(...a),
     listSharedTexts: (...a: unknown[]) => listSharedTexts(...a),
     listOfficialTexts: (...a: unknown[]) => listOfficialTexts(...a),
   };
@@ -61,7 +61,7 @@ async function callLoad(
 }
 
 beforeEach(() => {
-  listOwnedTexts.mockReset();
+  listPersonalLibrary.mockReset();
   listSharedTexts.mockReset();
   listOfficialTexts.mockReset();
   listCollectionsForUser.mockReset();
@@ -80,7 +80,7 @@ afterEach(() => {
 
 describe('/library loader', () => {
   it("defaults to the 'your' tab for an authenticated visitor", async () => {
-    listOwnedTexts.mockResolvedValueOnce({
+    listPersonalLibrary.mockResolvedValueOnce({
       cards: [{ id: 't1', title: 'Sample', language: 'hi' }],
       totalCount: 1,
       limit: 20,
@@ -92,7 +92,7 @@ describe('/library loader', () => {
     };
     expect(data.tab).toBe('your');
     expect(data.page.totalCount).toBe(1);
-    expect(listOwnedTexts).toHaveBeenCalled();
+    expect(listPersonalLibrary).toHaveBeenCalled();
   });
 
   it("defaults to the 'official' tab for an anonymous visitor", async () => {
@@ -114,7 +114,7 @@ describe('/library loader', () => {
     };
     expect(res.status).toBe(303);
     expect(res.location).toContain('/login');
-    expect(listOwnedTexts).not.toHaveBeenCalled();
+    expect(listPersonalLibrary).not.toHaveBeenCalled();
   });
 
   it("routes 'shared' through listSharedTexts", async () => {
@@ -132,21 +132,21 @@ describe('/library loader', () => {
   });
 
   it('scopes the listing to the current language (#436)', async () => {
-    listOwnedTexts.mockResolvedValueOnce({
+    listPersonalLibrary.mockResolvedValueOnce({
       cards: [],
       totalCount: 0,
       limit: 20,
       offset: 0,
     });
     await callLoad('http://x/library?tab=your', USER, 'mr');
-    expect(listOwnedTexts).toHaveBeenCalledWith(
+    expect(listPersonalLibrary).toHaveBeenCalledWith(
       { id: USER.id },
       expect.objectContaining({ language: 'mr' }),
     );
   });
 
   it('echoes the current language back to the page (#436)', async () => {
-    listOwnedTexts.mockResolvedValueOnce({
+    listPersonalLibrary.mockResolvedValueOnce({
       cards: [],
       totalCount: 0,
       limit: 20,

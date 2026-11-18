@@ -137,10 +137,8 @@ def build_hindi_pipeline() -> HindiPipeline:  # pragma: no cover
     factory. Lazy-imports stanza so the module tree stays importable in
     test environments that don't install stanza (CI).
 
-    The Docker image for the NLP service pre-downloads models at build
-    time via ``stanza.download('hi', processors='tokenize,pos,lemma')``;
-    ``download_method=None`` here prevents a surprise download from
-    happening in production at first-request time.
+    This legacy factory requires a separately installed Hindi model.
+    The reader uses HindiDB.
     """
     import stanza
 

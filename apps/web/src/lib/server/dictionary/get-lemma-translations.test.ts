@@ -66,7 +66,7 @@ const { getLemmaTranslations, LemmaNotFoundError } = await import('./lookups.js'
 function lemmaRow(overrides: Record<string, unknown> = {}) {
   return {
     id: 'lemma-1',
-    language: 'hi',
+    language: 'mr',
     headword: 'पार्क',
     pos: 'PROPN',
     script: 'Deva',
@@ -91,8 +91,8 @@ function translationRow(overrides: Record<string, unknown> = {}) {
     parentTranslationId: null,
     body: 'park',
     targetLanguage: 'en',
-    sourceAttribution: 'Wiktionary Hindi via Kaikki.org',
-    sourceId: 'kaikki:hi:पार्क:NOUN:abc123abc123',
+    sourceAttribution: 'Wiktionary Marathi via Kaikki.org',
+    sourceId: 'kaikki:mr:पार्क:NOUN:abc123abc123',
     hidden: false,
     displayRank: null,
     createdAt: new Date(),
@@ -154,6 +154,14 @@ describe('getLemmaTranslations (T-3.14 sibling fallback)', () => {
     expect(selectFn).toHaveBeenCalledTimes(3);
   });
 
+  it('keeps a Hindi occurrence on its selected entry when that entry has no translation', async () => {
+    stage([lemmaRow({ language: 'hi' })]);
+    stage([]);
+    const out = await getLemmaTranslations('lemma-1', null);
+    expect(out.translations.official).toEqual([]);
+    expect(selectFn).toHaveBeenCalledTimes(2);
+  });
+
   it('still returns empty when neither the primary nor any sibling tier has translations', async () => {
     stage([lemmaRow()]);
     stage([]); // primary empty
@@ -166,20 +174,20 @@ describe('getLemmaTranslations (T-3.14 sibling fallback)', () => {
   });
 
   it('falls back to nukta-stripped siblings when exact-headword siblings are empty (#318)', async () => {
-    // Linked lemma is `पढना` (pre-#316, no nukta). Exact-headword
-    // sibling fetch finds nothing (no other `पढना` rows). The
-    // canonical entry sits under `पढ़ना` (with nukta) and ships the
+    // Linked lemma is `फिल्म` (pre-#316, no nukta). Exact-headword
+    // sibling fetch finds nothing (no other `फिल्म` rows). The
+    // canonical entry sits under `फ़िल्म` (with nukta) and ships the
     // gloss — caught by the nukta-stripped tier because both reduce
     // to the same key.
-    stage([lemmaRow({ id: 'lemma-1', headword: 'पढना', pos: 'VERB' })]);
+    stage([lemmaRow({ id: 'lemma-1', headword: 'फिल्म', pos: 'NOUN' })]);
     stage([]); // primary translations empty
     stage([]); // exact-headword sibling fetch empty
     stage([
-      // nukta-stripped sibling fetch finds the canonical `पढ़ना` row
+      // nukta-stripped sibling fetch finds the canonical `फ़िल्म` row
       {
         translation: translationRow({
           lemmaId: 'lemma-canonical',
-          body: 'to read',
+          body: 'film',
         }),
       },
     ]);
@@ -187,8 +195,8 @@ describe('getLemmaTranslations (T-3.14 sibling fallback)', () => {
     // We honor the user-clicked lemma's metadata; only the
     // translation text comes from the canonical sibling.
     expect(out.lemma.id).toBe('lemma-1');
-    expect(out.lemma.headword).toBe('पढना');
-    expect(out.translations.official.map((t) => t.body)).toEqual(['to read']);
+    expect(out.lemma.headword).toBe('फिल्म');
+    expect(out.translations.official.map((t) => t.body)).toEqual(['film']);
     expect(selectFn).toHaveBeenCalledTimes(4);
   });
 

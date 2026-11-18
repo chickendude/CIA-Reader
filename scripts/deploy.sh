@@ -8,12 +8,8 @@
 #   ./scripts/deploy.sh --build          # force a rebuild even if auto-detect skips
 #   DEPLOY_HOST=root@... ./scripts/deploy.sh
 #
-# Build mode is `auto` by default — the box-side step diffs OLD_HEAD vs
-# the new ref and only passes `--build` when files in any image's
-# context changed (apps/, services/, packages/, infra/backup/,
-# pnpm-lock.yaml, etc.). Pure docs / scripts / compose-config changes
-# skip the rebuild entirely and the deploy collapses from minutes to
-# a few seconds.
+# Auto mode builds only the services whose image inputs changed.
+# Compose still applies configuration changes to the whole stack.
 set -euo pipefail
 
 DEPLOY_HOST="${DEPLOY_HOST:-root@parhiba.com}"
@@ -32,7 +28,7 @@ for arg in "$@"; do
     --build|-b)   BUILD_MODE="force" ;;
     --no-build|-B) BUILD_MODE="skip" ;;
     --help|-h)
-      sed -n '2,16p' "$0" | sed 's/^#//; s/^ //'
+      sed -n '2,12p' "$0" | sed 's/^#//; s/^ //'
       exit 0
       ;;
     -*)
@@ -84,7 +80,17 @@ BUILD_MODE="$5"
 
 cd "$DEPLOY_PATH"
 
-OLD_HEAD="$(git rev-parse HEAD 2>/dev/null || echo "")"
+# Serialize checkout and image updates on this server.
+exec 9>"$(git rev-parse --git-path deploy.lock)"
+flock 9
+
+# Keep the previous revision across a failed build, even though the server
+# checkout advances before Docker runs. Bootstrap from the current checkout.
+BUILD_REF=refs/deploy/build-baseline
+if ! git show-ref --verify --quiet "$BUILD_REF"; then
+  git update-ref "$BUILD_REF" HEAD
+fi
+OLD_HEAD="$(git rev-parse "$BUILD_REF")"
 
 echo "[box] $(hostname): fetching origin"
 git fetch origin --tags --quiet
@@ -100,37 +106,47 @@ git --no-pager log --oneline -1
 
 NEW_HEAD="$(git rev-parse HEAD)"
 
-# Decide whether to rebuild images. Building is the slow part
-# (~30-60s per service even with cache hits, because BuildKit
-# re-exports manifests with new digests and that triggers
-# container recreation). Skip it when nothing in any image's
-# build context changed.
+compose=(docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE")
+built=false
+
+# git diff returns 1 for changes and a higher status for errors.
+changed() {
+  local result=0
+  git diff --quiet "$OLD_HEAD" "$NEW_HEAD" -- "$@" || result=$?
+  if (( result > 1 )); then exit "$result"; fi
+  (( result == 1 ))
+}
+
 case "$BUILD_MODE" in
   force)
-    BUILD_ARG="--build"
-    echo "[box] build: --build (forced)"
-    ;;
-  skip)
-    BUILD_ARG=""
-    echo "[box] build: skipped (forced)"
+    "${compose[@]}" build
+    built=true
     ;;
   auto)
-    if [ -z "$OLD_HEAD" ] || [ "$OLD_HEAD" = "$NEW_HEAD" ]; then
-      BUILD_ARG=""
-      echo "[box] build: skipped (no commits to apply)"
-    elif git diff --name-only "$OLD_HEAD" "$NEW_HEAD" \
-           | grep -qE '^(apps/|services/|packages/|infra/backup/|pnpm-lock\.yaml|pnpm-workspace\.yaml|package\.json)' ; then
-      BUILD_ARG="--build"
-      echo "[box] build: --build (image-relevant files changed)"
-    else
-      BUILD_ARG=""
-      echo "[box] build: skipped (only docs/scripts/compose-config changed)"
+    services=()
+    if changed apps/web packages/shared-types pnpm-lock.yaml pnpm-workspace.yaml package.json .dockerignore; then
+      services+=(web)
     fi
+    if changed services/nlp packages/shared-types/python .dockerignore; then
+      services+=(nlp)
+    fi
+    if changed infra/backup; then
+      services+=(backup)
+    fi
+    if (( ${#services[@]} )); then
+      echo "[box] Building ${services[*]}"
+      "${compose[@]}" build "${services[@]}"
+      built=true
+    else
+      echo "[box] No image inputs changed"
+    fi
+    ;;
+  skip)
+    echo "[box] Skipping requested image builds"
     ;;
 esac
 
-echo "[box] docker compose up -d $BUILD_ARG"
-docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" up -d $BUILD_ARG
+"${compose[@]}" up -d
 
 # The Caddyfile is bind-mounted (./Caddyfile:/etc/caddy/Caddyfile),
 # so a `git reset --hard` updates the file on disk but compose has
@@ -139,13 +155,18 @@ docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" up -d $BUILD_ARG
 # memory config it loaded at boot, and any new site blocks (new
 # subdomains, header changes) silently don't take effect.
 # Detect Caddyfile-touching diffs and restart caddy explicitly.
-if [ -n "$OLD_HEAD" ] && [ "$OLD_HEAD" != "$NEW_HEAD" ] && \
-   git diff --name-only "$OLD_HEAD" "$NEW_HEAD" | grep -q '^infra/Caddyfile$'; then
+if changed infra/Caddyfile; then
   echo "[box] Caddyfile changed, restarting caddy to pick it up"
-  docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" restart caddy
+  "${compose[@]}" restart caddy
 fi
 
-if [ -n "$BUILD_ARG" ]; then
+# An explicit skip can leave the images behind the checkout. Let the next
+# auto deploy pick up those changes.
+if [[ "$BUILD_MODE" != skip ]]; then
+  git update-ref "$BUILD_REF" "$NEW_HEAD"
+fi
+
+if [[ "$built" == true ]]; then
   echo "[box] pruning dangling images"
   docker image prune -f >/dev/null
 fi

@@ -6,14 +6,13 @@ import type { ServerToken, ServerNumberForms } from './types.js';
 
 beforeAll(() => {
   // jsdom doesn't ship matchMedia; the popup uses it to switch between
-  // mobile-sheet and desktop-static layouts. Stub a minimal "always
-  // mobile" matcher so the $effect doesn't throw.
+  // mobile-sheet and desktop-static layouts. Stub a desktop matcher so the $effect doesn't throw.
   if (!window.matchMedia) {
     Object.defineProperty(window, 'matchMedia', {
       configurable: true,
       writable: true,
       value: (query: string) => ({
-        matches: false,
+        matches: query === '(min-width: 960px)',
         media: query,
         addEventListener: () => {},
         removeEventListener: () => {},
@@ -1290,7 +1289,7 @@ describe('WordPopup — add-translation form (no buttons, focus, refetch)', () =
     vi.unstubAllGlobals();
   });
 
-  it('focuses the textarea as soon as "+ Add my translation" is clicked', async () => {
+  it('focuses the textarea as soon as "+ Add your translation" is clicked', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValue(jsonResponse(emptyPayload())),
@@ -1302,14 +1301,14 @@ describe('WordPopup — add-translation form (no buttons, focus, refetch)', () =
       onClose: vi.fn(),
     });
     const toggle = await waitFor(() => {
-      const el = document.body.querySelector<HTMLButtonElement>('.add-toggle');
+      const el = document.body.querySelector<HTMLButtonElement>('.sp-primary-display');
       if (!el) throw new Error('add-toggle missing');
       return el;
     });
     toggle.click();
     await waitFor(() => {
       const textarea = document.body.querySelector<HTMLTextAreaElement>(
-        '.add-form textarea',
+        '.sp-primary-form textarea',
       );
       expect(textarea).not.toBeNull();
       expect(document.activeElement).toBe(textarea);
@@ -1328,13 +1327,13 @@ describe('WordPopup — add-translation form (no buttons, focus, refetch)', () =
       onClose: vi.fn(),
     });
     const toggle = await waitFor(() => {
-      const el = document.body.querySelector<HTMLButtonElement>('.add-toggle');
+      const el = document.body.querySelector<HTMLButtonElement>('.sp-primary-display');
       if (!el) throw new Error('add-toggle missing');
       return el;
     });
     toggle.click();
     const form = await waitFor(() => {
-      const el = document.body.querySelector<HTMLFormElement>('.add-form');
+      const el = document.body.querySelector<HTMLFormElement>('.sp-primary-form');
       if (!el) throw new Error('add-form missing');
       return el;
     });
@@ -1376,14 +1375,14 @@ describe('WordPopup — add-translation form (no buttons, focus, refetch)', () =
       onClose: vi.fn(),
     });
     const toggle = await waitFor(() => {
-      const el = document.body.querySelector<HTMLButtonElement>('.add-toggle');
+      const el = document.body.querySelector<HTMLButtonElement>('.sp-primary-display');
       if (!el) throw new Error('add-toggle missing');
       return el;
     });
     toggle.click();
     const textarea = await waitFor(() => {
       const el = document.body.querySelector<HTMLTextAreaElement>(
-        '.add-form textarea',
+        '.sp-primary-form textarea',
       );
       if (!el) throw new Error('textarea missing');
       return el;
@@ -1404,8 +1403,8 @@ describe('WordPopup — add-translation form (no buttons, focus, refetch)', () =
         '[data-testid="primary-translation-edit"]',
       );
       expect(primary?.textContent ?? '').toContain('water');
-      expect(document.body.querySelector('.add-form')).toBeNull();
-      expect(document.body.querySelector('.add-toggle')).not.toBeNull();
+      expect(document.body.querySelector('.sp-primary-form')).toBeNull();
+      expect(document.body.querySelector('.sp-primary-display')).not.toBeNull();
     });
   });
 });
@@ -1665,14 +1664,14 @@ describe('WordPopup — edit + delete personal translations', () => {
     });
 
     const toggle = await waitFor(() => {
-      const el = document.body.querySelector<HTMLButtonElement>('.add-toggle');
+      const el = document.body.querySelector<HTMLButtonElement>('.sp-primary-display');
       if (!el) throw new Error('add-toggle missing');
       return el;
     });
     toggle.click();
     const textarea = await waitFor(() => {
       const el = document.body.querySelector<HTMLTextAreaElement>(
-        '.add-form textarea',
+        '.sp-primary-form textarea',
       );
       if (!el) throw new Error('add textarea missing');
       return el;
@@ -2210,5 +2209,50 @@ describe('WordPopup — editable headword search', () => {
     });
     expect(document.body.querySelector('[data-testid="headword-results"]')).toBeNull();
     expect(input.value).toBe('pena');
+  });
+});
+
+describe('Mobile word definitions', () => {
+  afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+
+  function openMobile(isAdmin: boolean) {
+    const media = window.matchMedia('(min-width: 960px)');
+    vi.spyOn(window, 'matchMedia').mockReturnValue({ ...media, matches: false });
+    const token = makeToken({
+      surface: 'एक', headword: 'एक', pos: 'NUM', lemmaId: 'one', glossDefault: 'one; a',
+      canVerifyContext: true, contextVersion: 'v1', selectedBy: 'ai',
+      candidates: [{ lemmaId: 'only', headword: 'एक', pos: 'ADJ', glossDefault: 'only',
+        score: 1, features: {} }],
+    });
+    const request = vi.fn(async (_url: string, init?: RequestInit) =>
+      Response.json(init?.method === 'PATCH' ? { token } : {
+        lemma: { id: 'one', headword: 'एक', pos: 'NUM', glossDefault: 'one; a' },
+        canEdit: isAdmin,
+        translations: { official: [], personal: [], community: [] },
+      }));
+    vi.stubGlobal('fetch', request);
+    const view = render(WordPopup, { token, language: 'hi', isAdmin, isOwner: true, onClose: vi.fn() });
+    return { ...view, request };
+  }
+
+  it('shows the active definition and keeps study status outside the scrolling body', async () => {
+    const view = openMobile(false);
+    expect(view.getByTestId('selected-definition').textContent).toContain('one; a');
+    expect(view.queryByText('only')).toBeNull();
+    const controls = view.getByRole('group', { name: 'Mark status' });
+    expect(controls.closest('footer')?.previousElementSibling?.classList.contains('sheet-body')).toBe(true);
+    expect(view.queryByRole('button', { name: 'Choose definition' })).toBeNull();
+  });
+
+  it('lets an admin replace the choice for this occurrence', async () => {
+    const view = openMobile(true);
+    view.getByRole('button', { name: 'Choose definition' }).click();
+    const alternative = await view.findByRole('button', { name: /adj only/i });
+    alternative.click();
+    await waitFor(() => expect(view.request).toHaveBeenCalledWith('/api/v1/tokens/t1/hindi-context', {
+      method: 'PATCH', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ selectedLemmaIds: ['only'], expectedVersion: 'v1' }),
+    }));
+    await waitFor(() => expect(view.queryByRole('dialog', {name: 'Choose definition'})).toBeNull());
   });
 });

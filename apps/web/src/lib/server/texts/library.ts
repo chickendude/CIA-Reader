@@ -124,6 +124,45 @@ const NOT_A_CHAPTER_BOOK_MEMBER = sql`NOT EXISTS (
     AND c.kind = 'chapter_book'
 )`;
 
+export type LibraryGridCard = Pick<LibraryCard,
+  'id' | 'title' | 'language' | 'sourceType' | 'status' | 'visibility'
+> & { chapterCount?: number | null };
+
+/** Rank books and standalone texts together before taking a page. */
+export async function listPersonalLibrary(
+  viewer: Pick<User, 'id'>,
+  opts: { limit?: number; offset?: number; language?: LanguageCode },
+) {
+  const { limit, offset } = clampPage(opts);
+  const language = opts.language;
+  const rows = await db.execute<{ total: number; cards: LibraryGridCard[] }>(sql`
+    WITH items AS (
+      SELECT texts.id, texts.title, texts.language, texts.visibility::text, texts.source_type::text AS "sourceType",
+             texts.status::text, NULL::int AS "chapterCount", texts.created_at,
+             coalesce(p.last_opened_at, p.updated_at) AS opened
+      FROM texts LEFT JOIN user_text_progress p ON p.text_id = texts.id AND p.user_id = ${viewer.id}
+      WHERE texts.owner_id = ${viewer.id} AND ${NOT_A_CHAPTER_BOOK_MEMBER}
+        ${language ? sql`AND texts.language = ${language}` : sql``}
+      UNION ALL
+      SELECT c.id, c.title, c.language, c.visibility::text, 'book', '', count(ci.text_id)::int,
+             c.created_at, max(coalesce(p.last_opened_at, p.updated_at))
+      FROM collections c LEFT JOIN collection_items ci ON ci.collection_id = c.id
+      LEFT JOIN user_text_progress p ON p.text_id = ci.text_id AND p.user_id = ${viewer.id}
+      WHERE c.owner_id = ${viewer.id} AND c.kind = 'chapter_book'
+        ${language ? sql`AND c.language = ${language}` : sql``}
+      GROUP BY c.id
+    ), page AS (
+      SELECT * FROM items ORDER BY opened DESC NULLS LAST, created_at DESC, id
+      LIMIT ${limit} OFFSET ${offset}
+    )
+    SELECT (SELECT count(*)::int FROM items) AS total,
+      coalesce(jsonb_agg(to_jsonb(page) - 'opened' - 'created_at'
+        ORDER BY opened DESC NULLS LAST, created_at DESC, id), '[]'::jsonb) AS cards
+    FROM page
+  `);
+  return { cards: rows[0]?.cards ?? [], totalCount: rows[0]?.total ?? 0, limit, offset };
+}
+
 /**
  * The user's own imports, newest first.
  */

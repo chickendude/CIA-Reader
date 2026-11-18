@@ -8,6 +8,7 @@
   per-paragraph TokenSpan render so all three modes share styles.
 -->
 <script lang="ts">
+  import { pageSwipe } from './touch-gestures.js';
   import { looksLikeNumberToken } from './types.js';
   import { onMount, tick } from 'svelte';
 
@@ -438,6 +439,7 @@
       next();
     }
   }
+  const swipe = pageSwipe(prev, next);
 </script>
 
 <svelte:window onkeydown={onKeydown} />
@@ -453,7 +455,7 @@
     ‹
   </button>
 
-  <div class="reader-scroll-inner" data-restoring={isRestoringInitialToken ? '1' : undefined}>
+  <div class="reader-scroll-inner" {...swipe} data-restoring={isRestoringInitialToken ? '1' : undefined}>
     <header class="page-header">
       {#if current}
         <h2>

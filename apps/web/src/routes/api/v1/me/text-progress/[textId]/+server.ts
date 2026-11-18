@@ -16,6 +16,7 @@ import { z } from 'zod';
 import { requireUser } from '$lib/server/auth/require-user.js';
 import {
   getTextProgress,
+  recordTextOpened,
   ProgressNotAccessibleError,
   setTextProgress,
 } from '$lib/server/texts/progress.js';
@@ -82,6 +83,19 @@ export const PATCH: RequestHandler = async (event) => {
         updatedAt: row.updatedAt,
       },
     });
+  } catch (err) {
+    if (err instanceof ProgressNotAccessibleError) throw error(404, err.message);
+    throw err;
+  }
+};
+
+export const POST: RequestHandler = async (event) => {
+  const user = await requireUser(event);
+  const { textId } = event.params;
+  if (!UUID_RE.test(textId)) throw error(400, 'Invalid text id');
+  try {
+    await recordTextOpened(user.id, textId);
+    return new Response(null, { status: 204 });
   } catch (err) {
     if (err instanceof ProgressNotAccessibleError) throw error(404, err.message);
     throw err;

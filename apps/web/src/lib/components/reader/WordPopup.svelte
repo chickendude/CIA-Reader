@@ -27,8 +27,7 @@
   import { getFeaturePills } from './feature-labels.js';
   import HindiCandidateCard from './HindiCandidateCard.svelte';
   import EditableDefinition from './EditableDefinition.svelte';
-  import ContextChoiceButton from './ContextChoiceButton.svelte';
-  import { customizableOfficialIds } from './customize-eligibility.js';
+  import DefinitionPicker from './DefinitionPicker.svelte';
   import {
     definitionLanguageName,
     HIDDEN_DEFINITION_LANGUAGES_KEY,
@@ -399,7 +398,8 @@
         const res = await fetch(`/api/v1/lemmas/${t.lemmaId}/translations`);
         if (cancelled) return;
         if (res.ok) {
-          payload = (await res.json()) as LemmaPayload;
+          const next = (await res.json()) as LemmaPayload;
+          if (!cancelled) payload = next;
         } else {
           loadError = `Could not load translations (${res.status})`;
         }
@@ -714,7 +714,8 @@
   });
 
   function handleKeydown(e: KeyboardEvent) {
-    if (!isOwner || !token?.lemmaId) return;
+    if ((!isOwner && !isAdmin) || isNumberToken || !token?.lemmaId) return;
+    if (document.querySelector('.sheet-back.dimmed')) return;
     // T-5.21: skip the k/l/i shortcuts whenever the user is typing
     // into a form field — otherwise typing 'l' in the add-translation
     // textarea would silently flip the lemma to learning.
@@ -880,15 +881,6 @@
     }
   });
 
-  // ---- Customize-official flow (T-3.11) ---------------------------
-  // Which official translation (id) is currently being forked, if any,
-  // plus the body of the in-progress fork. The eligibility set itself
-  // lives in `customize-eligibility.ts` so the rule is unit-tested
-  // separately from the component.
-  let customizingId = $state<string | null>(null);
-  let customizeBody = $state('');
-  let savingCustomize = $state(false);
-  let customizeError = $state<string | null>(null);
   let votingTranslationId = $state<string | null>(null);
   let voteError = $state<string | null>(null);
   // Admin moderation: the community translation currently being hidden/unhidden.
@@ -907,14 +899,6 @@
   let reportedIds = $state<Set<string>>(new Set());
   let reportToast = $state<string | null>(null);
 
-  const customizableIds = $derived(() =>
-    customizableOfficialIds(
-      isOwner,
-      payload?.translations.official ?? [],
-      payload?.translations.personal ?? [],
-    ),
-  );
-
   // T-2.8: a token is treated as a number whenever the NLP service
   // populated `numberForms` OR the raw surface looks like one.
   // The second arm catches chapters processed before the comma-fix
@@ -925,6 +909,14 @@
     token != null &&
       (token.numberForms != null || looksLikeNumberToken(token.surface)),
   );
+
+  const canChooseDefinition = $derived(isAdmin && !!token?.lemmaId && token.candidates.length > 0 &&
+    (language === 'hi' ? !!(token.canVerifyContext && token.contextVersion) : isOwner));
+  const compactOfficial = $derived(payload?.translations.official.find(
+    (row) => !row.hidden && isDefLangVisible(row.targetLanguage),
+  ));
+  const compactFallback = $derived(payload?.lemma.glossDefault ?? token?.glossDefault ??
+    payload?.translations.community.find((row) => !row.hidden && isDefLangVisible(row.targetLanguage))?.body);
 
   const numberDisplay = $derived((): NumberDisplay | null => {
     if (!token?.numberForms) return null;
@@ -962,24 +954,9 @@
     };
   });
 
-  function startCustomize(t: PublicTranslation) {
-    customizingId = t.id;
-    customizeBody = t.body;
-    customizeError = null;
-  }
-
-  function cancelCustomize() {
-    customizingId = null;
-    customizeBody = '';
-    customizeError = null;
-  }
-
   type PostError = { message: string; status: number };
 
-  async function postTranslation(
-    body: string,
-    parentTranslationId: string | null,
-  ): Promise<PublicTranslation> {
+  async function postTranslation(body: string): Promise<void> {
     // T-14.3b: when the popup is showing a pending phrase selection
     // (lemmaId is null because the synthetic token in ChapterBody
     // stands in for a not-yet-saved phrase), route the submission
@@ -987,9 +964,7 @@
     // the translation to that phrase. The popup still presents the
     // single-word UI; the user just sees their translation save
     // and the popup close as the chapter refreshes around the new
-    // phrase. parentTranslationId is dropped on this path — the
-    // fork-an-official-translation flow only applies to lemma rows
-    // today and there's no phrase translation to fork from yet.
+    // phrase.
     if (pendingSelection && !token?.lemmaId) {
       const phraseRes = await fetch('/api/v1/phrases', {
         method: 'POST',
@@ -1029,21 +1004,7 @@
       // picks up on the next render and the popup transitions out
       // of pending mode.
       onPhraseCreated?.(phraseId);
-      // The lemma-shaped caller doesn't actually use the returned
-      // PublicTranslation when pending — the popup closes via
-      // onPhraseCreated. Return a stub of the right shape so the
-      // type system stays happy.
-      return {
-        id: '',
-        body,
-        targetLanguage: 'en',
-        source: 'user',
-        sourceAttribution: null,
-        parentTranslationId: null,
-        upvotes: 0,
-        downvotes: 0,
-        createdAt: new Date().toISOString(),
-      } as unknown as PublicTranslation;
+      return;
     }
     if (!token || !token.lemmaId) throw new Error('Missing lemma id');
     const res = await fetch('/api/v1/translations', {
@@ -1053,7 +1014,7 @@
         lemmaId: token.lemmaId,
         body,
         targetLanguage: 'en',
-        parentTranslationId,
+        parentTranslationId: null,
       }),
     });
     if (!res.ok) {
@@ -1063,8 +1024,6 @@
       const err: PostError = { message, status: res.status };
       throw err;
     }
-    const created = (await res.json()) as { translation: PublicTranslation };
-    return created.translation;
   }
 
   // T-5.22: re-fetch the lemma payload after a write so the new row
@@ -1125,7 +1084,7 @@
           return;
         }
       } else {
-        await postTranslation(trimmed, null);
+        await postTranslation(trimmed);
       }
       await refetchPayload(lemmaId);
       editingPrimary = false;
@@ -1163,27 +1122,16 @@
 
   async function submitNewTranslation() {
     if (!token) return;
-    // T-14.3b: pending phrase has no lemmaId; postTranslation
-    // routes that case through the phrase create-or-reuse path
-    // and the popup closes via onPhraseCreated.
-    if (!token.lemmaId && !pendingSelection) return;
+    if (token.lemmaId || !pendingSelection) return;
     const trimmed = newTranslationBody.trim();
     if (trimmed.length === 0) {
       addError = 'Translation cannot be empty.';
       return;
     }
-    const lemmaId = token.lemmaId;
     savingTranslation = true;
     addError = null;
     try {
-      await postTranslation(trimmed, null);
-      // Skip the lemma-payload refetch on the pending path — there's
-      // no lemma to refetch, and the chapter-level callback closes
-      // the popup so the next open will see the committed phrase.
-      if (lemmaId) {
-        await refetchPayload(lemmaId);
-        notifyPersonalChange();
-      }
+      await postTranslation(trimmed);
       newTranslationBody = '';
       showAddForm = false;
     } catch (e) {
@@ -1222,44 +1170,6 @@
       return;
     }
     void submitNewTranslation();
-  }
-
-  // Mirror onAddFormKeydown so Enter/Esc on the customize textarea
-  // behaves the same way as on the add-translation textarea.
-  function onCustomizeKeydown(e: KeyboardEvent) {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      void submitCustomize();
-      return;
-    }
-    if (e.key === 'Escape') {
-      e.stopPropagation();
-      e.preventDefault();
-      cancelCustomize();
-    }
-  }
-
-  async function submitCustomize() {
-    if (!customizingId || !token || !token.lemmaId) return;
-    const trimmed = customizeBody.trim();
-    if (trimmed.length === 0) {
-      customizeError = 'Translation cannot be empty.';
-      return;
-    }
-    const lemmaId = token.lemmaId;
-    savingCustomize = true;
-    customizeError = null;
-    try {
-      await postTranslation(trimmed, customizingId);
-      await refetchPayload(lemmaId);
-      customizingId = null;
-      customizeBody = '';
-      notifyPersonalChange();
-    } catch (e) {
-      customizeError = (e as PostError).message ?? (e as Error).message;
-    } finally {
-      savingCustomize = false;
-    }
   }
 
   function startEditPersonal(t: PublicTranslation) {
@@ -1422,7 +1332,7 @@
   // lemma immediately; the server row backs the change for next
   // read (handled by T-6.4's loader join).
   async function pickCandidate(lemmaId: string) {
-    if (!token) return;
+    if (!token) return false;
     const tokenId = token.id;
     pickingLemmaId = lemmaId;
     pickError = null;
@@ -1445,8 +1355,10 @@
       // back on the reader; the parent's reactive state has already
       // re-rendered the token with the new lemma.
       onClose();
+      return true;
     } catch (e) {
       pickError = (e as Error).message;
+      return false;
     } finally {
       pickingLemmaId = null;
     }
@@ -1550,7 +1462,130 @@
      while a word is locked in the panel.
      The panel is always open on desktop (static right column) and
      conditional on mobile (slides up only when a word is picked). -->
+{#snippet personalEditor(entry: LemmaPayload)}
+  <section class="sp-primary" data-testid="primary-translation">
+    {#if !entry.canEdit}
+      <div>{entry.translations.personal[0]?.body ?? ''}</div>
+    {:else if editingPrimary}
+      <form
+        class="sp-primary-form"
+        onsubmit={(e) => {
+          e.preventDefault();
+          void submitPrimary();
+        }}
+      >
+        <textarea
+          bind:this={primaryTextareaEl}
+          bind:value={primaryBody}
+          rows="1"
+          maxlength="500"
+          disabled={savingPrimary}
+          aria-label="Your translation"
+          placeholder="Type your translation"
+          title={'Enter to save\nShift+Enter for a newline\nEsc to cancel'}
+          onkeydown={onPrimaryKeydown}
+          onblur={onPrimaryBlur}
+        ></textarea>
+        {#if primaryError}
+          <p class="err small">{primaryError}</p>
+        {/if}
+      </form>
+    {:else}
+      <button
+        type="button"
+        class="sp-primary-display"
+        data-testid="primary-translation-edit"
+        data-empty={entry.translations.personal[0] ? '0' : '1'}
+        title={'Enter to save\nShift+Enter for a newline\nEsc to cancel'}
+        onclick={startEditPrimary}
+      >
+        {#if entry.translations.personal[0]}
+          <span class="sp-primary-body">
+            {entry.translations.personal[0].body}
+          </span>
+        {:else}
+          <span class="sp-primary-empty">+ Add your translation</span>
+        {/if}
+      </button>
+    {/if}
+  </section>
+{/snippet}
+
+{#snippet phraseStudyStatus()}
+  <div
+    class="sp-status sp-phrase-status"
+    role="group"
+    aria-label="Mark phrase status"
+  >
+    <button
+      type="button"
+      data-active={optimisticPhraseStatus === 'learning' ? '1' : '0'}
+      onclick={() => setPhraseStatus('learning')}
+    >
+      Learning
+    </button>
+    <button
+      type="button"
+      data-active={optimisticPhraseStatus === 'known' ? '1' : '0'}
+      onclick={() => setPhraseStatus('known')}
+    >
+      Known
+    </button>
+    <button
+      type="button"
+      data-active={optimisticPhraseStatus === 'ignored' ? '1' : '0'}
+      onclick={() => setPhraseStatus('ignored')}
+    >
+      Ignored
+    </button>
+  </div>
+  {#if phraseStatusError}
+    <p class="err small">{phraseStatusError}</p>
+  {/if}
+{/snippet}
+
 <Sheet open={sheetOpen} onClose={onClose} title="" dimmed={false}>
+  {#snippet footer()}
+    {#if phrase && isOwner && !token?.lemmaId}
+      <footer class="word-actions">
+        {@render phraseStudyStatus()}
+      </footer>
+    {:else if token?.lemmaId && !isNumberToken && (isOwner || isAdmin)}
+      <footer class="word-actions">
+        {#if canChooseDefinition}
+          {#key token.id}
+            <DefinitionPicker {token} {language} onPick={pickCandidate} />
+          {/key}
+        {/if}
+        <div class="sp-status" role="group" aria-label="Mark status">
+          <button
+            type="button"
+            data-active={optimisticStatus === 'learning' ? '1' : '0'}
+            onclick={() => markStatus('learning')}
+          >
+            Learning
+          </button>
+          <button
+            type="button"
+            data-active={optimisticStatus === 'known' ? '1' : '0'}
+            onclick={() => markStatus('known')}
+          >
+            Known
+          </button>
+          <button
+            type="button"
+            data-active={optimisticStatus === 'ignored' ? '1' : '0'}
+            onclick={() => markStatus('ignored')}
+          >
+            Ignored
+          </button>
+        </div>
+        {#if writeError}
+          <p class="err small">Could not save: {writeError}</p>
+        {/if}
+      </footer>
+    {/if}
+  {/snippet}
   {#if selectionError}
     <p class="err small sp-phrase-select-err">{selectionError}</p>
   {/if}
@@ -1569,37 +1604,8 @@
           <p class="sp-phrase-gloss muted">No phrase gloss yet.</p>
         {/if}
       </header>
-      {#if isOwner}
-        <div
-          class="sp-status sp-phrase-status"
-          role="group"
-          aria-label="Mark phrase status"
-        >
-          <button
-            type="button"
-            data-active={optimisticPhraseStatus === 'learning' ? '1' : '0'}
-            onclick={() => setPhraseStatus('learning')}
-          >
-            Learning
-          </button>
-          <button
-            type="button"
-            data-active={optimisticPhraseStatus === 'known' ? '1' : '0'}
-            onclick={() => setPhraseStatus('known')}
-          >
-            Known
-          </button>
-          <button
-            type="button"
-            data-active={optimisticPhraseStatus === 'ignored' ? '1' : '0'}
-            onclick={() => setPhraseStatus('ignored')}
-          >
-            Ignored
-          </button>
-        </div>
-        {#if phraseStatusError}
-          <p class="err small">{phraseStatusError}</p>
-        {/if}
+      {#if isOwner && token?.lemmaId}
+        {@render phraseStudyStatus()}
       {/if}
       <!-- T-14.4: translations list. The phrase detail endpoint
            (GET /api/v1/phrases/:id) returns visible translations
@@ -1792,6 +1798,28 @@
         {#if token.romanization}
           <p class="sp-roman">{token.romanization}</p>
         {/if}
+        {#if !isDesktop && token.lemmaId}
+          <div class="compact-definition" data-testid="selected-definition">
+            {#if payload?.translations.personal[0]}
+              {#if isOwner}
+                {@render personalEditor(payload)}
+              {:else}
+                {payload.translations.personal[0].body}
+              {/if}
+            {:else if !payload && token.personalGloss}
+              {token.personalGloss}
+            {:else if compactOfficial && payload}
+              {@const row = compactOfficial}
+              <EditableDefinition text={row.body} translationId={row.id}
+                lemmaId={payload.lemma.id} canEdit={payload.canEdit ?? false}
+                onSave={(body) => { row.body = body; }} />
+            {:else if compactFallback}
+              {compactFallback}
+            {:else if payload}
+              No definition yet.
+            {/if}
+          </div>
+        {/if}
         {#if payload}
           {@const featurePills = getFeaturePills(payload.lemma.pos, token?.features ?? {})}
           {#if featurePills.length > 0}
@@ -1819,86 +1847,10 @@
     </header>
 
     {#if !isNumberToken}
-    {#if isOwner && token.lemmaId && payload && (payload.canEdit || payload.translations.personal.length > 0)}
-      <section class="sp-primary" data-testid="primary-translation">
-        {#if !payload.canEdit}
-          <div>{payload.translations.personal[0]?.body ?? ''}</div>
-        {:else if editingPrimary}
-          <form
-            class="sp-primary-form"
-            onsubmit={(e) => {
-              e.preventDefault();
-              void submitPrimary();
-            }}
-          >
-            <textarea
-              bind:this={primaryTextareaEl}
-              bind:value={primaryBody}
-              rows="1"
-              maxlength="500"
-              disabled={savingPrimary}
-              aria-label="Your translation"
-              placeholder="Type your translation"
-              title={'Enter to save\nShift+Enter for a newline\nEsc to cancel'}
-              onkeydown={onPrimaryKeydown}
-              onblur={onPrimaryBlur}
-            ></textarea>
-            {#if primaryError}
-              <p class="err small">{primaryError}</p>
-            {/if}
-          </form>
-        {:else}
-          <button
-            type="button"
-            class="sp-primary-display"
-            data-testid="primary-translation-edit"
-            data-empty={payload.translations.personal[0] ? '0' : '1'}
-            title={'Enter to save\nShift+Enter for a newline\nEsc to cancel'}
-            onclick={startEditPrimary}
-          >
-            {#if payload.translations.personal[0]}
-              <span class="sp-primary-body">
-                {payload.translations.personal[0].body}
-              </span>
-            {:else}
-              <span class="sp-primary-empty">+ Add your translation</span>
-            {/if}
-          </button>
-        {/if}
-      </section>
+    {#if isOwner && token.lemmaId && payload && (payload.canEdit || payload.translations.personal.length > 0)
+      && (isDesktop || !payload.translations.personal.length)}
+      {@render personalEditor(payload)}
     {/if}
-    {#if language === 'hi' && token.lemmaId}
-      <ContextChoiceButton {token} lemmaId={token.lemmaId} label={`${token.headword ?? token.surface} ${token.pos ?? ''}`} selectedBy={token.selectedBy} />
-    {/if}
-    {#if isOwner && token.lemmaId}
-      <div class="sp-status" role="group" aria-label="Mark status">
-        <button
-          type="button"
-          data-active={optimisticStatus === 'learning' ? '1' : '0'}
-          onclick={() => markStatus('learning')}
-        >
-          Learning
-        </button>
-        <button
-          type="button"
-          data-active={optimisticStatus === 'known' ? '1' : '0'}
-          onclick={() => markStatus('known')}
-        >
-          Known
-        </button>
-        <button
-          type="button"
-          data-active={optimisticStatus === 'ignored' ? '1' : '0'}
-          onclick={() => markStatus('ignored')}
-        >
-          Ignored
-        </button>
-      </div>
-      {#if writeError}
-        <p class="err small">Could not save: {writeError}</p>
-      {/if}
-    {/if}
-
     {#if token.chapterId && token.isWord && !isNumberToken}
       <!-- OpenAI sentence-level translation for the sentence this word sits
            in. Lazy: only fetched when the reader asks. -->
@@ -1925,7 +1877,7 @@
       </div>
     {/if}
 
-    {#if payload}
+    {#if isDesktop && payload}
       <h3 class="sp-section-h">
         Translations
         <span class="muted">{allTranslations().length}</span>
@@ -2068,54 +2020,7 @@
                   {definitionLanguageName(t.targetLanguage)}
                 </span>
               {/if}
-              {#if payload.canEdit && customizableIds().has(t.id)}
-                <button
-                  type="button"
-                  class="customize-toggle"
-                  data-testid="customize-toggle"
-                  onclick={() => startCustomize(t)}
-                  disabled={customizingId !== null}
-                  title="Fork this translation into a private copy you can edit"
-                >
-                  Customize
-                </button>
-              {/if}
             </div>
-            {#if customizingId === t.id}
-              <form
-                class="customize-form"
-                data-testid="customize-form"
-                onsubmit={(e) => {
-                  e.preventDefault();
-                  void submitCustomize();
-                }}
-              >
-                <textarea
-                  bind:value={customizeBody}
-                  rows="2"
-                  maxlength="500"
-                  disabled={savingCustomize}
-                  aria-label="Your customized translation"
-                  onkeydown={onCustomizeKeydown}
-                ></textarea>
-                {#if customizeError}
-                  <p class="err small">{customizeError}</p>
-                {/if}
-                <div class="add-row">
-                  <button type="submit" disabled={savingCustomize}>
-                    {savingCustomize ? 'Saving…' : 'Save'}
-                  </button>
-                  <button
-                    type="button"
-                    class="ghost"
-                    disabled={savingCustomize}
-                    onclick={cancelCustomize}
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </form>
-            {/if}
           </li>
         {/each}
         {#each payload.translations.community.filter((t) => isDefLangVisible(t.targetLanguage) && !t.hidden) as t (t.id)}
@@ -2252,16 +2157,7 @@
 
     {/if}
 
-    <!-- T-14.3b: "+ Add my translation" sits outside the
-         `{#if payload}` block so it surfaces both for normal lemma
-         tokens (after the lemma fetch resolves) and for the
-         synthetic pending-phrase token (where there's no lemmaId
-         and so no payload at all — the form's submit routes
-         through phrase create-or-reuse + phrase translation
-         POST). On the pending path the popup closes via the
-         chapter-level onPhraseCreated callback rather than
-         re-rendering its own translations list. -->
-    {#if isOwner && payload?.canEdit && (payload || pendingSelection)}
+    {#if isOwner && isAdmin && pendingSelection && !token.lemmaId}
       {#if showAddForm}
         <form
           class="add-form"
@@ -2293,7 +2189,7 @@
             showAddForm = true;
           }}
         >
-          + Add my translation
+          + Add phrase translation
         </button>
       {/if}
     {/if}
@@ -2413,13 +2309,13 @@
       </button>
     {/if}
 
-    {#if language === 'hi' && token.candidates.length > 0}
+    {#if isDesktop && language === 'hi' && token.candidates.length > 0}
       <div class="hindi-candidates" data-testid="hindi-candidates">
         {#each token.candidates as candidate (candidate.lemmaId)}
           <HindiCandidateCard {candidate} {token} {textId} {isOwner} {onStatusChange} />
         {/each}
       </div>
-    {:else if token.isAmbiguous && token.candidates.length > 0}
+    {:else if isDesktop && token.isAmbiguous && token.candidates.length > 0}
       <button
         type="button"
         class="alt-toggle"
@@ -2751,6 +2647,23 @@
   }
   .sp-freq-badge:hover .sp-freq-tip {
     opacity: 1;
+  }
+  .compact-definition {
+    margin: 0.45rem 0;
+    font-size: 1.2rem;
+    line-height: 1.5;
+    color: var(--ink, var(--color-fg));
+    overflow-wrap: anywhere;
+  }
+  .compact-definition .sp-primary-display { font-size: inherit; }
+  .word-actions {
+    flex: none;
+    padding: 0.5rem 1.1rem max(0.5rem, env(safe-area-inset-bottom));
+    border-top: 1px solid var(--rule, var(--color-border));
+  }
+  .word-actions .sp-status { margin: 0; }
+  @media (max-width: 959.98px) {
+    .word-actions .sp-status button { min-height: 44px; }
   }
   .sp-roman {
     margin: 0 0 0.85rem;
@@ -3398,32 +3311,6 @@
     color: var(--ink, var(--color-fg));
     resize: vertical;
   }
-  .add-row {
-    display: flex;
-    gap: 0.4rem;
-  }
-  .add-row button {
-    flex: 1;
-    padding: 0.5rem 0.6rem;
-    font: inherit;
-    font-size: 0.82rem;
-    background: var(--ink, var(--color-fg));
-    color: var(--paper, var(--color-bg));
-    border: 1px solid var(--ink, var(--color-fg));
-    border-radius: 8px;
-    cursor: pointer;
-    min-height: 36px;
-  }
-  .add-row button.ghost {
-    background: transparent;
-    color: var(--ink, var(--color-fg));
-    border: 1px solid var(--rule, var(--color-border));
-  }
-  .add-row button[disabled] {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
   .official-row {
     display: flex;
     flex-direction: column;
@@ -3435,50 +3322,6 @@
     align-items: baseline;
     gap: 0.3rem;
   }
-  .customize-toggle {
-    margin-left: auto;
-    padding: 0.1rem 0.55rem;
-    background: transparent;
-    border: 1px solid var(--rule, var(--color-border));
-    border-radius: 999px;
-    font: inherit;
-    font-size: 0.7rem;
-    color: var(--ink-3, var(--color-fg-muted));
-    cursor: pointer;
-  }
-  .customize-toggle:hover:not([disabled]) {
-    border-color: var(--accent, var(--color-accent));
-    color: var(--accent-ink, var(--color-accent));
-  }
-  .customize-toggle[disabled] {
-    opacity: 0.4;
-    cursor: not-allowed;
-  }
-  .customize-form {
-    display: flex;
-    flex-direction: column;
-    gap: 0.4rem;
-    padding: 0.5rem;
-    border: 1px solid var(--rule, var(--color-border));
-    border-radius: 8px;
-    background: color-mix(
-      in oklch,
-      var(--ink, var(--color-fg)) 3%,
-      transparent
-    );
-  }
-  .customize-form textarea {
-    width: 100%;
-    padding: 0.45rem 0.6rem;
-    font: inherit;
-    font-size: 0.85rem;
-    border: 1px solid var(--rule, var(--color-border));
-    border-radius: 6px;
-    background: var(--card, var(--color-bg));
-    color: var(--ink, var(--color-fg));
-    resize: vertical;
-  }
-
   .fix-toggle {
     margin-top: 0.85rem;
     margin-right: 0.4rem;

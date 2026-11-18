@@ -37,6 +37,31 @@ export function classifySwipe(
   return { direction: dx > 0 ? 1 : -1, dx, dy };
 }
 
+/** Turn pages on a single-finger horizontal swipe over the reading area. */
+export function pageSwipe(previous: () => void, next: () => void) {
+  let start: { x: number; y: number } | null = null;
+  return {
+    ontouchstart(event: TouchEvent) {
+      const touch = event.touches[0];
+      start = touch && event.touches.length === 1 && (window.visualViewport?.scale ?? 1) <= 1
+        ? { x: touch.clientX, y: touch.clientY }
+        : null;
+    },
+    ontouchend(event: TouchEvent) {
+      const touch = event.changedTouches[0];
+      if (start && touch) {
+        const { direction } = classifySwipe(start, { x: touch.clientX, y: touch.clientY });
+        if (direction === -1) next();
+        if (direction === 1) previous();
+      }
+      start = null;
+    },
+    ontouchcancel() {
+      start = null;
+    },
+  };
+}
+
 /**
  * Long-press detection state machine. The reader's tap target is too
  * small for some users to land precisely, and a long-press is the

@@ -12,6 +12,7 @@
   image + tokens on demand.
 -->
 <script lang="ts">
+  import { pageSwipe } from './touch-gestures.js';
   import { goto } from '$app/navigation';
 
   import ChapterBody from './ChapterBody.svelte';
@@ -74,6 +75,7 @@
       pctRead: computePctRead(chapters, idx, 0),
     });
   });
+  const swipe = pageSwipe(() => goToPage(chapterIdx - 1), () => goToPage(chapterIdx + 1));
 </script>
 
 <div class="reader-image">
@@ -83,6 +85,7 @@
         type="button"
         onclick={() => goToPage(chapterIdx - 1)}
         disabled={chapterIdx <= 0}
+        class="page-arrow"
         aria-label="Previous page"
       >‹</button>
       <span class="page-indicator" aria-live="polite">
@@ -92,6 +95,7 @@
         type="button"
         onclick={() => goToPage(chapterIdx + 1)}
         disabled={chapterIdx >= pageCount - 1}
+        class="page-arrow"
         aria-label="Next page"
       >›</button>
     </div>
@@ -114,7 +118,7 @@
     {/if}
   </div>
 
-  <div class="page-body">
+  <div class="page-body" {...swipe}>
     {#if activeChapter}
       {#key activeChapter.id + ':' + view}
         <ChapterBody

@@ -35,6 +35,8 @@
 
   interface Props {
     open: boolean;
+    hideMobileArrows?: boolean;
+    onMobileArrowsChange?: (hidden: boolean) => void;
     showRomanization?: boolean;
     onRomanizationChange?: (show: boolean) => void;
     processingTools?: import('svelte').Snippet;
@@ -62,6 +64,8 @@
 
   let {
     open,
+    hideMobileArrows = false,
+    onMobileArrowsChange,
     showRomanization,
     onRomanizationChange,
     processingTools,
@@ -138,6 +142,7 @@
   }
 
   function reset() {
+    onMobileArrowsChange?.(false);
     onRomanizationChange?.(DEFAULT_READER_SETTINGS.scriptPreference !== 'native');
     commit({ ...DEFAULT_READER_SETTINGS });
   }
@@ -167,6 +172,18 @@
           >Continuous</button>
         </div>
       </div>
+
+      {#if onMobileArrowsChange}
+        <div class="rs-row rs-mobile-arrows">
+          <span class="rs-l" id="rs-page-arrows">Page arrows</span>
+          <div class="rs-seg" role="group" aria-labelledby="rs-page-arrows">
+            <button type="button" data-active={hideMobileArrows ? '0' : '1'}
+              aria-pressed={!hideMobileArrows} onclick={() => onMobileArrowsChange?.(false)}>Show</button>
+            <button type="button" data-active={hideMobileArrows ? '1' : '0'}
+              aria-pressed={hideMobileArrows} onclick={() => onMobileArrowsChange?.(true)}>Hide</button>
+          </div>
+        </div>
+      {/if}
 
       {#if local.readerLayoutMode === 'paged_scroll'}
         <div class="rs-row">
@@ -395,6 +412,9 @@
     color: var(--ink-3, var(--color-fg-muted));
     margin: 0;
     font-weight: 500;
+  }
+  @media (min-width: 640px) {
+    .rs-row.rs-mobile-arrows { display: none; }
   }
   .rs-row {
     display: grid;

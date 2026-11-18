@@ -197,7 +197,7 @@ Once `infra/.env` exists on the box and the stack is running, deploys are a sing
 ./scripts/deploy.sh --dry-run         # print the plan without touching the box
 ```
 
-The script SSHes to the box, fast-forwards the repo at `/opt/ciareader`, runs `docker compose up -d --build` (auto-skips `--build` when no image-relevant files changed), prunes dangling images, and then polls `https://parhiba.com/healthz` from the laptop side until it returns 200. On health-check timeout it prints the last 50 lines of web logs and exits non-zero, so a failed deploy is loud and diagnosable.
+The script checks out the requested commit on the server and builds the images affected by the change. A reader-only change builds the web image. Changes under `services/nlp/` build the NLP image. Compose then applies the production configuration, and the script checks `https://parhiba.com/healthz`.
 
 Override host / path with env vars: `DEPLOY_HOST=root@example.com ./scripts/deploy.sh`.
 

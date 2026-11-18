@@ -1669,6 +1669,7 @@ export const userTextProgress = pgTable(
     textId: uuid('text_id')
       .notNull()
       .references(() => texts.id, { onDelete: 'cascade' }),
+    lastOpenedAt: timestamp('last_opened_at', { withTimezone: true }),
     lastChapterIdx: integer('last_chapter_idx').notNull().default(0),
     lastTokenIdx: integer('last_token_idx').notNull().default(0),
     pctRead: real('pct_read').notNull().default(0),

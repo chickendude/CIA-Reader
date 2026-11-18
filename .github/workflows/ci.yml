@@ -131,7 +131,7 @@ jobs:
 
   nlp-accuracy:
     # Real-pipeline lemma-accuracy gate (T-2.8). Installs [models],
-    # downloads the Hindi + Marathi Stanza UD models, caches them, and
+    # downloads the Marathi and Basque Stanza models, caches them, and
     # enforces >=90% Hi / >=80% Mr / >=70% Or. Lives in its own job so
     # the main `nlp` lane stays fast; this one trades latency for the
     # only real end-to-end quality signal we have before release.
@@ -148,13 +148,13 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/stanza_resources
-          key: stanza-models-hi-mr-eu-v1-${{ hashFiles('services/nlp/pyproject.toml') }}
+          key: stanza-models-mr-eu-v1-${{ hashFiles('services/nlp/pyproject.toml') }}
           # A stale cache is still ~all of the model bytes; stanza validates
           # md5s and only re-downloads what changed. Keeps the flaky network
           # path (below) off the critical path in most runs.
           restore-keys: |
-            stanza-models-hi-mr-eu-v1-
-      - name: Download Stanza Hi + Mr + Eu models
+            stanza-models-mr-eu-v1-
+      - name: Download Marathi and Basque Stanza models
         env:
           # HF's Xet storage backend 401s unauthenticated CI clients
           # (cas-server/cas-bridge.xethub.hf.co); disabling it and retrying
@@ -169,7 +169,7 @@ jobs:
 
           import stanza
 
-          for lang in ("hi", "mr", "eu"):
+          for lang in ("mr", "eu"):
               for attempt in range(5):
                   try:
                       stanza.download(lang, processors="tokenize,pos,lemma", verbose=False)

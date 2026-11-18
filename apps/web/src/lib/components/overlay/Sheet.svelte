@@ -31,6 +31,7 @@
      *  paragraph remains readable while a word is locked (T-5.17). */
     dimmed?: boolean;
     children?: Snippet;
+    footer?: Snippet;
   }
 
   let {
@@ -41,6 +42,7 @@
     maxHeight = '85dvh',
     dimmed = true,
     children,
+    footer,
   }: Props = $props();
 
   let panelEl: HTMLDivElement | null = $state(null);
@@ -125,6 +127,7 @@
       <div class="sheet-body">
         {#if children}{@render children()}{/if}
       </div>
+      {@render footer?.()}
     </div>
   </div>
 {/if}

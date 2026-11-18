@@ -26,13 +26,8 @@ COPY packages/shared-types/python /opt/shared-types
 
 ENV PYTHONPATH=/opt/shared-types:/srv/nlp
 
-# Pre-download the Stanza models at image-build time so the first
-# /process request doesn't pay a multi-hundred-megabyte download and
-# so production stays offline-safe (each build_*_pipeline constructs
-# stanza.Pipeline with download_method=None). Odia (T-2.3a) and Yiddish
-# are custom pipelines and don't need a Stanza download; Basque uses the
-# UD_Basque-BDT model like Hindi/Marathi.
-RUN python -c "import stanza; [stanza.download(lang, processors='tokenize,pos,lemma', verbose=False) for lang in ('hi', 'mr', 'eu')]"
+# Bundle Marathi and Basque models for offline parsing. Hindi uses HindiDB.
+RUN python -c "import stanza; [stanza.download(lang, processors='tokenize,pos,lemma', verbose=False) for lang in ('mr', 'eu')]"
 
 EXPOSE 8000
 

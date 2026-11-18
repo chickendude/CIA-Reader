@@ -9,7 +9,7 @@ Two layers of coverage:
 
 2. **Real-pipeline accuracy** — marked ``@pytest.mark.real_models``,
    skipped by default. In the ``nlp-accuracy`` CI job we install
-   ``[models]`` (Stanza + IndicNLP), download the Hindi and Marathi
+   ``[models]`` (Stanza + IndicNLP), download the Marathi and Basque
    UD models, and run these. The thresholds — ≥90% Hindi, ≥80%
    Marathi, ≥70% Odia lemma accuracy — come straight from the plan
    and are the release gate for the whole pipeline milestone.
@@ -135,12 +135,10 @@ def _clean_pipeline_cache():
     # see a contaminated cache.
     from app import pipelines
     from app.pipelines.basque import build_basque_pipeline
-    from app.pipelines.hindi import build_hindi_pipeline
     from app.pipelines.marathi import build_marathi_pipeline
     from app.pipelines.odia import build_odia_pipeline
 
     saved = dict(pipelines._PIPELINE_FACTORIES)
-    pipelines._PIPELINE_FACTORIES["stanza-hi"] = build_hindi_pipeline
     pipelines._PIPELINE_FACTORIES["stanza-mr"] = build_marathi_pipeline
     pipelines._PIPELINE_FACTORIES["custom-or"] = build_odia_pipeline
     pipelines._PIPELINE_FACTORIES["stanza-eu"] = build_basque_pipeline
