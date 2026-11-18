@@ -18,7 +18,7 @@ const word = z
   .trim()
   .min(1)
   .max(400)
-  .transform((s) => s.normalize('NFC').replace(/[\u200c\u200d\ufeff]/g, ''));
+  .transform((s) => s.normalize('NFC').replace(/[\u200c-\u200d\ufeff]/gu, ''));
 const words = z.array(word).max(12000);
 const slot = z
   .object({
@@ -137,7 +137,7 @@ export async function getWorkshopWord(id: string) {
     evidence: [...evidence, ...(archive?.result ?? [])],
   };
 }
-export async function searchHindi(query: string, limit: number) {
+export async function searchHindi(query: string, limit: number, offset = 0) {
   const term = '%' + query.replace(/[\\%_]/g, '\\$&') + '%';
   return [
     ...(await db.execute<Match>(sql`SELECT l.id,l.headword lemma,l.pos,coalesce(l.gloss_default,'') meaning
@@ -145,7 +145,7 @@ export async function searchHindi(query: string, limit: number) {
     (l.headword ILIKE ${term} OR l.gloss_default ILIKE ${term} OR l.headword_nukta_stripped ILIKE translate(normalize(${term},NFD),'़','')
       OR EXISTS(SELECT 1 FROM jsonb_array_elements_text(h.entry->'alternative_headwords') alt WHERE alt ILIKE ${term})
       OR EXISTS(SELECT 1 FROM lemma_forms f WHERE f.lemma_id=l.id AND f.surface=${query} AND f.quarantined_at IS NULL))
-    ORDER BY (l.headword=${query}) DESC,l.headword,l.pos,l.id LIMIT ${limit}`)),
+    ORDER BY (l.headword=${query}) DESC,l.headword,l.pos,l.id LIMIT ${limit} OFFSET ${offset}`)),
   ];
 }
 function lexicalEntry(d: Draft, raw: Source) {

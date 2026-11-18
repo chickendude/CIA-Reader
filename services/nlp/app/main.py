@@ -50,12 +50,14 @@ class HindiEntryRequest(BaseModel):
 async def preview_hindi_entry(req: HindiEntryRequest):
     from hindidb.lexicon import Lexicon
     from hindidb.morphology import forms
+
     try:
         lexicon = Lexicon(documents=[{"entries": [req.entry]}])
         entry = next(iter(lexicon.entries.values()))
         result = {"forms": {word: sorted(rules) for word, rules in forms(entry).items()}}
         if req.include_slots:
-            from hindidb.form_inventory import slots, slot_pattern_forms
+            from hindidb.form_inventory import slot_pattern_forms, slots
+
             result["slots"] = [
                 {"label": slot["label"], "forms": sorted(words)}
                 for slot in slots(entry["pos"], entry.get("paradigm"))
@@ -63,13 +65,17 @@ async def preview_hindi_entry(req: HindiEntryRequest):
             ]
         if req.inventory or req.validate_inventory:
             from hindidb.form_inventory import build, validate_saved
+
             if req.validate_inventory:
                 validate_saved(req.entry)
             if req.inventory:
                 result["inventory"] = build(entry, source=req.entry)
         if req.phrase:
             from hindidb.phrase_forms import build as phrase_forms
-            result["forms"] = phrase_forms(lexicon, req.phrase, entry["lemma"], req.negative_variants)["forms"]
+
+            result["forms"] = phrase_forms(
+                lexicon, req.phrase, entry["lemma"], req.negative_variants
+            )["forms"]
         return result
     except (KeyError, TypeError, ValueError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -305,6 +311,7 @@ class HindiReferenceRequest(BaseModel):
 @app.post("/hindi/reference")
 def hindi_dictionary_reference(req: HindiReferenceRequest):
     from urllib.error import URLError
+
     from hindidb.dictionary_sources import PROVIDERS, fetch_page, search_dictionary
 
     try:
@@ -324,8 +331,10 @@ class WorkshopReportRequest(BaseModel):
 @app.post("/hindi/workshop-report")
 def hindi_workshop_report(req: WorkshopReportRequest):
     import os
-    import psycopg
     from copy import copy
+
+    import psycopg
+
     from hindidb.lexicon import lexical_id
     from hindidb.review_reports import entry_hash, recommendation_rows, spelling_rows
 
@@ -342,20 +351,32 @@ def hindi_workshop_report(req: WorkshopReportRequest):
             entry = lexicon.entries.get(key)
             if entry is None:
                 continue
-            meanings = [d.get("translation") or (d.get("original") if d.get("language") == "en" else "")
-                        for d in entry.get("definitions", [])]
+            meanings = [
+                d.get("translation") or (d.get("original") if d.get("language") == "en" else "")
+                for d in entry.get("definitions", [])
+            ]
             if "; ".join(filter(None, meanings)).strip() != (gloss or ""):
-                lexicon.entries[key] = {**entry, "definitions": [{"original": gloss or "", "language": "en"}]}
+                lexicon.entries[key] = {
+                    **entry,
+                    "definitions": [{"original": gloss or "", "language": "en"}],
+                }
         if req.report == "spellings":
             report = spelling_rows(lexicon)
             rows = [
-                {**r, "id": ids[r["source_id"]], "target": ids.get(r.get("target_id")),
-                 "state": "ready" if eligible else "skipped", "reason": r.get("reason", "")}
-                for eligible, subset in [(True, report["ready"]), (False, report["skipped"])] for r in subset
+                {
+                    **r,
+                    "id": ids[r["source_id"]],
+                    "target": ids.get(r.get("target_id")),
+                    "state": "ready" if eligible else "skipped",
+                    "reason": r.get("reason", ""),
+                }
+                for eligible, subset in [(True, report["ready"]), (False, report["skipped"])]
+                for r in subset
             ]
         else:
-            stored = conn.execute("SELECT result FROM hindi_reference_cache WHERE key=%s",
-                                  ("report:" + req.report,)).fetchone()
+            stored = conn.execute(
+                "SELECT result FROM hindi_reference_cache WHERE key=%s", ("report:" + req.report,)
+            ).fetchone()
             if not stored:
                 raise HTTPException(404, "Recommendation report not found")
             rows = [{**r, "id": ids.get(r["id"])} for r in recommendation_rows(lexicon, stored[0])]

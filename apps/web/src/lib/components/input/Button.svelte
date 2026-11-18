@@ -1,0 +1,72 @@
+<script lang="ts">
+  import type { Snippet } from 'svelte';
+  import type { HTMLAnchorAttributes, HTMLButtonAttributes } from 'svelte/elements';
+
+  type Props = ((HTMLAnchorAttributes & { href: string }) | (HTMLButtonAttributes & { href?: never })) & {
+    variant?: 'primary' | 'secondary' | 'toggle';
+    disabled?: boolean;
+    children: Snippet;
+  };
+
+  // svelte-ignore custom_element_props_identifier
+  let { variant = 'secondary', disabled, children, ...attrs }: Props = $props();
+</script>
+
+{#if attrs.href !== undefined}
+  <a {...attrs} href={disabled ? undefined : attrs.href} role={disabled ? 'link' : undefined}
+    aria-disabled={disabled || undefined} data-variant={variant}>{@render children()}</a>
+{:else}
+  <button type="button" {...attrs} {disabled} data-variant={variant}>{@render children()}</button>
+{/if}
+
+<style>
+  a, button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.35rem;
+    min-height: 2.25rem;
+    padding: 0.4rem 0.8rem;
+    border: 1px solid var(--rule, var(--color-border));
+    border-radius: 7px;
+    background: var(--card, var(--color-bg));
+    color: var(--ink, var(--color-fg));
+    font: 500 0.84rem/1.25 var(--font-sans, var(--font-ui));
+    text-decoration: none;
+    cursor: pointer;
+  }
+  [data-variant='primary'] {
+    color: var(--paper, var(--color-bg));
+    background: var(--ink, var(--color-fg));
+    border-color: var(--ink, var(--color-fg));
+  }
+  [data-variant='toggle'] {
+    text-transform: capitalize;
+  }
+  [aria-pressed='true'], [aria-pressed='mixed'] {
+    border-color: var(--ink-3, var(--color-border-strong));
+  }
+  [aria-pressed='true'] {
+    background: var(--accent-soft, var(--color-surface-2));
+  }
+  @media (hover: hover) {
+    :is(a, button):hover:not(:disabled, [aria-disabled='true']) {
+      border-color: var(--ink, var(--color-fg));
+      background: var(--paper-2, var(--color-surface-2));
+    }
+    [data-variant='primary']:hover:not(:disabled, [aria-disabled='true']) {
+      background: var(--ink-2, var(--color-fg-muted));
+    }
+    [aria-pressed='true']:hover:not(:disabled) {
+      background: color-mix(in oklch, var(--accent, var(--color-accent)) 25%, var(--paper, var(--color-bg)));
+    }
+  }
+  :is(a, button):focus-visible {
+    outline: 2px solid var(--accent, var(--color-accent));
+    outline-offset: 2px;
+  }
+  button:disabled, [aria-disabled='true'] {
+    opacity: 0.55;
+    cursor: default;
+  }
+</style>

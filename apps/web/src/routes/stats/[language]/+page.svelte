@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Pagination from '$lib/components/input/Pagination.svelte';
   import type { PageData } from './$types';
 
   let { data }: { data: PageData } = $props();
@@ -133,20 +134,13 @@
           {/each}
         </tbody>
       </table>
-      {#if data.textsPage.prevOffset !== null || data.textsPage.nextOffset !== null}
-        <nav class="ls-pager" aria-label="Text stats pages">
-          {#if data.textsPage.prevOffset !== null}
-            <a class="ls-page-link" href={statsHref({ textOffset: data.textsPage.prevOffset })}>Previous</a>
-          {/if}
-          {#if data.textsPage.nextOffset !== null}
-            <a class="ls-page-link" href={statsHref({ textOffset: data.textsPage.nextOffset })}>Next</a>
-          {/if}
-        </nav>
-      {/if}
+    {/if}
+    {#if data.texts.length || data.textsPage.offset}
+      <Pagination {...data.textsPage} hrefFor={(textOffset) => statsHref({ textOffset })} label="Text stats pages" />
     {/if}
   </section>
 
-  {#if data.collections.length > 0}
+  {#if data.collections.length || data.collectionsPage.offset}
     <section class="ls-section">
       <h2>Per-collection vocabulary coverage</h2>
       <table class="ls-table">
@@ -184,16 +178,7 @@
           {/each}
         </tbody>
       </table>
-      {#if data.collectionsPage.prevOffset !== null || data.collectionsPage.nextOffset !== null}
-        <nav class="ls-pager" aria-label="Collection stats pages">
-          {#if data.collectionsPage.prevOffset !== null}
-            <a class="ls-page-link" href={statsHref({ collectionOffset: data.collectionsPage.prevOffset })}>Previous</a>
-          {/if}
-          {#if data.collectionsPage.nextOffset !== null}
-            <a class="ls-page-link" href={statsHref({ collectionOffset: data.collectionsPage.nextOffset })}>Next</a>
-          {/if}
-        </nav>
-      {/if}
+      <Pagination {...data.collectionsPage} hrefFor={(collectionOffset) => statsHref({ collectionOffset })} label="Collection stats pages" />
     </section>
   {/if}
 
@@ -302,23 +287,6 @@
   }
   .ls-link:hover {
     text-decoration: underline;
-  }
-  .ls-pager {
-    display: flex;
-    justify-content: flex-end;
-    gap: 0.5rem;
-    margin-top: 0.7rem;
-  }
-  .ls-page-link {
-    color: inherit;
-    border: 1px solid var(--rule, var(--color-border));
-    border-radius: 6px;
-    padding: 0.35rem 0.6rem;
-    text-decoration: none;
-    font-size: 0.82rem;
-  }
-  .ls-page-link:hover {
-    background: color-mix(in oklch, var(--ink, var(--color-fg)) 5%, transparent);
   }
   .ls-pct {
     font-feature-settings: 'tnum';

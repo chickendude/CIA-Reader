@@ -169,12 +169,14 @@ function baseConditions(language: LanguageCode, query: BrowseQuery) {
     conditions.push(lte(schema.lemmas.frequencyRank, query.maxRank));
   }
   if (query.hasOfficialTranslation) {
+    const t = schema.translations;
     conditions.push(
       sql`EXISTS (
-        SELECT 1 FROM ${schema.translations} t
-        WHERE t.lemma_id = ${schema.lemmas.id}
-          AND t.hidden = false
-          AND t.source IN ('official_dictionary', 'curator')
+        SELECT 1 FROM ${t}
+        WHERE ${eq(t.targetType, 'lemma')}
+          AND ${eq(t.targetId, schema.lemmas.id)}
+          AND ${eq(t.hidden, false)}
+          AND ${inArray(t.source, ['official_dictionary', 'curator'])}
       )`,
     );
   }

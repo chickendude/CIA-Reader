@@ -108,6 +108,7 @@ export type ServerNumberForms = {
  *  component renders these spans directly; when null, it falls back
  *  to client-side whitespace tokenization. */
 export type ServerToken = {
+  correctedByViewer?: boolean;
   canVerifyContext?: boolean;
   contextVersion?: string;
   selectedBy?: 'ai' | 'human';
@@ -162,6 +163,29 @@ export type ServerToken = {
    *  for whitespace/punctuation. */
   bbox?: { x: number; y: number; w: number; h: number } | null;
 };
+
+/** Apply a reader correction with the complete dictionary entry for that sense. */
+export function withLemmaCorrection(token: ServerToken, lemmaId: string | undefined): ServerToken {
+  if (!lemmaId || lemmaId === token.lemmaId) return token;
+  const chosen = token.candidates.find((candidate) => candidate.lemmaId === lemmaId);
+  if (!chosen) return token;
+  const candidates = token.candidates.filter((candidate) => candidate.lemmaId !== lemmaId);
+  if (token.lemmaId) {
+    candidates.push({
+      lemmaId: token.lemmaId, headword: token.headword ?? token.surface, pos: token.pos ?? '',
+      glossDefault: token.glossDefault, personalGloss: token.personalGloss, status: token.status,
+      score: 0, features: token.features, selectedBy: token.selectedBy,
+    });
+  }
+  return {
+    ...token,
+    correctedByViewer: true,
+    lemmaId, headword: chosen.headword, pos: chosen.pos, features: chosen.features,
+    glossDefault: chosen.glossDefault, personalGloss: chosen.personalGloss ?? null,
+    status: chosen.status ?? 'unknown', selectedBy: chosen.selectedBy,
+    hasDefinition: chosen.glossDefault != null, isAmbiguous: candidates.length > 0, candidates,
+  };
+}
 
 /**
  * One occurrence of a phrase inside a chapter (T-14.3, M14

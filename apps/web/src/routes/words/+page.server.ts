@@ -1,6 +1,7 @@
-import { and, count, desc, eq, ilike, inArray, ne, or } from 'drizzle-orm';
+import { and, count, desc, eq, ilike, inArray, ne, or, sql } from 'drizzle-orm';
 import { error, redirect } from '@sveltejs/kit';
 
+import { vocabularyDefinition } from '$lib/server/vocabulary.js';
 import { db } from '$lib/server/db/index.js';
 import { lemmas, userKnownLemmas } from '$lib/server/db/schema.js';
 import type { Actions, PageServerLoad } from './$types';
@@ -36,11 +37,14 @@ export const load: PageServerLoad = async ({ url, locals, parent, cookies }) => 
   if (!statuses) throw error(400, `Unknown status '${requested}'`);
 
   const q = (url.searchParams.get('q') ?? '').trim();
+  const requestedOffset = Number(url.searchParams.get('offset'));
+  const offset = Number.isSafeInteger(requestedOffset) && requestedOffset > 0 ? requestedOffset : 0;
+  const definition = vocabularyDefinition(locals.user.id);
   const pattern = `%${q}%`;
   const scope = and(
     eq(userKnownLemmas.userId, locals.user.id),
     eq(lemmas.language, language),
-    q ? or(ilike(lemmas.headword, pattern), ilike(lemmas.glossDefault, pattern)) : undefined,
+    q ? or(ilike(lemmas.headword, pattern), sql`${definition} ilike ${pattern}`) : undefined,
   );
   const joinLemma = eq(lemmas.id, userKnownLemmas.lemmaId);
   const [rows, totals] = await Promise.all([
@@ -48,15 +52,16 @@ export const load: PageServerLoad = async ({ url, locals, parent, cookies }) => 
       lemmaId: userKnownLemmas.lemmaId,
       headword: lemmas.headword,
       pos: lemmas.pos,
-      glossDefault: lemmas.glossDefault,
+      definition,
       status: userKnownLemmas.status,
       updatedAt: userKnownLemmas.updatedAt,
     })
       .from(userKnownLemmas)
       .innerJoin(lemmas, joinLemma)
       .where(and(scope, inArray(userKnownLemmas.status, statuses)))
-      .orderBy(desc(userKnownLemmas.updatedAt))
-      .limit(ROW_LIMIT + 1),
+      .orderBy(desc(userKnownLemmas.updatedAt), userKnownLemmas.lemmaId)
+      .limit(ROW_LIMIT)
+      .offset(offset),
     db.select({ status: userKnownLemmas.status, total: count() })
       .from(userKnownLemmas)
       .innerJoin(lemmas, joinLemma)
@@ -69,8 +74,8 @@ export const load: PageServerLoad = async ({ url, locals, parent, cookies }) => 
     if (status !== 'unknown') counts[status] = total;
   }
   return {
-    rows: rows.slice(0, ROW_LIMIT),
-    truncated: rows.length > ROW_LIMIT,
+    rows,
+    pagination: { offset, limit: ROW_LIMIT, total: statuses.reduce((sum, status) => sum + counts[status], 0) },
     counts,
     filters: { language, statuses, q },
   };

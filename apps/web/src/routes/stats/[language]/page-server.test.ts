@@ -61,26 +61,30 @@ beforeEach(() => {
 
 describe('/stats/[language] loader', () => {
   it('passes capped pagination options to stats breakdown queries', async () => {
-    listTextStats.mockResolvedValueOnce(Array.from({ length: 100 }, () => ({})));
+    listTextStats.mockResolvedValueOnce(Array.from({ length: 101 }, () => ({})));
     listCollectionStats.mockResolvedValueOnce(Array.from({ length: 100 }, () => ({})));
 
     const data = (await callLoad(
       'http://x/stats/hi?textLimit=500&textOffset=25&collectionOffset=10',
     )) as {
-      textsPage: { limit: number; offset: number; nextOffset: number | null };
-      collectionsPage: { limit: number; offset: number; nextOffset: number | null };
+      texts: unknown[];
+      textsPage: { limit: number; offset: number; hasNext: boolean };
+      collectionsPage: { limit: number; offset: number; hasNext: boolean };
     };
 
     expect(listTextStats).toHaveBeenCalledWith(USER.id, 'hi', {
+      includeNextRow: true,
       limit: 100,
       offset: 25,
     });
     expect(listCollectionStats).toHaveBeenCalledWith(USER.id, 'hi', {
+      includeNextRow: true,
       limit: 100,
       offset: 10,
     });
-    expect(data.textsPage.nextOffset).toBe(125);
-    expect(data.collectionsPage.nextOffset).toBe(110);
+    expect(data.textsPage.hasNext).toBe(true);
+    expect(data.texts).toHaveLength(100);
+    expect(data.collectionsPage.hasNext).toBe(false);
   });
 
   it('redirects anonymous viewers before querying stats', async () => {

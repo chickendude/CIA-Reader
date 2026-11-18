@@ -28,9 +28,13 @@ export const load: PageServerLoad = async ({ params, url }) => {
 
   const fromParam = url.searchParams.get('from');
   const from = fromParam ? Number(fromParam) : undefined;
+  const limit = 50;
+  const requestedOffset = Number(url.searchParams.get('offset'));
+  const offset = Number.isSafeInteger(requestedOffset) && requestedOffset > 0 ? requestedOffset : 0;
   const queue = await listTranscriptionQueue(config, {
     fromPrintedPage: Number.isFinite(from) ? from : undefined,
-    limit: 50,
+    limit: limit + 1,
+    offset,
   });
   const progress = await countTranscriptionProgress(config);
 
@@ -63,7 +67,8 @@ export const load: PageServerLoad = async ({ params, url }) => {
   return {
     slug: config.slug,
     citation: config.citation,
-    queue,
+    queue: queue.slice(0, limit),
+    pagination: { offset, limit, hasNext: queue.length > limit },
     progress,
     issues,
     calibration,

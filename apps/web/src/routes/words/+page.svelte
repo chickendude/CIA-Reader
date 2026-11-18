@@ -1,4 +1,10 @@
 <script lang="ts">
+  import '$lib/styles/entry-table.css';
+  import { beforeNavigate, goto } from '$app/navigation';
+  import { onDestroy } from 'svelte';
+  import Pagination from '$lib/components/input/Pagination.svelte';
+  import Button from '$lib/components/input/Button.svelte';
+  import TextField from '$lib/components/input/TextField.svelte';
   import { enhance } from '$app/forms';
   import type { SubmitFunction } from '@sveltejs/kit';
   import type { PageData } from './$types';
@@ -9,6 +15,44 @@
   const allSelected = $derived(selected.length === WORD_STATUSES.length);
   let saving = $state(false);
 
+  let draft = $state<string | null>(null);
+  const query = $derived(draft ?? data.filters.q);
+  let timer: ReturnType<typeof setTimeout>;
+  let composing = false;
+  let searchVersion = 0;
+
+  beforeNavigate(({ type }) => {
+    if (type === 'link' || type === 'popstate') {
+      clearTimeout(timer);
+      searchVersion++;
+      draft = null;
+    }
+  });
+  onDestroy(() => clearTimeout(timer));
+
+  function wordsHref(offset: number, status = encodeStatuses(selected), text = data.filters.q) {
+    const params = new URLSearchParams({ status });
+    if (text.trim()) params.set('q', text.trim());
+    if (offset) params.set('offset', String(offset));
+    return `/words?${params}`;
+  }
+
+  async function search(status = encodeStatuses(selected)) {
+    clearTimeout(timer);
+    const version = ++searchVersion;
+    const text = query;
+    await goto(wordsHref(0, status, text), { replaceState: true, keepFocus: true, noScroll: true });
+    if (version === searchVersion && draft === text && text === text.trim()) draft = null;
+  }
+
+  function queueSearch(value: string) {
+    draft = value;
+    clearTimeout(timer);
+    if (composing || saving) return;
+    if (value) timer = setTimeout(() => void search(), 200);
+    else void search();
+  }
+
   function toggleValue(status: WordStatus): string {
     const next = selected.includes(status)
       ? selected.filter((item) => item !== status)
@@ -17,12 +61,19 @@
   }
 
   const saveSelection: SubmitFunction = () => {
+    clearTimeout(timer);
     saving = true;
-    return async ({ update }) => {
+    return async ({ result, update }) => {
       try {
-        await update();
+        if (result.type === 'redirect' && result.status === 303 && result.location.startsWith('/words?')) {
+          const status = new URL(result.location, window.location.href).searchParams.get('status');
+          if (status) await search(status);
+        } else {
+          await update();
+        }
       } finally {
         saving = false;
+        if (draft !== null && draft.trim() !== data.filters.q) queueSearch(draft);
       }
     };
   };
@@ -52,46 +103,51 @@
   <header class="topbar">
     <h1 class="page-title">Words</h1>
     <div class="actions">
-      <a class="export-link" href={`/api/v1/me/vocabulary/export?language=${data.filters.language}`}>Export CSV</a>
-      <a class="export-link" href="/words/anki/import">Import from Anki</a>
-      <a class="export-link" href="/words/anki">Export to Anki</a>
+      <Button variant="primary" href={`/api/v1/me/vocabulary/export?language=${data.filters.language}`}>Export CSV</Button>
+      <Button variant="primary" href="/words/anki/import">Import from Anki</Button>
+      <Button variant="primary" href="/words/anki">Export to Anki</Button>
     </div>
   </header>
 
   <div class="filters">
     <form method="post" action="?/filter" use:enhance={saveSelection}>
-      <input type="hidden" name="q" value={data.filters.q} />
+      <input type="hidden" name="q" value={query} />
       <fieldset class="status-tabs" disabled={saving} aria-label="Word statuses">
-        <button
-          class="status-tab"
+        <Button
+          type="submit" variant="toggle"
           name="status"
           value={allSelected ? 'none' : 'all'}
           aria-pressed={allSelected ? true : selected.length ? 'mixed' : false}
-        >All</button>
+        >All</Button>
         {#each WORD_STATUSES as status (status)}
-          <button
-            class="status-tab"
+          <Button
+            type="submit" variant="toggle"
             name="status"
             value={toggleValue(status)}
             aria-pressed={selected.includes(status)}
           >
             {status} <span class="count">{data.counts[status].toLocaleString()}</span>
-          </button>
+          </Button>
         {/each}
       </fieldset>
     </form>
 
-    <form method="get" class="filterbar" role="search">
-      <input
+    <form method="get" class="filterbar" role="search" onsubmit={(event) => {
+      event.preventDefault();
+      if (!saving && !composing) void search();
+    }}>
+      <TextField
         type="search"
         name="q"
-        value={data.filters.q}
+        bind:value={() => query, queueSearch}
+        oncompositionstart={() => { composing = true; clearTimeout(timer); }}
+        oncompositionend={(event) => { composing = false; queueSearch(event.currentTarget.value); }}
         aria-label="Search words and definitions"
         placeholder="Search words and definitions"
         autocomplete="off"
       />
       <input type="hidden" name="status" value={encodeStatuses(selected)} />
-      <button class="filter-go" type="submit">Search</button>
+      <Button type="submit">Search</Button>
     </form>
   </div>
 
@@ -106,8 +162,8 @@
       {/if}
     </p>
   {:else}
-    <div class="table-wrap">
-      <table class="kw-table" aria-label="Vocabulary">
+    <div class="entry-table-wrap">
+      <table class="entry-table" aria-label="Vocabulary">
         <thead>
           <tr>
             <th class="col-word">Word</th>
@@ -125,7 +181,7 @@
               </td>
               <td class="col-pos muted">{row.pos}</td>
               <td class="col-def">
-                {row.glossDefault ?? ''}
+                {row.definition ?? ''}
               </td>
               <td class="col-status">
                 <span class="status" data-status={row.status}>{row.status}</span>
@@ -136,13 +192,8 @@
         </tbody>
       </table>
     </div>
-
-    {#if data.truncated}
-      <p class="empty muted small">
-        Showing the {data.rows.length} most recently updated entries.
-      </p>
-    {/if}
   {/if}
+  <Pagination {...data.pagination} hrefFor={wordsHref} />
 </section>
 
 <style>
@@ -160,31 +211,9 @@
     display: flex;
     gap: 0.4rem;
     align-items: center;
-    max-width: 100%;
-  }
-  .filterbar input[type='search'] {
-    width: 14rem;
-    min-width: 0;
-    background: var(--paper);
-    border: 1px solid var(--rule);
-    border-radius: 8px;
-    padding: 0.5rem 0.6rem;
-    font: inherit;
+    width: min(20rem, 100%);
     font-size: 0.85rem;
-    color: var(--ink);
   }
-  .filter-go {
-    height: 38px;
-    padding: 0 0.85rem;
-    font-family: var(--font-sans, var(--font-ui));
-    font-size: 0.78rem;
-    background: var(--ink, var(--color-fg));
-    color: var(--paper, var(--color-bg));
-    border: 1px solid var(--ink, var(--color-fg));
-    border-radius: 8px;
-    cursor: pointer;
-  }
-
   .status-tabs {
     display: flex;
     padding: 0;
@@ -194,31 +223,9 @@
     gap: 4px;
     flex-wrap: wrap;
   }
-  .status-tab {
-    padding: 0.4rem 0.75rem;
-    border-radius: 7px;
-    font-family: var(--font-sans, var(--font-ui));
-    font-size: 0.78rem;
-    color: var(--ink-2, var(--color-fg-muted));
-    text-transform: capitalize;
-    background: transparent;
-    border: 1px solid var(--rule);
-    cursor: pointer;
-  }
   .count {
-    margin-inline-start: 0.2rem;
     font-variant-numeric: tabular-nums;
   }
-  .status-tab[aria-pressed='true'] {
-    background: color-mix(
-      in oklch,
-      var(--ink, var(--color-fg)) 8%,
-      transparent
-    );
-    border-color: var(--ink-3);
-    color: var(--ink);
-  }
-
   .actions {
     display: flex;
     gap: 0.4rem;
@@ -226,63 +233,6 @@
     flex-wrap: wrap;
     margin-left: auto;
     justify-content: flex-end;
-  }
-  .export-link {
-    min-height: 32px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: 7px;
-    border: 1px solid var(--rule, var(--color-border));
-    padding: 0 0.7rem;
-    font-family: var(--font-sans, var(--font-ui));
-    font-size: 0.76rem;
-    text-decoration: none;
-    background: var(--ink, var(--color-fg));
-    border-color: var(--ink, var(--color-fg));
-    color: var(--paper, var(--color-bg));
-  }
-  .table-wrap {
-    background: var(--card, var(--color-bg));
-    border: 1px solid var(--card-edge, var(--color-border));
-    border-radius: 14px;
-    box-shadow: var(--shadow-1, 0 1px 2px rgba(0, 0, 0, 0.04));
-    overflow: hidden;
-  }
-
-  .kw-table {
-    width: 100%;
-    border-collapse: collapse;
-    overflow-wrap: anywhere;
-    font-size: 0.85rem;
-  }
-  .kw-table thead th {
-    font-family: var(--font-sans, var(--font-ui));
-    font-size: 0.62rem;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    color: var(--ink-3, var(--color-fg-muted));
-    font-weight: 500;
-    text-align: left;
-    padding: 0.7rem 0.85rem;
-    border-bottom: 1px solid var(--rule, var(--color-border));
-    background: color-mix(
-      in oklch,
-      var(--paper, var(--color-bg)) 80%,
-      var(--paper-2, transparent)
-    );
-  }
-  .kw-table tbody td {
-    padding: 0.85rem;
-    border-bottom: 1px solid var(--rule-2, var(--color-border));
-    vertical-align: top;
-  }
-  .kw-table tbody tr:hover {
-    background: color-mix(
-      in oklch,
-      var(--ink, var(--color-fg)) 3%,
-      transparent
-    );
   }
   .col-word {
     width: 22%;
@@ -317,14 +267,14 @@
   }
 
   @media (max-width: 639px) {
-    .kw-table thead {
+    .entry-table thead {
       position: absolute;
       width: 1px;
       height: 1px;
       overflow: hidden;
       clip-path: inset(50%);
     }
-    .kw-table tbody tr {
+    .entry-table tbody tr {
       display: grid;
       grid-template-columns: minmax(0, 1fr) auto;
       grid-template-areas:
@@ -335,10 +285,10 @@
       gap: 0.25rem 0.75rem;
       padding: 0.75rem;
     }
-    .kw-table tbody tr + tr {
+    .entry-table tbody tr + tr {
       border-top: 1px solid var(--rule-2);
     }
-    .kw-table tbody td {
+    .entry-table tbody td {
       width: auto;
       padding: 0;
       border: 0;
@@ -352,9 +302,6 @@
 
   .muted {
     color: var(--ink-3, var(--color-fg-muted));
-  }
-  .small {
-    font-size: 0.78rem;
   }
   .empty {
     padding: 2rem 0;

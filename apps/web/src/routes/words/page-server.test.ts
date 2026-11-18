@@ -9,12 +9,12 @@ type StubRow = {
   lemmaId: string;
   headword: string;
   pos: string;
-  glossDefault: string | null;
+  definition: string | null;
   status: 'unknown' | 'learning' | 'known' | 'ignored';
   updatedAt: Date;
 };
 
-const queryRows = vi.fn<() => Promise<StubRow[]>>();
+const queryRows = vi.fn<(offset: number) => Promise<StubRow[]>>();
 const queryCounts = vi.fn<() => Promise<{ status: StubRow['status']; total: number }[]>>();
 const whereClause = vi.fn<(clause: SQL) => void>();
 
@@ -32,7 +32,7 @@ vi.mock('$lib/server/db/index.js', () => ({
                     groupBy: () => queryCounts(),
                     orderBy() {
                       return {
-                        limit: () => queryRows(),
+                        limit: () => ({ offset: queryRows }),
                       };
                     },
                   };
@@ -99,7 +99,7 @@ describe('words +page.server.ts load', () => {
         lemmaId: 'L1',
         headword: 'प्रभात',
         pos: 'noun',
-        glossDefault: 'dawn',
+        definition: 'dawn',
         status: 'learning',
         updatedAt: new Date('2026-04-25T12:00:00Z'),
       },
@@ -108,7 +108,7 @@ describe('words +page.server.ts load', () => {
     expect(data?.rows).toHaveLength(1);
     expect(data?.rows[0]?.headword).toBe('प्रभात');
     expect(data?.filters).toEqual({ language: 'hi', statuses: ['learning', 'known'], q: '' });
-    expect(data?.truncated).toBe(false);
+    expect(queryRows).toHaveBeenCalledWith(0);
   });
 
   it('counts every matching status, including deselected words beyond the display limit', async () => {
@@ -124,11 +124,13 @@ describe('words +page.server.ts load', () => {
     const counts = dialect.sqlToQuery(whereClause.mock.calls[1]![0]);
     for (const query of [list, counts]) {
       expect(query.sql).toContain('"lemmas"."language" = $2');
-      expect(query.params.slice(0, 4)).toEqual(['u1', 'mr', '%test%', '%test%']);
+      expect(query.sql).toContain('"translations"."target_id" = "lemmas"."id"');
+      expect(query.sql).toContain('"translations"."submitted_by" = $4');
+      expect(query.params.slice(0, 5)).toEqual(['u1', 'mr', '%test%', 'u1', '%test%']);
     }
-    expect(list.params.slice(4)).toEqual(['learning', 'known']);
-    expect(counts.sql).toContain('"user_known_lemmas"."status" <> $5');
-    expect(counts.params[4]).toBe('unknown');
+    expect(list.params.slice(5)).toEqual(['learning', 'known']);
+    expect(counts.sql).toContain('"user_known_lemmas"."status" <> $6');
+    expect(counts.params[5]).toBe('unknown');
   });
 
   it('directs the user to choose a language before querying vocabulary', async () => {
@@ -183,19 +185,10 @@ describe('words +page.server.ts load', () => {
     expect(data?.filters.q).toBe('mood');
   });
 
-  it.each([200, 201])('reports whether more than 200 matches exist (%i matches)', async (count) => {
-    queryRows.mockResolvedValue(
-      Array.from({ length: count }, (_, i) => ({
-        lemmaId: `L${i}`,
-        headword: `word${i}`,
-        pos: 'noun',
-        glossDefault: null,
-        status: 'learning' as const,
-        updatedAt: new Date(),
-      })),
-    );
-    const data = await callLoad({});
-    expect(data?.rows).toHaveLength(200);
-    expect(data?.truncated).toBe(count > 200);
+  it('pages through matches for the selected statuses', async () => {
+    queryCounts.mockResolvedValue([{ status: 'known', total: 230 }, { status: 'ignored', total: 12 }]);
+    const data = await callLoad({ url: new URL('http://x/words?status=known&offset=200') });
+    expect(queryRows).toHaveBeenCalledWith(200);
+    expect(data?.pagination).toEqual({ offset: 200, limit: 200, total: 230 });
   });
 });

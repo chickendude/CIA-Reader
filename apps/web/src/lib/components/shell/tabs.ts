@@ -36,7 +36,7 @@ export type TabIcon =
 /** Section heading the tab clusters under in the desktop rail (T-5.11).
  * `null` (the default) renders the tab outside any section, above the
  * first grouped tab. */
-export type TabSection = 'Read' | 'Track' | 'You' | null;
+export type TabSection = 'Read' | 'Stats' | 'You' | null;
 
 export interface Tab {
   id: string;
@@ -78,7 +78,7 @@ export const TABS: readonly Tab[] = [
     auth: 'authenticated',
     match: ['/words'],
     icon: 'words',
-    section: 'Track',
+    section: 'Stats',
   },
   { id: 'dictionary', label: 'Dictionary', href: '/dictionary', auth: 'any', match: ['/dictionary'], icon: 'library', section: 'Read' },
   {
@@ -153,7 +153,7 @@ export function getActiveTabId(pathname: string, tabs: readonly Tab[]): string |
 export function groupTabsBySection(
   tabs: readonly Tab[],
 ): { section: TabSection; tabs: Tab[] }[] {
-  const order: TabSection[] = [null, 'Read', 'Track', 'You'];
+  const order: TabSection[] = [null, 'Read', 'Stats', 'You'];
   const buckets = new Map<TabSection, Tab[]>();
   for (const s of order) buckets.set(s, []);
   for (const t of tabs) {

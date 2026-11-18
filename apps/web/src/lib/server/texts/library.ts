@@ -131,7 +131,7 @@ export type LibraryGridCard = Pick<LibraryCard,
 /** Rank books and standalone texts together before taking a page. */
 export async function listPersonalLibrary(
   viewer: Pick<User, 'id'>,
-  opts: { limit?: number; offset?: number; language?: LanguageCode },
+  opts: { limit?: number; offset?: number; language?: LanguageCode; query?: string },
 ) {
   const { limit, offset } = clampPage(opts);
   const language = opts.language;
@@ -151,11 +151,14 @@ export async function listPersonalLibrary(
       WHERE c.owner_id = ${viewer.id} AND c.kind = 'chapter_book'
         ${language ? sql`AND c.language = ${language}` : sql``}
       GROUP BY c.id
+    ), matches AS (
+      SELECT * FROM items
+      ${opts.query ? sql`WHERE strpos(lower(title), lower(${opts.query})) > 0` : sql``}
     ), page AS (
-      SELECT * FROM items ORDER BY opened DESC NULLS LAST, created_at DESC, id
+      SELECT * FROM matches ORDER BY opened DESC NULLS LAST, created_at DESC, id
       LIMIT ${limit} OFFSET ${offset}
     )
-    SELECT (SELECT count(*)::int FROM items) AS total,
+    SELECT (SELECT count(*)::int FROM matches) AS total,
       coalesce(jsonb_agg(to_jsonb(page) - 'opened' - 'created_at'
         ORDER BY opened DESC NULLS LAST, created_at DESC, id), '[]'::jsonb) AS cards
     FROM page
@@ -187,7 +190,7 @@ export async function listOwnedTexts(
     .select()
     .from(schema.texts)
     .where(where)
-    .orderBy(desc(schema.texts.createdAt))
+    .orderBy(desc(schema.texts.createdAt), schema.texts.id)
     .limit(limit)
     .offset(offset)) as Text[];
 
@@ -263,7 +266,7 @@ export async function listSharedTexts(
     .select()
     .from(schema.texts)
     .where(where)
-    .orderBy(desc(schema.texts.createdAt))
+    .orderBy(desc(schema.texts.createdAt), schema.texts.id)
     .limit(limit)
     .offset(offset)) as Text[];
 
@@ -308,7 +311,7 @@ export async function listOfficialTexts(
     .select()
     .from(schema.texts)
     .where(where)
-    .orderBy(desc(schema.texts.createdAt))
+    .orderBy(desc(schema.texts.createdAt), schema.texts.id)
     .limit(limit)
     .offset(offset)) as Text[];
 

@@ -2096,6 +2096,34 @@ describe('WordPopup — editable headword search', () => {
     expect(input.value).toBe('pena');
   });
 
+  it('keeps homographs separate and marks the entry whose definition is on screen', async () => {
+    const noun = { id: 'noun', headword: 'में', pos: 'NOUN', glossDefault: 'bleat, baa' };
+    const adp = { id: 'adp', headword: 'में', pos: 'ADP', glossDefault: 'in, inside' };
+    const request = vi.fn(async (url: string) => {
+      if (url.includes('/dictionary/hi/lemmas')) return jres({ lemmas: [noun, adp] });
+      return jres({
+        lemma: url.includes('/adp/') ? adp : noun,
+        translations: { personal: [], official: [], community: [] },
+      });
+    });
+    vi.stubGlobal('fetch', request);
+    const onStatusChange = vi.fn();
+    const view = render(WordPopup, {
+      token: makeToken({ surface: 'में', lemmaId: noun.id, headword: noun.headword, pos: noun.pos }),
+      language: 'hi', isOwner: true, onStatusChange, onClose: vi.fn(),
+    });
+    const input = view.getByTestId('headword-input') as HTMLInputElement;
+    input.value = 'में';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    const choice = await view.findByRole('option', { name: /in, inside/ });
+    expect(view.getAllByRole('option')).toHaveLength(2);
+    choice.click();
+    await waitFor(() => expect(view.getByTestId('pos-pill').getAttribute('data-pos')).toBe('ADP'));
+    view.getByRole('button', { name: 'Known' }).click();
+    await waitFor(() => expect(onStatusChange).toHaveBeenCalledWith('adp', 'known'));
+    expect(request).toHaveBeenCalledWith('/api/v1/me/known-lemmas/adp', expect.objectContaining({ method: 'PATCH' }));
+  });
+
   it('loads translations on an exact headword match as you type (no click)', async () => {
     const fetchMock = vi.fn(async (input: unknown) => {
       const url = String(input);

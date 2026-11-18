@@ -38,6 +38,7 @@ export interface LanguageDescriptor {
   code: LanguageCode;
   displayName: string; // English display ("Hindi")
   nativeName: string; // Native-script name ("हिन्दी")
+  nativeDictionaryTitle: string;
   script: ScriptCode;
   textDirection: TextDirection;
   supportedRomanizations: RomanizationScheme[];
@@ -55,6 +56,7 @@ export const LANGUAGES: Readonly<Record<LanguageCode, LanguageDescriptor>> = {
     code: 'hi',
     displayName: 'Hindi',
     nativeName: 'हिन्दी',
+    nativeDictionaryTitle: 'हिन्दी शब्दकोश',
     script: 'Deva',
     textDirection: 'ltr',
     supportedRomanizations: ['iso15919', 'iast', 'hunterian', 'itrans'],
@@ -71,6 +73,7 @@ export const LANGUAGES: Readonly<Record<LanguageCode, LanguageDescriptor>> = {
     code: 'mr',
     displayName: 'Marathi',
     nativeName: 'मराठी',
+    nativeDictionaryTitle: 'मराठी शब्दकोश',
     script: 'Deva',
     textDirection: 'ltr',
     supportedRomanizations: ['iso15919', 'iast', 'hunterian', 'itrans'],
@@ -87,6 +90,7 @@ export const LANGUAGES: Readonly<Record<LanguageCode, LanguageDescriptor>> = {
     code: 'or',
     displayName: 'Odia',
     nativeName: 'ଓଡ଼ିଆ',
+    nativeDictionaryTitle: 'ଓଡ଼ିଆ ଅଭିଧାନ',
     script: 'Orya',
     textDirection: 'ltr',
     supportedRomanizations: ['iso15919', 'iast', 'itrans'],
@@ -100,6 +104,7 @@ export const LANGUAGES: Readonly<Record<LanguageCode, LanguageDescriptor>> = {
     code: 'yi',
     displayName: 'Yiddish',
     nativeName: 'ייִדיש',
+    nativeDictionaryTitle: 'ייִדיש ווערטערבוך',
     script: 'Hebr',
     textDirection: 'rtl',
     supportedRomanizations: ['yivo'],
@@ -118,6 +123,7 @@ export const LANGUAGES: Readonly<Record<LanguageCode, LanguageDescriptor>> = {
     code: 'eu',
     displayName: 'Basque',
     nativeName: 'Euskara',
+    nativeDictionaryTitle: 'Euskal hiztegia',
     script: 'Latn',
     textDirection: 'ltr',
     // First Latin-script language: the text is already Latin, so there is no

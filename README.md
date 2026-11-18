@@ -17,6 +17,8 @@ infra/                docker-compose.yml, Caddyfile, Dockerfiles
 scripts/              One-off tooling (issue bootstrap, etc.)
 ```
 
+See the [web architecture and design standards](docs/web-standards.md) for shared page layouts, navigation, components, and server code.
+
 ## Local development
 
 ### Linux without Docker

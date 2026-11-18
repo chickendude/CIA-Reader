@@ -11,7 +11,12 @@ type Actor = Pick<User, 'id' | 'role'>;
 export async function reviewBooks(actor: Actor) {
   if (!isCuratorOrAdmin(actor)) throw new ContextChoiceError('Staff access required', 403);
   return db
-    .select({ id: schema.texts.id, title: schema.texts.title, visibility: schema.texts.visibility })
+    .select({
+      id: schema.texts.id,
+      title: schema.texts.title,
+      visibility: schema.texts.visibility,
+      canReprocess: sql<boolean>`${actor.role === 'admin'}::boolean OR ${schema.texts.ownerId} = ${actor.id}`,
+    })
     .from(schema.texts)
     .where(
       sql`${schema.texts.language}='hi' AND (${schema.texts.ownerId}=${actor.id} OR ${schema.texts.visibility}='official')`,

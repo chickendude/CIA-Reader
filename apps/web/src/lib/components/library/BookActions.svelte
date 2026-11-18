@@ -62,10 +62,14 @@
 </script>
 
 {#if catalogAction || onDelete}
-  <div class="book-actions" bind:this={container}>
+  <div class="book-actions" class:open bind:this={container}>
     <button type="button" class="trigger" bind:this={trigger} aria-label={`Actions for ${title}`}
       aria-expanded={open} disabled={busy} onclick={() => open = !open}>
-      <span aria-hidden="true">•••</span>
+      <svg aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="currentColor">
+        <circle cx="10" cy="4" r="1.7" />
+        <circle cx="10" cy="10" r="1.7" />
+        <circle cx="10" cy="16" r="1.7" />
+      </svg>
     </button>
     {#if open}
       <div class="choices">
@@ -81,13 +85,48 @@
 {/if}
 
 <style>
-  .book-actions { position: absolute; top: .4rem; right: .4rem; z-index: 1; }
-  .book-actions:focus-within { z-index: 3; }
-  button { font: inherit; color: var(--ink); cursor: pointer; }
-  .trigger { display: grid; place-items: center; width: 2.5rem; height: 2.5rem; border: 1px solid var(--card-edge); border-radius: 50%; background: var(--card); }
-  .trigger span { font-size: .8rem; letter-spacing: .06em; }
-  .choices { position: absolute; top: calc(100% + .2rem); right: 0; width: max-content; padding: .25rem; border: 1px solid var(--card-edge); border-radius: .5rem; background: var(--card); box-shadow: var(--shadow-2, 0 4px 14px #0003); }
-  .choices button { display: block; width: 100%; padding: .6rem .8rem; text-align: left; background: transparent; border: 0; border-radius: .3rem; font-size: .85rem; }
-  .choices button:hover, .choices button:focus-visible { background: var(--paper-2); }
+  .book-actions {
+    position: absolute;
+    top: .4rem;
+    right: .4rem;
+    z-index: 1;
+    --menu-bg: var(--paper, var(--color-bg));
+  }
+  .book-actions.open { z-index: 3; }
+  button { font: inherit; color: var(--ink, var(--color-fg)); cursor: pointer; }
+  .trigger {
+    display: grid;
+    place-items: center;
+    width: 2.5rem;
+    height: 2.5rem;
+    padding: 0;
+    border: 1px solid var(--card-edge, var(--color-border));
+    border-radius: 50%;
+    background: var(--menu-bg);
+  }
+  .choices {
+    position: absolute;
+    top: calc(100% + .2rem);
+    right: 0;
+    width: max-content;
+    padding: .25rem;
+    border: 1px solid var(--rule, var(--color-border));
+    border-radius: .5rem;
+    background: var(--menu-bg);
+    box-shadow: var(--shadow-2, 0 4px 14px #0003);
+  }
+  .choices button {
+    display: block;
+    width: 100%;
+    padding: .6rem .8rem;
+    text-align: start;
+    background: var(--menu-bg);
+    border: 0;
+    border-radius: .3rem;
+    font-size: .85rem;
+  }
+  .choices button:hover, .choices button:focus-visible {
+    background: color-mix(in srgb, var(--ink) 14%, var(--menu-bg));
+  }
   .danger { color: var(--err, #b94545); }
 </style>

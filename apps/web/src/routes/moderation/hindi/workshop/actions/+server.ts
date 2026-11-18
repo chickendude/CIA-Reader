@@ -31,13 +31,14 @@ const input = z.discriminatedUnion('action', [
     ids: z.array(id).min(1).max(3000),
   }),
   z.object({ action: z.literal('wiktionary'), query }),
-  z.object({ action: z.literal('search'), query, limit }),
+  z.object({ action: z.literal('search'), query, limit, offset: z.number().int().nonnegative().default(0) }),
   z.object({ action: z.literal('word'), id }),
   z.object({ action: z.literal('save'), draft: draftInput }),
   z.object({ action: z.literal('preview'), draft: draftInput, inventory: z.boolean() }),
   z.object({ action: z.literal('group'), id, members: z.array(id).max(24) }),
   z.object({
     action: z.literal('queue'),
+    offset: z.number().int().nonnegative().default(0),
     book: id.nullable(),
     kind: z.enum(['', 'unresolved', 'missing-definition', 'ignored']),
     query,
@@ -106,7 +107,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
         return json({ count });
       }
       case 'search':
-        return json(await searchHindi(p.query, p.limit));
+        return json(await searchHindi(p.query, p.limit, p.offset));
       case 'word':
         return json(await getWorkshopWord(p.id));
       case 'save':
@@ -114,7 +115,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
       case 'preview':
         return json(await previewDraft(p.draft, p.inventory));
       case 'queue':
-        return json(await workshopQueue(actor.id, p.book, p.kind, p.query, p.limit));
+        return json(await workshopQueue(actor.id, p.book, p.kind, p.query, p.limit, p.offset));
       case 'group':
         await groupUses(p.id, p.members, actor.id);
         return json(await getWorkshopWord(p.id));

@@ -47,8 +47,8 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 
   const [stats, texts, collections] = await Promise.all([
     getLanguageStats(locals.user.id, language),
-    listTextStats(locals.user.id, language, textPage),
-    listCollectionStats(locals.user.id, language, collectionPage),
+    listTextStats(locals.user.id, language, { ...textPage, includeNextRow: true }),
+    listCollectionStats(locals.user.id, language, { ...collectionPage, includeNextRow: true }),
   ]);
 
   return {
@@ -59,24 +59,9 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
       nativeName: LANGUAGES[language].nativeName,
     },
     stats,
-    texts,
-    textsPage: {
-      ...textPage,
-      nextOffset: texts.length === textPage.limit ? textPage.offset + textPage.limit : null,
-      prevOffset:
-        textPage.offset > 0 ? Math.max(0, textPage.offset - textPage.limit) : null,
-    },
-    collections,
-    collectionsPage: {
-      ...collectionPage,
-      nextOffset:
-        collections.length === collectionPage.limit
-          ? collectionPage.offset + collectionPage.limit
-          : null,
-      prevOffset:
-        collectionPage.offset > 0
-          ? Math.max(0, collectionPage.offset - collectionPage.limit)
-          : null,
-    },
+    texts: texts.slice(0, textPage.limit),
+    textsPage: { ...textPage, hasNext: texts.length > textPage.limit },
+    collections: collections.slice(0, collectionPage.limit),
+    collectionsPage: { ...collectionPage, hasNext: collections.length > collectionPage.limit },
   };
 };

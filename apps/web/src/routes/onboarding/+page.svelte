@@ -52,7 +52,7 @@
               bind:group={selectedLanguage}
             />
             <span class="native">{lang.nativeName}</span>
-            <span class="meta">{lang.displayName} · {lang.script}</span>
+            <span class="meta">{lang.displayName}</span>
           </label>
         {/each}
       </div>

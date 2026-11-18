@@ -27,7 +27,7 @@ import { lemmaBookFrequencies, resolveBookChapterScope } from './texts/book-freq
 import { sentenceFromTokens } from './texts/sentences.js';
 import { canReadText } from './auth/can-read.js';
 import type { LanguageCode } from '@ciareader/shared-types';
-import type { VocabularyStatus } from './vocabulary.js';
+import { vocabularyDefinition, type VocabularyStatus } from './vocabulary.js';
 
 export type AnkiCard = {
   /** Stable dictionary identity for catalog exports, independent of definition edits. */
@@ -53,29 +53,6 @@ type LemmaRow = {
   glossDefault: string | null;
   minedSentence: string | null;
 };
-
-async function personalGlossMap(
-  userId: string,
-  lemmaIds: string[],
-): Promise<Map<string, string>> {
-  const out = new Map<string, string>();
-  if (lemmaIds.length === 0) return out;
-  const rows = await db
-    .select({ lemmaId: schema.translations.targetId, body: schema.translations.body })
-    .from(schema.translations)
-    .where(
-      and(
-        eq(schema.translations.targetType, 'lemma'),
-        eq(schema.translations.source, 'user'),
-        eq(schema.translations.submittedBy, userId),
-        inArray(schema.translations.targetId, lemmaIds),
-      ),
-    );
-  for (const r of rows) {
-    if (r.lemmaId && !out.has(r.lemmaId)) out.set(r.lemmaId, r.body);
-  }
-  return out;
-}
 
 /**
  * Up to MAX_SAMPLES distinct book sentences per lemma (excluding the mined
@@ -183,7 +160,7 @@ export async function getAnkiCards(
       lemmaId: schema.userKnownLemmas.lemmaId,
       headword: schema.lemmas.headword,
       pos: schema.lemmas.pos,
-      glossDefault: schema.lemmas.glossDefault,
+      glossDefault: vocabularyDefinition(userId),
       minedSentence: schema.userKnownLemmas.minedSentence,
     })
     .from(schema.userKnownLemmas)
@@ -198,7 +175,6 @@ export async function getAnkiCards(
     .orderBy(asc(schema.lemmas.headword));
 
   const lemmaIds = rows.map((r) => r.lemmaId);
-  const personal = await personalGlossMap(userId, lemmaIds);
   const frequencies = opts.textId
     ? await lemmaBookFrequencies(opts.textId, lemmaIds)
     : new Map<string, number>();
@@ -208,7 +184,7 @@ export async function getAnkiCards(
     id: r.lemmaId,
     word: r.headword,
     pos: r.pos,
-    definition: personal.get(r.lemmaId) ?? r.glossDefault ?? '',
+    definition: r.glossDefault ?? '',
     frequency: frequencies.get(r.lemmaId) ?? 0,
     minedSentence: r.minedSentence ?? null,
     samples: samples.get(r.lemmaId) ?? [],

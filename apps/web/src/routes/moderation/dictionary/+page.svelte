@@ -1,11 +1,8 @@
 <script lang="ts">
+  import Pagination from '$lib/components/input/Pagination.svelte';
   import type { PageData } from './$types';
   let { data }: { data: PageData } = $props();
 
-  const pageNum = $derived(Math.floor(data.offset / data.limit) + 1);
-  const totalPages = $derived(Math.max(1, Math.ceil(data.totalCount / data.limit)));
-  const prevOffset = $derived(Math.max(0, data.offset - data.limit));
-  const nextOffset = $derived(data.offset + data.limit);
 
   function hrefWith(offset: number): string {
     const params = new URLSearchParams();
@@ -14,7 +11,7 @@
     if (offset > 0) params.set('offset', String(offset));
     if (data.limit !== 50) params.set('limit', String(data.limit));
     const qs = params.toString();
-    return qs ? `?${qs}` : '';
+    return qs ? `?${qs}` : '/moderation/dictionary';
   }
 </script>
 
@@ -112,20 +109,8 @@
         {/each}
       </ol>
 
-      <nav class="pager" aria-label="Pagination">
-        {#if data.offset > 0}
-          <a rel="prev" href={hrefWith(prevOffset)}>← Previous</a>
-        {:else}
-          <span class="muted">← Previous</span>
-        {/if}
-        <span class="muted">Page {pageNum} of {totalPages}</span>
-        {#if nextOffset < data.totalCount}
-          <a rel="next" href={hrefWith(nextOffset)}>Next →</a>
-        {:else}
-          <span class="muted">Next →</span>
-        {/if}
-      </nav>
     {/if}
+    <Pagination offset={data.offset} limit={data.limit} total={data.totalCount} hrefFor={hrefWith} />
   {/if}
 </div>
 
@@ -251,16 +236,5 @@
     color: var(--color-info-fg, var(--color-fg));
     border-left: 3px solid var(--color-accent);
     font-size: 0.9rem;
-  }
-  .pager {
-    display: flex;
-    justify-content: space-between;
-    gap: 1rem;
-    margin-top: 1.5rem;
-    padding-top: 1rem;
-    border-top: 1px solid var(--color-border);
-  }
-  .pager a {
-    color: var(--color-accent);
   }
 </style>

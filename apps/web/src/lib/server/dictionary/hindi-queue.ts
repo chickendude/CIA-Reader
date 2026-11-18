@@ -8,6 +8,7 @@ export async function workshopQueue(
   kind: string,
   query: string,
   limit: number,
+  offset = 0,
 ) {
   const pattern = '%' + query.replace(/[\\%_]/g, '\\$&') + '%';
   const rows = await db.execute<ReviewItem & { total: number }>(sql`
@@ -15,27 +16,33 @@ export async function workshopQueue(
       AND (${book}::uuid IS NULL OR id=${book}::uuid)),
     items AS (
       SELECT t.surface word,NULL::uuid id,CASE WHEN i.surface IS NULL THEN 'unresolved' ELSE 'ignored' END kind,
-        c.text_id book,c.idx chapter,t.idx token,t.chapter_id,t.sentence_idx
+        c.text_id book,c.idx chapter,t.idx token,t.chapter_id
       FROM books b JOIN text_chapters c ON c.text_id=b.id JOIN text_tokens t ON t.chapter_id=c.id
       LEFT JOIN hindi_review_ignored i ON i.text_id=b.id AND i.surface=t.surface
       WHERE t.is_word AND t.is_oov AND t.surface ILIKE ${pattern}
       UNION ALL
-      SELECT l.headword,l.id,'missing-definition',c.text_id,c.idx,t.idx,t.chapter_id,t.sentence_idx
+      SELECT l.headword,l.id,'missing-definition',c.text_id,c.idx,t.idx,t.chapter_id
       FROM books b JOIN text_chapters c ON c.text_id=b.id JOIN hindi_occurrences o ON o.chapter_id=c.id
       JOIN lemmas l ON l.id=o.lemma_id JOIN text_tokens t ON t.chapter_id=c.id AND t.idx=o.start_idx
       WHERE nullif(l.gloss_default,'') IS NULL AND l.headword ILIKE ${pattern}
-    ), grouped AS (
-      SELECT word,id,kind,count(*)::int count,(array_agg(book ORDER BY book,chapter,token))[1] book,
-        (array_agg(chapter_id ORDER BY book,chapter,token))[1] chapter_id,
-        (array_agg(chapter ORDER BY book,chapter,token))[1] chapter,
-        (array_agg(token ORDER BY book,chapter,token))[1] token,
-        (array_agg(sentence_idx ORDER BY book,chapter,token))[1] sentence
+    ), per_book AS (
+      SELECT word,id,kind,book,count(*)::int count,
+        (array_agg(chapter_id ORDER BY chapter,token))[1] chapter_id,
+        (array_agg(chapter ORDER BY chapter,token))[1] chapter,
+        (array_agg(token ORDER BY chapter,token))[1] token
       FROM items WHERE ${kind ? sql`kind=${kind}` : sql`kind<>'ignored'`}
-      GROUP BY word,id,kind
-    ), page AS (SELECT *,count(*) OVER()::int total FROM grouped ORDER BY count DESC,word,id LIMIT ${limit})
-    SELECT p.word,p.id,p.kind,p.count,p.book,p.chapter,p.token,p.total,
-      coalesce((SELECT string_agg(surface,'' ORDER BY idx) FROM text_tokens
-        WHERE chapter_id=p.chapter_id AND sentence_idx=p.sentence AND idx BETWEEN p.token-32 AND p.token+32),'') context
-    FROM page p ORDER BY p.count DESC,p.word,p.id`);
+      GROUP BY word,id,kind,book
+    ), page AS (
+      SELECT word,id,kind,sum(count)::int count,count(*) OVER()::int total
+      FROM per_book GROUP BY word,id,kind
+      ORDER BY count DESC,word,id,kind LIMIT ${limit} OFFSET ${offset}
+    )
+    SELECT p.*, (SELECT pos FROM lemmas WHERE id=p.id) pos, jsonb_agg(jsonb_build_object(
+      'book',b.book,'chapter',b.chapter,'token',b.token,'count',b.count,'context',
+      (SELECT string_agg(surface,'' ORDER BY idx) FROM text_tokens
+       WHERE chapter_id=b.chapter_id AND idx BETWEEN b.token-32 AND b.token+32)
+    ) ORDER BY b.count DESC,b.book) samples
+    FROM page p JOIN per_book b ON b.word=p.word AND b.kind=p.kind AND b.id IS NOT DISTINCT FROM p.id
+    GROUP BY p.word,p.id,p.kind,p.count,p.total ORDER BY p.count DESC,p.word,p.id,p.kind`);
   return { rows: [...rows], total: rows[0]?.total ?? 0 };
 }

@@ -5,6 +5,8 @@ import {
   looksLikeNumberToken,
   paragraphsOfTokens,
   statusToCode,
+  withLemmaCorrection,
+  type ServerToken,
   tokenize,
 } from './types.js';
 
@@ -138,5 +140,20 @@ describe('statusToCode', () => {
       known: '4',
       ignored: '5',
     });
+  });
+});
+
+it('switches every sense-specific field when correcting a homograph', () => {
+  const token: ServerToken = {
+    id: 'token', idx: 0, surface: 'में', isWord: true, isAmbiguous: true, isOov: false,
+    lemmaId: 'noun', headword: 'में', pos: 'NOUN', glossDefault: 'bleat',
+    personalGloss: 'baa', status: 'known', features: {}, romanization: null, numberForms: null,
+    candidates: [{ lemmaId: 'adp', headword: 'में', pos: 'ADP', glossDefault: 'in',
+      score: 1, features: {}, status: 'learning' }],
+  };
+  const corrected = withLemmaCorrection(token, 'adp');
+  expect(corrected).toMatchObject({
+    lemmaId: 'adp', pos: 'ADP', glossDefault: 'in', status: 'learning', personalGloss: null,
+    correctedByViewer: true, candidates: [{ lemmaId: 'noun', personalGloss: 'baa' }],
   });
 });

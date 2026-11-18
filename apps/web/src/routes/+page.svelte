@@ -3,7 +3,7 @@
 
   Replaces the M0 diagnostic dashboard with the CIAR design's
   language-pick landing: hero copy + a card grid where each card
-  shows a supported language's native + Roman name, script, and the
+  shows a supported language's native and English names and the
   signed-in user's known-word count for that language. Clicking a
   card makes that language current (adding it to the user's list if
   needed) and opens the library — the site is split by language.
@@ -67,7 +67,6 @@
       >
         <div class="lc-native">{L.nativeName}</div>
         <div class="lc-en">{L.displayName}</div>
-        <div class="lc-meta">{L.script}</div>
         {#if data.user}
           <div class="lc-stats">
             <div class="lc-stat">
@@ -150,13 +149,6 @@
     font-family: var(--font-serif, var(--font-ui));
     font-size: 0.85rem;
     color: var(--ink-2, var(--color-fg));
-  }
-  .lc-meta {
-    font-size: 0.66rem;
-    color: var(--ink-4, var(--color-fg-subtle));
-    letter-spacing: 0.04em;
-    margin-top: 0.15rem;
-    text-transform: uppercase;
   }
   .lc-stats {
     margin-top: 1rem;

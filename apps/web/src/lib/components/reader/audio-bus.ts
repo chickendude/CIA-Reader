@@ -96,3 +96,10 @@ export function setAlignmentMap(map: Map<string, number>): void {
 export function getAlignmentStartMs(tokenId: string): number | null {
   return alignmentByTokenId.get(tokenId) ?? null;
 }
+
+export function seekAudioForToken(tokenId: string): void {
+  const startMs = getAlignmentStartMs(tokenId);
+  if (startMs == null || !controller) return;
+  controller.pause();
+  controller.seekMs(startMs);
+}

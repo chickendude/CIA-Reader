@@ -121,11 +121,11 @@ describe('groupTabsBySection', () => {
     expect(read!.tabs.map((t) => t.id)).toEqual(['library', 'upload', 'dictionary']);
   });
 
-  it("groups Words under 'Track' (T-10.6)", () => {
+  it("groups Words under 'Stats' (T-10.6)", () => {
     const groups = groupTabsBySection(visibleTabs(TABS, USER));
-    const track = groups.find((g) => g.section === 'Track');
-    expect(track).toBeDefined();
-    expect(track!.tabs.map((t) => t.id)).toEqual(['words']);
+    const stats = groups.find((g) => g.section === 'Stats');
+    expect(stats).toBeDefined();
+    expect(stats!.tabs.map((t) => t.id)).toEqual(['words']);
   });
 
   it("groups Profile under 'You'", () => {
@@ -140,9 +140,9 @@ describe('groupTabsBySection', () => {
     expect(you!.tabs.map((t) => t.id)).toEqual(['profile', 'moderation']);
   });
 
-  it('skips empty sections so signed-out users do not see a stray Track / You header', () => {
+  it('skips empty sections so signed-out users do not see a stray Stats / You header', () => {
     const groups = groupTabsBySection(visibleTabs(TABS, ANON));
-    expect(groups.find((g) => g.section === 'Track')).toBeUndefined();
+    expect(groups.find((g) => g.section === 'Stats')).toBeUndefined();
     expect(groups.find((g) => g.section === 'You')).toBeUndefined();
   });
 

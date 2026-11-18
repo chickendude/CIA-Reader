@@ -66,6 +66,7 @@
   };
 
   type LemmaPayload = {
+    studyStatus?: ServerToken['status'];
     canEdit?: boolean;
     lemma: {
       id: string;
@@ -318,6 +319,9 @@
   }
 
   let payload = $state<LemmaPayload | null>(null);
+  const displayedLemmaId = $derived(payload?.lemma.id ?? token?.lemmaId);
+  let lookupVersion = 0;
+  let loadingLookup = $state(false);
   let loadError = $state<string | null>(null);
   let showAlternates = $state(false);
   // T-6.2: opens the CorrectionModal layered on top of the popup.
@@ -362,6 +366,9 @@
   // instead of leaving the old one stuck.
   $effect(() => {
     const t = token;
+    const version = ++lookupVersion;
+    loadingLookup = false;
+    showAlternates = false;
     // Clear the reference panel whenever the popup rebinds to a different
     // word; the auto-load effect refetches for the new word. The active
     // tab is intentionally preserved across words.
@@ -397,15 +404,15 @@
     void (async () => {
       try {
         const res = await fetch(`/api/v1/lemmas/${t.lemmaId}/translations`);
-        if (cancelled) return;
+        if (cancelled || version !== lookupVersion) return;
         if (res.ok) {
           const next = (await res.json()) as LemmaPayload;
-          if (!cancelled) payload = next;
+          if (!cancelled && version === lookupVersion) payload = next;
         } else {
           loadError = `Could not load translations (${res.status})`;
         }
       } catch (e) {
-        if (!cancelled) {
+        if (!cancelled && version === lookupVersion) {
           loadError = `Network error: ${(e as Error).message}`;
         }
       }
@@ -635,27 +642,11 @@
       const data = (await res.json()) as { lemmas: InternalHit[] };
       // Drop stale responses if the field moved on.
       if (headwordInput.trim() !== term) return;
-      // The NLP + import create several lemma rows per word; collapse them to
-      // one entry per headword (preferring one that carries a gloss) so the
-      // list isn't 20 identical "egon"s.
-      const byHeadword = new Map<string, InternalHit>();
-      for (const l of data.lemmas) {
-        const existing = byHeadword.get(l.headword);
-        if (!existing || (!existing.glossDefault && l.glossDefault)) {
-          byHeadword.set(l.headword, l);
-        }
-      }
-      internalResults = [...byHeadword.values()].slice(0, 8);
-      // If the typed text exactly matches a dictionary headword, load its
-      // translations straight away: editing the headword should update the
-      // Translations panel, not just the suggestion list. Guarded on the
-      // lemma id so we don't refetch the entry that's already shown.
+      internalResults = data.lemmas.slice(0, 8);
       const wanted = term.normalize('NFC').toLowerCase();
-      const exact = [...byHeadword.values()].find(
-        (r) => r.headword.normalize('NFC').toLowerCase() === wanted,
-      );
-      if (exact && exact.id !== payload?.lemma.id) {
-        void loadLemmaTranslations(exact);
+      const exact = data.lemmas.filter((r) => r.headword.normalize('NFC').toLowerCase() === wanted);
+      if (exact.length === 1 && exact[0]!.id !== displayedLemmaId) {
+        void loadLemmaTranslations(exact[0]!);
       }
     } catch {
       /* internal search is a convenience — ignore failures */
@@ -685,13 +676,21 @@
   // Load a dictionary lemma's full translations into the normal Translations
   // section. Shared by the click handler and the type-an-exact-match path.
   async function loadLemmaTranslations(hit: InternalHit): Promise<void> {
+    const version = ++lookupVersion;
+    loadingLookup = true;
     loadError = null;
     try {
-      const res = await fetch(`/api/v1/lemmas/${hit.id}/translations`);
-      if (res.ok) payload = (await res.json()) as LemmaPayload;
-      else loadError = `Could not load translations (${res.status})`;
+      const res = await fetch(`/api/v1/lemmas/${hit.id}/translations?studyStatus=1`);
+      if (!res.ok) throw new Error(`Could not load translations (${res.status})`);
+      const next = (await res.json()) as LemmaPayload;
+      if (version !== lookupVersion) return;
+      payload = next;
+      optimisticStatus = next.studyStatus ?? 'unknown';
+      writeError = null;
     } catch (e) {
-      loadError = `Network error: ${(e as Error).message}`;
+      if (version === lookupVersion) loadError = (e as Error).message;
+    } finally {
+      if (version === lookupVersion) loadingLookup = false;
     }
   }
 
@@ -1007,12 +1006,12 @@
       onPhraseCreated?.(phraseId);
       return;
     }
-    if (!token || !token.lemmaId) throw new Error('Missing lemma id');
+    if (!displayedLemmaId) throw new Error('Missing lemma id');
     const res = await fetch('/api/v1/translations', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
-        lemmaId: token.lemmaId,
+        lemmaId: displayedLemmaId,
         body,
         targetLanguage: 'en',
         parentTranslationId: null,
@@ -1035,7 +1034,9 @@
   async function refetchPayload(lemmaId: string) {
     const fresh = await fetch(`/api/v1/lemmas/${lemmaId}/translations`);
     if (fresh.ok) {
-      payload = (await fresh.json()) as LemmaPayload;
+      const next = (await fresh.json()) as LemmaPayload;
+      if (displayedLemmaId === lemmaId) payload = next;
+      return next;
     }
   }
 
@@ -1043,10 +1044,9 @@
   // editing / deleting a personal translation needs to push the new
   // primary body up to the parent. The "primary" matches the loader's
   // pick: the oldest personal row (which the popup also lists first).
-  function notifyPersonalChange() {
-    if (!token?.lemmaId) return;
-    const next = payload?.translations.personal[0]?.body ?? null;
-    onPersonalTranslationChange?.(token.lemmaId, next);
+  async function refreshPersonalGloss(lemmaId: string) {
+    const fresh = await refetchPayload(lemmaId);
+    if (fresh) onPersonalTranslationChange?.(lemmaId, fresh.translations.personal[0]?.body ?? null);
   }
 
   function startEditPrimary() {
@@ -1062,13 +1062,13 @@
   }
 
   async function submitPrimary() {
-    if (!token?.lemmaId) return;
+    if (!displayedLemmaId) return;
     const trimmed = primaryBody.trim();
     if (trimmed.length === 0) {
       cancelEditPrimary();
       return;
     }
-    const lemmaId = token.lemmaId;
+    const lemmaId = displayedLemmaId;
     const existing = payload?.translations.personal[0] ?? null;
     savingPrimary = true;
     primaryError = null;
@@ -1087,10 +1087,9 @@
       } else {
         await postTranslation(trimmed);
       }
-      await refetchPayload(lemmaId);
+      await refreshPersonalGloss(lemmaId);
       editingPrimary = false;
       primaryBody = '';
-      notifyPersonalChange();
     } catch (e) {
       const err = e as Partial<PostError> & Error;
       primaryError = err.message ?? `Network error: ${(e as Error).message}`;
@@ -1186,13 +1185,13 @@
   }
 
   async function submitEditPersonal() {
-    if (!editingId || !token?.lemmaId) return;
+    if (!editingId || !displayedLemmaId) return;
     const trimmed = editBody.trim();
     if (trimmed.length === 0) {
       editError = 'Translation cannot be empty.';
       return;
     }
-    const lemmaId = token.lemmaId;
+    const lemmaId = displayedLemmaId;
     const id = editingId;
     savingEdit = true;
     editError = null;
@@ -1207,10 +1206,9 @@
         editError = text || `Could not save (${res.status})`;
         return;
       }
-      await refetchPayload(lemmaId);
+      await refreshPersonalGloss(lemmaId);
       editingId = null;
       editBody = '';
-      notifyPersonalChange();
     } catch (e) {
       editError = `Network error: ${(e as Error).message}`;
     } finally {
@@ -1241,14 +1239,14 @@
   }
 
   async function deletePersonal(t: PublicTranslation) {
-    if (!token?.lemmaId) return;
+    if (!displayedLemmaId) return;
     if (
       typeof window !== 'undefined' &&
       !window.confirm('Delete this translation?')
     ) {
       return;
     }
-    const lemmaId = token.lemmaId;
+    const lemmaId = displayedLemmaId;
     deletingId = t.id;
     deleteError = null;
     try {
@@ -1260,8 +1258,7 @@
         deleteError = text || `Could not delete (${res.status})`;
         return;
       }
-      await refetchPayload(lemmaId);
-      notifyPersonalChange();
+      await refreshPersonalGloss(lemmaId);
     } catch (e) {
       deleteError = `Network error: ${(e as Error).message}`;
     } finally {
@@ -1273,7 +1270,7 @@
     translation: PublicTranslation,
     vote: 'up' | 'down',
   ) {
-    if (!token?.lemmaId) return;
+    if (!displayedLemmaId) return;
     const nextVote = translation.viewerVote === vote ? null : vote;
     votingTranslationId = translation.id;
     voteError = null;
@@ -1287,7 +1284,7 @@
         const text = await res.text().catch(() => '');
         throw new Error(text || `PATCH failed: ${res.status}`);
       }
-      await refetchPayload(token.lemmaId);
+      await refetchPayload(displayedLemmaId);
     } catch (e) {
       voteError = (e as Error).message;
     } finally {
@@ -1299,7 +1296,7 @@
   // showing hidden rows to admins (struck-through) so the action is reversible;
   // regular readers stop seeing the row entirely once it's hidden.
   async function toggleHideTranslation(translation: PublicTranslation) {
-    if (!token?.lemmaId) return;
+    if (!displayedLemmaId) return;
     const nextHidden = !translation.hidden;
     hidingTranslationId = translation.id;
     hideError = null;
@@ -1319,7 +1316,7 @@
         const text = await res.text().catch(() => '');
         throw new Error(text || `PATCH failed: ${res.status}`);
       }
-      await refetchPayload(token.lemmaId);
+      await refetchPayload(displayedLemmaId);
     } catch (e) {
       hideError = (e as Error).message;
     } finally {
@@ -1398,8 +1395,8 @@
   async function markStatus(
     status: 'unknown' | 'learning' | 'known' | 'ignored',
   ) {
-    if (!token || !token.lemmaId) return;
-    const lemmaId = token.lemmaId;
+    if (!token || !displayedLemmaId || loadingLookup) return;
+    const lemmaId = displayedLemmaId;
     const previous = optimisticStatus;
     optimisticStatus = status;
     writeError = null;
@@ -1418,6 +1415,7 @@
       }
       onStatusChange?.(lemmaId, status);
     } catch (e) {
+      if (displayedLemmaId !== lemmaId) return;
       optimisticStatus = previous;
       writeError = (e as Error).message;
     }
@@ -1561,6 +1559,7 @@
         <div class="sp-status" role="group" aria-label="Mark status">
           <button
             type="button"
+            disabled={loadingLookup}
             data-active={optimisticStatus === 'learning' ? '1' : '0'}
             onclick={() => markStatus('learning')}
           >
@@ -1568,6 +1567,7 @@
           </button>
           <button
             type="button"
+            disabled={loadingLookup}
             data-active={optimisticStatus === 'known' ? '1' : '0'}
             onclick={() => markStatus('known')}
           >
@@ -1575,6 +1575,7 @@
           </button>
           <button
             type="button"
+            disabled={loadingLookup}
             data-active={optimisticStatus === 'ignored' ? '1' : '0'}
             onclick={() => markStatus('ignored')}
           >
@@ -2316,11 +2317,15 @@
     {/if}
 
     {#if isDesktop && language === 'hi' && token.candidates.length > 0}
-      <div class="hindi-candidates" data-testid="hindi-candidates">
-        {#each token.candidates as candidate (candidate.lemmaId)}
-          <HindiCandidateCard {candidate} {token} {textId} {isOwner} {onStatusChange} />
-        {/each}
-      </div>
+      <button class="alt-toggle" type="button" aria-expanded={showAlternates}
+        onclick={() => showAlternates = !showAlternates}>Other dictionary entries ({token.candidates.length})</button>
+      {#if showAlternates}
+        <div class="hindi-candidates" data-testid="hindi-candidates">
+          {#each token.candidates as candidate (candidate.lemmaId)}
+            <HindiCandidateCard {candidate} {token} {textId} {isOwner} {onStatusChange} />
+          {/each}
+        </div>
+      {/if}
     {:else if isDesktop && token.isAmbiguous && token.candidates.length > 0}
       <button
         type="button"

@@ -41,6 +41,8 @@
   latin-rules interfering.
 -->
 <script lang="ts">
+  import Button from './Button.svelte';
+  import TextField from './TextField.svelte';
   import { untrack } from 'svelte';
   import { LANGUAGES, type LanguageCode } from '@ciareader/shared-types';
   import { latinToNative, looksLikeNativeScript, nfc } from './transliterate.js';
@@ -90,15 +92,7 @@
   // mode it equals the native-script value. In romanization mode it
   // is the user's latin draft and `nativePreview` carries the
   // transliterated render.
-  let text: string = $state(
-    untrack(() =>
-      mode === 'native'
-        ? nfc(value)
-        : value && looksLikeNativeScript(value, language)
-          ? nfc(value)
-          : '',
-    ),
-  );
+  let text = $state(untrack(() => nfc(value)));
   // Romanization-mode shadow render.
   const nativePreview = $derived(
     mode === 'romanization' ? nfc(transliterate(language, text)) : '',
@@ -109,8 +103,7 @@
     onNativeChange?.(nfc(native));
   }
 
-  function onInput(e: Event) {
-    const t = (e.target as HTMLInputElement).value;
+  function updateText(t: string) {
     text = t;
     if (composing) return;
     if (mode === 'native') {
@@ -133,7 +126,7 @@
   }
   function onCompositionEnd(e: CompositionEvent) {
     composing = false;
-    onInput(e);
+    updateText((e.target as HTMLInputElement).value);
   }
 
   function onPaste(e: ClipboardEvent) {
@@ -171,7 +164,7 @@
 </script>
 
 <div class="sai" data-mode={mode} data-language={language}>
-  <input
+  <TextField
     {id}
     {name}
     {placeholder}
@@ -182,8 +175,7 @@
     spellcheck="false"
     lang={language}
     dir="auto"
-    value={text}
-    oninput={onInput}
+    bind:value={() => text, updateText}
     oncompositionstart={onCompositionStart}
     oncompositionend={onCompositionEnd}
     onpaste={onPaste}
@@ -196,9 +188,9 @@
     </p>
   {/if}
   {#if !hideToggle}
-    <button
+    <Button
       type="button"
-      class="sai-toggle"
+      variant="toggle"
       onclick={toggleMode}
       aria-pressed={mode === 'native'}
       aria-label="Toggle native / romanization input"
@@ -217,42 +209,17 @@
             : langInfo.script === 'Hebr'
               ? 'ייִ'
               : 'A'}
-    </button>
+    </Button>
   {/if}
 </div>
 
 <style>
   .sai {
     display: grid;
-    grid-template-columns: 1fr auto;
+    grid-template-columns: minmax(0, 1fr) auto;
+    font: 0.95rem var(--font-serif-dev, var(--font-serif));
     gap: 0.4rem;
     align-items: center;
-  }
-  .sai input {
-    width: 100%;
-    padding: 0.45rem 0.6rem;
-    border: 1px solid var(--card-edge, var(--color-border));
-    border-radius: 6px;
-    background: var(--card, var(--color-bg));
-    color: var(--ink, var(--color-fg));
-    font-size: 0.95rem;
-    font-family: var(--font-serif-dev, var(--font-serif));
-  }
-  .sai input:focus {
-    outline: 2px solid var(--accent, var(--color-accent));
-    outline-offset: 1px;
-  }
-  .sai-toggle {
-    background: transparent;
-    border: 1px solid var(--rule, var(--color-border));
-    border-radius: 6px;
-    padding: 0.4rem 0.6rem;
-    font-family: var(--font-serif-dev, var(--font-serif));
-    color: var(--ink-2, var(--color-fg));
-    cursor: pointer;
-  }
-  .sai-toggle[aria-pressed='true'] {
-    background: var(--accent-soft, color-mix(in oklch, var(--accent, var(--color-accent)) 18%, transparent));
   }
   .sai-preview {
     grid-column: 1 / -1;

@@ -1,14 +1,44 @@
 <script lang="ts">
+  import Pagination from '$lib/components/input/Pagination.svelte';
+  import '$lib/styles/entry-table.css';
+  import { afterNavigate, beforeNavigate, goto } from '$app/navigation';
+  import { onDestroy } from 'svelte';
+  import Button from '$lib/components/input/Button.svelte';
   import { patternLabel } from '$lib/dictionary/hindi-patterns.js';
   import EditableDefinition from '$lib/components/reader/EditableDefinition.svelte';
   import ScriptAwareInput from '$lib/components/input/ScriptAwareInput.svelte';
   import type { PageData } from './$types';
   let { data }: { data: PageData } = $props();
 
-  const pageNum = $derived(Math.floor(data.offset / data.limit) + 1);
-  const totalPages = $derived(Math.max(1, Math.ceil(data.totalCount / data.limit)));
-  const prevOffset = $derived(Math.max(0, data.offset - data.limit));
-  const nextOffset = $derived(data.offset + data.limit);
+
+  let searchForm: HTMLFormElement;
+  let timer: ReturnType<typeof setTimeout>;
+  let inputKey = $state(0);
+  beforeNavigate(({ type }) => {
+    if (type === 'popstate' || type === 'link') clearTimeout(timer);
+  });
+  afterNavigate(({ type }) => {
+    if (type === 'popstate' || type === 'link') inputKey++;
+  });
+  onDestroy(() => clearTimeout(timer));
+
+  function search() {
+    clearTimeout(timer);
+    const params = new URLSearchParams();
+    for (const [name, value] of new FormData(searchForm)) {
+      if (typeof value === 'string' && value.trim()) params.append(name, value.trim());
+    }
+    void goto(`/dictionary/${data.language.code}?${params}`, {
+      replaceState: true,
+      keepFocus: true,
+      noScroll: true,
+    });
+  }
+
+  function queueSearch() {
+    clearTimeout(timer);
+    timer = setTimeout(search, 200);
+  }
 
   function hrefWith(offset: number): string {
     const params = new URLSearchParams();
@@ -20,78 +50,79 @@
     if (offset > 0) params.set('offset', String(offset));
     if (data.limit !== 50) params.set('limit', String(data.limit));
     const qs = params.toString();
-    return qs ? `?${qs}` : '';
+    return qs ? `?${qs}` : `/dictionary/${data.language.code}`;
   }
 </script>
 
 <svelte:head>
-  <title>{data.language.displayName} dictionary | Parhiba</title>
+  <title>{data.language.nativeDictionaryTitle} | {data.language.displayName} Dictionary | Parhiba</title>
   <meta
     name="description"
-    content="Browse {data.language.displayName} lemmas, glosses, and translations in CIA Reader."
+    content="Browse {data.language.displayName} lemmas, glosses, and translations in Parhiba."
   />
 </svelte:head>
 
 <div class="page" dir={data.language.textDirection}>
-  <header>
-    <h1 class="page-title">
-      {data.language.nativeName}
-      <span class="muted">{data.language.displayName} dictionary</span>
-    </h1>
-    <p class="sub">
-      {data.totalCount.toLocaleString()} lemmas indexed
-      {#if data.query.q} matching <strong>{data.query.q}</strong>{/if}
-    </p>
-  </header>
-  {#if data.user?.role === 'admin' || data.user?.role === 'curator'}
-    <nav aria-label="Dictionary staff tools">
-      {#if data.canEdit}<a href={data.language.code==='hi'?'/moderation/hindi/workshop':`/moderation/dictionary?language=${data.language.code}`}>Edit dictionary</a>{/if}
-      {#if data.language.code === 'hi'} <a href="/moderation/hindi">Unparsed words and context review</a>{/if}
+  <header class="toolbar">
+    <div>
+      <h1 class="page-title" dir="ltr">
+        <bdi lang={data.language.code} dir={data.language.textDirection}>{data.language.nativeDictionaryTitle}</bdi>
+        <span lang="en">{data.language.displayName} Dictionary</span>
+      </h1>
+      <p class="entry-count muted" lang="en" dir="ltr">
+        {data.totalCount.toLocaleString('en-US')} {data.totalCount === 1 ? 'entry' : 'entries'}
+      </p>
+    </div>
+    <nav class="actions" aria-label="Dictionary tools">
+      {#if data.canEdit}
+        <Button
+          href={data.language.code === 'hi'
+            ? '/moderation/hindi/workshop?view=entries'
+            : `/moderation/dictionary?language=${data.language.code}`}>Edit dictionary</Button
+        >
+        {#if data.language.code === 'hi'}
+          <Button variant="primary" href="/dictionary/hi/review">Review unparsed words</Button>
+        {/if}
+      {:else if data.language.code === 'hi' && data.user?.role === 'curator'}
+        <Button href="/moderation/hindi">Review book context</Button>
+      {/if}
     </nav>
-  {/if}
-
-  <form method="get" class="search" data-testid="dictionary-search-form">
-    <!-- T-3.12: ScriptAwareInput renders an `<input name="q">` whose
-         value flows through the form-GET unchanged. The user can type
-         in either the native script directly OR in ITRANS-flavored
-         Latin (`kitaab`); the server-side transliterator in
-         `listDictionaryLemmas` handles the Latin → native step. -->
-    <ScriptAwareInput
-      language={data.language.code}
-      name="q"
-      value={data.query.q}
-      placeholder="Type a headword in {data.language.nativeName} or in Latin (e.g. kitaab)…"
-    />
-    <label class="checkbox">
+  </header>
+  <form
+    method="get"
+    class="toolbar"
+    role="search"
+    data-testid="dictionary-search-form"
+    bind:this={searchForm}
+    onsubmit={(event) => {
+      event.preventDefault();
+      search();
+    }}
+  >
+    <label class="official-filter">
       <input
         type="checkbox"
         name="hasOfficialTranslation"
         value="true"
         checked={data.query.hasOfficialTranslation}
+        onchange={search}
       />
-      Only lemmas with an official translation
+      With dictionary or curator definitions
     </label>
-    <!-- T-3.12: audio-example filter is on the original T-3.6 spec but
-         the schema doesn't yet model audio examples — that lands with
-         M9 (#82). Render the affordance disabled with a tooltip so the
-         filter shape is visible to users and we don't add a "where
-         did the filter go?" surprise when M9 finally ships. -->
-    <label
-      class="checkbox checkbox-disabled"
-      title="Available once audio examples ship in M9."
-      data-testid="audio-filter-stub"
-    >
-      <input
-        type="checkbox"
-        name="hasAudioExample"
-        value="true"
-        disabled
-        aria-disabled="true"
-      />
-      Only lemmas with an audio example
-      <span class="muted">(coming in M9)</span>
-    </label>
-    <button type="submit">Search</button>
+    {#each data.query.pos as pos}<input type="hidden" name="pos" value={pos} />{/each}
+    {#if data.limit !== 50}<input type="hidden" name="limit" value={data.limit} />{/if}
+    <div class="search-fields">
+      {#key data.language.code + inputKey}
+        <ScriptAwareInput
+          language={data.language.code}
+          name="q"
+          value={data.query.q}
+          placeholder={`Search ${data.language.displayName} words`}
+          onNativeChange={queueSearch}
+        />
+      {/key}
+      <Button type="submit">Search</Button>
+    </div>
   </form>
 
   {#if data.usedRomanizationTransliteration}
@@ -109,140 +140,157 @@
   {#if data.usedNuktaFallback}
     <!--
       #318: Nukta-agnostic fallback fired. Tell the user the strict
-      match missed and we found these by ignoring nuktas — `ज़रा` and
+      match missed and we found these by ignoring nuktas. `ज़रा` and
       `जरा` collapse to the same key, so the user might be looking at
       a different word than they typed.
     -->
     <p class="nukta-fallback" role="status">
-      No exact matches for <strong>{data.query.q}</strong>. Showing
-      nukta-agnostic results.
+      No exact matches for <strong>{data.query.q}</strong>. Showing nukta-agnostic results.
     </p>
   {/if}
 
   {#if data.lemmas.length === 0}
-    <p class="empty">No lemmas match.</p>
+    <p class="empty">No entries match.</p>
   {:else}
-    <ol class="lemmas">
-      {#each data.lemmas as lemma (lemma.id)}
-        {@const definitionId = data.definitionIds[lemma.id]}
-        <li>
-          <div class="row">
-            <span class="headword">{lemma.headword}</span>
-            <span class="pos">{lemma.pos}</span>
-            {#if lemma.frequencyRank != null}
-              <span class="rank muted">#{lemma.frequencyRank}</span>
-            {/if}
-          </div>
-          {#if data.canEdit && definitionId}
-            <EditableDefinition text={lemma.glossDefault ?? ''} translationId={definitionId}
-              lemmaId={lemma.id} canEdit />
-          {:else if lemma.glossDefault}
-            <div class="gloss">{lemma.glossDefault}</div>
-          {/if}
-          <div class="entry-tools">
-            {#if data.language.code === 'hi'}
-              <span>{patternLabel(data.patterns[lemma.id] ?? 'invariant')}</span>
-            {:else if lemma.sourceAttribution}
-              <span>Source: {lemma.sourceAttribution}</span>
-            {/if}
-            {#if data.canEdit}
-              <a href={data.language.code==='hi'?`/moderation/hindi/workshop?id=${lemma.id}`:`/moderation/dictionary/${lemma.id}`}>Edit entry</a>
-              {#if data.language.code === 'hi'}
-                <a href={`/moderation/hindi/workshop?id=${lemma.id}#inflection`}>Edit inflection</a>
+    <div class="entry-table-wrap">
+      <table class="entry-table" aria-label="Dictionary entries">
+        <thead
+          ><tr
+            ><th>Word</th><th>POS</th><th>Definition</th><th
+              >{data.language.code === 'hi' ? 'Inflection' : 'Source'}</th
+            >
+            {#if data.canEdit}<th>Edit</th>{/if}
+          </tr></thead
+        >
+        <tbody>
+          {#each data.lemmas as lemma (lemma.id)}
+            {@const definitionId = data.definitionIds[lemma.id]}
+            <tr>
+              <td class="word" lang={data.language.code}
+                >{lemma.headword}
+                {#if lemma.frequencyRank != null}<small title="Frequency rank"
+                    >#{lemma.frequencyRank}</small
+                  >{/if}
+              </td>
+              <td class="pos">{lemma.pos.toLowerCase()}</td>
+              <td class="definition">
+                {#if data.canEdit && definitionId}
+                  <EditableDefinition
+                    text={lemma.glossDefault ?? ''}
+                    translationId={definitionId}
+                    lemmaId={lemma.id}
+                    canEdit
+                  />
+                {:else}{lemma.glossDefault ?? ''}{/if}
+              </td>
+              <td class="detail"
+                >{data.language.code === 'hi'
+                  ? patternLabel(data.patterns[lemma.id] ?? 'invariant')
+                  : (lemma.sourceAttribution ?? '')}</td
+              >
+              {#if data.canEdit}
+                <td class="edit"
+                  ><a
+                    href={data.language.code === 'hi'
+                      ? `/moderation/hindi/workshop?id=${lemma.id}`
+                      : `/moderation/dictionary/${lemma.id}`}>Edit entry</a
+                  >
+                  {#if data.language.code === 'hi'}<a
+                      href={`/moderation/hindi/workshop?id=${lemma.id}#inflection`}
+                      >Edit inflection</a
+                    >{/if}
+                </td>
               {/if}
-            {/if}
-          </div>
-        </li>
-      {/each}
-    </ol>
+            </tr>
+          {/each}
+        </tbody>
+      </table>
+    </div>
 
-    <nav class="pager" aria-label="Pagination">
-      {#if data.offset > 0}
-        <a rel="prev" href={hrefWith(prevOffset)}>← Previous</a>
-      {:else}
-        <span class="muted">← Previous</span>
-      {/if}
-      <span class="muted">Page {pageNum} of {totalPages}</span>
-      {#if nextOffset < data.totalCount}
-        <a rel="next" href={hrefWith(nextOffset)}>Next →</a>
-      {:else}
-        <span class="muted">Next →</span>
-      {/if}
-    </nav>
   {/if}
+  <Pagination offset={data.offset} limit={data.limit} total={data.totalCount} hrefFor={hrefWith} />
 </div>
 
 <style>
-  .sub {
-    margin: 0 0 1.5rem;
-    color: var(--color-fg-muted);
-    font-size: 0.95rem;
+  .entry-count {
+    margin: 0.25rem 0 0;
+    font-size: 0.85rem;
   }
-  .muted {
-    color: var(--color-fg-muted);
-  }
-  .search {
-    display: grid;
+  .toolbar,
+  .actions,
+  .search-fields,
+  .official-filter {
+    display: flex;
+    flex-wrap: wrap;
     gap: 0.5rem;
-    grid-template-columns: 1fr auto;
-    align-items: center;
-    margin-bottom: 1.25rem;
-  }
-  .search .checkbox {
-    grid-column: 1 / 2;
-    font-size: 0.9rem;
-    color: var(--color-fg-muted);
-    display: flex;
-    gap: 0.4rem;
     align-items: center;
   }
-  .search button {
-    grid-column: 2 / 3;
-    grid-row: 1 / 2;
-    min-height: 44px;
-    padding: 0 1rem;
-    font: inherit;
-    background: var(--color-accent);
-    color: var(--color-accent-fg, #fff);
-    border: 0;
-    border-radius: 6px;
-    cursor: pointer;
-  }
-  .lemmas {
-    list-style: none;
-    padding: 0;
-    margin: 0;
-  }
-  .lemmas li {
-    padding: 0.75rem 0;
-    border-bottom: 1px solid var(--color-border);
-  }
-  .row {
-    display: flex;
-    align-items: baseline;
+  .toolbar {
+    justify-content: space-between;
+    margin-bottom: 1rem;
     gap: 0.75rem;
   }
-  .headword {
-    font-size: 1.2rem;
-    font-weight: 500;
+  .official-filter,
+  .detail,
+  .pos,
+  .muted,
+  small {
+    color: var(--ink-2);
+  }
+  .official-filter {
+    font-size: 0.85rem;
+    cursor: pointer;
+  }
+  .word {
+    font: 1.1rem var(--font-serif-dev, var(--font-serif));
+    width: 22%;
+  }
+  small {
+    font: 0.75rem var(--font-ui);
   }
   .pos {
-    font-size: 0.85rem;
-    color: var(--color-fg-muted);
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
+    width: 8%;
   }
-  .rank {
-    font-size: 0.8rem;
+  .detail {
+    width: 16%;
   }
-  .gloss {
-    margin-top: 0.25rem;
-    color: var(--color-fg);
+  .edit {
+    width: 12%;
   }
-  .entry-tools, nav[aria-label="Dictionary staff tools"] {
-    display: flex; flex-wrap: wrap; gap: .75rem;
-    margin-top: 0.15rem;
-    font-size: 0.8rem;
+  .edit a {
+    display: block;
+  }
+  @media (max-width: 639px) {
+    .entry-table thead {
+      position: absolute;
+      clip-path: inset(50%);
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+    }
+    .entry-table tbody tr {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 0.25rem 0.75rem;
+      padding: 0.75rem;
+    }
+    .entry-table tbody tr + tr {
+      border-top: 1px solid var(--rule);
+    }
+    .entry-table tbody td {
+      width: auto;
+      border: 0;
+      padding: 0;
+    }
+    .definition,
+    .detail,
+    .edit {
+      grid-column: 1 / -1;
+    }
+    .edit a {
+      display: inline-block;
+      margin-inline-end: 0.75rem;
+    }
   }
   .empty {
     margin: 2rem 0;
@@ -257,23 +305,5 @@
     color: var(--color-info-fg, var(--color-fg));
     border-left: 3px solid var(--color-accent);
     font-size: 0.9rem;
-  }
-  .checkbox-disabled {
-    opacity: 0.55;
-    cursor: not-allowed;
-  }
-  .checkbox-disabled input {
-    cursor: not-allowed;
-  }
-  .pager {
-    display: flex;
-    justify-content: space-between;
-    gap: 1rem;
-    margin-top: 1.5rem;
-    padding-top: 1rem;
-    border-top: 1px solid var(--color-border);
-  }
-  .pager a {
-    color: var(--color-accent);
   }
 </style>

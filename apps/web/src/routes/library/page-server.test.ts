@@ -38,7 +38,6 @@ vi.mock('$lib/server/collections.js', () => ({
   listOfficialCollections: (...a: unknown[]) => listOfficialCollections(...a),
 }));
 
-type LoadFn = (typeof import('./+page.server.js'))['load'];
 const USER = { id: 'user-1', role: 'user' as const };
 
 async function callLoad(
@@ -46,15 +45,19 @@ async function callLoad(
   user: typeof USER | null = USER,
   currentLanguage: string | null = 'hi',
 ) {
-  const { load } = await import('./+page.server.js');
   const event = {
     locals: { user },
     url: new URL(url),
     // #436: the library scopes to the layout's resolved current language.
     parent: async () => ({ currentLanguage }),
-  } as unknown as Parameters<LoadFn>[0];
+  };
   try {
-    return await load(event);
+    if (event.url.pathname === '/library/all') {
+      const { load } = await import('./all/+page.server.js');
+      return await load(event as unknown as Parameters<typeof load>[0]);
+    }
+    const { load } = await import('./+page.server.js');
+    return await load(event as unknown as Parameters<typeof load>[0]);
   } catch (e) {
     return e as { status: number; location?: string };
   }
@@ -92,7 +95,23 @@ describe('/library loader', () => {
     };
     expect(data.tab).toBe('your');
     expect(data.page.totalCount).toBe(1);
-    expect(listPersonalLibrary).toHaveBeenCalled();
+    expect(listPersonalLibrary).toHaveBeenCalledWith(
+      { id: USER.id }, expect.objectContaining({ limit: 10, offset: 0 }),
+    );
+  });
+
+  it('searches all personal books in the current language before pagination', async () => {
+    listPersonalLibrary.mockResolvedValueOnce({ cards: [], totalCount: 24, limit: 10, offset: 10 });
+    await callLoad('http://x/library/all?q=Test+Book&offset=10');
+    expect(listPersonalLibrary).toHaveBeenCalledWith(
+      { id: USER.id }, { query: 'Test Book', language: 'hi', limit: 10, offset: 10 },
+    );
+  });
+
+  it('returns to the last available page after its final book is removed', async () => {
+    listPersonalLibrary.mockResolvedValueOnce({ cards: [], totalCount: 10, limit: 10, offset: 10 });
+    expect(await callLoad('http://x/library/all?q=book&offset=10'))
+      .toMatchObject({ status: 303, location: '/library/all?q=book' });
   });
 
   it("defaults to the 'official' tab for an anonymous visitor", async () => {
@@ -105,6 +124,24 @@ describe('/library loader', () => {
     const data = (await callLoad('http://x/library', null)) as { tab: string };
     expect(data.tab).toBe('official');
     expect(listOfficialTexts).toHaveBeenCalled();
+  });
+
+  it('counts official chapter books and standalone texts in the same page', async () => {
+    listOfficialCollections.mockResolvedValue([
+      { collection: { id: 'book', kind: 'chapter_book' }, textCount: 2 },
+    ]);
+    listOfficialTexts.mockResolvedValue({ cards: [{ id: 't1' }, { id: 't2' }], totalCount: 3 });
+    expect(await callLoad('http://x/library?tab=official&limit=2', null)).toMatchObject({
+      chapterBookCards: [{ id: 'book' }],
+      page: { cards: [{ id: 't1' }], totalCount: 4, limit: 2, offset: 0 },
+    });
+
+    listOfficialTexts.mockResolvedValue({ cards: [{ id: 't2' }, { id: 't3' }], totalCount: 3 });
+    expect(await callLoad('http://x/library?tab=official&limit=2&offset=2', null)).toMatchObject({
+      chapterBookCards: [],
+      page: { cards: [{ id: 't2' }, { id: 't3' }], totalCount: 4 },
+    });
+    expect(listOfficialTexts).toHaveBeenLastCalledWith({ limit: 2, offset: 1, language: 'hi' });
   });
 
   it("redirects an anonymous visitor asking for the 'your' tab", async () => {
@@ -128,7 +165,9 @@ describe('/library loader', () => {
       tab: string;
     };
     expect(data.tab).toBe('shared');
-    expect(listSharedTexts).toHaveBeenCalled();
+    expect(listSharedTexts).toHaveBeenCalledWith(
+      { id: USER.id }, expect.objectContaining({ language: 'hi' }),
+    );
   });
 
   it('scopes the listing to the current language (#436)', async () => {

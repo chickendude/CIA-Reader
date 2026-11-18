@@ -1,4 +1,6 @@
 <script lang="ts">
+  import Button from '$lib/components/input/Button.svelte';
+  import TextField from '$lib/components/input/TextField.svelte';
   import { ankiConnect, rememberAnkiConnection } from '$lib/anki-connect';
   import { untrack } from 'svelte';
   import type { PageData } from './$types';
@@ -106,26 +108,24 @@
 
     <label class="deck">
       <span>Deck name</span>
-      <input bind:value={deckName} aria-label="Deck name" />
+      <TextField bind:value={deckName} aria-label="Deck name" />
     </label>
 
     <div class="actions">
-      <a
-        class="btn"
-        class:disabled={data.cards.length === 0}
+      <Button
+        disabled={data.cards.length === 0}
         href={downloadHref}
         download
-        aria-disabled={data.cards.length === 0}
       >
         Download .apkg
-      </a>
-      <button
-        class="btn primary"
+      </Button>
+      <Button
+        variant="primary"
         onclick={sendToAnki}
         disabled={sending || data.cards.length === 0}
       >
         {sending ? 'Sending…' : 'Send to Anki'}
-      </button>
+      </Button>
     </div>
 
     {#if sendMsg}<p class="ok" role="status">{sendMsg}</p>{/if}
@@ -178,40 +178,11 @@
     font-size: 0.85rem;
     color: var(--color-fg-muted);
   }
-  .deck input {
-    padding: 0.4rem 0.55rem;
-    font: inherit;
-    color: var(--color-fg);
-    background: var(--color-bg);
-    border: 1px solid var(--color-border);
-    border-radius: 6px;
-  }
   .actions {
     display: flex;
     gap: 0.6rem;
     margin-bottom: 0.75rem;
     flex-wrap: wrap;
-  }
-  .btn {
-    padding: 0.4rem 0.9rem;
-    font: inherit;
-    font-size: 0.9rem;
-    color: var(--color-fg);
-    background: var(--color-bg);
-    border: 1px solid var(--color-border);
-    border-radius: 7px;
-    cursor: pointer;
-    text-decoration: none;
-    display: inline-block;
-  }
-  .btn.primary {
-    border-color: color-mix(in oklch, var(--color-accent) 40%, var(--color-border));
-    background: color-mix(in oklch, var(--color-accent) 14%, var(--color-bg));
-  }
-  .btn.disabled,
-  .btn:disabled {
-    opacity: 0.5;
-    pointer-events: none;
   }
   .ok {
     color: var(--color-fg);

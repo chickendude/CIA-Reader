@@ -76,7 +76,7 @@ describe('cardBackHtml', () => {
 });
 
 describe('getAnkiCards (language-wide path)', () => {
-  it('builds cards, preferring the personal gloss over the default', async () => {
+  it('builds cards with the resolved vocabulary definition', async () => {
     queue = [
       // learning lemmas
       [
@@ -91,12 +91,10 @@ describe('getAnkiCards (language-wide path)', () => {
           lemmaId: 'l2',
           headword: 'ur',
           pos: 'NOUN',
-          glossDefault: 'water',
+          glossDefault: 'agua (my note)',
           minedSentence: null,
         },
       ],
-      // personal glosses
-      [{ lemmaId: 'l2', body: 'agua (my note)' }],
     ];
     const { language, cards } = await getAnkiCards('user-1', { language: 'eu' });
     expect(language).toBe('eu');

@@ -40,6 +40,7 @@ export const STATS_DEFAULT_PAGE_SIZE = 50;
 export const STATS_MAX_PAGE_SIZE = 100;
 
 export type StatsPageOptions = {
+  includeNextRow?: boolean;
   limit?: number;
   offset?: number;
 };
@@ -327,8 +328,8 @@ export async function listTextStats(
       WHERE tx.owner_id = ${userId}
         AND tx.language = ${language}
       GROUP BY tx.id, tx.title, tx.language
-      ORDER BY tx.created_at DESC
-      LIMIT ${limit}
+      ORDER BY tx.created_at DESC, tx.id
+      LIMIT ${opts.includeNextRow ? limit + 1 : limit}
       OFFSET ${offset}
     `),
   );
@@ -594,8 +595,8 @@ export async function listCollectionStats(
       WHERE c.owner_id = ${userId}
         AND c.language = ${language}
       GROUP BY c.id, c.title
-      ORDER BY c.updated_at DESC
-      LIMIT ${limit}
+      ORDER BY c.updated_at DESC, c.id
+      LIMIT ${opts.includeNextRow ? limit + 1 : limit}
       OFFSET ${offset}
     `),
   );

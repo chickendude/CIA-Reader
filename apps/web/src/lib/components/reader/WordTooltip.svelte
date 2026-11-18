@@ -34,8 +34,12 @@
 
   let { token, anchorRect, language, onClose }: Props = $props();
   const hindiCandidates = $derived.by(() => {
-    const all = [{ lemmaId: token.lemmaId, headword: token.headword ?? token.surface, pos: token.pos ?? '',
-      glossDefault: token.glossDefault, personalGloss: token.personalGloss, selectedBy: token.selectedBy }, ...token.candidates];
+    const primary = {
+      lemmaId: token.lemmaId, headword: token.headword ?? token.surface, pos: token.pos ?? '',
+      glossDefault: token.glossDefault, personalGloss: token.personalGloss, selectedBy: token.selectedBy,
+    };
+    if (token.correctedByViewer) return [primary];
+    const all = [primary, ...token.candidates];
     const selected = all.filter(candidate => candidate.selectedBy);
     return selected.length ? selected : all;
   });

@@ -5,6 +5,8 @@
  * that limit/offset are clamped sanely.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { PgDialect } from 'drizzle-orm/pg-core';
+import type { SQL } from 'drizzle-orm';
 
 const staged: Array<unknown[]> = [];
 function stage(rows: unknown[]) {
@@ -20,11 +22,15 @@ const chainCalls: Array<{
   method: 'limit' | 'offset';
   arg: number;
 }> = [];
+const whereClause = vi.fn<(condition: SQL) => void>();
 
 function makeSelectChain() {
   const chain: Record<string, unknown> = {};
   chain.from = vi.fn(() => chain);
-  chain.where = vi.fn(() => chain);
+  chain.where = (condition: SQL) => {
+    whereClause(condition);
+    return chain;
+  };
   chain.orderBy = vi.fn(() => chain);
   chain.limit = vi.fn((n: number) => {
     chainCalls.push({ method: 'limit', arg: n });
@@ -40,19 +46,9 @@ function makeSelectChain() {
 
 const selectFn = vi.fn(() => makeSelectChain());
 
-vi.mock('../db/index.js', () => ({
+vi.mock('../db/index.js', async () => ({
   db: { select: () => selectFn() },
-  schema: {
-    lemmas: {
-      id: 'lemmas.id',
-      language: 'lemmas.language',
-      headword: 'lemmas.headword',
-      headwordNuktaStripped: 'lemmas.headword_nukta_stripped',
-      pos: 'lemmas.pos',
-      frequencyRank: 'lemmas.frequency_rank',
-    },
-    translations: {},
-  },
+  schema: await import('../db/schema.js'),
 }));
 
 const {
@@ -156,6 +152,15 @@ describe('listDictionaryLemmas', () => {
       hasOfficialTranslation: true,
     });
     expect(result.lemmas).toHaveLength(1);
+    const dialect = new PgDialect();
+    expect(whereClause).toHaveBeenCalledTimes(2);
+    for (const [condition] of whereClause.mock.calls) {
+      const query = dialect.sqlToQuery(condition);
+      expect(query.sql).toContain('"translations"."target_id" = "lemmas"."id"');
+      expect(query.sql).toContain('"translations"."target_type" =');
+      expect(query.sql).toContain('"translations"."hidden" =');
+      expect(query.params).toEqual(['hi', 'verb', 'noun', 1, 1000, 'lemma', false, 'official_dictionary', 'curator']);
+    }
   });
 
   it('respects an explicit offset', async () => {

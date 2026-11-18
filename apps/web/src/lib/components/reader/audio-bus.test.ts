@@ -5,6 +5,8 @@ import {
   _resetAudioBus,
   getAudioController,
   getAudioState,
+  seekAudioForToken,
+  setAlignmentMap,
   setAudioController,
   setAudioState,
   subscribeAudio,
@@ -53,5 +55,16 @@ describe('audio-bus', () => {
     expect(getAudioController()).toBe(ctrl);
     setAudioController(null);
     expect(getAudioController()).toBeNull();
+  });
+
+  it('pauses and seeks to the first aligned word, including a zero start time', () => {
+    const ctrl = { seekMs: vi.fn(), play: vi.fn(), pause: vi.fn() };
+    setAudioController(ctrl);
+    setAlignmentMap(new Map([['first', 0]]));
+    seekAudioForToken('unaligned');
+    expect(ctrl.pause).not.toHaveBeenCalled();
+    seekAudioForToken('first');
+    expect(ctrl.pause).toHaveBeenCalledOnce();
+    expect(ctrl.seekMs).toHaveBeenCalledWith(0);
   });
 });

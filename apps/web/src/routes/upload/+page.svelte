@@ -14,6 +14,8 @@
     form,
   }: { data: PageData; form: ActionData } = $props();
 
+  const pageTitle = $derived(`Upload ${data.selectedLanguageDisplay} Text`);
+
   // The upload language is fixed to the current language (#436) — the site
   // is split by language and the rail switcher picks it — so there's no
   // per-form language chooser; it's submitted as a hidden field below.
@@ -274,19 +276,12 @@
 </script>
 
 <svelte:head>
-  <title>Upload | Parhiba</title>
+  <title>{pageTitle} | Parhiba</title>
 </svelte:head>
 
 <div class="page page-form">
   <header>
-    <h1 class="page-title">Upload a text</h1>
-    <p class="sub">
-      Paste a passage, drop a <code>.txt</code> file, upload an
-      <code>.epub</code> or a <code>.zip</code> of
-      <code>.txt</code> files to import as a chapter-book collection, or
-      upload a <code>.pdf</code> to read as page images with clickable
-      words. Texts are private to your account by default.
-    </p>
+    <h1 class="page-title">{pageTitle}</h1>
   </header>
 
   {#if errorMessage}
@@ -308,15 +303,6 @@
     <!-- Language is fixed to the current language (#436). Submitted as a
          hidden field; switch languages from the menu in the top-left. -->
     <input type="hidden" name="language" value={data.selectedLanguage} />
-    <div class="lang-fixed">
-      <span class="lang-fixed-label">Importing into</span>
-      <span class="lang-fixed-value">
-        {data.selectedLanguageName} · {data.selectedLanguageDisplay}
-      </span>
-      <span class="lang-fixed-hint">
-        Change the language from the menu in the top-left.
-      </span>
-    </div>
 
     <label>
       Title {#if isFileMode}<span class="hint">(optional)</span>{/if}
@@ -488,11 +474,6 @@
 </div>
 
 <style>
-  .sub {
-    color: var(--color-fg-muted);
-    margin: 0 0 1rem;
-    font-size: 0.9rem;
-  }
   form label {
     display: block;
     margin-bottom: 0.75rem;
@@ -512,32 +493,6 @@
     min-height: 44px;
   }
 
-  /* Fixed-language banner (#436): a read-only stand-in for the old
-     language <select>, since the upload target now follows the current
-     language. */
-  .lang-fixed {
-    display: flex;
-    flex-direction: column;
-    gap: 0.15rem;
-    padding: 0.6rem 0.75rem;
-    border: 1px solid var(--color-border);
-    border-radius: 6px;
-    background: var(--color-bg);
-  }
-  .lang-fixed-label {
-    font-size: 0.62rem;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    color: var(--color-fg-muted);
-  }
-  .lang-fixed-value {
-    font-size: 1rem;
-    color: var(--color-fg);
-  }
-  .lang-fixed-hint {
-    font-size: 0.75rem;
-    color: var(--color-fg-muted);
-  }
   form textarea {
     min-height: 12rem;
     resize: vertical;

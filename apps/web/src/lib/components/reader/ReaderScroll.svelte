@@ -9,9 +9,10 @@
 -->
 <script lang="ts">
   import { pageSwipe } from './touch-gestures.js';
-  import { looksLikeNumberToken } from './types.js';
+  import { looksLikeNumberToken, withLemmaCorrection } from './types.js';
   import { onMount, tick } from 'svelte';
 
+  import { seekAudioForToken } from './audio-bus.js';
   import TokenSpan from './TokenSpan.svelte';
   import type { ProgressAnchor } from './progress-client.js';
   import {
@@ -87,21 +88,7 @@
     }
     return current.tokens.map((t) => {
       t = contextOverrides.get(t.id) ?? t;
-      const correctedLemmaId = lemmaCorrections.get(t.id);
-      let next = t;
-      if (correctedLemmaId && correctedLemmaId !== t.lemmaId) {
-        const chosen = t.candidates.find((c) => c.lemmaId === correctedLemmaId);
-        if (chosen) {
-          const remaining = t.candidates.filter((c) => c.lemmaId !== correctedLemmaId);
-          next = {
-            ...t,
-            lemmaId: chosen.lemmaId,
-            glossDefault: chosen.glossDefault ?? t.glossDefault,
-            candidates: remaining,
-            isAmbiguous: remaining.length > 0,
-          };
-        }
-      }
+      let next = withLemmaCorrection(t, lemmaCorrections.get(t.id));
       if (next.lemmaId && statusOverrides.has(next.lemmaId)) {
         next = { ...next, status: statusOverrides.get(next.lemmaId)! };
       }
@@ -318,20 +305,6 @@
     preview.close();
   }
 
-  function seekAudioForToken(tokenId: string) {
-    // T-9.4: tap-to-seek. Same flow as ChapterBody — audio
-    // alignment + player handle, no-op when neither is present.
-    void (async () => {
-      const { getAlignmentStartMs, getAudioController } = await import('./audio-bus.js');
-      const startMs = getAlignmentStartMs(tokenId);
-      if (startMs == null) return;
-      const ctrl = getAudioController();
-      if (!ctrl) return;
-      ctrl.pause();
-      ctrl.seekMs(startMs);
-    })();
-  }
-
   function showHoverTooltip(event: Event) {
     if ('pointerType' in event && event.pointerType === 'touch') return;
     const found = findToken(event.target as HTMLElement);
@@ -403,6 +376,9 @@
       next.set(tokenId, chosenLemmaId);
     }
     lemmaCorrections = next;
+    if (chosenLemmaId && activeToken?.id === tokenId) {
+      activeToken = tokensById.get(tokenId) ?? activeToken;
+    }
   }
 
   // Live-update personal-gloss override for the hover tooltip after
@@ -470,7 +446,6 @@
 
     <!-- svelte-ignore a11y_click_events_have_key_events -->
     <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-    <!-- svelte-ignore a11y_mouse_events_have_key_events -->
     <article
       bind:this={articleEl}
       onclick={onArticleClick}

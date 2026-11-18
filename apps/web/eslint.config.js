@@ -30,10 +30,14 @@ export default [
     languageOptions: {
       parserOptions: {
         parser: ts.parser,
+        svelteFeatures: { experimentalGenerics: true },
       },
       globals: {
         window: 'readonly',
         document: 'readonly',
+        Node: 'readonly',
+        CustomEvent: 'readonly',
+        structuredClone: 'readonly',
         localStorage: 'readonly',
         sessionStorage: 'readonly',
         navigator: 'readonly',

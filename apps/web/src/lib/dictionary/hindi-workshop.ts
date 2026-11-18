@@ -65,13 +65,11 @@ export function emptyDraft(lemma = '', pos = 'NOUN'): Draft {
 export type Match = { id: string; lemma: string; pos: string; meaning: string };
 export type ReviewItem = {
   id: string | null;
+  pos: string | null;
   word: string;
   kind: string;
   count: number;
-  book: string;
-  chapter: number;
-  token: number;
-  context: string;
+  samples: { book: string; chapter: number; token: number; context: string; count: number }[];
 };
 export type Reference = { provider: string; label: string; source_url: string };
 

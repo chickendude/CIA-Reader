@@ -228,6 +228,34 @@ describe.skipIf(!url)('HindiDB PostgreSQL integration (always rolls back)', () =
             .insert(schema.lemmaForms)
             .values({ lemmaId: entries[0]!.id, surface: 'परीक्षणों', createdBy: 'curator' });
           expect((await listTextStats(user!.id, 'hi'))[0]!.analysisStale).toBe(true);
+          const { workshopQueue } = await import('./dictionary/hindi-queue.js');
+          const [secondBook] = await tx.insert(schema.texts).values({
+            ownerId: user!.id, language: 'hi', title: 'Second review book', sourceType: 'paste',
+          }).returning();
+          const missing = 'अपरिचित' + randomUUID();
+          const [secondChapter] = await tx.insert(schema.textChapters).values({
+            textId: secondBook!.id, idx: 0, body: missing,
+          }).returning();
+          await tx.insert(schema.textTokens).values([
+            { chapterId: chapter!.id, idx: 1, surface: missing, isOov: true },
+            { chapterId: chapter!.id, idx: 2, surface: missing, isOov: true },
+            { chapterId: secondChapter!.id, idx: 0, surface: missing, isOov: true },
+            { chapterId: secondChapter!.id, idx: 1, surface: missing + 'अ', isOov: true },
+          ]);
+          const firstPage = await workshopQueue(user!.id, null, 'unresolved', missing, 1);
+          expect(firstPage.total).toBe(2);
+          expect(firstPage.rows[0]).toMatchObject({
+            word: missing, count: 3, samples: [
+              { book: text!.id, count: 2, token: 1 },
+              { book: secondBook!.id, count: 1, token: 0 },
+            ],
+          });
+          expect((await workshopQueue(user!.id, null, 'unresolved', missing, 1, 1)).rows[0]?.word)
+            .toBe(missing + 'अ');
+          await tx.insert(schema.hindiReviewIgnored).values({ textId: secondBook!.id, surface: missing });
+          expect((await workshopQueue(user!.id, null, 'unresolved', missing, 1)).rows[0]?.count).toBe(2);
+          expect((await workshopQueue(user!.id, secondBook!.id, 'ignored', missing, 1)).rows[0]?.count).toBe(1);
+          expect((await workshopQueue(randomUUID(), secondBook!.id, '', missing, 10)).rows).toEqual([]);
           throw rollback;
         }),
       ).rejects.toBe(rollback);

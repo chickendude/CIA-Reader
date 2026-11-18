@@ -68,6 +68,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -1114,6 +1115,7 @@ internal fun WordDetails(
     token: ReaderToken,
     translations: LemmaTranslations?,
     isLoading: Boolean,
+    modifier: Modifier = Modifier,
     onAddDefinition: (String, Boolean) -> Unit = { _, _ -> },
     onEditDefinition: (String, String, Boolean?) -> Unit = { _, _, _ -> },
     onDeleteDefinition: (String) -> Unit = {},
@@ -1134,7 +1136,6 @@ internal fun WordDetails(
     onSelectBasqueSource: (String) -> Unit = {},
     onBasqueRefSearchInput: (String) -> Unit = {},
     onBasqueRefSearch: (String) -> Unit = {},
-    modifier: Modifier = Modifier,
     activeParseLemmaId: String? = token.lemmaId,
     primaryHeadword: String? = null,
     primaryPos: String? = null,
@@ -2317,7 +2318,7 @@ private fun ReaderImage(
         if (currentIdx != pagerState.currentPage) pagerState.animateScrollToPage(currentIdx)
     }
     // Zoom belongs to the page you're on; reset it whenever the page changes.
-    var scale by remember { mutableStateOf(1f) }
+    var scale by remember { mutableFloatStateOf(1f) }
     var offset by remember { mutableStateOf(Offset.Zero) }
     LaunchedEffect(pagerState.settledPage) {
         scale = 1f

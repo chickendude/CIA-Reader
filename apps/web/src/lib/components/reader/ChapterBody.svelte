@@ -13,7 +13,8 @@
       user closes / picks another word.
 -->
 <script lang="ts">
-  import { looksLikeNumberToken } from './types.js';
+  import { looksLikeNumberToken, withLemmaCorrection } from './types.js';
+  import { seekAudioForToken } from './audio-bus.js';
   import TokenSpan from './TokenSpan.svelte';
   import WordPopup from './WordPopup.svelte';
   import WordTooltip from './WordTooltip.svelte';
@@ -125,32 +126,7 @@
     }
     return chapter.tokens.map((t) => {
       t = contextOverrides.get(t.id) ?? t;
-      // T-6.1: lemma override wins; the corrected lemmaId becomes
-      // the active pick for this token + the candidate that *was*
-      // active drops back into the alternates list (so the user
-      // can revert without re-opening the candidate menu).
-      const correctedLemmaId = lemmaCorrections.get(t.id);
-      let next = t;
-      if (correctedLemmaId && correctedLemmaId !== t.lemmaId) {
-        const chosen = t.candidates.find((c) => c.lemmaId === correctedLemmaId);
-        if (chosen) {
-          const remaining = t.candidates.filter(
-            (c) => c.lemmaId !== correctedLemmaId,
-          );
-          // The previous primary becomes a candidate so the user
-          // can flip back. We synthesize a candidate row from the
-          // current token's lemma metadata; if we don't have it on
-          // hand (status only — no headword), we still leave the
-          // remaining list as-is so at least the new pick lands.
-          next = {
-            ...t,
-            lemmaId: chosen.lemmaId,
-            glossDefault: chosen.glossDefault ?? t.glossDefault,
-            candidates: remaining,
-            isAmbiguous: remaining.length > 0,
-          };
-        }
-      }
+      let next = withLemmaCorrection(t, lemmaCorrections.get(t.id));
       if (next.lemmaId && statusOverrides.has(next.lemmaId)) {
         next = { ...next, status: statusOverrides.get(next.lemmaId)! };
       }
@@ -452,21 +428,6 @@
     seekAudioForToken(found.token.id);
   }
 
-  function seekAudioForToken(tokenId: string) {
-    if (typeof window === 'undefined') return;
-    void (async () => {
-      const { getAlignmentStartMs, getAudioController } = await import(
-        './audio-bus.js'
-      );
-      const startMs = getAlignmentStartMs(tokenId);
-      if (startMs == null) return;
-      const ctrl = getAudioController();
-      if (!ctrl) return;
-      ctrl.pause();
-      ctrl.seekMs(startMs);
-    })();
-  }
-
   // Accepts both MouseEvent (mouseover) and FocusEvent (focusin) so
   // the tooltip surfaces for pointer hovers AND keyboard tabbing.
   // We deliberately keep showing the tooltip for the locked word —
@@ -595,6 +556,9 @@
       next.set(tokenId, chosenLemmaId);
     }
     lemmaCorrections = next;
+    if (chosenLemmaId && activeToken?.id === tokenId) {
+      activeToken = tokensById.get(tokenId) ?? activeToken;
+    }
     toastTokenId = tokenId;
   }
 
@@ -632,7 +596,6 @@
      blur) so the tooltip also appears for keyboard navigation. -->
 <!-- svelte-ignore a11y_click_events_have_key_events -->
 <!-- svelte-ignore a11y_no_static_element_interactions -->
-<!-- svelte-ignore a11y_mouse_events_have_key_events -->
 <div
   dir={textDirection}
   onmousedown={onChapterMousedown}

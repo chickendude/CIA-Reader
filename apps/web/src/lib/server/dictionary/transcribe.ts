@@ -267,7 +267,7 @@ export function printedPageFromSourceId(sourceId: string | null): number | null 
 
 export async function listTranscriptionQueue(
   config: ScanDictionaryConfig,
-  opts: { fromPrintedPage?: number; limit?: number } = {},
+  opts: { fromPrintedPage?: number; limit?: number; offset?: number } = {},
 ): Promise<QueueEntry[]> {
   const limit = Math.min(opts.limit ?? 50, 200);
   const openIssue = db
@@ -302,8 +302,9 @@ export async function listTranscriptionQueue(
     })
     .from(schema.lemmas)
     .where(and(...conditions))
-    .orderBy(sql`${printedPageSql} NULLS LAST`, asc(schema.lemmas.sourceId))
-    .limit(limit);
+    .orderBy(sql`${printedPageSql} NULLS LAST`, asc(schema.lemmas.sourceId), asc(schema.lemmas.id))
+    .limit(limit)
+    .offset(opts.offset ?? 0);
   return rows as QueueEntry[];
 }
 

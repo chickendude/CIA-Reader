@@ -1,10 +1,17 @@
-import { cleanup, render, screen } from '@testing-library/svelte';
-import { afterEach, expect, it } from 'vitest';
+import { cleanup, fireEvent, render, screen } from '@testing-library/svelte';
+import { afterEach, expect, it, vi } from 'vitest';
 import Words from './+page.svelte';
 import type { PageData } from './$types';
 import type { WordStatus } from './word-statuses';
 
-afterEach(cleanup);
+const { goto } = vi.hoisted(() => ({ goto: vi.fn() }));
+vi.mock('$app/navigation', () => ({ beforeNavigate: vi.fn(), goto }));
+
+afterEach(() => {
+  cleanup();
+  goto.mockReset();
+  vi.useRealTimers();
+});
 
 function pageData(statuses: WordStatus[]): PageData {
   return {
@@ -15,7 +22,7 @@ function pageData(statuses: WordStatus[]): PageData {
     counts: { learning: 35, known: 702, ignored: 2 },
     filters: { language: 'hi', q: '', statuses },
     rows: [],
-    truncated: false,
+    pagination: { offset: 0, limit: 200, total: 737 },
   };
 }
 
@@ -39,4 +46,24 @@ it('toggles individual statuses and switches All between every status and none',
   expect(button(/^all$/i).getAttribute('aria-pressed')).toBe('false');
   expect(button(/^all$/i).value).toBe('all');
   expect(button(/^ignored 2$/i).value).toBe('ignored');
+});
+
+it('searches while typing, waits for IME composition, and clears immediately', async () => {
+  vi.useFakeTimers();
+  render(Words, { data: pageData(['known']) });
+  const field = screen.getByRole('searchbox');
+  await fireEvent.compositionStart(field);
+  await fireEvent.input(field, { target: { value: 'मे' } });
+  await vi.advanceTimersByTimeAsync(300);
+  expect(goto).not.toHaveBeenCalled();
+  await fireEvent.compositionEnd(field, { target: { value: 'में' } });
+  await vi.advanceTimersByTimeAsync(200);
+  expect(goto).toHaveBeenCalledTimes(1);
+  const [url, options] = goto.mock.calls[0]!;
+  const params = new URL(url, 'http://localhost').searchParams;
+  expect(params.get('q')).toBe('में');
+  expect(params.get('status')).toBe('known');
+  expect(options).toMatchObject({ replaceState: true, keepFocus: true });
+  await fireEvent.input(field, { target: { value: '' } });
+  expect(goto).toHaveBeenLastCalledWith('/words?status=known', expect.anything());
 });

@@ -8,8 +8,9 @@
  * separate decks if they prefer single-word and multi-word cards
  * apart.
  */
-import { and, asc, eq } from 'drizzle-orm';
+import { and, asc, eq, sql } from 'drizzle-orm';
 
+import { lemmas, translations } from './db/schema.js';
 import { db, schema } from './db/index.js';
 import type { LanguageCode } from '@ciareader/shared-types';
 
@@ -31,6 +32,17 @@ export type VocabularyRow = {
   status: VocabularyStatus;
 };
 
+/** Use the reader's first personal translation for this exact dictionary entry. */
+export function vocabularyDefinition(userId: string) {
+  return sql<string | null>`coalesce((
+    select ${translations.body} from ${translations}
+    where ${translations.targetType} = 'lemma' and ${translations.targetId} = ${lemmas.id}
+      and ${translations.source} = 'user' and ${translations.submittedBy} = ${userId}
+      and not ${translations.hidden}
+    order by ${translations.createdAt}, ${translations.id} limit 1
+  ), ${lemmas.glossDefault})`;
+}
+
 export async function getVocabularyForExport(
   userId: string,
   language: LanguageCode,
@@ -40,7 +52,7 @@ export async function getVocabularyForExport(
     .select({
       headword: schema.lemmas.headword,
       pos: schema.lemmas.pos,
-      glossDefault: schema.lemmas.glossDefault,
+      glossDefault: vocabularyDefinition(userId),
       status: schema.userKnownLemmas.status,
     })
     .from(schema.userKnownLemmas)

@@ -180,7 +180,7 @@
               <div>
                 <span class="native">{lang.nativeName}</span>
                 <span class="muted small">
-                  {lang.displayName} · {lang.script}
+                  {lang.displayName}
                 </span>
               </div>
               {#if lang.isDefault}

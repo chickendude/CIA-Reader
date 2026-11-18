@@ -11,6 +11,7 @@
  */
 import { error, json } from '@sveltejs/kit';
 
+import { loadKnownStatusMap } from '$lib/server/texts/tokens.js';
 import { getHeadwordRomanization } from '$lib/server/dictionary/lemma-forms.js';
 import { resolveUser } from '$lib/server/auth/require-user.js';
 import { canEditDictionary } from '$lib/server/dictionary/permissions.js';
@@ -32,11 +33,13 @@ export const GET: RequestHandler = async (event) => {
 
   try {
     const result = await getLemmaTranslations(id, viewer);
-    const [romanization, canEdit] = await Promise.all([
+    const [romanization, canEdit, statuses] = await Promise.all([
       getHeadwordRomanization(result.lemma),
       canEditDictionary(user, result.lemma.language),
+      new URL(event.request.url).searchParams.has('studyStatus') ? loadKnownStatusMap(user?.id ?? null, [id]) : undefined,
     ]);
-    return json({ ...result, lemma: { ...result.lemma, romanization }, canEdit });
+    return json({ ...result, lemma: { ...result.lemma, romanization }, canEdit,
+      ...(statuses && { studyStatus: statuses.get(id) ?? 'unknown' }) });
   } catch (err) {
     if (err instanceof LemmaNotFoundError) throw error(404, 'Lemma not found');
     throw err;

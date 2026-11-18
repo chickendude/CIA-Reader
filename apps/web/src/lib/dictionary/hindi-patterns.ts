@@ -2,7 +2,8 @@
 const nouns = ['NOUN', 'PROPN'];
 const adjectives = ['ADJ', 'DET', 'PRON', 'ADP'];
 const verbs = ['VERB', 'AUX'];
-const consonant = /[^अआइईउऊऋॠऌॡऍऎएऐऑऒओऔािीुूृॄॅॆेैॉॊोौंँ]$/u;
+// Exclude independent vowels, vowel signs, chandrabindu and anusvara.
+const consonant = /[^\u0901-\u0902\u093e-\u094cअ-औॠ-ॡ]$/u;
 
 type Pattern = { id: string; label: string; pos: string[]; ending: RegExp };
 const patterns: Pattern[] = [
@@ -19,7 +20,7 @@ const patterns: Pattern[] = [
   { id: 'noun_f_uu', label: 'Feminine ऊ', pos: nouns, ending: /[ूऊ]$/u },
   { id: 'noun_mf_uu', label: 'Masculine and feminine ऊ', pos: nouns, ending: /[ूऊ]$/u },
   { id: 'adj_aa', label: 'Adjective agreement (ा, े, ी)', pos: adjectives, ending: /ा$/u },
-  { id: 'verb_consonant', label: 'Regular consonant stem', pos: verbs, ending: /[क-ह़]ना$/u },
+  { id: 'verb_consonant', label: 'Regular consonant stem', pos: verbs, ending: /(?:[क-ह]|\u093c)ना$/u },
   { id: 'verb_aa', label: 'Regular आ stem', pos: verbs, ending: /[ाआ]ना$/u },
   { id: 'verb_explicit', label: 'Common verb forms and irregulars', pos: verbs, ending: /.+ना$/u },
 ];

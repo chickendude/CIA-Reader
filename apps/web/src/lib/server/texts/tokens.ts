@@ -73,6 +73,7 @@ export type RenderedNumberForms = {
 };
 
 export type RenderedToken = {
+  correctedByViewer?: boolean;
   canVerifyContext?: boolean;
   contextVersion?: string;
   selectedBy?: 'ai' | 'human';
@@ -466,6 +467,7 @@ export async function loadChapterTokens(
       : null;
 
     return {
+      ...(correction?.chosenLemmaId && { correctedByViewer: true }),
       canVerifyContext,
       contextVersion: contextVersion(t.lemmaCandidates.flatMap(c=>c.lemmaId?[c.lemmaId]:[]),choice),
       selectedBy: effectiveLemmaId ? choice?.selectedOrigins[effectiveLemmaId] : undefined,
@@ -512,16 +514,14 @@ export async function loadKnownStatusMap(
   lemmaIds: string[],
 ): Promise<Map<string, UserKnownLemma['status']>> {
   if (!viewerId || lemmaIds.length === 0) return new Map();
-  const rows = (await db
-    .select()
-    .from(schema.userKnownLemmas)
-    .where(eq(schema.userKnownLemmas.userId, viewerId))) as UserKnownLemma[];
-  const wanted = new Set(lemmaIds);
-  const out = new Map<string, UserKnownLemma['status']>();
-  for (const r of rows) {
-    if (wanted.has(r.lemmaId)) out.set(r.lemmaId, r.status);
-  }
-  return out;
+  const rows = await db.select({
+    lemmaId: schema.userKnownLemmas.lemmaId,
+    status: schema.userKnownLemmas.status,
+  }).from(schema.userKnownLemmas).where(and(
+    eq(schema.userKnownLemmas.userId, viewerId),
+    inArray(schema.userKnownLemmas.lemmaId, lemmaIds),
+  ));
+  return new Map(rows.map((r) => [r.lemmaId, r.status]));
 }
 
 /** Rare but useful: every lemma the user has marked, regardless of

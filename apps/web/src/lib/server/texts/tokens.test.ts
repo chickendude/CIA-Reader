@@ -1,4 +1,5 @@
 // @vitest-environment node
+import { PgDialect } from 'drizzle-orm/pg-core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const staged: Array<unknown[]> = [];
@@ -478,16 +479,17 @@ describe('loadKnownStatusMap', () => {
     expect(selectFn).not.toHaveBeenCalled();
   });
 
-  it('filters server-returned rows down to the requested lemma id set', async () => {
+  it('requests the specified lemma IDs for the signed-in user', async () => {
     stage([
       { userId: 'user-1', lemmaId: 'l1', status: 'known' },
-      { userId: 'user-1', lemmaId: 'l2', status: 'learning' },
       { userId: 'user-1', lemmaId: 'l3', status: 'ignored' },
     ]);
     const map = await loadKnownStatusMap('user-1', ['l1', 'l3']);
     expect(map.get('l1')).toBe('known');
     expect(map.get('l3')).toBe('ignored');
-    expect(map.has('l2')).toBe(false);
+    const clause = selectFn.mock.results.at(-1)!.value.where as ReturnType<typeof vi.fn>;
+    const { params } = new PgDialect().sqlToQuery(clause.mock.calls[0]![0]);
+    expect(params).toEqual(expect.arrayContaining(['user-1', 'l1', 'l3']));
   });
 });
 

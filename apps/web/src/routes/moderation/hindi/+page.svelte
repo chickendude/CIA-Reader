@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Pagination from '$lib/components/input/Pagination.svelte';
   import { invalidateAll } from '$app/navigation';
   import ContextChoiceButton from '$lib/components/reader/ContextChoiceButton.svelte';
   import type { ServerToken } from '$lib/components/reader/types.js';
@@ -150,12 +151,7 @@
         </article>
       {/each}
     {/if}
-    <nav>
-      {#if data.offset > 0}<a href={link(data.kind, Math.max(0, data.offset - limit))}>← Previous</a
-        >{/if}{#if data.offset + limit < data.result.total}<a
-          href={link(data.kind, data.offset + limit)}>Next →</a
-        >{/if}
-    </nav>
+    <Pagination offset={data.offset} {limit} total={data.result.total} hrefFor={(offset) => link(data.kind, offset)} />
   {:else}<p>No Hindi books are available for review.</p>{/if}
 </div>
 

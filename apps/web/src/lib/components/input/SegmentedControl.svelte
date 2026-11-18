@@ -1,4 +1,4 @@
-<script lang="ts" generics="const Value extends string | boolean">
+<script lang="ts" generics="Value extends string | boolean">
   let {
     label,
     options,
@@ -65,6 +65,14 @@
     );
     color: var(--ink, var(--color-fg));
     font-weight: 600;
+  }
+  @media (hover: hover) {
+    input:hover:not(:disabled) + span {
+      background: color-mix(in oklch, var(--accent, var(--color-accent)) 12%, var(--card, var(--color-bg)));
+    }
+    input:checked:hover:not(:disabled) + span {
+      background: color-mix(in oklch, var(--accent, var(--color-accent)) 25%, var(--card, var(--color-bg)));
+    }
   }
   input:focus-visible + span {
     outline: 2px solid var(--accent, var(--color-accent));

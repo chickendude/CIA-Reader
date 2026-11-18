@@ -1,7 +1,16 @@
 <script lang="ts">
+  import Pagination from '$lib/components/input/Pagination.svelte';
+  import { page } from '$app/state';
   import { enhance } from '$app/forms';
   import type { PageData } from './$types';
   let { data }: { data: PageData } = $props();
+
+  function pageHref(offset: number) {
+    const url = new URL(page.url);
+    if (offset) url.searchParams.set('offset', String(offset));
+    else url.searchParams.delete('offset');
+    return url.pathname + url.search;
+  }
 </script>
 
 <svelte:head>
@@ -116,14 +125,9 @@
           {/each}
         </tbody>
       </table>
-      {#if data.queue.length === 50}
-        {@const last = data.queue[data.queue.length - 1]}
-        {#if last && last.printedPage !== null}
-          <a class="more" href={`?from=${last.printedPage}`}>
-            More from page {last.printedPage} →
-          </a>
-        {/if}
-      {/if}
+    {/if}
+    {#if data.queue.length || data.pagination.offset}
+      <Pagination {...data.pagination} hrefFor={pageHref} />
     {/if}
   </section>
 </div>
@@ -189,10 +193,6 @@
     align-items: center;
     padding: 0.35rem 0;
     border-bottom: 1px solid var(--border, #eee);
-  }
-  .more {
-    display: inline-block;
-    margin-top: 0.75rem;
   }
   .empty {
     color: var(--text-secondary, #444);
