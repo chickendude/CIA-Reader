@@ -48,7 +48,7 @@ LANGUAGES: dict[LanguageCode, LanguageDescriptor] = {
             "Tiro Devanagari Hindi",
             "Mukta",
         ),
-        pipeline_id="stanza-hi",
+        pipeline_id="hindidb-hi",
     ),
     "mr": LanguageDescriptor(
         code="mr",

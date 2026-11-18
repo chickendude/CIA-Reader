@@ -13,6 +13,7 @@
       user closes / picks another word.
 -->
 <script lang="ts">
+  import { looksLikeNumberToken } from './types.js';
   import TokenSpan from './TokenSpan.svelte';
   import WordPopup from './WordPopup.svelte';
   import WordTooltip from './WordTooltip.svelte';
@@ -71,6 +72,29 @@
   // token tied to the same lemma flips its highlight in real time
   // (the next page load reflects the same state via the loader).
   let statusOverrides = $state(new Map<string, ServerToken['status']>());
+  let definitionOverrides = $state(new Map<string, string>());
+  let contextOverrides = $state(new Map<string, ServerToken>());
+  $effect(() => {
+    const update = (event: Event) => {
+      const next = (event as CustomEvent<ServerToken>).detail;
+      if (next.chapterId !== chapter.id) return;
+      contextOverrides = new Map(contextOverrides).set(next.id,next);
+      const corrections = new Map(lemmaCorrections); corrections.delete(next.id); lemmaCorrections = corrections;
+      if (activeToken?.id === next.id) activeToken = next;
+      if (hoverToken?.id === next.id) hoverToken = next;
+    };
+    window.addEventListener('hindi-context-choice-changed',update);
+    return () => window.removeEventListener('hindi-context-choice-changed',update);
+  });
+  $effect(() => {
+    const update = (event: Event) => {
+      const { lemmaId, body } = (event as CustomEvent<{ lemmaId: string; body: string }>).detail;
+      definitionOverrides = new Map(definitionOverrides).set(lemmaId, body);
+    };
+    window.addEventListener('dictionary-definition-changed', update);
+    return () => window.removeEventListener('dictionary-definition-changed', update);
+  });
+
   // T-6.1: per-token lemma corrections live here so picking an
   // alternate meaning in the popup re-renders that token with the
   // chosen lemma immediately. Server-side persistence happens in
@@ -92,13 +116,14 @@
   const tokensWithOverrides = $derived.by(() => {
     if (!chapter.tokens) return null;
     if (
-      statusOverrides.size === 0 &&
+      statusOverrides.size === 0 && definitionOverrides.size === 0 && contextOverrides.size === 0 &&
       lemmaCorrections.size === 0 &&
       personalGlossOverrides.size === 0
     ) {
       return chapter.tokens;
     }
     return chapter.tokens.map((t) => {
+      t = contextOverrides.get(t.id) ?? t;
       // T-6.1: lemma override wins; the corrected lemmaId becomes
       // the active pick for this token + the candidate that *was*
       // active drops back into the alternates list (so the user
@@ -134,6 +159,16 @@
           personalGloss: personalGlossOverrides.get(next.lemmaId) ?? null,
         };
       }
+      if (next.lemmaId && definitionOverrides.has(next.lemmaId)) {
+        next = { ...next, glossDefault: definitionOverrides.get(next.lemmaId) ?? null };
+      }
+      next = { ...next, candidates: next.candidates.map((candidate) => ({
+        ...candidate,
+        glossDefault: definitionOverrides.get(candidate.lemmaId) ?? candidate.glossDefault,
+        status: statusOverrides.get(candidate.lemmaId) ?? candidate.status,
+        personalGloss: personalGlossOverrides.has(candidate.lemmaId)
+          ? personalGlossOverrides.get(candidate.lemmaId) ?? null : candidate.personalGloss,
+      })) };
       return next;
     });
   });
@@ -300,7 +335,7 @@
     const tokenId = span.getAttribute('data-token-id');
     if (!tokenId) return null;
     const token = tokensById.get(tokenId);
-    if (!token || !token.isWord) return null;
+    if (!token || (!token.isWord && !token.numberForms && !looksLikeNumberToken(token.surface))) return null;
     return { token, el: span };
   }
 
@@ -464,6 +499,7 @@
     if (related && (event.currentTarget as HTMLElement).contains(related)) {
       return;
     }
+    if (related?.closest?.('[role=tooltip]')) return;
     hoverToken = null;
     hoverRect = null;
   }
@@ -662,7 +698,7 @@
 </div>
 
 {#if hoverToken && hoverRect}
-  <WordTooltip token={hoverToken} anchorRect={hoverRect} {language} />
+  <WordTooltip token={hoverToken} anchorRect={hoverRect} {language} onClose={() => { hoverToken = null; hoverRect = null; }} />
 {/if}
 
 <!-- WordPopup mounts unconditionally so the side panel can stay

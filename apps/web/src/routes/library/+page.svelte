@@ -9,7 +9,7 @@
   and a leading "Add a text" tile on the Your tab.
 -->
 <script lang="ts">
-  import { invalidateAll } from '$app/navigation';
+  import { goto, invalidateAll } from '$app/navigation';
   import { coverForId } from '$lib/components/library/cover.js';
   import Modal from '$lib/components/overlay/Modal.svelte';
   import type { PageData } from './$types';
@@ -27,6 +27,22 @@
   } | null>(null);
   let deleting = $state(false);
   let deleteError = $state<string | null>(null);
+  let publishing = $state<string | null>(null);
+  let publishError = $state<string | null>(null);
+  async function publishBook(id: string) {
+    if (publishing) return;
+    publishing = id;
+    publishError = null;
+    try {
+      const res = await fetch(`/api/v1/texts/${id}/visibility`, {
+        method: 'PATCH', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ visibility: 'official' }),
+      });
+      if (!res.ok) throw new Error('Could not add this book to Official.');
+      await goto(`/library/${id}`);
+    } catch (e) { publishError = (e as Error).message; }
+    finally { publishing = null; }
+  }
 
   function askDeleteText(id: string, title: string) {
     pendingDelete = { kind: 'text', id, title };
@@ -104,6 +120,7 @@
 </svelte:head>
 
 <section class="content">
+  {#if publishError}<p role="alert">{publishError}</p>{/if}
   <header class="topbar">
     <div>
       <h1 class="title">Library</h1>
@@ -222,7 +239,7 @@
       {#each data.page.cards as card (card.id)}
         {@const pct = data.textComprehension?.[card.id] ?? null}
         <div class="lib-card-wrap">
-          <a class="card lib-card" href={`/reader/${card.id}`}>
+          <a class="card lib-card" href={data.tab === 'official' ? `/library/${card.id}` : `/reader/${card.id}`}>
             <div class={`lib-cover cover-${coverForId(card.id)}`}>
               <div class="cover-title">{card.title}</div>
               <div class="cover-chips">
@@ -231,7 +248,7 @@
                   <span class="chip">{card.visibility}</span>
                 {/if}
                 {#if pct !== null}
-                  <span class="chip chip-pct" title="Estimated comprehension">
+                  <span class="chip chip-pct" title="Vocabulary coverage">
                     {pct}% known
                   </span>
                 {/if}
@@ -253,6 +270,11 @@
               title="Delete"
               onclick={() => askDeleteText(card.id, card.title)}
             >×</button>
+            {#if data.user?.role === 'admin' && card.status === 'ready' && card.visibility !== 'official'}
+              <button class="publish-book" disabled={publishing !== null} onclick={() => void publishBook(card.id)}>
+                {publishing === card.id ? 'Adding…' : 'Add to Official'}
+              </button>
+            {/if}
           {/if}
         </div>
       {/each}
@@ -339,6 +361,7 @@
 </Modal>
 
 <style>
+  .publish-book { width: 100%; margin-top: .4rem; padding: .5rem; border: 1px solid var(--rule); border-radius: 6px; background: var(--card); color: var(--ink); cursor: pointer; font: inherit; font-size: .8rem; }
   .content {
     max-width: 72rem;
     margin: 0 auto;

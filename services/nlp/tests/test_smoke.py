@@ -30,8 +30,9 @@ def test_process_hindi_canned():
     assert resp.status_code == 200
     body = resp.json()
     assert body["language"] == "hi"
-    assert body["pipeline_id"] == "stanza-hi"
-    assert len(body["tokens"]) == 2
+    assert body["pipeline_id"] == "hindidb-hi"
+    assert len(body["tokens"]) == 3
+    assert body["hindi_analysis"]["stats"]["source_words"] == 2
     assert body["tokens"][0]["surface"] == "नमस्ते"
 
 
@@ -86,17 +87,13 @@ def test_process_rejects_unsupported_language():
     assert resp.status_code == 400
 
 
-def test_process_nfc_normalizes_input():
-    # Devanagari क़ (U+0958) is a Unicode composition exclusion — NFC
-    # canonicalizes it to the decomposed form क (U+0915) + nukta (U+093C).
-    # Sending the precomposed form and getting the decomposed surface back
-    # proves the /process endpoint ran NFC normalization.
+def test_process_hindi_preserves_original_input_offsets():
+    # HindiDB normalizes matching internally while retaining source surfaces.
     precomposed = "\u0958"
-    canonical = "\u0915\u093c"
     resp = client.post("/process", json={"language": "hi", "text": precomposed})
     assert resp.status_code == 200
     body = resp.json()
-    assert body["tokens"][0]["surface"] == canonical
+    assert body["tokens"][0]["surface"] == precomposed
 
 
 def test_process_empty_text_rejected_by_validation():

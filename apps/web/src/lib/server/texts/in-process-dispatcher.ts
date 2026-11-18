@@ -54,6 +54,8 @@ import {
 } from './jobs.js';
 import { rebuildChapterSpans } from './phrase-spans.js';
 import { upsertPhraseProposals } from './phrase-proposals.js';
+import { persistHindiTokens } from './hindidb.js';
+import type { HindiAnalysis } from '../nlp-client.js';
 
 export type LemmaIndex = {
   /** `${headword} ${pos}` → id. Strict-POS lookup. */
@@ -396,8 +398,12 @@ export async function persistTokens(args: {
     NlpToken & { bbox?: { x: number; y: number; w: number; h: number } | null }
   >;
   proposedPhrases?: ProposedPhrase[];
+  hindiAnalysis?: HindiAnalysis | null;
 }): Promise<number> {
   const { chapterId, language, index, tokens } = args;
+  if (language === 'hi' && args.hindiAnalysis) {
+    return persistHindiTokens(chapterId, tokens, args.hindiAnalysis);
+  }
   // Resolve / auto-create lemmas first so each token's lemma_id is
   // ready for the bulk insert. We can't `Promise.all` because
   // ensureLemma writes into the shared index — sequential keeps
@@ -494,6 +500,7 @@ async function processChapter(
     index,
     tokens: result.tokens,
     proposedPhrases: result.proposed_phrases,
+    hindiAnalysis: result.hindi_analysis,
   });
 }
 

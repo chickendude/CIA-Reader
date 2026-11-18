@@ -76,6 +76,15 @@ describe('TokenSpan — no-definition class (#435)', () => {
     expect(container.querySelector('.no-definition')).toBeNull();
   });
 
+  it('makes a number available to the reader hover handler without assigning a learning status', () => {
+    const { container } = render(TokenSpan, {
+      token: makeToken({ surface: '२०११', isWord: false, lemmaId: null }),
+    });
+    const number = container.querySelector('[data-token-id="t1"]');
+    expect(number?.textContent).toBe('२०११');
+    expect(number?.hasAttribute('data-s')).toBe(false);
+  });
+
   it('tags the undefined word in <ruby> render mode too', () => {
     const { container } = render(TokenSpan, {
       token: makeToken({ hasDefinition: false, romanization: 'pānī' }),

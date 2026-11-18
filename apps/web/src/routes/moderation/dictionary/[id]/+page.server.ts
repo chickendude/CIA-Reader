@@ -43,6 +43,7 @@ import { deriveProvenance } from '$lib/server/dictionary/lookups.js';
 import { MissingReasonError } from '$lib/server/dictionary/audit.js';
 import { ForbiddenError, isAdmin } from '$lib/server/dictionary/permissions.js';
 import type { Actions, PageServerLoad } from './$types';
+import { getHindiEntry, hindiPatternPreviews, saveHindiMorphology } from '$lib/server/dictionary/hindidb.js';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -110,6 +111,7 @@ export const load: PageServerLoad = async ({ params, locals }) => {
       listFormsForLemma(view.lemma.id),
       listParadigmsForLemma(view.lemma.language, view.lemma.pos),
     ]);
+    const hindi = view.lemma.language === 'hi' ? await getHindiEntry(view.lemma.id) : null;
     return {
       ...view,
       translations: view.translations.map((t) => ({
@@ -118,6 +120,8 @@ export const load: PageServerLoad = async ({ params, locals }) => {
       })),
       forms,
       availableParadigms,
+      hindi,
+      hindiPatterns: hindi ? await hindiPatternPreviews(hindi) : [],
     };
   } catch (e) {
     const mapped = mapError(e);
@@ -180,7 +184,7 @@ const lockSchema = z.object({
 
 const translationPatchSchema = z.object({
   translationId: z.string().regex(UUID_RE),
-  body: z.string().min(1).max(500),
+  body: z.string().min(1).max(50_000),
   promoteToCurator: z
     .enum(['true', 'false'])
     .optional()
@@ -290,6 +294,15 @@ function editorFromLocals(locals: App.Locals) {
 }
 
 export const actions: Actions = {
+  hindiMorphology: async ({ locals, params, request }) => {
+    if (!locals.user) throw redirect(303, '/login');
+    try {
+      const count = await saveHindiMorphology(locals.user, params.id, await request.formData());
+      return { ok: true, section: 'hindi' as const, count };
+    } catch (e) {
+      return fail(400, { ok: false, section: 'hindi' as const, message: e instanceof Error ? e.message : 'Unable to save' });
+    }
+  },
   updateLemma: async ({ params, request, locals }) => {
     const editor = editorFromLocals(locals);
     const form = Object.fromEntries(await request.formData());

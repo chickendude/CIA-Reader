@@ -48,6 +48,7 @@ export async function recordListeningDelta(
       textId: schema.audioFiles.textId,
       ownerId: schema.texts.ownerId,
       visibility: schema.texts.visibility,
+      staffOnly: schema.texts.staffOnly,
     })
     .from(schema.audioFiles)
     .innerJoin(schema.texts, eq(schema.texts.id, schema.audioFiles.textId))
@@ -68,6 +69,7 @@ export async function recordListeningDelta(
         id: row.textId,
         ownerId: row.ownerId,
         visibility: row.visibility,
+        staffOnly: row.staffOnly,
       },
     );
   } catch {

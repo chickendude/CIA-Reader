@@ -91,7 +91,10 @@
   {/if}
 
   <section class="ls-section">
-    <h2>Per-text comprehension</h2>
+    <h2>Word counts and vocabulary coverage</h2>
+    {#if data.language === 'hi'}
+      <p>Word counts include each source word once. Coverage includes every supported dictionary candidate and unresolved word gaps. Compounds and ambiguous words can contribute several candidate matches. Unique vocabulary combines explicitly grouped POS uses.</p>
+    {/if}
     {#if data.texts.length === 0}
       <p class="ls-empty">No texts in {data.languageDescriptor.displayName} yet.</p>
     {:else}
@@ -99,9 +102,12 @@
         <thead>
           <tr>
             <th>Text</th>
-            <th class="num">Unique lemmas</th>
+            <th class="num">Unique vocabulary</th>
             <th class="num">Words</th>
-            <th class="num">Est. comprehension</th>
+            <th class="num">Known coverage</th>
+            <th class="num">Known + learning</th>
+            <th class="num">Unique known</th>
+            <th class="num">Unresolved</th>
             <th class="num">Listened</th>
           </tr>
         </thead>
@@ -110,6 +116,7 @@
             <tr>
               <td>
                 <a href={`/reader/${t.textId}`} class="ls-link">{t.title}</a>
+                {#if t.analysisStale}<small>Dictionary changed — reprocess this text.</small>{/if}
               </td>
               <td class="num">{t.uniqueLemmas.toLocaleString()}</td>
               <td class="num">{t.totalWords.toLocaleString()}</td>
@@ -118,6 +125,9 @@
                   {t.estimatedComprehensionPct}%
                 </span>
               </td>
+              <td class="num">{t.learningCoveragePct}%</td>
+              <td class="num">{t.uniqueKnownPct}%</td>
+              <td class="num">{t.unresolvedWords.toLocaleString()}</td>
               <td class="num">{minutes(t.listeningMinutes)} min</td>
             </tr>
           {/each}
@@ -138,13 +148,17 @@
 
   {#if data.collections.length > 0}
     <section class="ls-section">
-      <h2>Per-collection comprehension</h2>
+      <h2>Per-collection vocabulary coverage</h2>
       <table class="ls-table">
         <thead>
           <tr>
             <th>Collection</th>
             <th class="num">Texts</th>
-            <th class="num">Est. comprehension</th>
+            <th class="num">Words</th>
+            <th class="num">Unique vocabulary</th>
+            <th class="num">Known coverage</th>
+            <th class="num">Known + learning</th>
+            <th class="num">Unresolved</th>
             <th class="num">Listened</th>
           </tr>
         </thead>
@@ -153,13 +167,18 @@
             <tr>
               <td>
                 <a href={`/collections/${c.collectionId}`} class="ls-link">{c.title}</a>
+                {#if c.analysisStale}<small>Dictionary changed — reprocess this collection.</small>{/if}
               </td>
               <td class="num">{c.textCount}</td>
+              <td class="num">{c.totalWords.toLocaleString()}</td>
+              <td class="num">{c.uniqueLemmas.toLocaleString()}</td>
               <td class="num">
                 <span class="ls-pct" data-level={c.estimatedComprehensionPct >= 80 ? 'high' : c.estimatedComprehensionPct >= 50 ? 'mid' : 'low'}>
                   {c.estimatedComprehensionPct}%
                 </span>
               </td>
+              <td class="num">{c.learningCoveragePct}%</td>
+              <td class="num">{c.unresolvedWords.toLocaleString()}</td>
               <td class="num">{minutes(c.listeningMinutes)} min</td>
             </tr>
           {/each}

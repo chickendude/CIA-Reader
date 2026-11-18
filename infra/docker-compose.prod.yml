@@ -97,6 +97,7 @@ services:
       - internal
     environment:
       PYTHONPATH: /opt/shared-types:/srv/nlp
+      DATABASE_URL: postgres://${POSTGRES_USER:-ciareader}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-ciareader}
       # Pin PyTorch / NumPy / Stanza's BLAS thread count to the
       # cgroup CPU quota. Without these, the libraries try to use
       # every host core they can see, then Docker throttles them —

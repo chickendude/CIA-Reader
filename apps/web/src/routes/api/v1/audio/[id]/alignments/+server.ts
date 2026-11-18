@@ -10,7 +10,8 @@
 import { error, json } from '@sveltejs/kit';
 import { z } from 'zod';
 
-import { requireUser } from '$lib/server/auth/require-user.js';
+import { requireUser, resolveUser } from '$lib/server/auth/require-user.js';
+import { canReadAudio } from '$lib/server/auth/can-read.js';
 import {
   AlignmentError,
   listAlignments,
@@ -39,6 +40,7 @@ const putSchema = z
 export const GET: RequestHandler = async (event) => {
   const id = event.params.id;
   if (!id || !UUID_RE.test(id)) throw error(400, 'Invalid audio id');
+  if (!(await canReadAudio(await resolveUser(event), id))) throw error(404, 'Audio not found');
   const alignments = await listAlignments(id);
   return json({ alignments });
 };

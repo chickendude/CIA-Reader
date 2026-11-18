@@ -40,6 +40,7 @@ class LemmaCandidate(BaseModel):
     pos: str
     score: float
     features: dict[str, str] = Field(default_factory=dict)
+    dictionary_id: str | None = None
 
 
 class NumberLanguageForm(BaseModel):
@@ -84,6 +85,7 @@ class NumberForms(BaseModel):
 
 class Token(BaseModel):
     idx: int
+    sentence_idx: int = 0
     surface: str
     is_word: bool
     candidates: list[LemmaCandidate] = Field(default_factory=list)
@@ -123,6 +125,7 @@ class ProcessResponse(BaseModel):
     language: str
     pipeline_id: str
     tokens: list[Token]
+    hindi_analysis: dict | None = None
     proposed_phrases: list[ProposedPhrase] = Field(
         default_factory=list,
         description="T-14.5: rule-based phrase proposals over the token list.",
@@ -163,4 +166,5 @@ class OcrResponse(BaseModel):
     height: int
     body: str
     tokens: list[OcrToken]
+    hindi_analysis: dict | None = None
     proposed_phrases: list[ProposedPhrase] = Field(default_factory=list)

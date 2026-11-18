@@ -26,6 +26,8 @@ dependencies = [
   # Pure-Python, tiny; FastAPI requires it for Form/File params and the
   # tests post multipart bodies, so it stays in base deps.
   "python-multipart>=0.0.9",
+  # HindiDB reads the dictionary maintained by Parhiba, with no second writable store.
+  "psycopg[binary]>=3.2",
 ]
 
 [project.optional-dependencies]
@@ -62,11 +64,15 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
-include = ["app*"]
+include = ["app*", "hindidb*"]
+
+[tool.setuptools.package-data]
+hindidb = ["data/*.json", "UPSTREAM.json"]
 
 [tool.ruff]
 line-length = 100
 target-version = "py311"
+extend-exclude = ["hindidb"] # Vendored upstream parser; keep its source style.
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "N", "W"]

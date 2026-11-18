@@ -13,10 +13,13 @@
  *  `lemmas` so the row already carries headword + POS + gloss for
  *  the popup. */
 export type ServerCandidate = {
+  selectedBy?: 'ai' | 'human';
   lemmaId: string;
   headword: string;
   pos: string;
   glossDefault: string | null;
+  personalGloss?: string | null;
+  status?: 'known' | 'learning' | 'ignored' | 'unknown';
   score: number;
   features: Record<string, string>;
 };
@@ -105,6 +108,10 @@ export type ServerNumberForms = {
  *  component renders these spans directly; when null, it falls back
  *  to client-side whitespace tokenization. */
 export type ServerToken = {
+  canVerifyContext?: boolean;
+  contextVersion?: string;
+  selectedBy?: 'ai' | 'human';
+  selectionStatus?: string;
   id: string;
   idx: number;
   /** Owning chapter id (server tokens only). Lets the popup capture the mined
@@ -116,6 +123,8 @@ export type ServerToken = {
   isAmbiguous: boolean;
   isOov: boolean;
   lemmaId: string | null;
+  headword?: string;
+  pos?: string;
   romanization: string | null;
   /** Canonical short gloss for the lemma — surfaced in the hover
    *  tooltip (T-5.18). Null when there's no lemma or no gloss yet. */

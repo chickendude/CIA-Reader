@@ -3,6 +3,8 @@
  * (T-9.6).
  */
 import { error } from '@sveltejs/kit';
+import { resolveUser } from '$lib/server/auth/require-user.js';
+import { canReadAudio } from '$lib/server/auth/can-read.js';
 import { inArray } from 'drizzle-orm';
 
 import { listAlignments } from '$lib/server/audio/alignments.js';
@@ -15,9 +17,11 @@ import type { RequestHandler } from './$types';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-export const GET: RequestHandler = async ({ params, url }) => {
+export const GET: RequestHandler = async (event) => {
+  const { params, url } = event;
   const id = params.id;
   if (!id || !UUID_RE.test(id)) throw error(400, 'Invalid audio id');
+  if (!(await canReadAudio(await resolveUser(event), id))) throw error(404, 'Audio not found');
   const format = url.searchParams.get('format') ?? 'whisper';
   if (format !== 'whisper' && format !== 'webvtt') {
     throw error(400, 'format must be "whisper" or "webvtt"');

@@ -25,6 +25,7 @@ const nlpDispatcher: Dispatcher = new Agent({
 });
 
 export interface LemmaCandidate {
+  dictionary_id?: string | null;
   lemma: string;
   pos: string;
   score: number;
@@ -60,6 +61,7 @@ export interface NumberForms {
 }
 
 export interface NlpToken {
+  sentence_idx?: number;
   idx: number;
   surface: string;
   is_word: boolean;
@@ -85,6 +87,7 @@ export interface ProposedPhrase {
 }
 
 export interface ProcessResponse {
+  hindi_analysis?: HindiAnalysis | null;
   language: string;
   pipeline_id: string;
   tokens: NlpToken[];
@@ -111,6 +114,7 @@ export interface OcrToken extends NlpToken {
 }
 
 export interface OcrResponse {
+  hindi_analysis?: HindiAnalysis | null;
   language: string;
   pipeline_id: string;
   /** Page image pixel dimensions (echoed from the upload). */
@@ -174,6 +178,17 @@ export interface HealthResponse {
   languages: string[];
 }
 
+export interface HindiAnalysis {
+  revision: number;
+  parser_version: string;
+  stats: { source_words: number; unresolved_occurrences: number; [key: string]: unknown };
+  occurrences: Array<{
+    start_idx: number; end_idx: number; lemma_id: string;
+    source_start: number; source_end: number; rules: string[];
+  }>;
+  constructions?: unknown[];
+}
+
 export interface RomanizeResponse {
   /** One entry per input surface, same order. `null` when the input
    *  was empty / on an unsupported script — caller leaves the row's
@@ -205,14 +220,21 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const nlpClient = {
+  previewHindiEntry(entry: Record<string, unknown>, includeSlots = false): Promise<{ forms: Record<string, string[]>; slots?: { label: string; forms: string[] }[] }> {
+    return request('/hindi/preview', { method: 'POST', body: JSON.stringify({ entry, include_slots: includeSlots }) });
+  },
   health(): Promise<HealthResponse> {
     return request<HealthResponse>('/health');
   },
-  process(language: string, text: string): Promise<ProcessResponse> {
-    return request<ProcessResponse>('/process', {
+  async process(language: string, text: string): Promise<ProcessResponse> {
+    const result = await request<ProcessResponse>('/process', {
       method: 'POST',
       body: JSON.stringify({ language, text }),
     });
+    if (language === 'hi' && result.pipeline_id === 'stanza-hi') {
+      throw new Error('Restart the NLP service to load HindiDB before processing Hindi texts.');
+    }
+    return result;
   },
   romanize(language: string, surfaces: string[]): Promise<RomanizeResponse> {
     return request<RomanizeResponse>('/romanize', {
@@ -264,6 +286,10 @@ export const nlpClient = {
       const body = await res.text().catch(() => '');
       throw new Error(`NLP service ${res.status}: ${body || res.statusText}`);
     }
-    return (await res.json()) as OcrResponse;
+    const result = (await res.json()) as OcrResponse;
+    if (language === 'hi' && result.pipeline_id === 'stanza-hi') {
+      throw new Error('Restart the NLP service to load HindiDB before processing Hindi pages.');
+    }
+    return result;
   },
 };

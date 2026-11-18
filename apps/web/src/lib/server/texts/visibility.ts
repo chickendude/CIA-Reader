@@ -70,7 +70,7 @@ export async function setTextVisibility(
 
   const [updated] = await db
     .update(schema.texts)
-    .set({ visibility: input.next, updatedAt: new Date() })
+    .set({ visibility: input.next, ...(input.next === 'official' ? { staffOnly: true } : {}), updatedAt: new Date() })
     .where(eq(schema.texts.id, input.textId))
     .returning();
   if (!updated) throw new TextVisibilityError('update returned no row', 404);

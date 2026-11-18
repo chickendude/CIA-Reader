@@ -9,20 +9,29 @@
  *
  * Two delivery paths share this builder: a downloadable `.apkg`
  * (`buildApkg`) and AnkiConnect (the page posts `getAnkiCards` JSON to the
- * user's local Anki). `.apkg` generation uses `anki-apkg-export` (CommonJS +
- * sql.js), loaded via `createRequire` to sidestep ESM interop.
+ * user's local Anki). `.apkg` generation uses the existing Anki schema with
+ * native SQLite (Node 22.13+) so full-book decks have no fixed WASM heap limit.
  */
 import { createRequire } from 'node:module';
+import { createHash } from 'node:crypto';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import type { DatabaseSync as SQLiteDatabase } from 'node:sqlite';
+import JSZip from 'jszip';
 
 import { and, asc, eq, inArray } from 'drizzle-orm';
 
 import { db, schema } from './db/index.js';
 import { lemmaBookFrequencies, resolveBookChapterScope } from './texts/book-frequency.js';
 import { sentenceFromTokens } from './texts/sentences.js';
+import { canReadText } from './auth/can-read.js';
 import type { LanguageCode } from '@ciareader/shared-types';
 import type { VocabularyStatus } from './vocabulary.js';
 
 export type AnkiCard = {
+  /** Stable dictionary identity for catalog exports, independent of definition edits. */
+  id?: string;
   word: string;
   pos: string;
   definition: string;
@@ -155,13 +164,14 @@ export async function getAnkiCards(
   opts: { textId?: string; language?: LanguageCode; status?: VocabularyStatus },
 ): Promise<{ language: LanguageCode; cards: AnkiCard[] }> {
   let language = opts.language;
-  if (!language && opts.textId) {
+  if (opts.textId) {
     const [text] = await db
-      .select({ language: schema.texts.language })
+      .select()
       .from(schema.texts)
       .where(eq(schema.texts.id, opts.textId))
       .limit(1);
-    language = text?.language as LanguageCode | undefined;
+    if (!text || !(await canReadText({ id: userId }, text))) return { language: language ?? 'hi', cards: [] };
+    language = text.language;
   }
   if (!language) {
     return { language: 'eu' as LanguageCode, cards: [] };
@@ -195,6 +205,7 @@ export async function getAnkiCards(
   const samples = opts.textId ? await bookSamples(opts.textId, rows) : new Map();
 
   const cards: AnkiCard[] = rows.map((r) => ({
+    id: r.lemmaId,
     word: r.headword,
     pos: r.pos,
     definition: personal.get(r.lemmaId) ?? r.glossDefault ?? '',
@@ -222,6 +233,7 @@ export function cardBackHtml(card: AnkiCard): string {
   const parts: string[] = [];
   if (card.definition) parts.push(`<div class="def">${escapeHtml(card.definition)}</div>`);
   if (card.pos) parts.push(`<div class="pos">${escapeHtml(card.pos)}</div>`);
+  if (card.frequency > 0) parts.push(`<div class="frequency">${card.frequency} occurrences</div>`);
   const sentences = [
     ...(card.minedSentence ? [card.minedSentence] : []),
     ...card.samples,
@@ -235,15 +247,49 @@ export function cardBackHtml(card: AnkiCard): string {
 /** Build a `.apkg` deck (a zip Buffer) from the given cards. */
 export async function buildApkg(deckName: string, cards: AnkiCard[]): Promise<Buffer> {
   const require = createRequire(import.meta.url);
-  const mod = require('anki-apkg-export');
-  const AnkiExport = (mod.default ?? mod) as new (name: string) => {
-    addCard(front: string, back: string): void;
-    save(): Promise<Buffer | Uint8Array>;
-  };
-  const apkg = new AnkiExport(deckName);
-  for (const card of cards) {
-    apkg.addCard(escapeHtml(card.word), cardBackHtml(card));
+  const { DatabaseSync } = require('node:sqlite') as typeof import('node:sqlite');
+  // Reuse the Anki schema/template, but use native SQLite: the package's
+  // bundled sql.js has a fixed 16 MB heap and fails on full-book decks.
+  const template = require('anki-apkg-export/dist/template').default as () => string;
+  const directory = await mkdtemp(join(tmpdir(), 'parhiba-anki-'));
+  let sqlite: SQLiteDatabase | undefined;
+  try {
+    const path = join(directory, 'collection.anki2');
+    sqlite = new DatabaseSync(path);
+    sqlite.exec(template());
+    const now = Date.now(), seconds = Math.floor(now / 1000);
+    const stableId = (value: string) => Number.parseInt(createHash('sha256').update(value).digest('hex').slice(0, 12), 16);
+    const deckId = stableId(`parhiba:deck:${deckName}`), modelId = stableId('parhiba:vocabulary:v1');
+    const row = sqlite.prepare('SELECT conf,models,decks FROM col').get()!;
+    const model = Object.values(JSON.parse(String(row.models)))[0] as Record<string, unknown>;
+    const decks = JSON.parse(String(row.decks));
+    const deck = Object.values(decks).find((d) => (d as { name: string }).name === 'Template') as Record<string, unknown>;
+    const conf = JSON.parse(String(row.conf));
+    const models = { [modelId]: { ...model, id: modelId, name: 'Parhiba Vocabulary', did: deckId, mod: seconds } };
+    const updatedDecks = { 1: decks[1], [deckId]: { ...deck, id: deckId, name: deckName, mod: seconds,
+      newToday: [0,0], revToday: [0,0], lrnToday: [0,0], timeToday: [0,0] } };
+    sqlite.prepare('UPDATE col SET mod=?,models=?,decks=?,conf=?').run(now, JSON.stringify(models), JSON.stringify(updatedDecks),
+      JSON.stringify({ ...conf, nextPos: cards.length + 1, curDeck: deckId, activeDecks: [deckId], curModel: String(modelId) }));
+    const note = sqlite.prepare('INSERT INTO notes VALUES(?,?,?,?,?,?,?,?,?,?,?)');
+    const item = sqlite.prepare('INSERT INTO cards VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)');
+    sqlite.exec('BEGIN');
+    for (const [index, card] of cards.entries()) {
+      const id = now + index;
+      const guid = card.id ? `parhiba-${card.id}` : createHash('sha256').update(`${deckName}\0${card.word}\0${card.pos}`).digest('hex');
+      const front = escapeHtml(card.word);
+      const checksum = Number.parseInt(createHash('sha1').update(card.word).digest('hex').slice(0,8),16);
+      note.run(id,guid,modelId,seconds,-1,'',`${front}\x1f${cardBackHtml(card)}`,card.word,checksum,0,'');
+      item.run(id,id,deckId,0,seconds,-1,0,0,index+1,0,0,0,0,0,0,0,0,'');
+    }
+    sqlite.exec('COMMIT');
+    sqlite.close();
+    sqlite = undefined;
+    const archive = new JSZip();
+    archive.file('collection.anki2', await readFile(path));
+    archive.file('media', '{}');
+    return await archive.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
+  } finally {
+    sqlite?.close();
+    await rm(directory, { recursive: true, force: true });
   }
-  const zip = await apkg.save();
-  return Buffer.isBuffer(zip) ? zip : Buffer.from(zip);
 }

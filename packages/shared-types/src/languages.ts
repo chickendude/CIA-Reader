@@ -65,7 +65,7 @@ export const LANGUAGES: Readonly<Record<LanguageCode, LanguageDescriptor>> = {
       'Tiro Devanagari Hindi',
       'Mukta',
     ],
-    pipelineId: 'stanza-hi',
+    pipelineId: 'hindidb-hi',
   },
   mr: {
     code: 'mr',

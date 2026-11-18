@@ -309,7 +309,8 @@ export type UpdateTranslationPatch = {
   promoteToCurator?: boolean;
 };
 
-const MAX_BODY_LEN = 500;
+// Staff edit complete dictionary entries, including long joined HindiDB senses.
+const MAX_BODY_LEN = 50_000;
 
 function normalizeBody(body: string): string {
   return body.trim().replace(/\s+/g, ' ');

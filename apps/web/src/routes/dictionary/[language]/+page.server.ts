@@ -5,6 +5,8 @@
  * index is crawlable. Search, filters, and pagination are driven by
  * URL query params so deep links and back-button work without JS.
  */
+import { canEditDictionary } from '$lib/server/dictionary/permissions.js';
+import { listHindiPatterns, singleHindiDefinitions } from '$lib/server/dictionary/hindidb.js';
 import { error } from '@sveltejs/kit';
 
 import {
@@ -27,7 +29,7 @@ function readInt(url: URL, key: string, fallback: number): number {
   return Number.isFinite(n) ? n : fallback;
 }
 
-export const load: PageServerLoad = async ({ params, url }) => {
+export const load: PageServerLoad = async ({ params, url, locals }) => {
   if (!isSupportedLanguage(params.language)) {
     throw error(404, `Unknown language: ${params.language}`);
   }
@@ -51,7 +53,14 @@ export const load: PageServerLoad = async ({ params, url }) => {
     offset,
   });
 
+  const canEdit = await canEditDictionary(locals?.user, language);
+  const hindiIds = language === 'hi' ? result.lemmas.map(row => row.id) : [];
+  const [patterns, definitionIds] = await Promise.all([
+    listHindiPatterns(hindiIds),
+    singleHindiDefinitions(canEdit ? hindiIds : []),
+  ]);
   return {
+    canEdit, patterns, definitionIds,
     language: descriptor,
     lemmas: result.lemmas.map(publicLemma),
     totalCount: result.totalCount,

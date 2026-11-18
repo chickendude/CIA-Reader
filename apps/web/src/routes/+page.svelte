@@ -91,9 +91,30 @@
       <a href="/login">Sign in</a> to track known words across each language.
     </p>
   {/if}
+  <footer class="home-sources">
+    <h2>Sources</h2>
+    <p>Hindi dictionary and parsing: HindiDB, including locally reviewed meanings and forms.</p>
+    <p>Dictionary references:
+      <a href="https://en.wiktionary.org/wiki/Category:Hindi_language">Wiktionary</a>,
+      <a href="https://www.hindwi.org/">Hindwi</a>,
+      <a href="https://www.rekhtadictionary.com/">Rekhta Dictionary</a>, and
+      <a href="https://www.shabdkosh.com/">Shabdkosh</a>.
+      Individual source records are retained with dictionary entries.
+    </p>
+  </footer>
 </section>
 
 <style>
+  .home-sources {
+    margin-top: 3rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--rule, var(--color-border));
+    color: var(--ink-3, var(--color-fg-muted));
+    font-size: 0.8rem;
+    line-height: 1.6;
+  }
+  .home-sources h2 { font-size: 0.9rem; font-weight: 500; }
+  .home-sources a { color: inherit; }
   .content {
     max-width: 64rem;
     padding: 2rem 1.25rem 3rem;

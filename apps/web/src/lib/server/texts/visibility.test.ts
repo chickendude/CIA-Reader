@@ -89,6 +89,7 @@ describe('setTextVisibility', () => {
       next: 'official',
     });
     expect(r.visibility).toBe('official');
+    expect(chain.set).toHaveBeenCalledWith(expect.objectContaining({ staffOnly: true }));
   });
 
   it('forbids the owner from demoting an official text', async () => {

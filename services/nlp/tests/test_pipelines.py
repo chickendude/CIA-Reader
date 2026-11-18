@@ -11,7 +11,7 @@ import pytest
 
 from app import pipelines
 from app.pipelines import Pipeline, PipelineResult, StubPipeline, get_pipeline
-from app.pipelines.hindi import HindiPipeline
+from app.pipelines.hindidb import HindiDBPipeline
 from app.pipelines.marathi import MarathiPipeline
 from app.pipelines.odia import OdiaPipeline
 from app.schemas import LemmaCandidate, Token
@@ -28,7 +28,7 @@ def test_get_pipeline_returns_real_pipelines_for_mvp_languages():
     # After T-2.2 / T-2.3 / T-2.3a, every MVP language routes to its
     # real implementation. No language is on the stub any more (the
     # StubPipeline still exists as a test-only factory override target).
-    assert isinstance(get_pipeline("hi"), HindiPipeline)
+    assert isinstance(get_pipeline("hi"), HindiDBPipeline)
     assert isinstance(get_pipeline("mr"), MarathiPipeline)
     assert isinstance(get_pipeline("or"), OdiaPipeline)
     for code in ("hi", "mr", "or"):
@@ -112,7 +112,7 @@ def test_custom_factory_override_via_registry(monkeypatch):
     class MarkerPipeline(StubPipeline):
         pipeline_id = "marker"
 
-    monkeypatch.setitem(pipelines._PIPELINE_FACTORIES, "stanza-hi", MarkerPipeline)
+    monkeypatch.setitem(pipelines._PIPELINE_FACTORIES, "hindidb-hi", MarkerPipeline)
     pipelines.reset_pipeline_cache()
     assert isinstance(get_pipeline("hi"), MarkerPipeline)
 

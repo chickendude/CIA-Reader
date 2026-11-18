@@ -2,14 +2,16 @@
  * GET /audio/<storage-key> (T-9.1, dev backend only).
  *
  * Serves audio blobs from the local volume in dev. The S3 backend
- * presigns URLs and bypasses this route entirely. Public — audio
- * is keyed under text-id paths and the canReadText gate runs at
- * the listing endpoint; once the player has the URL we don't
- * re-check (mirrors how a CDN edge would behave).
+ * presigns URLs and bypasses this route entirely. Local requests
+ * check the parent text so restricted books stay restricted.
  */
 import { error } from '@sveltejs/kit';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
+import { eq } from 'drizzle-orm';
+import { db, schema } from '$lib/server/db/index.js';
+import { resolveUser } from '$lib/server/auth/require-user.js';
+import { canReadText } from '$lib/server/auth/can-read.js';
 
 import type { RequestHandler } from './$types';
 
@@ -25,7 +27,8 @@ const MIME_BY_EXT: Record<string, string> = {
   '.webm': 'audio/webm',
 };
 
-export const GET: RequestHandler = async ({ params }) => {
+export const GET: RequestHandler = async (event) => {
+  const { params } = event;
   const key = params.key;
   if (!key) throw error(400, 'missing key');
   // Defense-in-depth against path traversal: refuse keys that
@@ -35,6 +38,10 @@ export const GET: RequestHandler = async ({ params }) => {
   if (!resolved.startsWith(root + path.sep) && resolved !== root) {
     throw error(400, 'invalid key');
   }
+  const [row] = await db.select({ text: schema.texts }).from(schema.audioFiles)
+    .innerJoin(schema.texts, eq(schema.texts.id, schema.audioFiles.textId))
+    .where(eq(schema.audioFiles.storageKey, key)).limit(1);
+  if (!row || !(await canReadText(await resolveUser(event), row.text))) throw error(404, 'audio not found');
   let body: Buffer;
   try {
     body = await fs.readFile(resolved);
@@ -46,7 +53,7 @@ export const GET: RequestHandler = async ({ params }) => {
   return new Response(new Uint8Array(body), {
     headers: {
       'content-type': mime,
-      'cache-control': 'public, max-age=86400',
+      'cache-control': 'private, no-store',
       // Stream-friendly: allow Range requests for the <audio> element.
       'accept-ranges': 'bytes',
     },

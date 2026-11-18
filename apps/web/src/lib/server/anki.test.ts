@@ -1,5 +1,11 @@
 // @vitest-environment node
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { mkdtemp, writeFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { createRequire } from 'node:module';
+import JSZip from 'jszip';
+const { DatabaseSync } = createRequire(import.meta.url)('node:sqlite') as typeof import('node:sqlite');
 
 let queue: unknown[][] = [];
 
@@ -105,6 +111,30 @@ describe('getAnkiCards (language-wide path)', () => {
 });
 
 describe('buildApkg', () => {
+  it('exports decks larger than the old 16 MB heap and keeps note identity through definition edits', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'anki-test-'));
+    const inspect = async (buffer: Buffer) => {
+      const zip = await JSZip.loadAsync(buffer);
+      const path = join(directory, 'deck.sqlite');
+      const bytes = await zip.file('collection.anki2')!.async('nodebuffer');
+      await writeFile(path, bytes);
+      const sqlite = new DatabaseSync(path, { readOnly: true });
+      try {
+        return { bytes: bytes.length, notes: sqlite.prepare('SELECT guid,mid FROM notes ORDER BY id').all(),
+          integrity: sqlite.prepare('PRAGMA integrity_check').get()?.integrity_check };
+      } finally { sqlite.close(); }
+    };
+    try {
+      const cards = Array.from({ length: 800 }, (_, index) => ({ id: `lemma-${index}`, word: `शब्द${index}`, pos: 'NOUN',
+        definition: 'a long dictionary meaning; '.repeat(1000), frequency: 800-index, minedSentence: null, samples: [] }));
+      const original = await inspect(await buildApkg('Test::Large', cards));
+      expect(original.bytes).toBeGreaterThan(16 * 1024 * 1024);
+      expect(original.integrity).toBe('ok');
+      expect(original.notes).toHaveLength(800);
+      const edited = await inspect(await buildApkg('Test::Large', [{ ...cards[0]!, definition: 'revised meaning' }]));
+      expect(edited.notes[0]).toEqual(original.notes[0]);
+    } finally { await rm(directory, { recursive: true, force: true }); }
+  });
   it('produces a non-empty .apkg zip (PK header)', async () => {
     const buf = await buildApkg('Test::Deck', [
       {

@@ -96,8 +96,10 @@ describe('GET /api/v1/lemmas/:id/translations', () => {
     const body = await res.json();
     expect(body.lemma.headword).toBe('पानी');
     expect(body.translations.official[0].body).toBe('water');
+    expect(body.canEdit).toBe(false);
     expect(jsonContract(body)).toMatchInlineSnapshot(`
       {
+        "canEdit": "boolean",
         "lemma": {
           "frequencyRank": "number",
           "glossDefault": "string",

@@ -87,8 +87,8 @@ async def test_process_text_happy_path_marks_processing_then_ready():
 
     assert result.text_id == "text-1"
     assert result.chapters_processed == 2
-    # 2 tokens in each chapter (whitespace-split fake Stanza from conftest)
-    assert result.tokens_written == 4
+    # HindiDB preserves the whitespace between the two words in each chapter.
+    assert result.tokens_written == 6
 
     # Marker sequence: processing before loading chapters, ready after
     # all are written, job bookkeeping brackets the work.

@@ -21,6 +21,7 @@ function makeSelectChain() {
 }
 
 const selectFn = vi.fn(() => makeSelectChain());
+vi.mock('./hindi-context.js', () => ({ loadHindiContextChoices: async () => new Map(), canVerifyHindiContext: async () => false, contextVersion: () => 'version' }));
 
 vi.mock('../db/index.js', () => ({
   db: { select: () => selectFn() },
@@ -206,7 +207,7 @@ describe('loadChapterTokens', () => {
     expect(result![2]).toMatchObject({ id: 't3', hasDefinition: false });
   });
 
-  it('hasDefinition follows the T-3.14 sibling-gloss fallback (#435)', async () => {
+  it('does not borrow another Hindi POS entry’s definition', async () => {
     stage([tokenRow({ id: 't1', idx: 0, lemmaId: 'lem-propn' })]);
     stage([]); // token_corrections
     stage([]); // user_known_lemmas
@@ -214,14 +215,12 @@ describe('loadChapterTokens', () => {
       { id: 'lem-propn', language: 'hi', headword: 'पार्क', glossDefault: null },
     ]);
     stage([]); // personal translations
-    stage([{ language: 'hi', headword: 'पार्क', glossDefault: 'park' }]);
     const result = await loadChapterTokens('chap-1', 'user-1');
-    // The linked lemma had no gloss, but a same-headword sibling does —
-    // the overlay must agree with the tooltip and treat it as defined.
+    // HindiDB's lexical identities remain separate even when spelling matches.
     expect(result![0]).toMatchObject({
       id: 't1',
-      glossDefault: 'park',
-      hasDefinition: true,
+      glossDefault: null,
+      hasDefinition: false,
     });
   });
 
@@ -232,11 +231,11 @@ describe('loadChapterTokens', () => {
     stage([]); // token_corrections (T-6.4)
     stage([]); // user_known_lemmas
     stage([
-      { id: 'lem-propn', language: 'hi', headword: 'पार्क', glossDefault: null },
+      { id: 'lem-propn', language: 'mr', headword: 'पार्क', glossDefault: null },
     ]);
     stage([]); // personal translations
     stage([
-      { language: 'hi', headword: 'पार्क', glossDefault: 'park' },
+      { language: 'mr', headword: 'पार्क', glossDefault: 'park' },
     ]);
     const result = await loadChapterTokens('chap-1', 'user-1');
     expect(result![0]).toMatchObject({ id: 't1', glossDefault: 'park' });
@@ -306,6 +305,8 @@ describe('loadChapterTokens', () => {
         headword: 'पाठ',
         pos: 'VERB',
         glossDefault: 'to read',
+        personalGloss: null,
+        status: 'unknown',
         score: 0.3,
         features: { Case: 'Acc' },
       },

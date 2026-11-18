@@ -6,20 +6,20 @@
  * exactly one place. Deny-by-default — if none of the explicit allow
  * paths match, access is rejected.
  *
- * Allow paths today:
+ * Staff-only texts require a curator/admin role before any allow path.
+ * The catalog can expose metadata without exposing the book's contents.
+ * Allow paths:
  *   - **Owner**: `text.owner_id === viewer.id`. The most common case.
  *   - **Official**: `text.visibility === 'official'`. Public; the
  *     viewer may be `null` (anonymous), e.g. SEO crawls of T-7.6.
  *
- * Allow paths the plan calls for that aren't wired yet (M7):
+ * Sharing paths:
  *   - **Direct share**: a row in `text_shares` matching
  *     `(text_id, shared_with_user_id = viewer.id)`.
  *   - **Group share**: the viewer is a member of a group that holds a
  *     `text_group_shares` row for the text.
  *
- * Both M7 paths require a DB lookup, so the helper is async even
- * though today's logic is purely in-memory. M7 plugs in the lookups
- * without touching any call site. `canReadText` always returns a
+ * Sharing and staff checks require DB lookups. `canReadText` always returns a
  * boolean; `assertCanReadText` throws a `ForbiddenError` so endpoints
  * can map to 403 / 404 as they prefer (privacy preference: 404 so we
  * don't leak text existence to non-readers).
@@ -28,17 +28,20 @@ import type { Text, User } from '../db/schema.js';
 import { ForbiddenError } from '../dictionary/permissions.js';
 
 export type Viewer = Pick<User, 'id'> | null | undefined;
-export type ReadableText = Pick<Text, 'id' | 'ownerId' | 'visibility'>;
+export type ReadableText = Pick<Text, 'id' | 'ownerId' | 'visibility'> & Partial<Pick<Text, 'staffOnly'>>;
 
 /**
- * Pure predicate. Returns true iff the viewer is allowed to read the
- * text under the current policy. Async because M7 will need DB
- * lookups for the share-table branches; today nothing here awaits.
+ * Returns true iff the viewer is allowed to read the text under the current policy.
  */
 export async function canReadText(
   viewer: Viewer,
   text: ReadableText,
 ): Promise<boolean> {
+  if (text.staffOnly) {
+    if (!viewer) return false;
+    const { isStaffMember } = await import('./staff.js');
+    if (!(await isStaffMember(viewer.id))) return false;
+  }
   // 1. Public official texts are readable by anyone, including
   //    anonymous visitors.
   if (text.visibility === 'official') return true;
@@ -63,6 +66,25 @@ export async function canReadText(
     if (await viewerHasCollectionShareForText(viewer.id, text.id)) return true;
   }
   return false;
+}
+
+/** Authorize before fetching sentence text, including indirect export/mining paths. */
+export async function canReadChapter(viewer: Viewer, chapterId: string): Promise<boolean> {
+  const { db, schema } = await import('../db/index.js');
+  const { eq } = await import('drizzle-orm');
+  const [row] = await db.select({ text: schema.texts }).from(schema.textChapters)
+    .innerJoin(schema.texts, eq(schema.texts.id, schema.textChapters.textId))
+    .where(eq(schema.textChapters.id, chapterId)).limit(1);
+  return row ? canReadText(viewer, row.text) : false;
+}
+
+export async function canReadAudio(viewer: Viewer, audioId: string): Promise<boolean> {
+  const { db, schema } = await import('../db/index.js');
+  const { eq } = await import('drizzle-orm');
+  const [row] = await db.select({ text: schema.texts }).from(schema.audioFiles)
+    .innerJoin(schema.texts, eq(schema.texts.id, schema.audioFiles.textId))
+    .where(eq(schema.audioFiles.id, audioId)).limit(1);
+  return row ? canReadText(viewer, row.text) : false;
 }
 
 export async function assertCanReadText(

@@ -1,7 +1,10 @@
 <script lang="ts">
   import { enhance } from '$app/forms';
+  import EditableDefinition from '$lib/components/reader/EditableDefinition.svelte';
+  import { invalidateAll } from '$app/navigation';
   import ProvenanceBadge from '$lib/components/dictionary/ProvenanceBadge.svelte';
   import LemmaInlineField from './LemmaInlineField.svelte';
+  import HindiPatternPicker from './HindiPatternPicker.svelte';
   import LemmaInlinePos from './LemmaInlinePos.svelte';
   import type { ActionData, PageData } from './$types';
 
@@ -18,7 +21,7 @@
     if (!form) return null;
     if (form.section !== section) return null;
     if (form.ok) return 'Saved.';
-    return form.message;
+    return form.message ?? null;
   }
 
   /** Render `Tense=Past, Person=1` from a features blob — same shape
@@ -131,8 +134,8 @@
    *  itself so they don't carry a slot label. */
   function slotLabel(features: Record<string, string>): string {
     if (features.Mood === 'Imp') {
-      if (features.Politeness === 'Form') return 'imperative · polite';
-      if (features.Politeness === 'Infm') return 'imperative · familiar';
+      if (features.Politeness === 'Form') return 'imperative, polite';
+      if (features.Politeness === 'Infm') return 'imperative, familiar';
       return 'imperative';
     }
     if (features.VerbForm === 'Inf') return 'infinitive';
@@ -311,7 +314,7 @@
 </script>
 
 <svelte:head>
-  <title>Edit {lemma.headword} — CIA Reader</title>
+  <title>Edit {lemma.headword} | CIA Reader</title>
   <meta name="robots" content="noindex" />
 </svelte:head>
 
@@ -411,6 +414,15 @@
     <span class="mli-divider"></span>
     <LemmaInlinePos value={lemma.pos} />
     <span class="mli-divider"></span>
+    {#if data.hindi}
+      {@const definitions = data.translations.filter(t => !t.hidden && t.targetLanguage === 'en' && t.source !== 'user')}
+      {#if definitions.length === 1}
+        <EditableDefinition text={definitions[0]!.body} translationId={definitions[0]!.id} lemmaId={lemma.id}
+          canEdit onSave={() => void invalidateAll()} />
+      {:else}
+        <a href="#translations">Edit translations</a>
+      {/if}
+    {:else}
     <LemmaInlineField
       field="glossDefault"
       value={lemma.glossDefault ?? ''}
@@ -418,22 +430,22 @@
       multiline
       class="mli-gloss"
     />
+    {/if}
     <span class="mli-divider"></span>
     <label class="mli-fld">
       <span class="mli-fld-l">rank</span>
       <LemmaInlineField
         field="frequencyRank"
         value={lemma.frequencyRank?.toString() ?? ''}
-        placeholder="—"
+        placeholder=""
         numeric
         class="mli-freq"
       />
     </label>
-    <button class="mli-translations" type="button" title="Translations">
+    <a class="mli-translations" href="#translations" title="Translations">
       <span class="mli-tr-count">{data.translations.length}</span>
       <span class="mli-tr-l">translations</span>
-      <span class="mli-tr-add" aria-hidden="true">＋</span>
-    </button>
+      </a>
   </div>
 
   {#if opsMode === 'merge'}
@@ -522,7 +534,35 @@
   {/if}
 
   <!-- Translations ------------------------------------------------------ -->
-  <section>
+  {#if data.hindi}
+    <section id="inflection">
+      <h2>Hindi inflection</h2>
+      {#if msgFor('hindi')}<p role="status">{msgFor('hindi')}</p>{/if}
+      <form method="post" action="?/hindiMorphology" use:enhance class="stack">
+        {#key lemma.id + data.hindi.paradigm + lemma.pos + lemma.headword}
+          <HindiPatternPicker patterns={data.hindiPatterns} current={data.hindi.paradigm} />
+        {/key}
+        {#if data.hindi.reviewedSlots.length}
+          <details><summary>Reviewed HindiDB forms ({data.hindi.reviewedSlots.length} slots)</summary>
+            <dl>{#each data.hindi.reviewedSlots as slot}
+              <dt>{slot.label}</dt><dd lang="hi">{slot.forms.join(', ') || 'No recorded form'}</dd>
+            {/each}</dl>
+          </details>
+        {/if}
+        <label>Listed forms (one spelling per line)
+          <textarea name="forms" rows="5" value={data.hindi.forms.join('\n')}></textarea>
+        </label>
+        <label>Alternative headwords (one per line)
+          <textarea name="alternatives" rows="2" value={data.hindi.alternatives.join('\n')}></textarea>
+        </label>
+        <label>Excluded spellings (also blocks generated matches)
+          <textarea name="excluded" rows="2" value={data.hindi.excluded.join('\n')}></textarea>
+        </label>
+        <button type="submit">Save Hindi forms</button>
+      </form>
+    </section>
+  {/if}
+  <section id="translations">
     <h2>Translations ({data.translations.length})</h2>
     {#if msgFor('reorder')}
       <p class:ok={form?.ok} class:err={!form?.ok}>{msgFor('reorder')}</p>
@@ -534,7 +574,7 @@
         {#each data.translations as t, i (t.id)}
           <li>
             <div class="meta">
-              <ProvenanceBadge provenance={t.provenance} />
+              {#if !data.hindi}<ProvenanceBadge provenance={t.provenance} />{/if}
               <span class="muted">{t.targetLanguage}</span>
               {#if t.hidden}<span class="tag warn">hidden</span>{/if}
               {#if data.translations.length > 1}
@@ -611,7 +651,7 @@
       Forms
       <span class="forms-h-count">{formsList.length}</span>
       <span class="mod-spread"></span>
-      {#if lemma.paradigmId && lemma.stem}
+      {#if !data.hindi && lemma.paradigmId && lemma.stem}
         <form
           method="post"
           action="?/regenerateForms"
@@ -625,7 +665,7 @@
       {/if}
     </h2>
 
-    <!-- Compact paradigm bar -->
+    {#if !data.hindi}
     <form
       method="post"
       action="?/setParadigm"
@@ -636,7 +676,7 @@
       <label class="pb-fld">
         <span>PARADIGM</span>
         <select name="paradigmId" class="mod-in">
-          <option value="none" selected={!lemma.paradigmId}>— none —</option>
+          <option value="none" selected={!lemma.paradigmId}>None</option>
           {#each availableParadigms as p (p.id)}
             <option value={p.id} selected={lemma.paradigmId === p.id}>
               {p.name}
@@ -662,6 +702,8 @@
         </span>
       {/if}
     </form>
+
+    {/if}
 
     <!-- Existing forms list, grouped by tense / aspect -->
     {#snippet formCellRow(f: FormRow, alwaysShowSlotKey: boolean)}
@@ -753,14 +795,14 @@
                     {#each row.sing as f (f.id)}
                       {@render formCellRow(f, true)}
                     {:else}
-                      <span class="pcell empty">—</span>
+                      <span class="pcell empty">-</span>
                     {/each}
                   </div>
                   <div class="pgrid-cell">
                     {#each row.plur as f (f.id)}
                       {@render formCellRow(f, true)}
                     {:else}
-                      <span class="pcell empty">—</span>
+                      <span class="pcell empty">-</span>
                     {/each}
                   </div>
                 {/each}
@@ -794,7 +836,7 @@
               </span>
             </header>
             <p class="muted small">
-              Excluded from reader lookup. Likely junk imports — review and
+              Excluded from reader lookup. Likely junk imports. Review and
               delete or salvage.
             </p>
             <div class="pflat">
@@ -867,6 +909,11 @@
 </div>
 
 <style>
+  #inflection form, #inflection form > label { display: grid; gap: .5rem; }
+  #inflection form { gap: 1rem; }
+  #inflection textarea { font: inherit; color: var(--ink); background: var(--card); border: 1px solid var(--rule); padding: .5rem; border-radius: .35rem; }
+  #inflection button { justify-self: start; }
+
   /* ════════ Page wrapper — adopts the design's paper palette ════════ */
   .page.mod {
     /* Left-align with the rail / left nav, no centering. The page
@@ -1138,7 +1185,6 @@
     font-family: var(--font-mono, ui-monospace, monospace);
     color: var(--ink, var(--color-fg, #111));
   }
-  .mli-tr-add { color: var(--accent-ink, var(--color-accent)); font-size: 14.5px; line-height: 1; }
 
   /* ════════ Forms section ════════ */
   .forms-sec { margin-top: 14px; }

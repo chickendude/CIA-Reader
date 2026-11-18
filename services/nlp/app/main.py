@@ -13,6 +13,7 @@ import json
 import unicodedata
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from pydantic import BaseModel
 
 from app.languages import LANGUAGES, SUPPORTED_LANGUAGE_CODES, is_supported_language
 from app.ocr.align import OcrPage, assign_token_boxes
@@ -34,6 +35,31 @@ from app.schemas import (
 )
 
 app = FastAPI(title="CIA Reader NLP", version="0.0.0")
+
+
+class HindiEntryRequest(BaseModel):
+    entry: dict
+    include_slots: bool = False
+
+
+@app.post("/hindi/preview")
+async def preview_hindi_entry(req: HindiEntryRequest):
+    from hindidb.lexicon import Lexicon
+    from hindidb.morphology import forms
+    try:
+        lexicon = Lexicon(documents=[{"entries": [req.entry]}])
+        entry = next(iter(lexicon.entries.values()))
+        result = {"forms": {word: sorted(rules) for word, rules in forms(entry).items()}}
+        if req.include_slots:
+            from hindidb.form_inventory import slots, slot_pattern_forms
+            result["slots"] = [
+                {"label": slot["label"], "forms": sorted(words)}
+                for slot in slots(entry["pos"], entry.get("paradigm"))
+                if (words := slot_pattern_forms(entry, slot))
+            ]
+        return result
+    except (KeyError, TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 async def _health() -> HealthResponse:
@@ -63,7 +89,7 @@ async def process(req: ProcessRequest) -> ProcessResponse:
     # NFC is the canonical form for every Indic script we support; many
     # Devanagari / Odia inputs arrive in other normalizations from the
     # wild web. Doing it once here means pipelines can assume NFC.
-    text = unicodedata.normalize("NFC", req.text)
+    text = req.text if req.language == "hi" else unicodedata.normalize("NFC", req.text)
     pipeline = get_pipeline(req.language)
     result = pipeline.process(text)
 
@@ -75,7 +101,7 @@ async def process(req: ProcessRequest) -> ProcessResponse:
     # `phrase_proposals` and a periodic promotion pass moves
     # ≥3-chapter occurrences into `phrases` (`source='nlp'`).
     detector = get_detector(req.language)
-    proposed_phrases = detector.detect(result.tokens)
+    proposed_phrases = [] if result.hindi_analysis is not None else detector.detect(result.tokens)
 
     # The client always sees the language's canonical pipeline_id (from
     # the shared registry), not the pipeline instance's internal id — so
@@ -86,6 +112,7 @@ async def process(req: ProcessRequest) -> ProcessResponse:
         language=req.language,
         pipeline_id=canonical_pipeline_id,
         tokens=result.tokens,
+        hindi_analysis=result.hindi_analysis,
         proposed_phrases=proposed_phrases,
     )
 
@@ -189,7 +216,7 @@ async def ocr(
     pipeline = get_pipeline(language)
     result = pipeline.process(page.text)
     detector = get_detector(language)
-    proposed_phrases = detector.detect(result.tokens)
+    proposed_phrases = [] if result.hindi_analysis is not None else detector.detect(result.tokens)
 
     boxes = assign_token_boxes(result.tokens, page)
     tokens = [
@@ -204,6 +231,7 @@ async def ocr(
         height=height,
         body=page.text,
         tokens=tokens,
+        hindi_analysis=result.hindi_analysis,
         proposed_phrases=proposed_phrases,
     )
 

@@ -27,6 +27,9 @@ coverage.lcov
 .env.local
 .env.*.local
 
+# Native development database, downloaded backups, models, and local config
+.local/
+
 # editor swap files (a stray .env.swp once leaked a key into a commit)
 *.swp
 *.swo

@@ -114,11 +114,11 @@ describe('groupTabsBySection', () => {
     expect(groups[0]!.tabs.map((t) => t.id)).toEqual(['home']);
   });
 
-  it('groups Read-section tabs (Library + Upload) together', () => {
+  it('groups Read-section tabs (Library, Upload, Dictionary) together', () => {
     const groups = groupTabsBySection(visibleTabs(TABS, USER));
     const read = groups.find((g) => g.section === 'Read');
     expect(read).toBeDefined();
-    expect(read!.tabs.map((t) => t.id)).toEqual(['library', 'upload']);
+    expect(read!.tabs.map((t) => t.id)).toEqual(['library', 'upload', 'dictionary']);
   });
 
   it("groups Words under 'Track' (T-10.6)", () => {

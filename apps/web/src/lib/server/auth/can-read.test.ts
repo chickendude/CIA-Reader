@@ -1,4 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
+const staff = vi.hoisted(() => vi.fn().mockResolvedValue(false));
+vi.mock('./staff.js', () => ({ isStaffMember: staff }));
 
 // canReadText consults three sharing modules via dynamic imports:
 // T-7.2 direct shares, T-7.4 group shares, T-8.4 collection shares.
@@ -30,6 +32,14 @@ function text(overrides: Record<string, unknown> = {}) {
 }
 
 describe('canReadText', () => {
+  it('requires staff even for the owner of a restricted official book', async () => {
+    const restricted = text({ visibility: 'official', staffOnly: true });
+    expect(await canReadText(null, restricted)).toBe(false);
+    expect(await canReadText(VIEWER, restricted)).toBe(false);
+    staff.mockResolvedValueOnce(true);
+    expect(await canReadText(OTHER, restricted)).toBe(true);
+    expect(await canReadText(VIEWER, text({ staffOnly: true }))).toBe(false);
+  });
   it('allows the owner of a private text', async () => {
     expect(await canReadText(VIEWER, text())).toBe(true);
   });

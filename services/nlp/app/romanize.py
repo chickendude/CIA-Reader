@@ -66,8 +66,9 @@ from __future__ import annotations
 import re
 import unicodedata
 
-from aksharamukha import transliterate as _aksharamukha
 from indic_transliteration import sanscript
+
+from app.aksharamukha_compat import transliterate as _aksharamukha
 
 # Script codes (ISO 15924) → the sanscript scheme name. The registry
 # ships more script codes than we implement right now (Beng, Guru,
