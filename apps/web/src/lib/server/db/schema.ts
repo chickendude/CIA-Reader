@@ -2496,3 +2496,14 @@ export const hindiContextChoices = pgTable('hindi_context_choices', {
 }, (t) => ({
   pk: primaryKey({ columns: [t.chapterId, t.sourceOccurrenceId] }),
 }));
+
+export const hindiReviewIgnored = pgTable('hindi_review_ignored', {
+  textId: uuid('text_id').notNull().references(() => texts.id, { onDelete: 'cascade' }),
+  surface: text('surface').notNull(),
+}, t => ({ pk: primaryKey({ columns: [t.textId, t.surface] }) }));
+
+export const hindiReferenceCache = pgTable('hindi_reference_cache', {
+  key: text('key').primaryKey(),
+  result: jsonb('result').notNull(),
+  retrievedAt: timestamp('retrieved_at', { withTimezone: true }).notNull().defaultNow(),
+});

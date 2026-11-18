@@ -9,15 +9,15 @@
   const deckUrl = $derived(`/api/v1/texts/${book.id}/anki?scope=${scope}`);
 </script>
 
-<svelte:head><title>{book.title} · Official · Parhiba</title></svelte:head>
+<svelte:head><title>{book.title} | Official | Parhiba</title></svelte:head>
 
-<main class="book-page">
+<div class="book-page">
   <a class="back" href="/library?tab=official">← Official library</a>
   <div class="book-layout">
     <div class={`book-cover cover-${coverForId(book.id)}`}><span>{book.title}</span><small>{book.language.toUpperCase()} · OFFICIAL</small></div>
     <div class="book-info">
       <p class="eyebrow">Official library · {book.language}</p>
-      <h1>{book.title}</h1>
+      <h1 class="page-title">{book.title}</h1>
       <div class="facts">
         <div><strong>{book.words.toLocaleString()}</strong><span>Words</span></div>
         <div><strong>{book.uniqueWords.toLocaleString()}</strong><span>Dictionary entries</span></div>
@@ -60,17 +60,16 @@
       {#if form?.message}<p role="alert">{form.message}</p>{/if}
     </div>
   </div>
-</main>
+</div>
 
 <style>
-  .book-page { max-width: 1050px; margin: 0 auto; padding: 2rem; }
   .back { color: var(--ink-3); font-size: .9rem; }
   .book-layout { display: grid; grid-template-columns: 240px 1fr; gap: 2.5rem; margin-top: 2rem; }
   .book-cover { min-height: 330px; align-self: start; padding: 2rem; border-radius: 10px; background: var(--accent); color: var(--accent-ink,white); display: flex; flex-direction: column; justify-content: space-between; box-shadow: 0 8px 24px #0002; }
   .book-cover span { font-family: var(--font-serif); font-size: 2rem; line-height: 1.3; }
   .book-cover small { letter-spacing: .12em; font-size: .7rem; }
   .eyebrow { color: var(--ink-3); margin: 0; font-size: .8rem; }
-  h1 { margin: .5rem 0 1.5rem; font-size: 2rem; }
+
   h2 { font-size: 1.1rem; margin: 0 0 1rem; }
   .facts { display: flex; flex-wrap: wrap; gap: 1.5rem; margin-bottom: 2rem; }
   .facts div { display: grid; gap: .2rem; }
@@ -87,5 +86,5 @@
   select { background: var(--paper); color: var(--ink); border: 1px solid var(--rule); border-radius: 5px; padding: .55rem; }
   .btn { display: inline-block; padding: .6rem .85rem; border: 1px solid var(--rule); border-radius: 6px; background: var(--card); color: var(--ink); text-decoration: none; font: inherit; font-size: .85rem; cursor: pointer; }
   button:disabled { opacity: .6; cursor: wait; }
-  @media(max-width: 700px) { .book-page { padding: 1rem; } .book-layout { grid-template-columns: 1fr; gap: 1.5rem; } .book-cover { min-height: 180px; } }
+  @media(max-width: 700px) {  .book-layout { grid-template-columns: 1fr; gap: 1.5rem; } .book-cover { min-height: 180px; } }
 </style>

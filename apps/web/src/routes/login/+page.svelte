@@ -21,16 +21,16 @@
 </script>
 
 <svelte:head>
-  <title>Sign in — CIA Reader</title>
+  <title>Sign in | Parhiba</title>
 </svelte:head>
 
-<div class="page">
+<div class="page page-auth">
   {#if data.alreadySignedIn && data.authError}
     <!-- Signed-in user landed here via a stale magic-link redirect.
          Skip the sign-in forms entirely — they're redundant. Just
          show the error and a way back to the app. -->
     <header>
-      <h1>Link expired</h1>
+      <h1 class="page-title">Link expired</h1>
     </header>
     <p class="err" role="alert">{data.authError}</p>
     <p class="sub">
@@ -38,7 +38,7 @@
     </p>
   {:else}
   <header>
-    <h1>Sign in</h1>
+    <h1 class="page-title">Sign in</h1>
     <p class="sub">
       New to CIA Reader? <a href={`/register?next=${encodeURIComponent(data.next)}`}>
         Create an account
@@ -108,15 +108,6 @@
 </div>
 
 <style>
-  .page {
-    max-width: 26rem;
-    margin: 2rem auto;
-    padding: 1rem 1.25rem 3rem;
-  }
-  header h1 {
-    margin: 0 0 0.4rem;
-    font-size: 1.6rem;
-  }
   .sub {
     color: var(--color-fg-muted);
     margin: 0 0 1rem;

@@ -314,7 +314,7 @@
 </script>
 
 <svelte:head>
-  <title>Edit {lemma.headword} | CIA Reader</title>
+  <title>Edit {lemma.headword} | Parhiba</title>
   <meta name="robots" content="noindex" />
 </svelte:head>
 
@@ -330,7 +330,7 @@
     </nav>
 
     <div class="mod-id">
-      <span class="mod-hw-script" lang={lemma.language}>{lemma.headword}</span>
+      <h1 class="page-title mod-hw-script" lang={lemma.language}>{lemma.headword}</h1>
       <span class="mod-id-pos">{lemma.pos}</span>
     </div>
 
@@ -916,13 +916,6 @@
 
   /* ════════ Page wrapper — adopts the design's paper palette ════════ */
   .page.mod {
-    /* Left-align with the rail / left nav, no centering. The page
-       still caps its width so the paradigm grid doesn't blow out on
-       ultra-wide screens. */
-    max-width: 1100px;
-    margin: 0;
-    padding: 14px 22px 22px;
-    color: var(--ink, var(--color-fg));
     background: var(--paper, var(--color-bg));
     font-family: var(--font-serif, ui-serif, Georgia, serif);
   }

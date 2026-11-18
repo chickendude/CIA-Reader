@@ -5,7 +5,7 @@
 </script>
 
 <svelte:head>
-  <title>Transcribe — {data.citation}</title>
+  <title>Transcribe | {data.citation} | Parhiba</title>
   <meta name="robots" content="noindex" />
 </svelte:head>
 
@@ -14,7 +14,7 @@
     <nav class="crumbs">
       <a href="/moderation/transcribe">← Workbench</a>
     </nav>
-    <h1>{data.citation}</h1>
+    <h1 class="page-title">{data.citation}</h1>
     <p class="sub">
       {data.progress.verified.toLocaleString()} /
       {data.progress.total.toLocaleString()} verified
@@ -129,11 +129,6 @@
 </div>
 
 <style>
-  .page {
-    max-width: 64rem;
-    margin: 0 auto;
-    padding: 1.5rem 1rem 3rem;
-  }
   .crumbs a {
     color: var(--text-secondary, #444);
     text-decoration: none;

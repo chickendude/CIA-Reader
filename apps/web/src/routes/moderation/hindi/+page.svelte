@@ -56,10 +56,11 @@
   }
 </script>
 
-<svelte:head><title>Hindi dictionary review · Parhiba</title></svelte:head>
-<main>
+<svelte:head><title>Hindi dictionary review | Parhiba</title></svelte:head>
+<div class="review-page">
   <a href="/dictionary/hi">← Hindi dictionary</a>
-  <h1>Hindi dictionary review</h1>
+  <h1 class="page-title">Hindi dictionary review</h1>
+  <a href="/moderation/hindi/workshop">Open dictionary workshop</a>
   <p>Inspect unparsed words and verify dictionary entries in context.</p>
   <form method="GET" class="filters">
     <label
@@ -94,7 +95,7 @@
                   >Read context</a
                 >
                 ·
-                <a href={`/moderation/dictionary?language=hi&q=${encodeURIComponent(row.surface)}`}
+                <a href={`/moderation/hindi/workshop?word=${encodeURIComponent(row.surface)}`}
                   >Find dictionary entry</a
                 >
               </td></tr
@@ -156,17 +157,9 @@
         >{/if}
     </nav>
   {:else}<p>No Hindi books are available for review.</p>{/if}
-</main>
+</div>
 
 <style>
-  main {
-    max-width: 1000px;
-    margin: 0 auto;
-    padding: 2rem;
-  }
-  h1 {
-    margin-top: 1rem;
-  }
   p {
     line-height: 1.6;
   }
@@ -256,9 +249,6 @@
     margin: 0.3rem 0;
   }
   @media (max-width: 650px) {
-    main {
-      padding: 1rem;
-    }
     select {
       max-width: 75vw;
     }

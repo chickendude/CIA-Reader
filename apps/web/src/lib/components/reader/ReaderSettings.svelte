@@ -13,6 +13,7 @@
 -->
 <script lang="ts">
   import { untrack } from 'svelte';
+  import SegmentedControl from '$lib/components/input/SegmentedControl.svelte';
   import Sheet from '$lib/components/overlay/Sheet.svelte';
   import {
     DEFAULT_READER_SETTINGS,
@@ -154,34 +155,17 @@
       <h3>Layout</h3>
       <div class="rs-row">
         <span class="rs-l">Mode</span>
-        <div class="rs-seg" role="group" aria-label="Reading layout mode">
-          <button
-            type="button"
-            data-active={local.readerLayoutMode === 'page' ? '1' : '0'}
-            onclick={() => commit({ ...local, readerLayoutMode: 'page' })}
-          >Page</button>
-          <button
-            type="button"
-            data-active={local.readerLayoutMode === 'paged_scroll' ? '1' : '0'}
-            onclick={() => commit({ ...local, readerLayoutMode: 'paged_scroll' })}
-          >Scroll</button>
-          <button
-            type="button"
-            data-active={local.readerLayoutMode === 'continuous' ? '1' : '0'}
-            onclick={() => commit({ ...local, readerLayoutMode: 'continuous' })}
-          >Continuous</button>
-        </div>
+        <SegmentedControl label="Reading layout mode" value={local.readerLayoutMode}
+            options={[{ value: 'page', label: 'Page' }, { value: 'paged_scroll', label: 'Scroll' }, { value: 'continuous', label: 'Continuous' }]}
+            onChange={(readerLayoutMode) => commit({ ...local, readerLayoutMode })} />
       </div>
 
       {#if onMobileArrowsChange}
         <div class="rs-row rs-mobile-arrows">
-          <span class="rs-l" id="rs-page-arrows">Page arrows</span>
-          <div class="rs-seg" role="group" aria-labelledby="rs-page-arrows">
-            <button type="button" data-active={hideMobileArrows ? '0' : '1'}
-              aria-pressed={!hideMobileArrows} onclick={() => onMobileArrowsChange?.(false)}>Show</button>
-            <button type="button" data-active={hideMobileArrows ? '1' : '0'}
-              aria-pressed={hideMobileArrows} onclick={() => onMobileArrowsChange?.(true)}>Hide</button>
-          </div>
+          <span class="rs-l">Page arrows</span>
+          <SegmentedControl label="Page arrows" value={hideMobileArrows}
+            options={[{ value: false, label: 'Show' }, { value: true, label: 'Hide' }]}
+            onChange={(hidden) => onMobileArrowsChange?.(hidden)} />
         </div>
       {/if}
 
@@ -206,23 +190,9 @@
 
       <div class="rs-row">
         <span class="rs-l">Width</span>
-        <div class="rs-seg" role="group" aria-label="Reading column width">
-          <button
-            type="button"
-            data-active={local.readingWidth === 'narrow' ? '1' : '0'}
-            onclick={() => commit({ ...local, readingWidth: 'narrow' })}
-          >Narrow</button>
-          <button
-            type="button"
-            data-active={local.readingWidth === 'medium' ? '1' : '0'}
-            onclick={() => commit({ ...local, readingWidth: 'medium' })}
-          >Medium</button>
-          <button
-            type="button"
-            data-active={local.readingWidth === 'wide' ? '1' : '0'}
-            onclick={() => commit({ ...local, readingWidth: 'wide' })}
-          >Wide</button>
-        </div>
+        <SegmentedControl label="Reading column width" value={local.readingWidth}
+            options={[{ value: 'narrow', label: 'Narrow' }, { value: 'medium', label: 'Medium' }, { value: 'wide', label: 'Wide' }]}
+            onChange={(readingWidth) => commit({ ...local, readingWidth })} />
       </div>
     </section>
 
@@ -287,23 +257,9 @@
       <h3>Highlight</h3>
       <div class="rs-row">
         <span class="rs-l">Style</span>
-        <div class="rs-seg" role="group" aria-label="Highlight style">
-          <button
-            type="button"
-            data-active={local.highlightStyle === 'background' ? '1' : '0'}
-            onclick={() => commit({ ...local, highlightStyle: 'background' })}
-          >Tint</button>
-          <button
-            type="button"
-            data-active={local.highlightStyle === 'underline' ? '1' : '0'}
-            onclick={() => commit({ ...local, highlightStyle: 'underline' })}
-          >Underline</button>
-          <button
-            type="button"
-            data-active={local.highlightStyle === 'colored_text' ? '1' : '0'}
-            onclick={() => commit({ ...local, highlightStyle: 'colored_text' })}
-          >Color</button>
-        </div>
+        <SegmentedControl label="Highlight style" value={local.highlightStyle}
+            options={[{ value: 'background', label: 'Tint' }, { value: 'underline', label: 'Underline' }, { value: 'colored_text', label: 'Color' }]}
+            onChange={(highlightStyle) => commit({ ...local, highlightStyle })} />
       </div>
     </section>
 
@@ -315,23 +271,9 @@
       <h3>Romanization</h3>
       <div class="rs-row">
         <span class="rs-l">Show as</span>
-        <div class="rs-seg" role="group" aria-label="Script preference">
-          <button
-            type="button"
-            data-active={displayedScript === 'native' ? '1' : '0'}
-            onclick={() => selectScript('native')}
-          >Native</button>
-          <button
-            type="button"
-            data-active={displayedScript === 'native_with_romanization' ? '1' : '0'}
-            onclick={() => selectScript('native_with_romanization')}
-          >Both</button>
-          <button
-            type="button"
-            data-active={displayedScript === 'romanization_only' ? '1' : '0'}
-            onclick={() => selectScript('romanization_only')}
-          >Roman</button>
-        </div>
+        <SegmentedControl label="Script preference" value={displayedScript}
+            options={[{ value: 'native', label: 'Native' }, { value: 'native_with_romanization', label: 'Both' }, { value: 'romanization_only', label: 'Roman' }]}
+            onChange={selectScript} />
       </div>
       <div class="rs-row">
         <label class="rs-l" for="rs-scheme">Scheme</label>
@@ -361,22 +303,9 @@
       <h3>Admin</h3>
       <div class="rs-row">
         <span class="rs-l">Undefined words</span>
-        <div class="rs-seg" role="group" aria-label="Highlight words with no definition">
-          <button
-            type="button"
-            data-testid="rs-flag-undefined-on"
-            data-active={flagUndefined ? '1' : '0'}
-            aria-pressed={flagUndefined}
-            onclick={() => onFlagUndefinedChange?.(true)}
-          >Flag</button>
-          <button
-            type="button"
-            data-testid="rs-flag-undefined-off"
-            data-active={flagUndefined ? '0' : '1'}
-            aria-pressed={!flagUndefined}
-            onclick={() => onFlagUndefinedChange?.(false)}
-          >Off</button>
-        </div>
+        <SegmentedControl label="Highlight words with no definition" value={flagUndefined}
+            options={[{ value: true, label: 'Flag' }, { value: false, label: 'Off' }]}
+            onChange={(on) => onFlagUndefinedChange?.(on)} />
       </div>
       <p class="rs-hint">Tints words with no definition yet so you can spot gaps.</p>
     </section>
@@ -435,32 +364,6 @@
     font-size: 0.7rem;
     color: var(--ink-3, var(--color-fg-muted));
     font-feature-settings: 'tnum';
-  }
-  .rs-seg {
-    display: flex;
-    background: var(--card-2, var(--color-bg));
-    border: 1px solid var(--card-edge, var(--color-border));
-    border-radius: 6px;
-    overflow: hidden;
-  }
-  .rs-seg button {
-    flex: 1;
-    background: transparent;
-    border: 0;
-    padding: 0.4rem 0.55rem;
-    font-size: 0.78rem;
-    color: var(--ink-2, var(--color-fg));
-    cursor: pointer;
-  }
-  /* Selected segment: the soft accent tint is a *translucent* fill, so
-     it pairs with the strong page ink — NOT `--accent-ink`, which is
-     tuned dark to sit on a SOLID accent surface and reads as dark-on-dark
-     over this tint in dark mode (#438). Same pairing as ScriptAwareInput's
-     pressed toggle. */
-  .rs-seg button[data-active='1'] {
-    background: var(--accent-soft, color-mix(in oklch, var(--accent, var(--color-accent)) 18%, transparent));
-    color: var(--ink, var(--color-fg));
-    font-weight: 600;
   }
   input[type='range'] {
     width: 100%;

@@ -377,7 +377,7 @@
 </script>
 
 <svelte:head>
-  <title>{data.paradigm.name} — Paradigms — CIA Reader</title>
+  <title>{data.paradigm.name} | Paradigms | Parhiba</title>
   <meta name="robots" content="noindex" />
 </svelte:head>
 
@@ -387,7 +387,7 @@
   </p>
 
   <header>
-    <h1>{data.paradigm.name}</h1>
+    <h1 class="page-title">{data.paradigm.name}</h1>
     <p class="sub">
       <span class="lang-badge">{data.paradigm.language}</span>
       <span class="pos-badge">{data.paradigm.pos}</span>
@@ -755,11 +755,7 @@
 
 <style>
   .page {
-    max-width: 64rem;
-    margin: 0 auto;
-    /* Reserve room at the bottom so the sticky save bar doesn't cover
-       the last section. */
-    padding: 1.5rem 1.25rem 6rem;
+    padding-bottom: 3rem;
   }
   .crumb {
     margin: 0 0 1rem;
@@ -768,10 +764,7 @@
   .crumb a {
     color: var(--color-accent);
   }
-  header h1 {
-    margin: 0 0 0.25rem;
-    font-size: 1.6rem;
-  }
+
   .sub {
     margin: 0 0 0.75rem;
     color: var(--color-fg-muted);
@@ -1105,7 +1098,6 @@
     opacity: 0.5;
     cursor: not-allowed;
   }
-
 
   .empty {
     margin: 0.5rem 0;

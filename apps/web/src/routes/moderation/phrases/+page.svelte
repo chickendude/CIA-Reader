@@ -24,12 +24,12 @@
 </script>
 
 <svelte:head>
-  <title>Phrase dictionary — moderation</title>
+  <title>Phrase dictionary | moderation | Parhiba</title>
 </svelte:head>
 
 <div class="ph">
   <header class="ph-h">
-    <h1>Phrases</h1>
+    <h1 class="page-title">Phrases</h1>
     <p class="muted">
       Curator-side editor for multi-word entries (M14). Pick a language to browse;
       click a row to edit its gloss, lock state, or moderation flag.
@@ -109,17 +109,6 @@
 </div>
 
 <style>
-  .ph {
-    max-width: 64rem;
-    margin: 0 auto;
-    padding: 1.5rem 1.25rem 3rem;
-    color: var(--ink, var(--color-fg));
-  }
-  .ph-h h1 {
-    margin: 0 0 0.25rem;
-    font-family: var(--font-serif);
-    font-size: 1.5rem;
-  }
   .muted {
     color: var(--ink-3, var(--color-fg-muted));
     font-size: 0.85rem;

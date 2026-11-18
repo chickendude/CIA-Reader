@@ -1,8 +1,8 @@
 <svelte:head>
-  <title>Client API Guide - CIA Reader</title>
+  <title>Client API Guide - Parhiba</title>
   <meta
     name="description"
-    content="Day-one CIA Reader API reference for mobile and external clients."
+    content="Day-one Parhiba API reference for mobile and external clients."
   />
 </svelte:head>
 
@@ -57,11 +57,11 @@
 }`;
 </script>
 
-<main class="api-reference">
+<div class="api-reference">
   <article>
     <header class="hero">
       <p class="eyebrow">Client reference</p>
-      <h1>CIA Reader API</h1>
+      <h1 class="page-title">Parhiba API</h1>
       <p>
         A practical first read for mobile clients and external integrations using
         the stable <code>/api/v1/*</code> API.
@@ -295,23 +295,16 @@
       </p>
     </section>
   </article>
-</main>
+</div>
 
 <style>
   .api-reference {
     min-height: 100vh;
     background: var(--paper, var(--color-bg));
-    color: var(--ink, var(--color-fg));
-  }
-
-  article {
-    width: min(100% - 2rem, 74rem);
-    margin: 0 auto;
-    padding: 2rem 0 4rem;
   }
 
   .hero {
-    padding: 2rem 0 2.5rem;
+    padding-bottom: 2.5rem;
     border-bottom: 1px solid var(--rule, var(--color-border));
   }
 
@@ -327,12 +320,6 @@
   h2 {
     font-family: var(--font-serif, system-ui);
     letter-spacing: 0;
-  }
-
-  h1 {
-    margin: 0;
-    font-size: 3rem;
-    line-height: 1;
   }
 
   h2 {
@@ -441,17 +428,8 @@
   }
 
   @media (max-width: 800px) {
-    article {
-      width: min(100% - 1.25rem, 74rem);
-      padding-top: 1rem;
-    }
-
     .facts {
       grid-template-columns: 1fr 1fr;
-    }
-
-    h1 {
-      font-size: 2.35rem;
     }
 
     table {
@@ -465,8 +443,5 @@
       grid-template-columns: 1fr;
     }
 
-    h1 {
-      font-size: 2rem;
-    }
   }
 </style>

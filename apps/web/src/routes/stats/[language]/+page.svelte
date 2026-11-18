@@ -29,12 +29,12 @@
 </script>
 
 <svelte:head>
-  <title>Stats — {data.languageDescriptor.displayName} — CIA Reader</title>
+  <title>Stats | {data.languageDescriptor.displayName} | Parhiba</title>
 </svelte:head>
 
 <div class="ls">
   <header class="ls-h">
-    <h1>
+    <h1 class="page-title">
       {data.languageDescriptor.displayName}
       <span class="ls-native">{data.languageDescriptor.nativeName}</span>
     </h1>
@@ -208,17 +208,6 @@
 </div>
 
 <style>
-  .ls {
-    max-width: 56rem;
-    margin: 0 auto;
-    padding: 1.5rem 1.25rem 3rem;
-    color: var(--ink, var(--color-fg));
-  }
-  .ls-h h1 {
-    margin: 0 0 0.2rem;
-    font-family: var(--font-serif, system-ui);
-    font-size: 1.6rem;
-  }
   .ls-native {
     font-family: var(--font-serif-dev, var(--font-serif));
     color: var(--ink-3, var(--color-fg-muted));

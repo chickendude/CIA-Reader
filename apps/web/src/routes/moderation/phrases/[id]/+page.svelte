@@ -72,13 +72,13 @@
 </script>
 
 <svelte:head>
-  <title>{data.phrase.surfaceNormalised} — phrase editor</title>
+  <title>{data.phrase.surfaceNormalised} | phrase editor | Parhiba</title>
 </svelte:head>
 
 <div class="pe">
   <header class="pe-h">
     <a class="back" href={`/moderation/phrases?language=${data.languageDescriptor.code}`}>← All phrases</a>
-    <h1 class="pe-surface">{data.phrase.surfaceNormalised}</h1>
+    <h1 class="page-title pe-surface">{data.phrase.surfaceNormalised}</h1>
     <p class="muted">
       {data.languageDescriptor.displayName} · {data.phrase.tokens.length} tokens · {data.translations.length} translations
       · {data.chapterIds.length} chapters
@@ -172,12 +172,6 @@
 </div>
 
 <style>
-  .pe {
-    max-width: 56rem;
-    margin: 0 auto;
-    padding: 1.5rem 1.25rem 3rem;
-    color: var(--ink, var(--color-fg));
-  }
   .back {
     color: var(--ink-3, var(--color-fg-muted));
     text-decoration: none;
@@ -186,11 +180,7 @@
   .back:hover {
     text-decoration: underline;
   }
-  .pe-surface {
-    margin: 0.25rem 0 0.4rem;
-    font-family: var(--font-serif);
-    font-size: 1.6rem;
-  }
+
   .muted {
     color: var(--ink-3, var(--color-fg-muted));
   }

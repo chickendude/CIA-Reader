@@ -238,12 +238,12 @@
 </script>
 
 <svelte:head>
-  <title>{data.collection.title} — CIA Reader</title>
+  <title>{data.collection.title} | Parhiba</title>
 </svelte:head>
 
 <div class="cd">
   <header class="cd-h">
-    <h1>{data.collection.title}</h1>
+    <h1 class="page-title">{data.collection.title}</h1>
     <p class="cd-meta">
       <span class="cd-pill">{data.collection.kind}</span>
       <span class="cd-pill">{data.collection.language}</span>
@@ -441,17 +441,6 @@
 </Modal>
 
 <style>
-  .cd {
-    max-width: 48rem;
-    margin: 0 auto;
-    padding: 1.5rem 1.25rem 3rem;
-    color: var(--ink, var(--color-fg));
-  }
-  .cd-h h1 {
-    margin: 0 0 0.4rem;
-    font-family: var(--font-serif, system-ui);
-    font-size: 1.6rem;
-  }
   .cd-meta {
     display: flex;
     gap: 0.4rem;

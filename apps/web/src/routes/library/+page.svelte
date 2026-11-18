@@ -9,8 +9,9 @@
   and an "Add a text" tile on the Your tab.
 -->
 <script lang="ts">
-  import { goto, invalidateAll } from '$app/navigation';
+  import { invalidateAll } from '$app/navigation';
   import { coverForId } from '$lib/components/library/cover.js';
+  import BookActions from '$lib/components/library/BookActions.svelte';
   import Modal from '$lib/components/overlay/Modal.svelte';
   import type { PageData } from './$types';
 
@@ -27,23 +28,6 @@
   } | null>(null);
   let deleting = $state(false);
   let deleteError = $state<string | null>(null);
-  let publishing = $state<string | null>(null);
-  let publishError = $state<string | null>(null);
-  async function publishBook(id: string) {
-    if (publishing) return;
-    publishing = id;
-    publishError = null;
-    try {
-      const res = await fetch(`/api/v1/texts/${id}/visibility`, {
-        method: 'PATCH', headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ visibility: 'official' }),
-      });
-      if (!res.ok) throw new Error('Could not add this book to Official.');
-      await goto(`/library/${id}`);
-    } catch (e) { publishError = (e as Error).message; }
-    finally { publishing = null; }
-  }
-
   function askDeleteText(id: string, title: string) {
     pendingDelete = { kind: 'text', id, title };
     deleteError = null;
@@ -116,14 +100,13 @@
 </script>
 
 <svelte:head>
-  <title>Library — CIA Reader</title>
+  <title>Library | Parhiba</title>
 </svelte:head>
 
 <section class="content">
-  {#if publishError}<p role="alert">{publishError}</p>{/if}
   <header class="topbar">
     <div>
-      <h1 class="title">Library</h1>
+      <h1 class="page-title title">Library</h1>
       <p class="sub">
         {#if data.tab === 'your'}
           Your imported texts.
@@ -163,29 +146,34 @@
 
     {#if data.tab === 'collections'}
       {#each data.collections as col (col.id)}
-        <a class="card lib-card" href={`/collections/${col.id}`}>
-          <div class={`lib-cover cover-${coverForId(col.id)}`}>
-            <div class="cover-title">{col.title}</div>
-            <div class="cover-chips">
-              <span class="chip">{col.kind}</span>
-              {#if col.visibility !== 'private'}
-                <span class="chip">{col.visibility}</span>
-              {/if}
-              {#if col.estimatedComprehensionPct !== null}
-                <span class="chip chip-pct" title="Estimated comprehension">
-                  {col.estimatedComprehensionPct}% known
-                </span>
-              {/if}
+        <div class="lib-card-wrap">
+          <a class="card lib-card" href={`/collections/${col.id}`}>
+            <div class={`lib-cover cover-${coverForId(col.id)}`}>
+              <div class="cover-title">{col.title}</div>
+              <div class="cover-chips">
+                <span class="chip">{col.kind}</span>
+                {#if col.visibility !== 'private'}
+                  <span class="chip">{col.visibility}</span>
+                {/if}
+                {#if col.estimatedComprehensionPct !== null}
+                  <span class="chip chip-pct" title="Estimated comprehension">
+                    {col.estimatedComprehensionPct}% known
+                  </span>
+                {/if}
+              </div>
             </div>
-          </div>
-          <div class="body">
-            <div class="kind-row">
-              <span class="kind-tag">collection</span>
-              <span class="kind-meta">{col.textCount} {col.textCount === 1 ? 'text' : 'texts'}</span>
+            <div class="body">
+              <div class="kind-row">
+                <span class="kind-tag">collection</span>
+                <span class="kind-meta">{col.textCount} {col.textCount === 1 ? 'text' : 'texts'}</span>
+              </div>
+              <div class="title-dev">{col.title}</div>
             </div>
-            <div class="title-dev">{col.title}</div>
-          </div>
-        </a>
+          </a>
+          {#if data.user?.role === 'admin' && col.visibility === 'official'}
+            <BookActions id={col.id} title={col.title} collection catalogAction="remove" />
+          {/if}
+        </div>
       {/each}
     {:else}
       {#each data.chapterBookCards as col (col.id)}
@@ -213,14 +201,8 @@
               <div class="title-dev">{col.title}</div>
             </div>
           </a>
-          {#if data.tab === 'your'}
-            <button
-              type="button"
-              class="lib-card-del"
-              aria-label="Delete {col.title}"
-              title="Delete"
-              onclick={() => askDeleteCollection(col.id, col.title)}
-            >×</button>
+          {#if data.user?.role === 'admin' && col.visibility === 'official'}
+            <BookActions id={col.id} title={col.title} collection catalogAction="remove" />
           {/if}
         </div>
       {/each}
@@ -251,20 +233,13 @@
               <div class="title-dev">{card.title}</div>
             </div>
           </a>
-          {#if data.tab === 'your'}
-            <button
-              type="button"
-              class="lib-card-del"
-              aria-label="Delete {card.title}"
-              title="Delete"
-              onclick={() => card.chapterCount != null ? askDeleteCollection(card.id, card.title) : askDeleteText(card.id, card.title)}
-            >×</button>
-            {#if data.user?.role === 'admin' && card.status === 'ready' && card.visibility !== 'official'}
-              <button class="publish-book" disabled={publishing !== null} onclick={() => void publishBook(card.id)}>
-                {publishing === card.id ? 'Adding…' : 'Add to Official'}
-              </button>
-            {/if}
-          {/if}
+          <BookActions id={card.id} title={card.title} collection={card.chapterCount != null}
+            catalogAction={data.user?.role !== 'admin' ? undefined
+              : card.visibility === 'official' ? 'remove'
+              : data.tab === 'your' && card.chapterCount == null && card.status === 'ready' ? 'publish' : undefined}
+            onDelete={data.tab === 'your' ? () => card.chapterCount != null
+              ? askDeleteCollection(card.id, card.title) : askDeleteText(card.id, card.title) : undefined}
+          />
         </div>
       {/each}
     {/if}
@@ -362,17 +337,6 @@
 </Modal>
 
 <style>
-  .publish-book { width: 100%; margin-top: .4rem; padding: .5rem; border: 1px solid var(--rule); border-radius: 6px; background: var(--card); color: var(--ink); cursor: pointer; font: inherit; font-size: .8rem; }
-  .content {
-    max-width: 72rem;
-    margin: 0 auto;
-    padding: 1.75rem 1.25rem 3rem;
-  }
-  @media (min-width: 768px) {
-    .content {
-      padding: 2.25rem 2rem 3.5rem;
-    }
-  }
   .topbar {
     display: grid;
     grid-template-columns: 1fr;
@@ -385,14 +349,7 @@
       grid-template-columns: 1fr auto;
     }
   }
-  .title {
-    font-family: var(--font-serif, var(--font-ui));
-    font-weight: 600;
-    font-size: 1.4rem;
-    letter-spacing: -0.01em;
-    margin: 0;
-    color: var(--ink, var(--color-fg));
-  }
+
   .sub {
     font-size: 0.78rem;
     color: var(--ink-3, var(--color-fg-muted));
@@ -428,58 +385,17 @@
     gap: 1rem;
   }
 
-  /* A wrapper so we can stack a delete affordance over the card link
-     without nesting a <button> inside an <a>. The wrapper itself has
-     no visual chrome — the card link still owns the card box. */
   .lib-card-wrap {
     position: relative;
     display: flex;
+    flex-direction: column;
+    min-width: 0;
   }
   .lib-card-wrap > .lib-card {
     flex: 1;
   }
-  .lib-card-del {
-    position: absolute;
-    top: 0.5rem;
-    right: 0.5rem;
-    z-index: 2;
-    width: 28px;
-    height: 28px;
-    border-radius: 999px;
-    border: 1px solid var(--card-edge, var(--color-border));
-    background: var(--paper, var(--color-bg));
-    color: var(--ink, var(--color-fg));
-    font-size: 1.2rem;
-    line-height: 1;
-    display: grid;
-    place-items: center;
-    cursor: pointer;
-    opacity: 0;
-    transition:
-      opacity 150ms ease,
-      background-color 150ms ease,
-      color 150ms ease;
-  }
-  .lib-card-wrap:hover .lib-card-del,
-  .lib-card-del:focus-visible {
-    opacity: 1;
-  }
-  .lib-card-del:hover,
-  .lib-card-del:focus-visible {
-    background: var(--err, #b94545);
-    color: #fff;
-    border-color: var(--err, #b94545);
-  }
-  .lib-card-del:focus-visible {
-    outline: 2px solid var(--accent, var(--color-accent));
-    outline-offset: 2px;
-  }
-  /* Touch / coarse-pointer devices have no hover state — keep the
-     delete affordance always visible so phone users can reach it. */
-  @media (hover: none) {
-    .lib-card-del {
-      opacity: 1;
-    }
+  .lib-card-wrap:has(:global(.book-actions)) .cover-chips {
+    right: 3.3rem;
   }
 
   .del-body {

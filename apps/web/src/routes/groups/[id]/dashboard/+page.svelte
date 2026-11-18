@@ -32,12 +32,12 @@
 </script>
 
 <svelte:head>
-  <title>{data.dashboard.group.name} — classroom dashboard</title>
+  <title>{data.dashboard.group.name} | classroom dashboard | Parhiba</title>
 </svelte:head>
 
 <div class="cd">
   <header class="cd-h">
-    <h1>{data.dashboard.group.name}</h1>
+    <h1 class="page-title">{data.dashboard.group.name}</h1>
     {#if data.dashboard.group.description}
       <p class="cd-desc">{data.dashboard.group.description}</p>
     {/if}
@@ -83,17 +83,6 @@
 </div>
 
 <style>
-  .cd {
-    max-width: 56rem;
-    margin: 0 auto;
-    padding: 1.5rem 1.25rem 3rem;
-    color: var(--ink, var(--color-fg));
-  }
-  .cd-h h1 {
-    margin: 0 0 0.2rem;
-    font-size: 1.6rem;
-    font-family: var(--font-serif, system-ui);
-  }
   .cd-desc {
     color: var(--ink-2, var(--color-fg));
     margin: 0 0 0.4rem;

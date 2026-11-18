@@ -8,6 +8,7 @@
   full-width header on desktop, matching the CIAR design.
 -->
 <script lang="ts">
+  import PageLayout from './PageLayout.svelte';
   import { page } from '$app/stores';
   import { invalidateAll } from '$app/navigation';
   import { onMount } from 'svelte';
@@ -233,15 +234,15 @@
         >
           <span class="brand-mark" aria-hidden="true">{currentOption.glyph}</span>
           <span class="brand-text">
-            <span class="brand-name">CIAR</span>
+            <span class="brand-name">Parhiba</span>
             <span class="brand-sub">Indo-Aryan Reader</span>
           </span>
         </button>
       {:else}
-        <a class="brand" href="/" aria-label="CIA Reader home">
+        <a class="brand" href="/" aria-label="Parhiba home">
           <span class="brand-mark" aria-hidden="true">अ</span>
           <span class="brand-text">
-            <span class="brand-name">CIAR</span>
+            <span class="brand-name">Parhiba</span>
             <span class="brand-sub">Indo-Aryan Reader</span>
           </span>
         </a>
@@ -303,7 +304,7 @@
           <span class="brand-mark" aria-hidden="true">{currentOption.glyph}</span>
         </button>
       {:else}
-        <a class="brand-strip" href="/" aria-label="CIA Reader home">
+        <a class="brand-strip" href="/" aria-label="Parhiba home">
           <span class="brand-mark" aria-hidden="true">अ</span>
         </a>
       {/if}
@@ -322,7 +323,11 @@
   </header>
 
   <main class="content">
-    {@render children()}
+    {#if onReader}
+      {@render children()}
+    {:else}
+      <PageLayout>{@render children()}</PageLayout>
+    {/if}
   </main>
 
   <nav class="bottom-nav" aria-label="Primary navigation">
@@ -407,7 +412,7 @@
   .shell {
     min-height: 100dvh;
     display: grid;
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
     grid-template-rows: auto 1fr auto;
     grid-template-areas:
       'top'
@@ -427,6 +432,7 @@
   /* —— Top strip (mobile only) —— */
   .top-strip {
     grid-area: top;
+    min-width: 0;
     display: flex;
     align-items: center;
     gap: 0.75rem;
@@ -624,7 +630,8 @@
     grid-area: bottom;
     display: grid;
     grid-auto-flow: column;
-    grid-auto-columns: 1fr;
+    grid-auto-columns: minmax(max-content, 1fr);
+    overflow-x: auto;
     position: fixed;
     bottom: 0;
     left: 0;

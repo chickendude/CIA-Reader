@@ -8,6 +8,8 @@
   let { data, children }: { data: LayoutData; children: import('svelte').Snippet } = $props();
 </script>
 
+<svelte:head><title>Parhiba</title></svelte:head>
+
 <!-- T-11.7: renders only when locals.user.emailVerifiedAt is null.
      Sits above AppShell so it spans full width across desktop rail +
      mobile top strip layouts. -->

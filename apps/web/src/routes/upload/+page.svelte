@@ -274,12 +274,12 @@
 </script>
 
 <svelte:head>
-  <title>Upload — CIA Reader</title>
+  <title>Upload | Parhiba</title>
 </svelte:head>
 
-<div class="page">
+<div class="page page-form">
   <header>
-    <h1>Upload a text</h1>
+    <h1 class="page-title">Upload a text</h1>
     <p class="sub">
       Paste a passage, drop a <code>.txt</code> file, upload an
       <code>.epub</code> or a <code>.zip</code> of
@@ -488,15 +488,6 @@
 </div>
 
 <style>
-  .page {
-    max-width: 42rem;
-    margin: 0 auto;
-    padding: 1.5rem 1.25rem 3rem;
-  }
-  header h1 {
-    margin: 0 0 0.25rem;
-    font-size: 1.6rem;
-  }
   .sub {
     color: var(--color-fg-muted);
     margin: 0 0 1rem;

@@ -89,13 +89,13 @@
 </script>
 
 <svelte:head>
-  <title>Dictionary sources — CIA Reader</title>
+  <title>Dictionary sources | Parhiba</title>
   <meta name="robots" content="noindex" />
 </svelte:head>
 
 <div class="page">
   <header>
-    <h1>Dictionary sources</h1>
+    <h1 class="page-title">Dictionary sources</h1>
     <p class="sub">
       Cache state, last import, and contribution counts for every registered importer.
       Admin-only — actions kick off in-process jobs.
@@ -219,15 +219,6 @@
 </div>
 
 <style>
-  .page {
-    max-width: 78rem;
-    margin: 0 auto;
-    padding: 1.5rem 1.25rem 3rem;
-  }
-  h1 {
-    margin: 0 0 0.25rem;
-    font-size: 1.6rem;
-  }
   .sub {
     margin: 0 0 1rem;
     color: var(--color-fg-muted);

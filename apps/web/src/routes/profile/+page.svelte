@@ -35,13 +35,13 @@
 </script>
 
 <svelte:head>
-  <title>Settings — CIA Reader</title>
+  <title>Settings | Parhiba</title>
 </svelte:head>
 
 <section class="content">
   <header class="topbar">
     <div>
-      <h1 class="title">Settings</h1>
+      <h1 class="page-title title">Settings</h1>
       <p class="sub">Account + per-language reading preferences.</p>
     </div>
   </header>
@@ -237,27 +237,10 @@
 </section>
 
 <style>
-  .content {
-    max-width: 64rem;
-    margin: 0 auto;
-    padding: 1.75rem 1.25rem 3rem;
-  }
-  @media (min-width: 768px) {
-    .content {
-      padding: 2.25rem 2rem 3.5rem;
-    }
-  }
   .topbar {
     margin-bottom: 1.25rem;
   }
-  .title {
-    font-family: var(--font-serif, var(--font-ui));
-    font-weight: 600;
-    font-size: 1.4rem;
-    letter-spacing: -0.01em;
-    margin: 0;
-    color: var(--ink, var(--color-fg));
-  }
+
   .sub {
     font-size: 0.78rem;
     color: var(--ink-3, var(--color-fg-muted));

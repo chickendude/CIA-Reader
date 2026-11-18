@@ -15,12 +15,12 @@
 </script>
 
 <svelte:head>
-  <title>Correction stats — moderation</title>
+  <title>Correction stats | moderation | Parhiba</title>
 </svelte:head>
 
 <div class="ms">
   <header class="ms-h">
-    <h1>Correction stats</h1>
+    <h1 class="page-title">Correction stats</h1>
     <p class="ms-h-sub">
       Lightweight per-language metrics on parse accuracy, the curator queue,
       and time-to-resolution. Track these over time as overrides + dictionary
@@ -140,16 +140,6 @@
 </div>
 
 <style>
-  .ms {
-    padding: 1.25rem 1.5rem 2rem;
-    color: var(--ink, var(--color-fg));
-    max-width: 64rem;
-  }
-  .ms-h h1 {
-    margin: 0 0 0.2rem;
-    font-size: 1.4rem;
-    font-family: var(--font-serif, system-ui);
-  }
   .ms-h-sub {
     color: var(--ink-3, var(--color-fg-muted));
     font-size: 0.85rem;

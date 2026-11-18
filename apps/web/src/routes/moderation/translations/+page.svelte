@@ -69,13 +69,13 @@
 </script>
 
 <svelte:head>
-  <title>Translation reports — moderation</title>
+  <title>Translation reports | moderation | Parhiba</title>
   <meta name="robots" content="noindex" />
 </svelte:head>
 
 <div class="tr">
   <header class="tr-h">
-    <h1>Translation reports</h1>
+    <h1 class="page-title">Translation reports</h1>
     <p class="tr-h-sub">
       Reader-filed reports against community translations. Hide writes an
       audit row to <code>lemma_edit_history</code>; Keep closes the report
@@ -274,17 +274,6 @@
 </div>
 
 <style>
-  .tr {
-    padding: 1.25rem 1.5rem 2rem;
-    color: var(--ink, var(--color-fg));
-    max-width: 64rem;
-    margin: 0 auto;
-  }
-  .tr-h h1 {
-    margin: 0 0 0.2rem;
-    font-size: 1.4rem;
-    font-family: var(--font-serif, system-ui);
-  }
   .tr-h-sub {
     color: var(--ink-3, var(--color-fg-muted));
     font-size: 0.85rem;

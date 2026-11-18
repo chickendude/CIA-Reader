@@ -11,12 +11,12 @@
 </script>
 
 <svelte:head>
-  <title>Create account — CIA Reader</title>
+  <title>Create account | Parhiba</title>
 </svelte:head>
 
-<div class="page">
+<div class="page page-auth">
   <header>
-    <h1>Create account</h1>
+    <h1 class="page-title">Create account</h1>
     <p class="sub">
       Already have one? <a href={`/login?next=${encodeURIComponent(data.next)}`}>
         Sign in
@@ -66,15 +66,6 @@
 </div>
 
 <style>
-  .page {
-    max-width: 26rem;
-    margin: 2rem auto;
-    padding: 1rem 1.25rem 3rem;
-  }
-  header h1 {
-    margin: 0 0 0.4rem;
-    font-size: 1.6rem;
-  }
   .sub {
     color: var(--color-fg-muted);
     margin: 0 0 1rem;

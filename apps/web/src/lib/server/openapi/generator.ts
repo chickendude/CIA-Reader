@@ -279,13 +279,13 @@ export async function generateOpenApiDocument(): Promise<OpenApiDocument> {
   return {
     openapi: '3.1.0',
     info: {
-      title: 'CIA Reader API',
+      title: 'Parhiba API',
       version: '1.0.0',
       description:
         'Stable v1 web/mobile API plus the internal NLP FastAPI service surface.',
     },
     servers: [
-      { url: '/', description: 'CIA Reader web app' },
+      { url: '/', description: 'Parhiba web app' },
       { url: 'http://nlp:8000', description: 'NLP service in docker compose' },
     ],
     externalDocs: {

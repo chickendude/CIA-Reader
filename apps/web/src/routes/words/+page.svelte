@@ -62,13 +62,13 @@
 </script>
 
 <svelte:head>
-  <title>Words — CIA Reader</title>
+  <title>Words | Parhiba</title>
 </svelte:head>
 
 <section class="content">
   <header class="topbar">
     <div>
-      <h1 class="title">Words</h1>
+      <h1 class="page-title title">Words</h1>
       <p class="sub">
         {data.rows.length}{data.truncated ? '+' : ''} entries
         {#if data.languageName}
@@ -111,6 +111,7 @@
         Export CSV
       </a>
     {/if}
+    <a class="export-link" href="/words/anki/import">Import from Anki</a>
     <a class="export-link" href="/words/anki">Export to Anki</a>
   </div>
 
@@ -193,17 +194,6 @@
 </section>
 
 <style>
-  .content {
-    max-width: 72rem;
-    margin: 0 auto;
-    padding: 1.75rem 1.25rem 3rem;
-  }
-  @media (min-width: 768px) {
-    .content {
-      padding: 2.25rem 2rem 3.5rem;
-    }
-  }
-
   .topbar {
     display: grid;
     grid-template-columns: 1fr;
@@ -216,14 +206,7 @@
       grid-template-columns: 1fr auto;
     }
   }
-  .title {
-    font-family: var(--font-serif, var(--font-ui));
-    font-weight: 600;
-    font-size: 1.4rem;
-    letter-spacing: -0.01em;
-    margin: 0;
-    color: var(--ink, var(--color-fg));
-  }
+
   .sub {
     font-size: 0.78rem;
     color: var(--ink-3, var(--color-fg-muted));

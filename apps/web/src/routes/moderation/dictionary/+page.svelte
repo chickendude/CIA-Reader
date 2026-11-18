@@ -19,13 +19,13 @@
 </script>
 
 <svelte:head>
-  <title>Dictionary moderation — CIA Reader</title>
+  <title>Dictionary moderation | Parhiba</title>
   <meta name="robots" content="noindex" />
 </svelte:head>
 
 <div class="page">
   <header>
-    <h1>Dictionary moderation</h1>
+    <h1 class="page-title">Dictionary moderation</h1>
     {#if data.language}
       <p class="sub">
         Editing <strong>{data.language.nativeName}</strong> —
@@ -35,6 +35,7 @@
       <p class="sub">No language grants. Ask an admin for curator rights.</p>
     {/if}
     <nav class="mod-nav" aria-label="Moderation sections">
+      <a href="/moderation/hindi/workshop">Hindi dictionary workshop</a>
       <a href="/moderation/hindi">Hindi unparsed words and context review →</a>
       <a href="/moderation/translations">Translation reports →</a>
       <a href="/moderation/parses">Parse reports →</a>
@@ -129,15 +130,6 @@
 </div>
 
 <style>
-  .page {
-    max-width: 48rem;
-    margin: 0 auto;
-    padding: 1.5rem 1.25rem 3rem;
-  }
-  h1 {
-    margin: 0 0 0.25rem;
-    font-size: 1.6rem;
-  }
   .sub {
     margin: 0 0 1.25rem;
     color: var(--color-fg-muted);

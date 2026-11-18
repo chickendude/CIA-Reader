@@ -46,11 +46,11 @@
 </script>
 
 <svelte:head>
-  <title>New collection — CIA Reader</title>
+  <title>New collection | Parhiba</title>
 </svelte:head>
 
-<div class="nc">
-  <header><h1>New collection</h1></header>
+<div class="nc page-form">
+  <header><h1 class="page-title">New collection</h1></header>
   <form onsubmit={submit} class="nc-form">
     <label class="nc-row">
       <span class="nc-l">Title</span>
@@ -96,16 +96,6 @@
 </div>
 
 <style>
-  .nc {
-    max-width: 36rem;
-    margin: 0 auto;
-    padding: 1.5rem 1.25rem 3rem;
-    color: var(--ink, var(--color-fg));
-  }
-  .nc h1 {
-    margin: 0 0 1rem;
-    font-family: var(--font-serif, system-ui);
-  }
   .nc-form {
     display: flex;
     flex-direction: column;

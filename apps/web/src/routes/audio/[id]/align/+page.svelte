@@ -94,13 +94,13 @@
 </script>
 
 <svelte:head>
-  <title>Align audio — CIA Reader</title>
+  <title>Align audio | Parhiba</title>
 </svelte:head>
 
 <svelte:window onkeydown={onKey} onkeyup={onKeyUp} />
 
 <div class="ae">
-  <header><h1>Align audio</h1></header>
+  <header><h1 class="page-title">Align audio</h1></header>
 
   <audio
     bind:this={audioEl}
@@ -162,16 +162,6 @@
 </div>
 
 <style>
-  .ae {
-    max-width: 48rem;
-    margin: 0 auto;
-    padding: 1.5rem 1.25rem 3rem;
-    color: var(--ink, var(--color-fg));
-  }
-  .ae h1 {
-    margin: 0 0 1rem;
-    font-family: var(--font-serif, system-ui);
-  }
   audio {
     width: 100%;
     margin-bottom: 0.5rem;

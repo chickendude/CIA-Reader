@@ -67,12 +67,12 @@
 </script>
 
 <svelte:head>
-  <title>Parse reports — moderation</title>
+  <title>Parse reports | moderation | Parhiba</title>
 </svelte:head>
 
 <div class="mp">
   <header class="mp-h">
-    <h1>Parse reports</h1>
+    <h1 class="page-title">Parse reports</h1>
     <p class="mp-h-sub">
       User-filed corrections + system-flagged consensus. Accept promotes a fix to
       <code>form_lemma_overrides</code>; reject closes the report.
@@ -249,15 +249,6 @@
 </div>
 
 <style>
-  .mp {
-    padding: 1.25rem 1.5rem 2rem;
-    color: var(--ink, var(--color-fg));
-  }
-  .mp-h h1 {
-    margin: 0 0 0.2rem;
-    font-size: 1.4rem;
-    font-family: var(--font-serif, system-ui);
-  }
   .mp-h-sub {
     color: var(--ink-3, var(--color-fg-muted));
     font-size: 0.85rem;

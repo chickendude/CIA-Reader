@@ -15,17 +15,17 @@
 </script>
 
 <svelte:head>
-  <title>Bulk dictionary tools — CIA Reader</title>
+  <title>Bulk dictionary tools | Parhiba</title>
   <meta name="robots" content="noindex" />
 </svelte:head>
 
-<div class="page">
+<div class="page page-form">
   <p class="crumb">
     <a href="/moderation/dictionary">← Back to dictionary</a>
   </p>
 
   <header>
-    <h1>Bulk curator tools</h1>
+    <h1 class="page-title">Bulk curator tools</h1>
     <p class="sub">
       Admin-only. Each operation requires a reason and writes one audit row
       per affected translation. Hard cap of {data.bulkLimit} rows per submission.
@@ -180,11 +180,6 @@ bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
 </div>
 
 <style>
-  .page {
-    max-width: 44rem;
-    margin: 0 auto;
-    padding: 1.5rem 1.25rem 3rem;
-  }
   .crumb {
     margin: 0 0 1rem;
     font-size: 0.9rem;
@@ -192,10 +187,7 @@ bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
   .crumb a {
     color: var(--color-accent);
   }
-  header h1 {
-    margin: 0 0 0.25rem;
-    font-size: 1.6rem;
-  }
+
   .sub {
     color: var(--color-fg-muted);
     margin: 0 0 0.75rem;

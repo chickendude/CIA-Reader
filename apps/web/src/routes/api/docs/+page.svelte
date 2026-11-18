@@ -1,8 +1,8 @@
 <svelte:head>
-  <title>API Docs — CIA Reader</title>
+  <title>API Docs | Parhiba</title>
   <meta
     name="description"
-    content="CIA Reader OpenAPI 3.1 reference for v1 web/mobile clients."
+    content="Parhiba OpenAPI 3.1 reference for v1 web/mobile clients."
   />
   <link
     rel="stylesheet"
@@ -113,11 +113,11 @@
   });
 </script>
 
-<main class="api-docs">
+<div class="api-docs">
   <header>
     <div>
       <p class="eyebrow">OpenAPI 3.1</p>
-      <h1>CIA Reader API</h1>
+      <h1 class="page-title">Parhiba API</h1>
     </div>
     <nav aria-label="API documentation links">
       <a href="/docs/api/">Client guide</a>
@@ -157,27 +157,22 @@
       </table>
     {/if}
   </section>
-</main>
+</div>
 
 <style>
   .api-docs {
     min-height: 100vh;
     background: var(--paper, var(--color-bg));
-    color: var(--ink, var(--color-fg));
   }
   header {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 1rem;
-    padding: 1rem 1.25rem;
+    padding: 0 0 1rem;
     border-bottom: 1px solid var(--rule, var(--color-border));
   }
-  h1 {
-    margin: 0.1rem 0 0;
-    font-size: 1.25rem;
-    font-family: var(--font-serif, system-ui);
-  }
+
   .eyebrow {
     margin: 0;
     font-size: 0.68rem;

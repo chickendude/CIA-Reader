@@ -9,13 +9,13 @@
 </script>
 
 <svelte:head>
-  <title>Transcription workbench — CIA Reader</title>
+  <title>Transcription workbench | Parhiba</title>
   <meta name="robots" content="noindex" />
 </svelte:head>
 
 <div class="page">
   <header>
-    <h1>Transcription workbench</h1>
+    <h1 class="page-title">Transcription workbench</h1>
     <p class="sub">
       Verify imported dictionary drafts against the public-domain page
       scans. A verified entry becomes our own transcription and is
@@ -60,11 +60,6 @@
 </div>
 
 <style>
-  .page {
-    max-width: 60rem;
-    margin: 0 auto;
-    padding: 1.5rem 1rem 3rem;
-  }
   .sub {
     color: var(--text-secondary, #444);
     max-width: 44rem;

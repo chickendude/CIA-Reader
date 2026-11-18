@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { ankiConnect, rememberAnkiConnection } from '$lib/anki-connect';
   import { untrack } from 'svelte';
   import type { PageData } from './$types';
 
@@ -23,8 +24,6 @@
   let sendMsg = $state<string | null>(null);
   let sendErr = $state<string | null>(null);
 
-  const ANKI_CONNECT_URL = 'http://127.0.0.1:8765';
-
   function escapeHtml(s: string): string {
     return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   }
@@ -40,18 +39,6 @@
     return parts.join('');
   }
 
-  async function ankiConnect(action: string, params: unknown): Promise<unknown> {
-    const res = await fetch(ANKI_CONNECT_URL, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ action, version: 6, params }),
-    });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const body = (await res.json()) as { result: unknown; error: string | null };
-    if (body.error) throw new Error(body.error);
-    return body.result;
-  }
-
   async function sendToAnki(): Promise<void> {
     if (data.mode !== 'export') return;
     sending = true;
@@ -59,6 +46,7 @@
     sendErr = null;
     try {
       await ankiConnect('createDeck', { deck: deckName });
+      rememberAnkiConnection();
       const notes = data.cards.map((c) => ({
         deckName,
         modelName: 'Basic',
@@ -86,10 +74,11 @@
   );
 </script>
 
-<svelte:head><title>Export to Anki · CIA Reader</title></svelte:head>
+<svelte:head><title>Export to Anki | Parhiba</title></svelte:head>
 
-<section class="anki">
-  <h1>Export to Anki</h1>
+<section class="anki page-form">
+  <h1 class="page-title">Export to Anki</h1>
+  <a href="/words/anki/import">Import vocabulary from Anki Desktop</a>
 
   {#if data.mode === 'pick'}
     <p class="muted">Pick a book to export the words you're learning from it.</p>
@@ -166,16 +155,6 @@
 </section>
 
 <style>
-  .anki {
-    max-width: 46rem;
-    margin: 0 auto;
-    padding: 1.5rem 1rem 4rem;
-    color: var(--color-fg);
-  }
-  h1 {
-    font-size: 1.4rem;
-    margin: 0 0 0.5rem;
-  }
   .muted {
     color: var(--color-fg-muted);
   }

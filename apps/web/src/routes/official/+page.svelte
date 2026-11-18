@@ -1,5 +1,6 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
+  import BookActions from '$lib/components/library/BookActions.svelte';
   import type { PageData } from './$types';
 
   let { data }: { data: PageData } = $props();
@@ -14,7 +15,7 @@
 </script>
 
 <svelte:head>
-  <title>Official library — CIA Reader</title>
+  <title>Official library | Parhiba</title>
   <meta
     name="description"
     content="Browse the official library of Hindi, Marathi, and Odia texts curated for the CIA Reader — every text comes with lemma-aware reading, romanization, and shared dictionary entries."
@@ -23,7 +24,7 @@
 
 <div class="ol">
   <header class="ol-h">
-    <h1>Official library</h1>
+    <h1 class="page-title">Official library</h1>
     <p class="ol-h-sub">
       Curator-promoted texts. Anyone can read; sign in to track known
       words across visits.
@@ -55,6 +56,9 @@
             <span class="ol-pill ol-pill-source">{card.sourceType}</span>
           </p>
         </a>
+        {#if data.user?.role === 'admin'}
+          <BookActions id={card.id} title={card.title} catalogAction="remove" />
+        {/if}
       </li>
     {:else}
       <li class="ol-empty">No official texts yet for this language.</li>
@@ -63,17 +67,6 @@
 </div>
 
 <style>
-  .ol {
-    max-width: 56rem;
-    margin: 0 auto;
-    padding: 1.5rem 1.25rem 3rem;
-    color: var(--ink, var(--color-fg));
-  }
-  .ol-h h1 {
-    margin: 0 0 0.2rem;
-    font-size: 1.6rem;
-    font-family: var(--font-serif, system-ui);
-  }
   .ol-h-sub {
     color: var(--ink-3, var(--color-fg-muted));
     font-size: 0.9rem;
@@ -107,6 +100,7 @@
     gap: 0.85rem;
   }
   .ol-card {
+    position: relative;
     background: var(--card, var(--color-bg));
     border: 1px solid var(--rule, var(--color-border));
     border-radius: 10px;
@@ -117,6 +111,7 @@
     text-decoration: none;
     color: inherit;
   }
+  .ol-card:has(:global(.book-actions)) .ol-card-a { padding-right: 3.4rem; }
   .ol-card-a:hover {
     background: color-mix(in oklch, var(--ink, var(--color-fg)) 4%, transparent);
   }

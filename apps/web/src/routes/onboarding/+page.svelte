@@ -29,11 +29,11 @@
 </script>
 
 <svelte:head>
-  <title>Welcome — CIA Reader</title>
+  <title>Welcome | Parhiba</title>
 </svelte:head>
 
-<div class="page">
-  <h1>Welcome to CIA Reader</h1>
+<div class="page page-form">
+  <h1 class="page-title">Welcome to CIA Reader</h1>
   <p class="lede">
     Pick the language you want to read and a rough sense of what you already know. You can add
     more languages or change these choices later from your profile.
@@ -84,14 +84,6 @@
 </div>
 
 <style>
-  .page {
-    max-width: 40rem;
-    margin: 0 auto;
-    padding: 2rem 1.25rem;
-  }
-  h1 {
-    margin: 0 0 0.5rem;
-  }
   .lede {
     color: var(--color-fg-muted);
     margin: 0 0 1.5rem;

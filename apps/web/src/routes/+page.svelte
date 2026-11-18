@@ -49,17 +49,11 @@
 </script>
 
 <svelte:head>
-  <title>CIA Reader — Read in Indo-Aryan languages</title>
+  <title>Parhiba</title>
 </svelte:head>
 
 <section class="content">
-  <h1 class="home-hero">
-    Read in your <em>own time.</em>
-  </h1>
-  <p class="home-sub">
-    Pick a language to begin. Your progress, known-words list, and per-language
-    settings are kept separately for each script.
-  </p>
+  <h1 class="page-title">Pick your language</h1>
 
   <div class="lang-grid">
     {#each data.languages as L (L.code)}
@@ -92,14 +86,11 @@
     </p>
   {/if}
   <footer class="home-sources">
-    <h2>Sources</h2>
-    <p>Hindi dictionary and parsing: HindiDB, including locally reviewed meanings and forms.</p>
-    <p>Dictionary references:
-      <a href="https://en.wiktionary.org/wiki/Category:Hindi_language">Wiktionary</a>,
-      <a href="https://www.hindwi.org/">Hindwi</a>,
-      <a href="https://www.rekhtadictionary.com/">Rekhta Dictionary</a>, and
-      <a href="https://www.shabdkosh.com/">Shabdkosh</a>.
-      Individual source records are retained with dictionary entries.
+    <h2>Where the data comes from</h2>
+    <p>
+      The Hindi dictionary includes entries from <a href="https://en.wiktionary.org/wiki/Category:Hindi_language">Wiktionary</a>.
+      All dictionary data on Parhiba is released under the same
+      <a href="https://creativecommons.org/licenses/by-sa/4.0/">Creative Commons Attribution-ShareAlike 4.0 International license</a>.
     </p>
   </footer>
 </section>
@@ -115,41 +106,6 @@
   }
   .home-sources h2 { font-size: 0.9rem; font-weight: 500; }
   .home-sources a { color: inherit; }
-  .content {
-    max-width: 64rem;
-    padding: 2rem 1.25rem 3rem;
-    margin: 0 auto;
-  }
-  @media (min-width: 768px) {
-    .content {
-      padding: 3rem 2rem 4rem;
-    }
-  }
-  .home-hero {
-    font-family: var(--font-serif, var(--font-ui));
-    font-size: 2rem;
-    line-height: 1.1;
-    letter-spacing: -0.02em;
-    color: var(--ink, var(--color-fg));
-    font-weight: 400;
-    margin: 0 0 0.5rem;
-  }
-  @media (min-width: 768px) {
-    .home-hero {
-      font-size: 2.5rem;
-    }
-  }
-  .home-hero em {
-    font-style: italic;
-    color: var(--accent-ink, var(--color-accent));
-  }
-  .home-sub {
-    font-size: 0.95rem;
-    color: var(--ink-3, var(--color-fg-muted));
-    max-width: 36rem;
-    margin: 0 0 1.75rem;
-    line-height: 1.5;
-  }
   .lang-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));

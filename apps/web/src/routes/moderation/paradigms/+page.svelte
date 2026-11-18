@@ -19,7 +19,7 @@
 </script>
 
 <svelte:head>
-  <title>Paradigms — CIA Reader</title>
+  <title>Paradigms | Parhiba</title>
   <meta name="robots" content="noindex" />
 </svelte:head>
 
@@ -29,7 +29,7 @@
   </p>
 
   <header>
-    <h1>Paradigms</h1>
+    <h1 class="page-title">Paradigms</h1>
     <p class="sub">
       Admin-only. A paradigm is a conjugation/declension pattern (e.g. "Odia
       regular verb"); each row pairs a (language, pos) scope with a list of
@@ -141,11 +141,6 @@
 </div>
 
 <style>
-  .page {
-    max-width: 48rem;
-    margin: 0 auto;
-    padding: 1.5rem 1.25rem 3rem;
-  }
   .crumb {
     margin: 0 0 1rem;
     font-size: 0.9rem;
@@ -153,10 +148,7 @@
   .crumb a {
     color: var(--color-accent);
   }
-  header h1 {
-    margin: 0 0 0.25rem;
-    font-size: 1.6rem;
-  }
+
   .sub {
     margin: 0 0 0.75rem;
     color: var(--color-fg-muted);

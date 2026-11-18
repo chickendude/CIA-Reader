@@ -48,7 +48,7 @@
 </script>
 
 <svelte:head>
-  <title>Transcribe {data.lemma.headword} — CIA Reader</title>
+  <title>Transcribe {data.lemma.headword} | Parhiba</title>
   <meta name="robots" content="noindex" />
 </svelte:head>
 
@@ -58,7 +58,7 @@
       <a href={`/moderation/transcribe/${data.slug}`}>← {data.citation}</a>
     </nav>
     <div class="headrow">
-      <h1>{data.lemma.headword}</h1>
+      <h1 class="page-title">{data.lemma.headword}</h1>
       {#if data.lemma.curatorLocked}
         <span class="badge verified">verified</span>
       {:else}
@@ -100,7 +100,7 @@
     <div class="workbench">
       <section class="scan">
         <h2>
-          Scan — printed page {data.scanPage.printedPage ?? '?'}
+          Scan of printed page {data.scanPage.printedPage ?? '?'}
           {#if data.proposal && !data.savedCrop}
             <span class="meta">
               (crop auto-proposed, confidence
@@ -245,11 +245,6 @@
 </div>
 
 <style>
-  .page {
-    max-width: 90rem;
-    margin: 0 auto;
-    padding: 1.5rem 1rem 3rem;
-  }
   .crumbs a {
     color: var(--text-secondary, #444);
     text-decoration: none;
@@ -259,9 +254,7 @@
     align-items: baseline;
     gap: 0.75rem;
   }
-  .headrow h1 {
-    margin: 0.25rem 0;
-  }
+
   .nav-links {
     margin-left: auto;
     display: flex;

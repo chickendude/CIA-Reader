@@ -70,6 +70,11 @@ class DatabaseLexicon:
                 for entry in entries:
                     if entry.get("group_id"):
                         groups[entry["group_id"]].append(entry)
+                def member_ids(members):
+                    live = [lexical_id(e["lemma"], e["pos"]) for e in members]
+                    ordered = [use["id"] for use in members[0].get("group_uses", []) if use["id"] in live]
+                    return list(dict.fromkeys(ordered + live))
+
                 document = {
                     "entries": entries,
                     "entry_groups": [
@@ -77,7 +82,7 @@ class DatabaseLexicon:
                             "id": gid,
                             "lemma": members[0]["lemma"],
                             "primary": members[0].get("group_primary"),
-                            "members": [lexical_id(e["lemma"], e["pos"]) for e in members],
+                            "members": member_ids(members),
                         }
                         for gid, members in groups.items()
                         if len(members) > 1 and len({e["lemma"] for e in members}) == 1

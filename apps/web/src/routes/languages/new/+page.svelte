@@ -34,11 +34,11 @@
 </script>
 
 <svelte:head>
-  <title>Add a language — CIA Reader</title>
+  <title>Add a language | Parhiba</title>
 </svelte:head>
 
-<div class="page">
-  <h1>Add a language</h1>
+<div class="page page-form">
+  <h1 class="page-title">Add a language</h1>
 
   {#if data.addable.length === 0}
     <p class="lede">
@@ -101,14 +101,6 @@
 </div>
 
 <style>
-  .page {
-    max-width: 40rem;
-    margin: 0 auto;
-    padding: 2rem 1.25rem;
-  }
-  h1 {
-    margin: 0 0 0.5rem;
-  }
   .lede {
     color: var(--color-fg-muted);
     margin: 0 0 1.5rem;

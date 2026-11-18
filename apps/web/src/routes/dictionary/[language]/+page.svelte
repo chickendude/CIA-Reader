@@ -25,7 +25,7 @@
 </script>
 
 <svelte:head>
-  <title>{data.language.displayName} dictionary | CIA Reader</title>
+  <title>{data.language.displayName} dictionary | Parhiba</title>
   <meta
     name="description"
     content="Browse {data.language.displayName} lemmas, glosses, and translations in CIA Reader."
@@ -34,7 +34,7 @@
 
 <div class="page" dir={data.language.textDirection}>
   <header>
-    <h1>
+    <h1 class="page-title">
       {data.language.nativeName}
       <span class="muted">{data.language.displayName} dictionary</span>
     </h1>
@@ -45,7 +45,7 @@
   </header>
   {#if data.user?.role === 'admin' || data.user?.role === 'curator'}
     <nav aria-label="Dictionary staff tools">
-      {#if data.canEdit}<a href={`/moderation/dictionary?language=${data.language.code}`}>Edit dictionary</a>{/if}
+      {#if data.canEdit}<a href={data.language.code==='hi'?'/moderation/hindi/workshop':`/moderation/dictionary?language=${data.language.code}`}>Edit dictionary</a>{/if}
       {#if data.language.code === 'hi'} <a href="/moderation/hindi">Unparsed words and context review</a>{/if}
     </nav>
   {/if}
@@ -146,9 +146,9 @@
               <span>Source: {lemma.sourceAttribution}</span>
             {/if}
             {#if data.canEdit}
-              <a href={`/moderation/dictionary/${lemma.id}`}>Edit entry</a>
+              <a href={data.language.code==='hi'?`/moderation/hindi/workshop?id=${lemma.id}`:`/moderation/dictionary/${lemma.id}`}>Edit entry</a>
               {#if data.language.code === 'hi'}
-                <a href={`/moderation/dictionary/${lemma.id}#inflection`}>Edit inflection</a>
+                <a href={`/moderation/hindi/workshop?id=${lemma.id}#inflection`}>Edit inflection</a>
               {/if}
             {/if}
           </div>
@@ -173,15 +173,6 @@
 </div>
 
 <style>
-  .page {
-    max-width: 48rem;
-    margin: 0 auto;
-    padding: 1.5rem 1.25rem 3rem;
-  }
-  header h1 {
-    margin: 0 0 0.25rem;
-    font-size: 1.75rem;
-  }
   .sub {
     margin: 0 0 1.5rem;
     color: var(--color-fg-muted);
