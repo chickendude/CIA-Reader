@@ -39,7 +39,7 @@ let counter = 0;
 export type PushToastInput = {
   kind?: ToastKind;
   message: string;
-  /** Defaults to 5000ms. Pass `null` to make the toast sticky. */
+  /** Pass `null` to keep the toast visible until dismissed. */
   duration?: number | null;
 };
 
@@ -49,14 +49,18 @@ export type PushToastInput = {
  * when a long-running operation wants to clear a "loading…" toast
  * once it succeeds).
  */
-export function pushToast(input: PushToastInput): string {
+export function pushToast({
+  kind = 'info',
+  message,
+  duration = kind === 'success' ? 2000 : 5000,
+}: PushToastInput): string {
   counter += 1;
   const id = `toast-${counter}-${Date.now()}`;
   const toast: Toast = {
     id,
-    kind: input.kind ?? 'info',
-    message: input.message,
-    duration: input.duration === undefined ? 5000 : input.duration,
+    kind,
+    message,
+    duration,
   };
   inner.update((list) => [...list, toast]);
   return id;

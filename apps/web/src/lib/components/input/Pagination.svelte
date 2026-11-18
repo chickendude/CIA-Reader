@@ -60,7 +60,6 @@
     justify-content: space-between;
     margin-top: 1rem;
     padding-top: 0.75rem;
-    border-top: 1px solid var(--rule, var(--color-border));
   }
   .page-info {
     color: var(--ink-3, var(--color-fg-muted));

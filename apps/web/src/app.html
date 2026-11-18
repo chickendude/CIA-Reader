@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" data-theme="%cia.theme%" data-hl="background">
+<html lang="en" data-theme="%cia.theme%" data-theme-preference="%cia.themePreference%" data-hl="background">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -9,9 +9,8 @@
     <meta name="description" content="Parhiba, a comparative Indo-Aryan reader." />
     <!--
       Resolve the user's theme preference before first paint to avoid a
-      light-mode flash for dark-mode users. Reads the cookie written by
-      the profile form and falls back to the OS preference. Mirrored by
-      server-side rendering in hooks.server.ts so hydration matches.
+      light-mode flash for dark-mode users. The server supplies the account
+      or cookie preference. System mode follows the browser color scheme.
 
       `data-hl` controls reader word-status highlighting style
       (background tint vs. underline). It's a reader-mode setting written
@@ -21,15 +20,14 @@
     <script>
       (function () {
         try {
-          var match = document.cookie.match(/(?:^|; )cia_theme=([^;]+)/);
-          var pref = match ? decodeURIComponent(match[1]) : 'system';
-          var resolved =
-            pref === 'light' || pref === 'dark' || pref === 'sepia'
-              ? pref
-              : window.matchMedia('(prefers-color-scheme: dark)').matches
-                ? 'dark'
-                : 'light';
-          document.documentElement.setAttribute('data-theme', resolved);
+          var root = document.documentElement;
+          var scheme = window.matchMedia('(prefers-color-scheme: dark)');
+          function applyTheme() {
+            var pref = root.dataset.themePreference;
+            root.dataset.theme = pref === 'system' ? (scheme.matches ? 'dark' : 'light') : pref;
+          }
+          applyTheme();
+          scheme.addEventListener('change', applyTheme);
 
           var hlMatch = document.cookie.match(/(?:^|; )cia_hl=([^;]+)/);
           var hlPref = hlMatch ? decodeURIComponent(hlMatch[1]) : 'background';

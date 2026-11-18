@@ -7,6 +7,7 @@ import {
   isThemePreference,
   resolveTheme,
   type ResolvedTheme,
+  type ThemePreference,
 } from '$lib/theme/index.js';
 import { setJobDispatcher } from '$lib/server/texts/jobs.js';
 import { inProcessDispatcher } from '$lib/server/texts/in-process-dispatcher.js';
@@ -36,13 +37,15 @@ setJobDispatcher(inProcessDispatcher);
  *  4. Default to 'light' (light-mode systems without a cookie or hint won't
  *     flip when the client-side script runs).
  */
+function themePreference(event: Parameters<Handle>[0]['event']): ThemePreference {
+  const cookie = event.cookies.get(THEME_COOKIE);
+  return event.locals.user?.themePreference ?? (isThemePreference(cookie) ? cookie : 'system');
+}
+
 export function resolveServerTheme(event: Parameters<Handle>[0]['event']): ResolvedTheme {
-  const userPref = event.locals.user?.themePreference;
-  const cookiePref = event.cookies.get(THEME_COOKIE);
-  const preference = userPref ?? (isThemePreference(cookiePref) ? cookiePref : 'system');
   const hint = event.request.headers.get('sec-ch-prefers-color-scheme');
   const systemPrefersDark = hint === 'dark';
-  return resolveTheme(preference, systemPrefersDark);
+  return resolveTheme(themePreference(event), systemPrefersDark);
 }
 
 export const handle: Handle = async ({ event, resolve }) => {
@@ -75,7 +78,7 @@ export const handle: Handle = async ({ event, resolve }) => {
   }
   const theme = resolveServerTheme(event);
   const response = await resolve(event, {
-    transformPageChunk: ({ html }) => html.replace('%cia.theme%', theme),
+    transformPageChunk: ({ html }) => html.replace('%cia.theme%', theme).replace('%cia.themePreference%', themePreference(event)),
   });
   if (corsForExtension) response.headers.set('access-control-allow-origin', reqOrigin!);
   return response;

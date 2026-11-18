@@ -1,13 +1,10 @@
-<!--
-  Profile / settings (T-1.2 → T-5.14).
-
-  CIAR design's sectioned layout: each section has a heading + subtitle
-  on the left and the actual controls on the right. On <768px the
-  two columns stack. The form actions and validation flow are
-  unchanged from T-1.2 — this PR only restyles.
--->
 <script lang="ts">
   import { enhance } from '$app/forms';
+  import { invalidateAll } from '$app/navigation';
+  import { isThemePreference, resolveTheme } from '$lib/theme/index.js';
+  import Button from '$lib/components/input/Button.svelte';
+  import { pushToast } from '$lib/components/toast/toast-store.js';
+  import type { SubmitFunction } from '@sveltejs/kit';
   import type { ActionData, PageData } from './$types';
 
   let { data, form }: { data: PageData; form: ActionData } = $props();
@@ -25,6 +22,100 @@
     itrans: 'ITRANS',
   };
 
+  type SaveStatus = { state: 'saving' | 'saved' } | { state: 'error'; message: string };
+  let languageSaves = $state<Record<string, SaveStatus>>({});
+
+  let accountSave = $state<SaveStatus>();
+  let pendingAccount: { displayName: string | null; themePreference: string } | null = null;
+  let generatingKey = $state(false);
+
+  async function copyApiKey(key: string) {
+    try {
+      await navigator.clipboard.writeText(key);
+      pushToast({ kind: 'success', message: 'API key copied.' });
+    } catch {
+      pushToast({ kind: 'error', message: 'Could not copy the API key. Select it and copy it manually.' });
+    }
+  }
+
+  async function saveAccount(event: SubmitEvent & { currentTarget: HTMLFormElement }) {
+    event.preventDefault();
+    const fields = new FormData(event.currentTarget);
+    const theme = fields.get('themePreference');
+    if (!isThemePreference(theme)) return;
+
+    document.documentElement.dataset.themePreference = theme;
+    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    document.documentElement.dataset.theme = resolveTheme(theme, prefersDark);
+    pendingAccount = { displayName: String(fields.get('displayName') ?? '').trim() || null, themePreference: theme };
+    if (accountSave?.state === 'saving') return;
+    accountSave = { state: 'saving' };
+    while (pendingAccount) {
+      const patch = pendingAccount;
+      pendingAccount = null;
+      try {
+        const response = await fetch('/api/v1/me/profile', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(patch),
+        });
+        if (!response.ok) throw new Error('Profile update failed');
+        if (!pendingAccount) await invalidateAll();
+      } catch {
+        if (pendingAccount) continue;
+        accountSave = { state: 'error', message: 'Could not save account settings.' };
+        return;
+      }
+    }
+    accountSave = { state: 'saved' };
+  }
+
+  const generateKey: SubmitFunction = ({ cancel }) => {
+    if (generatingKey) {
+      cancel();
+      return;
+    }
+    generatingKey = true;
+    return async ({ update }) => {
+      try {
+        await update();
+      } finally {
+        generatingKey = false;
+      }
+    };
+  };
+
+  const revokeKey: SubmitFunction = () => async ({ result, update }) => {
+    if (result.type === 'success' && typeof result.data?.message === 'string') {
+      pushToast({ kind: 'success', message: result.data.message });
+    }
+    await update();
+  };
+
+  const saveLanguage: SubmitFunction = ({ formData, cancel }) => {
+    const code = String(formData.get('code'));
+    if (languageSaves[code]?.state === 'saving') {
+      cancel();
+      return;
+    }
+    languageSaves[code] = { state: 'saving' };
+    return async ({ result }) => {
+      if (result.type === 'success') {
+        try {
+          await invalidateAll();
+          languageSaves[code] = { state: 'saved' };
+        } catch {
+          languageSaves[code] = { state: 'error', message: 'Preferences saved. Could not refresh settings.' };
+        }
+      } else {
+        const message = result.type === 'failure' && typeof result.data?.message === 'string'
+          ? result.data.message
+          : 'Could not save these preferences.';
+        languageSaves[code] = { state: 'error', message };
+      }
+    };
+  };
+
   function formatDate(value: Date | string | null): string {
     if (!value) return 'Never';
     return new Intl.DateTimeFormat(undefined, {
@@ -40,28 +131,19 @@
 
 <section class="content">
   <header class="topbar">
-    <div>
-      <h1 class="page-title title">Settings</h1>
-      <p class="sub">Account + per-language reading preferences.</p>
-    </div>
+    <h1 class="page-title title">Settings</h1>
   </header>
 
   <div class="card">
     <section class="settings-section">
       <div class="settings-h-col">
         <h2 class="settings-h">Account</h2>
-        <p class="settings-sub">Used across all languages.</p>
       </div>
-      <form method="POST" action="?/updateProfile" use:enhance class="form-col">
-        <label class="field">
+      <form method="POST" action="?/updateProfile" onsubmit={saveAccount} onchange={(event) => event.currentTarget.requestSubmit()} class="form-col">
+        <div class="field">
           <span class="field-label">Email</span>
-          <input
-            type="email"
-            value={data.user.email}
-            readonly
-            aria-readonly="true"
-          />
-        </label>
+          <span class="account-email">{data.user.email}</span>
+        </div>
         <label class="field">
           <span class="field-label">Display name</span>
           <input
@@ -88,74 +170,67 @@
             {/each}
           </div>
         </fieldset>
-        <div class="form-actions">
-          <button type="submit" class="btn">Save account</button>
-          {#if form && form.section === 'profile' && form.ok}
-            <span class="ok" role="status">Saved.</span>
-          {:else if form && form.section === 'profile' && !form.ok}
-            <span class="err" role="alert">{form.message}</span>
-          {/if}
-        </div>
+        {#if accountSave?.state === 'saving'}
+          <span class="muted small" role="status">Saving…</span>
+        {:else if accountSave?.state === 'saved'}
+          <span class="ok" role="status">Saved.</span>
+        {:else if accountSave?.state === 'error'}
+          <div class="form-actions">
+            <span class="err" role="alert">{accountSave.message}</span>
+            <Button variant="primary" type="submit">Retry</Button>
+          </div>
+        {/if}
+        <noscript>
+          <Button variant="primary" type="submit">Save account</Button>
+          {#if form?.section === 'profile' && !form.ok}<span class="err" role="alert">{form.message}</span>{/if}
+        </noscript>
       </form>
     </section>
 
     <section class="settings-section">
       <div class="settings-h-col">
-        <h2 class="settings-h">Personal API Keys</h2>
+        <h2 class="settings-h">Personal API key</h2>
         <p class="settings-sub">
-          Scoped to your account for mobile apps and third-party clients.
+          For use with third-party apps.
         </p>
       </div>
       <div class="form-col">
-        <form method="POST" action="?/createApiKey" use:enhance class="api-key-form">
-          <label class="field">
-            <span class="field-label">Key name</span>
-            <input
-              type="text"
-              name="name"
-              maxlength="80"
-              placeholder="Laptop, phone, integration..."
-              required
-            />
-          </label>
-          <div class="form-actions">
-            <button type="submit" class="btn">Generate key</button>
-            {#if form && form.section === 'apiKeys' && !form.ok}
-              <span class="err" role="alert">{form.message}</span>
-            {:else if form && form.section === 'apiKeys' && form.ok && !form.key}
-              <span class="ok" role="status">{form.message}</span>
-            {/if}
-          </div>
-          {#if form && form.section === 'apiKeys' && form.ok && form.key}
-            <div class="api-key-secret" role="status">
-              <span>{form.message}</span>
-              <code>{form.key}</code>
+        {#if data.apiKey}
+          <div class="api-key-row">
+            <div>
+              <code>{data.apiKey.keyPrefix}…</code>
+              <span class="muted small">Last used {formatDate(data.apiKey.lastUsedAt)}</span>
             </div>
-          {/if}
-        </form>
-
-        {#if data.apiKeys.length > 0}
-          <div class="api-key-list">
-            {#each data.apiKeys as key (key.id)}
-              <div class="api-key-row" class:revoked={key.revokedAt}>
-                <div>
-                  <strong>{key.name}</strong>
-                  <span class="muted small">{key.keyPrefix}...</span>
-                  <span class="muted small">
-                    Last used {formatDate(key.lastUsedAt)}
-                  </span>
-                </div>
-                {#if key.revokedAt}
-                  <span class="muted small">Revoked {formatDate(key.revokedAt)}</span>
-                {:else}
-                  <form method="POST" action="?/revokeApiKey" use:enhance>
-                    <input type="hidden" name="keyId" value={key.id} />
-                    <button type="submit" class="btn secondary">Revoke</button>
-                  </form>
-                {/if}
-              </div>
-            {/each}
+            <form method="POST" action="?/revokeApiKey" use:enhance={revokeKey}>
+              <input type="hidden" name="keyId" value={data.apiKey.id} />
+              <Button variant="primary" type="submit">Revoke key</Button>
+            </form>
           </div>
+        {:else}
+          <form method="POST" action="?/createApiKey" use:enhance={generateKey}>
+            <Button variant="primary" type="submit" disabled={generatingKey}>Generate key</Button>
+          </form>
+        {/if}
+        {#if form?.section === 'apiKeys'}
+          {#if !form.ok}
+            <span class="err" role="alert">{form.message}</span>
+          {:else if form.key && data.apiKey && form.key.startsWith(data.apiKey.keyPrefix)}
+            {@const key = form.key}
+            <div class="api-key-secret">
+              <span role="status">{form.message}</span>
+              <div class="secret-row">
+                <code>{key}</code>
+                <Button aria-label="Copy API key" title="Copy API key" onclick={() => copyApiKey(key)}>
+                  <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                    <rect x="8" y="8" width="12" height="13" rx="2" />
+                    <path d="M15 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3" />
+                  </svg>
+                </Button>
+              </div>
+            </div>
+          {:else if !form.key}
+            <noscript><span class="ok" role="status">{form.message}</span></noscript>
+          {/if}
         {/if}
       </div>
     </section>
@@ -163,17 +238,15 @@
     <section class="settings-section">
       <div class="settings-h-col">
         <h2 class="settings-h">Languages</h2>
-        <p class="settings-sub">
-          Per-language reading defaults. These take effect the first time you
-          open a text in that language.
-        </p>
       </div>
       <div class="form-col">
         {#each data.languages as lang (lang.code)}
+          {@const save = languageSaves[lang.code]}
           <form
             method="POST"
             action="?/updateLanguage"
-            use:enhance
+            onchange={(event) => event.currentTarget.requestSubmit()}
+            use:enhance={saveLanguage}
             class="lang-form"
           >
             <header class="lang-form-h">
@@ -183,15 +256,17 @@
                   {lang.displayName}
                 </span>
               </div>
-              {#if lang.isDefault}
-                <span class="muted small">Using defaults</span>
+              {#if save?.state === 'saving'}
+                <span class="muted small" role="status">Saving…</span>
+              {:else if save?.state === 'saved'}
+                <span class="ok" role="status">Saved.</span>
               {/if}
             </header>
             <input type="hidden" name="code" value={lang.code} />
             {#if lang.supportedRomanizations.length > 0}
               <label class="field">
                 <span class="field-label">Script preference</span>
-                <select name="scriptPreference">
+                <select name="scriptPreference" disabled={save?.state === 'saving'}>
                   {#each ['native', 'native_with_romanization', 'romanization_only'] as pref (pref)}
                     <option value={pref} selected={lang.scriptPreference === pref}>
                       {SCRIPT_PREF_LABELS[pref]}
@@ -201,7 +276,7 @@
               </label>
               <label class="field">
                 <span class="field-label">Romanization scheme</span>
-                <select name="romanizationScheme">
+                <select name="romanizationScheme" disabled={save?.state === 'saving'}>
                   {#each lang.supportedRomanizations as scheme (scheme)}
                     <option
                       value={scheme}
@@ -217,18 +292,23 @@
                    preference or romanization scheme to choose. The hidden
                    scriptPreference keeps the form payload valid. -->
               <input type="hidden" name="scriptPreference" value="native" />
-              <p class="muted small">Latin script — rendered as written, no romanization.</p>
+              <p class="muted small">Latin script</p>
             {/if}
-            <div class="form-actions">
-              <button type="submit" class="btn secondary">
-                Save {lang.displayName}
-              </button>
-              {#if form && form.section === 'language' && form.code === lang.code && form.ok}
-                <span class="ok" role="status">Saved.</span>
-              {:else if form && form.section === 'language' && form.code === lang.code && !form.ok}
-                <span class="err" role="alert">{form.message}</span>
-              {/if}
-            </div>
+            {#if save?.state === 'error'}
+              <div class="form-actions">
+                <span class="err" role="alert">{save.message}</span>
+                <Button variant="primary" type="submit">Retry</Button>
+              </div>
+            {/if}
+            {#if lang.supportedRomanizations.length}
+              <noscript>
+                <Button variant="primary" type="submit">Save changes</Button>
+                {#if form?.section === 'language' && form.code === lang.code}
+                  {#if form.ok}<span class="ok">Saved.</span>
+                  {:else}<span class="err" role="alert">{form.message}</span>{/if}
+                {/if}
+              </noscript>
+            {/if}
           </form>
         {/each}
       </div>
@@ -239,12 +319,6 @@
 <style>
   .topbar {
     margin-bottom: 1.25rem;
-  }
-
-  .sub {
-    font-size: 0.78rem;
-    color: var(--ink-3, var(--color-fg-muted));
-    margin: 0.15rem 0 0;
   }
 
   .card {
@@ -305,7 +379,6 @@
     flex-direction: column;
     gap: 0.6rem;
   }
-  .api-key-form,
   .api-key-row {
     border: 1px solid var(--rule, var(--color-border));
     border-radius: 9px;
@@ -327,14 +400,16 @@
     color: var(--ink, var(--color-fg));
     font-size: 0.8rem;
   }
+  .secret-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 0.5rem;
+  }
   .api-key-secret code {
     overflow-wrap: anywhere;
     font-family: var(--font-mono-display, var(--font-mono));
     font-size: 0.78rem;
-  }
-  .api-key-list {
-    display: grid;
-    gap: 0.55rem;
   }
   .api-key-row {
     display: flex;
@@ -345,9 +420,6 @@
   .api-key-row > div {
     display: grid;
     gap: 0.15rem;
-  }
-  .api-key-row.revoked {
-    opacity: 0.68;
   }
   .lang-form-h {
     display: flex;
@@ -378,7 +450,6 @@
     color: var(--ink-3, var(--color-fg-muted));
   }
   input[type='text'],
-  input[type='email'],
   select {
     padding: 0.55rem 0.7rem;
     border: 1px solid var(--rule, var(--color-border));
@@ -390,18 +461,14 @@
     min-height: var(--touch-target, 44px);
   }
   input[type='text']:focus,
-  input[type='email']:focus,
   select:focus {
     outline: 2px solid var(--accent, var(--color-accent));
     outline-offset: 1px;
   }
-  input[readonly] {
-    color: var(--ink-3, var(--color-fg-muted));
-    background: color-mix(
-      in oklch,
-      var(--paper, var(--color-bg)) 90%,
-      transparent
-    );
+  .account-email {
+    align-self: flex-start;
+    font-size: 0.85rem;
+    overflow-wrap: anywhere;
   }
 
   .radio-row {
@@ -422,23 +489,6 @@
     accent-color: var(--accent, var(--color-accent));
   }
 
-  .btn {
-    height: var(--touch-target, 44px);
-    padding: 0 1rem;
-    background: var(--ink, var(--color-fg));
-    color: var(--paper, var(--color-bg));
-    border: 1px solid var(--ink, var(--color-fg));
-    border-radius: 8px;
-    font-family: var(--font-sans, var(--font-ui));
-    font-size: 0.82rem;
-    font-weight: 500;
-    cursor: pointer;
-  }
-  .btn.secondary {
-    background: transparent;
-    color: var(--ink-2, var(--color-fg));
-    border-color: var(--rule, var(--color-border));
-  }
   .form-actions {
     display: flex;
     gap: 0.75rem;

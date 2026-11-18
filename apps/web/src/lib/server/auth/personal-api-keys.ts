@@ -1,32 +1,11 @@
-import { and, desc, eq, isNull } from 'drizzle-orm';
+import { and, eq, isNull } from 'drizzle-orm';
 
 import { db, schema } from '../db/index.js';
-import type { PersonalApiKey, User } from '../db/schema.js';
+import type { User } from '../db/schema.js';
 import { generateToken, hashToken } from './tokens.js';
 
 export const PERSONAL_API_KEY_PREFIX = 'ciar_pk_';
 const TOKEN_BYTES = 32;
-
-export type PublicPersonalApiKey = Pick<
-  PersonalApiKey,
-  'id' | 'name' | 'keyPrefix' | 'lastUsedAt' | 'revokedAt' | 'createdAt'
->;
-
-export type CreatedPersonalApiKey = {
-  key: string;
-  record: PublicPersonalApiKey;
-};
-
-function publicKey(row: PersonalApiKey): PublicPersonalApiKey {
-  return {
-    id: row.id,
-    name: row.name,
-    keyPrefix: row.keyPrefix,
-    lastUsedAt: row.lastUsedAt,
-    revokedAt: row.revokedAt,
-    createdAt: row.createdAt,
-  };
-}
 
 export function normalizePersonalApiKey(value: string): string | null {
   const key = value.trim();
@@ -37,33 +16,24 @@ export function generatePersonalApiKeySecret(): string {
   return `${PERSONAL_API_KEY_PREFIX}${generateToken(TOKEN_BYTES)}`;
 }
 
-export async function createPersonalApiKey(
-  userId: string,
-  name: string,
-): Promise<CreatedPersonalApiKey> {
+export async function createPersonalApiKey(userId: string): Promise<string | null> {
+  const t = schema.personalApiKeys;
   const key = generatePersonalApiKeySecret();
-  const [record] = await db
-    .insert(schema.personalApiKeys)
-    .values({
-      userId,
-      name,
-      keyHash: hashToken(key),
-      keyPrefix: key.slice(0, 18),
-    })
-    .returning();
-  if (!record) throw new Error('Failed to create personal API key');
-  return { key, record: publicKey(record) };
+  const [created] = await db
+    .insert(t)
+    .values({ userId, keyHash: hashToken(key), keyPrefix: key.slice(0, 18) })
+    .onConflictDoNothing({ target: t.userId, where: isNull(t.revokedAt) })
+    .returning({ id: t.id });
+  return created ? key : null;
 }
 
-export async function listPersonalApiKeys(
-  userId: string,
-): Promise<PublicPersonalApiKey[]> {
-  const rows = await db
-    .select()
-    .from(schema.personalApiKeys)
-    .where(eq(schema.personalApiKeys.userId, userId))
-    .orderBy(desc(schema.personalApiKeys.createdAt));
-  return rows.map(publicKey);
+export async function getActivePersonalApiKey(userId: string) {
+  const t = schema.personalApiKeys;
+  const [key] = await db.select({ id: t.id, keyPrefix: t.keyPrefix, lastUsedAt: t.lastUsedAt })
+    .from(t)
+    .where(and(eq(t.userId, userId), isNull(t.revokedAt)))
+    .limit(1);
+  return key ?? null;
 }
 
 export async function revokePersonalApiKey(

@@ -8,7 +8,7 @@ import {
 } from '$lib/server/profile.js';
 import {
   createPersonalApiKey,
-  listPersonalApiKeys,
+  getActivePersonalApiKey,
   revokePersonalApiKey,
 } from '$lib/server/auth/personal-api-keys.js';
 import { THEME_COOKIE, THEME_COOKIE_MAX_AGE } from '$lib/theme/index.js';
@@ -41,10 +41,6 @@ const languageFormSchema = z.object({
   ),
 });
 
-const apiKeyCreateSchema = z.object({
-  name: z.string().trim().min(1).max(80),
-});
-
 const apiKeyRevokeSchema = z.object({
   keyId: z.string().uuid(),
 });
@@ -52,9 +48,9 @@ const apiKeyRevokeSchema = z.object({
 export const load: PageServerLoad = async ({ locals }) => {
   if (!locals.user) throw redirect(303, '/login?next=/profile');
 
-  const [persisted, apiKeys] = await Promise.all([
+  const [persisted, apiKey] = await Promise.all([
     listUserLanguages(locals.user.id),
-    listPersonalApiKeys(locals.user.id),
+    getActivePersonalApiKey(locals.user.id),
   ]);
   return {
     user: {
@@ -71,7 +67,7 @@ export const load: PageServerLoad = async ({ locals }) => {
       script: LANGUAGES[row.code].script,
       supportedRomanizations: LANGUAGES[row.code].supportedRomanizations,
     })),
-    apiKeys,
+    apiKey,
   };
 };
 
@@ -176,7 +172,7 @@ export const actions: Actions = {
     } satisfies LanguageActionResult;
   },
 
-  createApiKey: async ({ request, locals }) => {
+  createApiKey: async ({ locals }) => {
     if (!locals.user) {
       return fail(401, {
         ok: false,
@@ -184,20 +180,19 @@ export const actions: Actions = {
         message: 'Unauthorized',
       } satisfies ApiKeyActionResult);
     }
-    const parsed = apiKeyCreateSchema.safeParse(Object.fromEntries(await request.formData()));
-    if (!parsed.success) {
-      return fail(400, {
+    const key = await createPersonalApiKey(locals.user.id);
+    if (!key) {
+      return fail(409, {
         ok: false,
         section: 'apiKeys',
-        message: parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; '),
+        message: 'An active API key already exists.',
       } satisfies ApiKeyActionResult);
     }
-    const created = await createPersonalApiKey(locals.user.id, parsed.data.name);
     return {
       ok: true,
       section: 'apiKeys',
-      key: created.key,
-      message: 'Personal API key created. Copy it now; it will not be shown again.',
+      key,
+      message: "Here's your API key. Be sure to store it as it won't be shown again.",
     } satisfies ApiKeyActionResult;
   },
 

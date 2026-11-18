@@ -21,44 +21,43 @@
 
 <style>
   a, button {
+    --button-bg: var(--card, var(--color-bg));
+    --button-border: var(--rule, var(--color-border));
     display: inline-flex;
     align-items: center;
     justify-content: center;
     gap: 0.35rem;
     min-height: 2.25rem;
     padding: 0.4rem 0.8rem;
-    border: 1px solid var(--rule, var(--color-border));
+    border: 1px solid var(--button-border);
     border-radius: 7px;
-    background: var(--card, var(--color-bg));
+    background: var(--button-bg);
     color: var(--ink, var(--color-fg));
     font: 500 0.84rem/1.25 var(--font-sans, var(--font-ui));
     text-decoration: none;
     cursor: pointer;
   }
   [data-variant='primary'] {
+    --button-bg: var(--ink, var(--color-fg));
+    --button-border: var(--button-bg);
     color: var(--paper, var(--color-bg));
-    background: var(--ink, var(--color-fg));
-    border-color: var(--ink, var(--color-fg));
+  }
+  :global([data-theme='dark']) [data-variant='primary'] {
+    --button-bg: var(--ink-2, var(--color-fg-muted));
   }
   [data-variant='toggle'] {
     text-transform: capitalize;
   }
   [aria-pressed='true'], [aria-pressed='mixed'] {
-    border-color: var(--ink-3, var(--color-border-strong));
+    --button-border: var(--ink-3, var(--color-border-strong));
   }
   [aria-pressed='true'] {
-    background: var(--accent-soft, var(--color-surface-2));
+    --button-bg: var(--accent-soft, var(--color-surface-2));
   }
   @media (hover: hover) {
     :is(a, button):hover:not(:disabled, [aria-disabled='true']) {
-      border-color: var(--ink, var(--color-fg));
-      background: var(--paper-2, var(--color-surface-2));
-    }
-    [data-variant='primary']:hover:not(:disabled, [aria-disabled='true']) {
-      background: var(--ink-2, var(--color-fg-muted));
-    }
-    [aria-pressed='true']:hover:not(:disabled) {
-      background: color-mix(in oklch, var(--accent, var(--color-accent)) 25%, var(--paper, var(--color-bg)));
+      border-color: color-mix(in oklch, var(--button-border) 88%, currentColor);
+      background: color-mix(in oklch, var(--button-bg) 95%, currentColor);
     }
   }
   :is(a, button):focus-visible {

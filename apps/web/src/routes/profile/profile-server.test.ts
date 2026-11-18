@@ -5,7 +5,7 @@ const listUserLanguages = vi.fn();
 const updateUserProfile = vi.fn();
 const upsertUserLanguage = vi.fn();
 const createPersonalApiKey = vi.fn();
-const listPersonalApiKeys = vi.fn();
+const getActivePersonalApiKey = vi.fn();
 const revokePersonalApiKey = vi.fn();
 
 vi.mock('$lib/server/profile.js', () => ({
@@ -26,7 +26,7 @@ vi.mock('$lib/server/profile.js', () => ({
 
 vi.mock('$lib/server/auth/personal-api-keys.js', () => ({
   createPersonalApiKey: (...a: unknown[]) => createPersonalApiKey(...a),
-  listPersonalApiKeys: (...a: unknown[]) => listPersonalApiKeys(...a),
+  getActivePersonalApiKey: (...a: unknown[]) => getActivePersonalApiKey(...a),
   revokePersonalApiKey: (...a: unknown[]) => revokePersonalApiKey(...a),
 }));
 
@@ -67,9 +67,9 @@ describe('profile +page.server.ts', () => {
     updateUserProfile.mockReset();
     upsertUserLanguage.mockReset();
     createPersonalApiKey.mockReset();
-    listPersonalApiKeys.mockReset();
+    getActivePersonalApiKey.mockReset();
     revokePersonalApiKey.mockReset();
-    listPersonalApiKeys.mockResolvedValue([]);
+    getActivePersonalApiKey.mockResolvedValue(null);
   });
 
   afterEach(() => vi.resetModules());
@@ -104,8 +104,8 @@ describe('profile +page.server.ts', () => {
       expect(data.languages[0]?.code).toBe('hi');
       expect(data.languages[0]?.displayName).toBe('Hindi');
       expect(data.languages[0]?.supportedRomanizations).toContain('iso15919');
-      expect(data.apiKeys).toEqual([]);
-      expect(listPersonalApiKeys).toHaveBeenCalledWith('u1');
+      expect(data.apiKey).toBeNull();
+      expect(getActivePersonalApiKey).toHaveBeenCalledWith('u1');
     });
   });
 
@@ -228,14 +228,11 @@ describe('profile +page.server.ts', () => {
 
   describe('personal API key actions', () => {
     it('creates a personal API key for the authenticated user', async () => {
-      createPersonalApiKey.mockResolvedValue({
-        key: 'ciar_pk_secret',
-        record: { id: 'key-1', name: 'Phone' },
-      });
+      createPersonalApiKey.mockResolvedValue('ciar_pk_secret');
       const actions = await loadActions();
 
       const result = await actions.createApiKey(
-        formEvent({ name: 'Phone' }, { user: { id: 'u1' } }),
+        formEvent({}, { user: { id: 'u1' } }),
       );
 
       expect(result).toMatchObject({
@@ -243,7 +240,14 @@ describe('profile +page.server.ts', () => {
         section: 'apiKeys',
         key: 'ciar_pk_secret',
       });
-      expect(createPersonalApiKey).toHaveBeenCalledWith('u1', 'Phone');
+      expect(createPersonalApiKey).toHaveBeenCalledWith('u1');
+    });
+
+    it('rejects generation when an active key already exists', async () => {
+      createPersonalApiKey.mockResolvedValue(null);
+      const actions = await loadActions();
+      const result = await actions.createApiKey(formEvent({}, { user: { id: 'u1' } }));
+      expect(result).toMatchObject({ status: 409, data: { ok: false } });
     });
 
     it('revokes a personal API key owned by the authenticated user', async () => {

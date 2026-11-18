@@ -147,7 +147,6 @@
         autocomplete="off"
       />
       <input type="hidden" name="status" value={encodeStatuses(selected)} />
-      <Button type="submit">Search</Button>
     </form>
   </div>
 
@@ -208,9 +207,6 @@
   }
 
   .filterbar {
-    display: flex;
-    gap: 0.4rem;
-    align-items: center;
     width: min(20rem, 100%);
     font-size: 0.85rem;
   }

@@ -241,15 +241,16 @@
         }}
       />
       <div class="controls">
-        <button
+        <Button
+          variant="primary"
           disabled={working}
           onclick={() => open(null, query.match(/\p{Script=Devanagari}/u) ? query : '')}
-          >New entry</button
-        ><button onclick={() => refresh++}>Refresh</button>
+        >New entry</Button>
+        <Button onclick={() => refresh++}>Refresh</Button>
         {#if tab === 'review' && reviewBook?.canReprocess}
-          <button disabled={reprocessing} title={reviewBook.title} onclick={reprocessBook}>
+          <Button disabled={reprocessing} title={reviewBook.title} onclick={reprocessBook}>
             {reprocessing ? 'Reprocessing…' : 'Reprocess book'}
-          </button>
+          </Button>
         {/if}
       </div>
       <div class="results" aria-busy={pending}>
@@ -367,7 +368,7 @@
   }
   aside,
   article {
-    background: var(--surface, var(--paper));
+    background: var(--card);
     border: 1px solid var(--rule);
     border-radius: 0.65rem;
     padding: 1.1rem;

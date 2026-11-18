@@ -1,6 +1,8 @@
 // @vitest-environment node
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { hashToken } from './tokens.js';
+
 const rows: Array<Record<string, unknown>> = [];
 function chainable(...args: unknown[]) {
   void args;
@@ -16,6 +18,7 @@ const chain = {
     return rows;
   }),
   values: vi.fn(chainable),
+  onConflictDoNothing: vi.fn(chainable),
   set: vi.fn(chainable),
   returning: vi.fn((...args: unknown[]) => {
     void args;
@@ -74,25 +77,19 @@ describe('personal API keys', () => {
   });
 
   it('creates a key once and stores only a hash plus prefix', async () => {
-    rows.push({
-      id: 'key-1',
+    rows.push({ id: 'key-1' });
+    const key = await createPersonalApiKey('u1');
+    if (!key) throw new Error('Expected a generated key');
+    expect(key.startsWith(PERSONAL_API_KEY_PREFIX)).toBe(true);
+    expect(chain.values).toHaveBeenCalledWith({
       userId: 'u1',
-      name: 'Laptop',
-      keyPrefix: `${PERSONAL_API_KEY_PREFIX}abcd`,
-      createdAt: new Date('2026-04-30T00:00:00Z'),
-      lastUsedAt: null,
-      revokedAt: null,
+      keyHash: hashToken(key),
+      keyPrefix: key.slice(0, 18),
     });
+  });
 
-    const created = await createPersonalApiKey('u1', 'Laptop');
-
-    expect(created.key).toMatch(new RegExp(`^${PERSONAL_API_KEY_PREFIX}`));
-    expect(created.record).toMatchObject({ id: 'key-1', name: 'Laptop' });
-    const values = chain.values.mock.calls[0]?.[0] as Record<string, unknown>;
-    expect(values.userId).toBe('u1');
-    expect(values.name).toBe('Laptop');
-    expect(values.keyPrefix).toBe((values.keyPrefix as string).slice(0, 18));
-    expect(values.keyHash).not.toBe(created.key);
+  it('returns no secret when the user already has an active key', async () => {
+    await expect(createPersonalApiKey('u1')).resolves.toBeNull();
   });
 
   it('revokes only an active key owned by the user', async () => {

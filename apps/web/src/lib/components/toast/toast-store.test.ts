@@ -30,12 +30,13 @@ describe('pushToast', () => {
     expect(list[0]!.id).toBe(id);
     expect(list[0]!.kind).toBe('success');
     expect(list[0]!.message).toBe('Saved');
-    expect(list[0]!.duration).toBe(5000);
+    expect(list[0]!.duration).toBe(2000);
   });
 
   it('defaults `kind` to "info" when omitted', () => {
     pushToast({ message: 'Heads up' });
     expect(get(toasts)[0]!.kind).toBe('info');
+    expect(get(toasts)[0]!.duration).toBe(5000);
   });
 
   it('honors a custom `duration`', () => {

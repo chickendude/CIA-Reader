@@ -12,6 +12,7 @@ import {
   text,
   timestamp,
   unique,
+  uniqueIndex,
   uuid,
 } from 'drizzle-orm/pg-core';
 import { sql, type InferSelectModel } from 'drizzle-orm';
@@ -154,12 +155,6 @@ export const refreshTokens = pgTable(
   }),
 );
 
-/**
- * Personal API keys for mobile / third-party clients. The plaintext key is
- * returned once at creation time; only SHA-256(key) is stored. Revocation is a
- * soft delete so the profile page can show key history without leaking secret
- * material.
- */
 export const personalApiKeys = pgTable(
   'personal_api_keys',
   {
@@ -167,7 +162,7 @@ export const personalApiKeys = pgTable(
     userId: uuid('user_id')
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
-    name: text('name').notNull(),
+    name: text('name'),
     keyHash: text('key_hash').notNull(),
     keyPrefix: text('key_prefix').notNull(),
     lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
@@ -177,7 +172,7 @@ export const personalApiKeys = pgTable(
   (t) => ({
     hashUnique: unique('personal_api_keys_hash_unique').on(t.keyHash),
     userIdx: index('personal_api_keys_user_idx').on(t.userId),
-    activeUserIdx: index('personal_api_keys_active_user_idx').on(t.userId, t.revokedAt),
+    activeUserIdx: uniqueIndex('personal_api_keys_one_active_per_user').on(t.userId).where(sql`${t.revokedAt} IS NULL`),
   }),
 );
 

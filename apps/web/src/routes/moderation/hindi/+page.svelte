@@ -208,6 +208,7 @@
   }
   article {
     padding: 1rem;
+    background: var(--card);
     border: 1px solid var(--rule);
     border-radius: 8px;
     margin: 1rem 0;
@@ -230,7 +231,7 @@
   }
   .context {
     padding: 0.6rem;
-    background: var(--card);
+    background: var(--paper);
     font-size: 1.1rem;
   }
   .candidate {
