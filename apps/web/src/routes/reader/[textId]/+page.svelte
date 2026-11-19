@@ -1,6 +1,6 @@
 <script lang="ts">
   import { goto, invalidateAll } from '$app/navigation';
-  import { onMount, untrack } from 'svelte';
+  import { onMount, setContext, untrack } from 'svelte';
 
   import AlignmentHighlighter from '$lib/components/reader/AlignmentHighlighter.svelte';
   import AudioPlayer from '$lib/components/reader/AudioPlayer.svelte';
@@ -33,6 +33,8 @@
   import type { PageData } from './$types';
 
   let { data }: { data: PageData } = $props();
+
+  setContext('readerHindiDictionary', () => data.hindiDictionary);
 
   // PDF texts render as a page-image reader (clickable word overlays)
   // regardless of the saved layout mode.

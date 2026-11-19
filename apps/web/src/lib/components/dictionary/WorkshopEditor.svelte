@@ -5,6 +5,7 @@
     emptyDraft,
     partsOfSpeech,
     type Draft,
+    type WorkshopWord as Word,
     type Inventory,
     type Match,
     type Reference,
@@ -12,8 +13,6 @@
     type ReviewItem,
   } from '$lib/dictionary/hindi-workshop';
   import { hindiPatterns } from '$lib/dictionary/hindi-patterns';
-  import type { PageData } from './$types';
-  type Word = NonNullable<PageData['initial']>;
   let {
     word,
     draft = $bindable(),
@@ -35,7 +34,7 @@
     review: boolean;
     onsaved: (w: Word, advance?: boolean) => void;
     onopen: (id: string | null, lemma: string, pos: string, attach?: string) => void;
-    ondeleted: () => void;
+    ondeleted?: () => void;
   } = $props();
   let message = $state(''),
     previewError = $state(''),
@@ -384,7 +383,7 @@
     <button onclick={() => changePanel('attach')}
       >{observed ? 'Attach to existing entry' : 'Find existing entry'}</button
     >
-    {#if draft.id}<button onclick={() => changePanel('uses')}>POS uses</button>{/if}
+    {#if draft.id && ondeleted}<button onclick={() => changePanel('uses')}>POS uses</button>{/if}
   </nav>
   {#if panel === 'attach' || panel === 'merge'}
     <div class="sub">
@@ -632,7 +631,7 @@
     {#if review}<button disabled={!draft.lemma.trim()} onclick={() => save(true)}
         >Save and next</button
       >{/if}
-    {#if draft.id}<button
+    {#if draft.id && ondeleted}<button
         disabled={dirty}
         title={dirty ? 'Save edits before merging' : ''}
         onclick={() => changePanel('merge')}>Merge into…</button
@@ -646,7 +645,7 @@
           )
             void act(async () => {
               await workshop('delete', { id: draft.id, version: draft.version });
-              ondeleted();
+              ondeleted?.();
             });
         }}>Delete entry</button
       >{/if}

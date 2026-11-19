@@ -75,35 +75,63 @@ function classify(card: DesktopCard): CardType {
   return 'young';
 }
 
+const wordFields = ['lemma', 'headword', 'word', 'expression', 'hindi', 'front'];
+const importFields = new Set(['parhiba_id', 'hindidb_id', ...wordFields]);
+
+type EntryIdentity = {
+  parhibaId?: string;
+  /** External ID used by older HindiDB decks and import clients. */
+  id?: string;
+  headword?: string;
+};
+
+export function ankiEntryKey(entry: EntryIdentity) {
+  return JSON.stringify([entry.parhibaId, entry.headword, entry.id]);
+}
+
+type ImportEntry = EntryIdentity & {
+  status: Assignment;
+};
+
+function fieldText(value: string | undefined) {
+  if (!value) return '';
+  const text = value.replace(/<(?:br\b[^>]*|\/(?:p|div|li))>/gi, ' ').replace(/<[^>]*>/g, '');
+  let decoded = text;
+  if (text.includes('&')) {
+    const decoder = document.createElement('textarea');
+    decoder.innerHTML = text;
+    decoded = decoder.value;
+  }
+  return decoded.replace(/\s+/g, ' ').trim().normalize('NFC');
+}
+
 export function collectEntries(cards: DesktopCard[], decks: string[], mapping: CardMapping) {
   const selectedDecks = new Set(decks);
-  const entries = new Map<string, 'learning' | 'known'>();
-  const ignored = new Set<string>();
-  const headwords = new Map<string, string>();
-  let missingId = 0;
+  const entries = new Map<string, ImportEntry>();
+  let missingWord = 0;
   for (const card of cards) {
     if (!selectedDecks.has(card.deckName)) continue;
+    const fields = new Map(Object.entries(card.fields).map(([k, v]) => [k.toLowerCase(), v.value]));
+    const parhibaId = fieldText(fields.get('parhiba_id'));
+    const id = fieldText(fields.get('hindidb_id'));
+    const word = wordFields.map((name) => fieldText(fields.get(name))).find(Boolean);
+    const headword = word && word.length <= 500 ? word : undefined;
     const status = mapping[classify(card)];
-    const id = card.fields.HindiDB_ID?.value.replace(/<[^>]*>/g, '').trim();
-    if (!id) {
-      if (status !== 'ignore') missingId++;
+    if (!parhibaId && !id && !headword) {
+      if (status !== 'ignore') missingWord++;
       continue;
     }
-    const headword = card.fields.Lemma?.value.replace(/<[^>]*>/g, '').trim();
-    if (headword) headwords.set(id, headword);
-    if (status === 'ignore') {
-      ignored.add(id);
-      entries.delete(id);
-    } else if (!ignored.has(id) && (status === 'known' || !entries.has(id))) {
-      entries.set(id, status);
+    const identity = { parhibaId: parhibaId || undefined, id: id || undefined, headword };
+    const key = ankiEntryKey(identity);
+    const prior = entries.get(key);
+    if (!prior) {
+      entries.set(key, { ...identity, status });
+    } else {
+      if (status === 'ignore' || (status === 'known' && prior.status !== 'ignore'))
+        prior.status = status;
     }
   }
-  return {
-    missingId,
-    headwords,
-    ignoredIds: [...ignored],
-    entries: [...entries].map(([id, status]) => ({ id, status })),
-  };
+  return { entries: [...entries.values()], missingWord };
 }
 
 export type DeckNode = {
@@ -156,10 +184,9 @@ export async function readDecks(decks: string[]) {
         type,
         queue,
         interval,
-        fields: {
-          ...(fields.HindiDB_ID && { HindiDB_ID: fields.HindiDB_ID }),
-          ...(fields.Lemma && { Lemma: fields.Lemma }),
-        },
+        fields: Object.fromEntries(
+          Object.entries(fields).filter(([name]) => importFields.has(name.toLowerCase())),
+        ),
       });
     }
   }

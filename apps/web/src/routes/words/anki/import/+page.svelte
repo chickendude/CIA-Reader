@@ -77,7 +77,7 @@
   let preview = $state<{
     matched: number;
     changes: number;
-    unmatched: string[];
+    unmatchedEntries: { headword: string | null; parhibaId: string | null }[];
     counts: Record<string, number>;
   } | null>(null);
   let batch = $state<ReturnType<typeof collectEntries> | null>(null);
@@ -133,7 +133,7 @@
       const res = await fetch('/api/v1/me/anki/import', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ apply, entries: batch.entries, ignoredIds: batch.ignoredIds }),
+        body: JSON.stringify({ apply, entries: batch.entries }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.message ?? 'Import failed');
@@ -185,28 +185,25 @@
     <section aria-live="polite">
       <h2>{imported ? 'Import complete' : 'Import preview'}</h2>
       <p>
-        {preview.matched} matched words. {preview.changes}
+        {preview.matched} matched dictionary {preview.matched === 1 ? 'entry' : 'entries'}. {preview.changes}
         {imported ? 'changed' : 'would change'}.
       </p>
       <p>
         Learning {preview.counts.learning}, known {preview.counts.known}.
       </p>
-      {#if batch.missingId}<p>{batch.missingId} cards skipped without a HindiDB_ID.</p>{/if}
-      {#if preview.unmatched.length}
+      {#if batch.missingWord}<p>{batch.missingWord} cards skipped without an entry ID or headword.</p>{/if}
+      {#if preview.unmatchedEntries.length}
         <details>
           <summary
-            >{preview.unmatched.length}
-            {preview.unmatched.length === 1 ? 'entry' : 'entries'} without a dictionary match</summary
+            >{preview.unmatchedEntries.length}
+            {preview.unmatchedEntries.length === 1 ? 'entry' : 'entries'} without a dictionary match</summary
           >
-          <p>
-            Parhiba skips these entries because their Anki IDs have no unique match in the current
-            Hindi dictionary.
-          </p>
           <ul class="unmatched">
-            {#each preview.unmatched as id (id)}
+            {#each preview.unmatchedEntries as entry}
               <li>
-                {#if batch.headwords.has(id)}<span lang="hi">{batch.headwords.get(id)}</span>{/if}
-                <code>{id}</code>
+                {#if entry.headword}<span lang="hi">{entry.headword}</span>{/if}
+                {#if entry.parhibaId}<code>{entry.parhibaId}</code>{/if}
+                {#if !entry.headword && !entry.parhibaId}Missing headword{/if}
               </li>
             {/each}
           </ul>

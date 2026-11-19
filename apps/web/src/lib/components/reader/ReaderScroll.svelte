@@ -256,8 +256,8 @@
   // packing, and the shared component would have to know about
   // pages.
   const tokensById = $derived.by(() => {
-    if (!current?.tokens) return new Map<string, ServerToken>();
-    return new Map(current.tokens.map((t) => [t.id, t]));
+    if (!correctedTokens) return new Map<string, ServerToken>();
+    return new Map(correctedTokens.map((t) => [t.id, t]));
   });
 
   let activeToken = $state<ServerToken | null>(null);
@@ -406,7 +406,7 @@
 
   function onKeydown(e: KeyboardEvent) {
     if (e.metaKey || e.ctrlKey || e.altKey) return;
-    if (isTypingInsideElement(e.target)) return;
+    if (isTypingInsideElement(e.target) || document.querySelector('.sheet-back.dimmed')) return;
     if (e.key === 'ArrowLeft' && hasPrev) {
       e.preventDefault();
       prev();
@@ -491,6 +491,7 @@
 
 {#if activeToken && activeRect}
   <WordPopup
+    chapterTokens={current?.tokens}
     token={activeToken}
     anchorRect={activeRect}
     {language}

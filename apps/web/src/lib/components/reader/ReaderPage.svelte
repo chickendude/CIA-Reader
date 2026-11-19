@@ -298,7 +298,7 @@
 
   function onKeydown(e: KeyboardEvent) {
     if (e.metaKey || e.ctrlKey || e.altKey) return;
-    if (isTypingInsideElement(e.target)) return;
+    if (isTypingInsideElement(e.target) || document.querySelector('.sheet-back.dimmed')) return;
     if (e.key === 'ArrowLeft' && hasPrev) {
       e.preventDefault();
       prevPage();

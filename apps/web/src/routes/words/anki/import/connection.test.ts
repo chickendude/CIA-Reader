@@ -59,7 +59,8 @@ it('reconnects on return after a successful connection and supports a manual ret
   expect(calls.slice(3)).toEqual(['deckNames', 'requestPermission', 'deckNames']);
 });
 
-it('shows the Anki headword for a skipped dictionary ID in the import preview', async () => {
+it('shows unmatched headwords and only displays IDs from the Parhiba field', async () => {
+  const parhibaId = 'cbec4099-ab06-475d-86cb-300e7d2da618';
   const results: Record<string, unknown> = {
     requestPermission: { permission: 'granted' },
     deckNames: ['Hindi'],
@@ -70,7 +71,7 @@ it('shows the Anki headword for a skipped dictionary ID in the import preview', 
         type: 2,
         queue: 2,
         interval: 30,
-        fields: { HindiDB_ID: { value: 'retired-id' }, Lemma: { value: 'याद करना' } },
+        fields: { HindiDB_ID: { value: 'hi_retired' }, Lemma: { value: 'याद करना' } },
       },
     ],
   };
@@ -81,7 +82,11 @@ it('shows the Anki headword for a skipped dictionary ID in the import preview', 
         return Response.json({
           matched: 0,
           changes: 0,
-          unmatched: ['retired-id'],
+          unmatched: ['hi_retired', parhibaId],
+          unmatchedEntries: [
+            { headword: 'याद करना', parhibaId: null },
+            { headword: 'मदद करना', parhibaId },
+          ],
           counts: { learning: 0, known: 0 },
         });
       }
@@ -92,6 +97,7 @@ it('shows the Anki headword for a skipped dictionary ID in the import preview', 
   await fireEvent.click(screen.getByRole('button', { name: 'Connect to Anki Desktop' }));
   await fireEvent.click(await screen.findByRole('checkbox', { name: 'Hindi' }));
   await fireEvent.click(screen.getByRole('button', { name: 'Preview import' }));
-  await fireEvent.click(await screen.findByText('1 entry without a dictionary match'));
-  expect(screen.getByText('याद करना').closest('li')?.textContent).toContain('retired-id');
+  await fireEvent.click(await screen.findByText('2 entries without a dictionary match'));
+  expect(screen.getByText('याद करना').closest('li')?.textContent?.trim()).toBe('याद करना');
+  expect(screen.getByText('मदद करना').closest('li')?.textContent).toContain(parhibaId);
 });

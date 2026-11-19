@@ -18,7 +18,10 @@
   shortcuts so the existing keyboard-first flow (T-5.7) still works.
 -->
 <script lang="ts">
-  import { untrack } from 'svelte';
+  import { getContext, untrack } from 'svelte';
+  import Button from '$lib/components/input/Button.svelte';
+  import ReaderDictionaryEditor from './ReaderDictionaryEditor.svelte';
+  import type { WorkshopWord } from '$lib/dictionary/hindi-workshop';
   import Sheet from '../overlay/Sheet.svelte';
   import CorrectionModal from './CorrectionModal.svelte';
   import FeaturePill from './FeaturePill.svelte';
@@ -100,6 +103,7 @@
   // the user hasn't picked a word yet.
   let {
     token,
+    chapterTokens,
     phrase = null,
     pendingSelection,
     selectionError,
@@ -115,6 +119,7 @@
     onPersonalTranslationChange,
   }: {
     token: ServerToken | null;
+    chapterTokens?: ServerToken[] | null;
     /** PDF image reader: the active page image, so the popup can show a
      *  crop of the clicked word (using the token's bbox) for verifying
      *  OCR against the real glyphs. Null in the text reader. */
@@ -170,6 +175,24 @@
       gloss: string | null,
     ) => void;
   } = $props();
+
+  const readerDictionary = getContext<(() => { ai: boolean } | null) | undefined>('readerHindiDictionary');
+  const hindiDictionary = $derived(language === 'hi' ? readerDictionary?.() : null);
+  let editor = $state<{ tokenId: string; lemmaId: string | null; headword: string } | null>(null);
+  let dictionaryNotice = $state('');
+
+  function dictionarySaved(word: WorkshopWord) {
+    const { id, lemma, meaning, pos } = word.draft;
+    if (!id) return;
+    editor = null;
+    dictionaryNotice = token?.isOov
+      ? 'Entry saved. Book matches update after reprocessing.'
+      : 'Dictionary entry saved.';
+    window.dispatchEvent(new CustomEvent('dictionary-definition-changed', {
+      detail: { lemmaId: id, body: meaning },
+    }));
+    void selectInternalLemma({ id, headword: lemma, glossDefault: meaning, pos });
+  }
 
   // PDF image reader: a CSS-cropped view of the clicked word straight
   // off the page image, so the reader can compare what OCR read against
@@ -367,6 +390,8 @@
   $effect(() => {
     const t = token;
     const version = ++lookupVersion;
+    editor = null;
+    dictionaryNotice = '';
     loadingLookup = false;
     showAlternates = false;
     // Clear the reference panel whenever the popup rebinds to a different
@@ -1805,7 +1830,7 @@
           Reprocess this text to see written-out number forms in each language.
         </p>
       {:else}
-        {#if !isDesktop && token.lemmaId}
+        {#if !isDesktop && displayedLemmaId}
           <div class="compact-definition" data-testid="selected-definition">
             {#if payload?.translations.personal[0]}
               {#if isOwner}
@@ -1853,6 +1878,16 @@
       {/if}
     </header>
 
+    {#if hindiDictionary && token.isWord && !isNumberToken && !pendingSelection}
+      <Button aria-haspopup="dialog" disabled={loadingLookup} onclick={() => {
+        if (token) editor = {
+          tokenId: token.id,
+          lemmaId: displayedLemmaId ?? null,
+          headword: headwordInput.trim() || token.surface,
+        };
+      }}>{displayedLemmaId ? 'Edit dictionary entry' : 'Add dictionary entry'}</Button>
+      {#if dictionaryNotice}<p role="status">{dictionaryNotice}</p>{/if}
+    {/if}
     {#if !isNumberToken}
     {#if isOwner && token.lemmaId && payload && (payload.canEdit || payload.translations.personal.length > 0)
       && (isDesktop || !payload.translations.personal.length)}
@@ -2367,6 +2402,11 @@
     </div>
   {/if}
 </Sheet>
+
+{#if hindiDictionary && editor && token && token.id === editor.tokenId}
+  <ReaderDictionaryEditor {token} {chapterTokens} lemmaId={editor.lemmaId} headword={editor.headword}
+    ai={hindiDictionary.ai} onSaved={dictionarySaved} onClose={() => (editor = null)} />
+{/if}
 
 {#if token}
   <CorrectionModal

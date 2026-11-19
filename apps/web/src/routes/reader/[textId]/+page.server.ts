@@ -21,6 +21,8 @@
 import { error } from '@sveltejs/kit';
 import { and, eq } from 'drizzle-orm';
 
+import { canEditDictionary } from '$lib/server/dictionary/permissions';
+import { OPENAI_API_KEY } from '$lib/server/env';
 import { getReadableText } from '$lib/server/texts/upload.js';
 import { getPdfStorage } from '$lib/server/pdf/storage.js';
 import { loadChapterTokens } from '$lib/server/texts/tokens.js';
@@ -252,6 +254,9 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
     // reader; anonymous viewers (anon reads of an official text) get
     // a session-only live preview.
     canPersistSettings: locals.user != null,
+    hindiDictionary: result.text.language === 'hi' && await canEditDictionary(locals.user, 'hi')
+      ? { ai: Boolean(OPENAI_API_KEY) }
+      : null,
     isOwner: Boolean(locals.user && locals.user.id === result.text.ownerId),
     // T-2.8: surface admin status so the reader chrome can offer the
     // reprocess affordance to admins on any text (owners get the

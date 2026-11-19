@@ -298,6 +298,62 @@ describe.skipIf(!url)('HindiDB PostgreSQL integration (always rolls back)', () =
       await client.end();
     }
   });
+  it('prefers the Parhiba ID and imports every exact Hindi headword match as a fallback', async () => {
+    if (!url || !['localhost', '127.0.0.1', '[::1]'].includes(new URL(url).hostname)) {
+      throw new Error('Use a local test database');
+    }
+    const client = postgres(url, { max: 1 });
+    const rollback = new Error('rollback Anki fixture');
+    try {
+      await expect(drizzle(client, { schema }).transaction(async (tx) => {
+        state.db = tx as unknown as DB;
+        const { importAnkiVocabulary, ankiImportInput } = await import('./anki-import.js');
+        const [user] = await tx.insert(schema.users)
+          .values({ email: `${randomUUID()}@example.invalid` }).returning();
+        const unique = 'नया' + randomUUID();
+        const shared = 'अर्थ' + randomUUID();
+        const entries = await tx.insert(schema.lemmas).values(
+          ([[unique, 'NOUN'], [shared, 'NOUN'], [shared, 'VERB']] as const).map(([headword, pos]) => ({
+            language: 'hi' as const, script: 'Deva', source: 'curator' as const, headword, pos,
+          })),
+        ).returning();
+        const parhibaId = entries[2]!.id;
+        const run = (apply: boolean, notes: unknown[]) => importAnkiVocabulary(user!.id,
+          ankiImportInput.parse({ apply, entries: notes }));
+        const knownById = [{ parhibaId, headword: shared, status: 'known' }];
+        expect(await run(false, knownById)).toMatchObject({ matched: 1, changes: 1 });
+        expect(await run(true, knownById)).toMatchObject({ matched: 1, changes: 1 });
+        expect(await tx.select({ id: schema.userKnownLemmas.lemmaId }).from(schema.userKnownLemmas)
+          .where(eq(schema.userKnownLemmas.userId, user!.id))).toEqual([{ id: parhibaId }]);
+
+        const allSenses = [{ headword: shared, status: 'known' }];
+        expect(await run(false, allSenses)).toMatchObject({ matched: 2, changes: 1, unmatched: [] });
+        expect(await run(false, [{ ...allSenses[0], parhibaId: randomUUID() }]))
+          .toMatchObject({ matched: 2, changes: 1, unmatched: [] });
+        expect(await run(true, allSenses)).toMatchObject({ matched: 2, changes: 1 });
+        expect(await run(true, allSenses)).toMatchObject({ matched: 2, changes: 0 });
+
+        const partial = shared.slice(0, -1);
+        const notes = [
+          { parhibaId, headword: unique, status: 'learning' },
+          { headword: unique, status: 'known' },
+          { id: 'hi_retired', headword: partial, status: 'known' },
+        ];
+        expect(await run(false, notes)).toMatchObject({
+          matched: 2, changes: 2, counts: { known: 1, learning: 1 }, unmatched: ['hi_retired'],
+          unmatchedEntries: [{ headword: partial, parhibaId: null }],
+        });
+        expect(await run(false, [
+          { parhibaId, status: 'ignore' },
+          { headword: shared, status: 'learning' },
+        ])).toMatchObject({ matched: 1, changes: 1, counts: { learning: 1 } });
+        throw rollback;
+      })).rejects.toBe(rollback);
+    } finally {
+      await client.end();
+    }
+  });
+
   it('ranks standalone and chapter books together before choosing a catalog page', async () => {
     if (!url || !['localhost', '127.0.0.1', '[::1]'].includes(new URL(url).hostname)) {
       throw new Error('Use a local test database');

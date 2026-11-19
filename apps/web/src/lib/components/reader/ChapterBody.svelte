@@ -663,6 +663,7 @@
      itself decides whether to render its full body or an empty-state
      prompt based on whether `token` is null. -->
 <WordPopup
+  chapterTokens={chapter.tokens}
   token={popupToken}
   phrase={activePhrase}
   pendingSelection={pendingSelection ?? undefined}

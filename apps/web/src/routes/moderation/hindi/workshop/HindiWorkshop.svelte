@@ -5,23 +5,20 @@
   import { page } from '$app/state';
   import { untrack } from 'svelte';
   import {
-    emptyDraft,
+    blankWorkshopWord,
+    type WorkshopWord as Word,
     type Draft,
     type Match,
     type ReviewItem,
   } from '$lib/dictionary/hindi-workshop';
   import { workshop } from '$lib/dictionary/workshop-client';
   import WorkshopReports from './WorkshopReports.svelte';
-  import WorkshopEditor from './WorkshopEditor.svelte';
+  import WorkshopEditor from '$lib/components/dictionary/WorkshopEditor.svelte';
   import type { loadHindiWorkshop } from '$lib/server/dictionary/workshop-page';
   import Button from '$lib/components/input/Button.svelte';
   type PageData = Awaited<ReturnType<typeof loadHindiWorkshop>>;
   let { data, reviewOnly = false }: { data: PageData; reviewOnly?: boolean } = $props();
-  type Word = NonNullable<PageData['initial']>;
-  function blank(lemma = '', pos = 'NOUN'): Word {
-    return { draft: emptyDraft(lemma, pos), evidence: [], group: [], external: '', uses: [] };
-  }
-  let word = $state<Word>(untrack(() => data.initial ?? blank(data.observed)));
+  let word = $state<Word>(untrack(() => data.initial ?? blankWorkshopWord(data.observed)));
   let draft = $state<Draft>(untrack(() => structuredClone($state.snapshot(word.draft))));
   let selectionSource = $state<'none' | 'editor' | 'list'>(
     untrack(() => data.initial || data.observed ? 'editor' : 'none'),
@@ -138,7 +135,7 @@
     selection++;
     openingManually = false;
     selectionSource = 'none';
-    display(blank(), null, false);
+    display(blankWorkshopWord(), null, false);
   }
   async function open(
     id: string | null,
@@ -154,7 +151,7 @@
     const ticket = ++selection;
     openingManually = !signal;
     try {
-      const next = id ? await workshop<Word>('word', { id }, signal) : blank(lemma, pos);
+      const next = id ? await workshop<Word>('word', { id }, signal) : blankWorkshopWord(lemma, pos);
       if (ticket !== selection || signal?.aborted) return;
       remember();
       display(next, row);

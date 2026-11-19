@@ -21,7 +21,7 @@ const card = (
   deckName,
 });
 
-describe('HindiDB Anki vocabulary', () => {
+describe('Anki vocabulary', () => {
   it('groups nested decks by full path and selects only decks returned by Anki', () => {
     const roots = buildDeckTree([
       'Other::Words',
@@ -55,13 +55,14 @@ describe('HindiDB Anki vocabulary', () => {
     ];
     cards[0]!.fields.Lemma = { value: '<b>भी</b>' };
     expect(collectEntries(cards, ['Hindi'], defaultMapping)).toEqual({
-      headwords: new Map([['a', 'भी']]),
-      missingId: 1,
-      ignoredIds: ['a', 'new'],
+      missingWord: 1,
       entries: [
+        { id: 'a', headword: 'भी', status: 'ignore' },
+        { id: 'a', status: 'ignore' },
         { id: 'b', status: 'known' },
         { id: 'c', status: 'learning' },
         { id: 'd', status: 'learning' },
+        { id: 'new', status: 'ignore' },
       ],
     });
     expect(
@@ -72,14 +73,31 @@ describe('HindiDB Anki vocabulary', () => {
         suspended: 'known',
       }).entries,
     ).toEqual([
+      { id: 'a', headword: 'भी', status: 'known' },
       { id: 'a', status: 'known' },
+      { id: 'b', status: 'ignore' },
       { id: 'c', status: 'learning' },
       { id: 'd', status: 'learning' },
       { id: 'new', status: 'known' },
     ]);
     expect(
       collectEntries([card('a', 0, 0), card('a', 2, 21)], ['Hindi'], defaultMapping).entries,
-    ).toEqual([]);
+    ).toEqual([{ id: 'a', status: 'ignore' }]);
+  });
+
+  it('reads a Parhiba ID or an ordinary headword from the selected decks', () => {
+    const noteFields: DesktopCard['fields'][] = [
+      { Parhiba_ID: { value: 'uuid' }, HindiDB_ID: { value: 'old' }, Lemma: { value: 'भी' } },
+      { Word: { value: '<b>याद&nbsp;करना</b>' } },
+      { Front: { value: 'भी' } },
+      { word: { value: 'भी' } },
+    ];
+    const cards = noteFields.map((fields) => ({ ...card('', 2, 25), fields }));
+    expect(collectEntries(cards, ['Hindi'], defaultMapping).entries).toEqual([
+      { parhibaId: 'uuid', id: 'old', headword: 'भी', status: 'known' },
+      { headword: 'याद करना', status: 'known' },
+      { headword: 'भी', status: 'known' },
+    ]);
   });
 
   it('restores valid assignments and falls back to defaults for missing or invalid ones', () => {

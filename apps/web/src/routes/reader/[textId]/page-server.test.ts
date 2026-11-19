@@ -62,6 +62,7 @@ vi.mock('$lib/server/texts/progress.js', async () => {
 // drizzle query chain to return whatever the test stages in
 // `userLanguagesRow`.
 let userLanguagesRow: Record<string, unknown> | null = null;
+let hindiCuratorGrant = false;
 // T-8.3: the loader now calls readerCollectionContext. Mock to
 // "no collection" by default so existing tests stay focused on the
 // reader surface; tests that care stage a return value.
@@ -77,24 +78,24 @@ vi.mock('$lib/server/audio/audio.js', () => ({
 }));
 
 vi.mock('$lib/server/db/index.js', () => {
-  type ChainShape = {
-    from: ReturnType<typeof vi.fn>;
-    where: ReturnType<typeof vi.fn>;
-    limit: ReturnType<typeof vi.fn>;
-  };
-  const chain: ChainShape = {
-    from: vi.fn(() => chain),
-    where: vi.fn(() => chain),
-    limit: vi.fn(() => (userLanguagesRow ? [userLanguagesRow] : [])),
+  const schema = {
+    userLanguages: { userId: 'ul.user_id', language: 'ul.language' },
+    curatorLanguages: { userId: 'cl.user_id', language: 'cl.language' },
   };
   return {
-    db: { select: vi.fn(() => chain) },
-    schema: {
-      userLanguages: {
-        userId: 'ul.user_id',
-        language: 'ul.language',
-      },
+    db: {
+      select: () => ({
+        from: (table: object) => ({
+          where: () => ({
+            limit: () => {
+              if (table === schema.curatorLanguages) return hindiCuratorGrant ? [{ language: 'hi' }] : [];
+              return userLanguagesRow ? [userLanguagesRow] : [];
+            },
+          }),
+        }),
+      }),
     },
+    schema,
   };
 });
 
@@ -161,6 +162,7 @@ beforeEach(() => {
   getTextProgress.mockResolvedValue(null);
   // No persisted reader settings unless a test stages a row.
   userLanguagesRow = null;
+  hindiCuratorGrant = false;
   // Default to "text belongs to no collection".
   readerCollectionContext.mockReset();
   readerCollectionContext.mockResolvedValue(null);
@@ -339,6 +341,20 @@ describe('/reader/[textId] loader', () => {
       null,
     )) as { isAdmin: boolean };
     expect(anonData.isAdmin).toBe(false);
+  });
+
+  it('offers the Hindi editor only to dictionary editors for a Hindi book', async () => {
+    const book = ownedTextWithChapters(1);
+    const curator = { id: USER.id, role: 'curator' } as const;
+    getReadableText.mockResolvedValue(book);
+    const load = (user: TestUser | null) => callLoad('http://x/reader/' + VALID_ID, VALID_ID, user);
+    await expect(load(null)).resolves.toMatchObject({ hindiDictionary: null });
+    await expect(load(USER)).resolves.toMatchObject({ hindiDictionary: null });
+    await expect(load(curator)).resolves.toMatchObject({ hindiDictionary: null });
+    hindiCuratorGrant = true;
+    await expect(load(curator)).resolves.toMatchObject({ hindiDictionary: { ai: expect.any(Boolean) } });
+    book.text.language = 'eu';
+    await expect(load({ id: USER.id, role: 'admin' })).resolves.toMatchObject({ hindiDictionary: null });
   });
 
   it('lets anonymous viewers read official texts and reports isOwner=false', async () => {

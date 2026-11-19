@@ -63,6 +63,18 @@ export function emptyDraft(lemma = '', pos = 'NOUN'): Draft {
   };
 }
 export type Match = { id: string; lemma: string; pos: string; meaning: string };
+export type WorkshopWord = {
+  draft: Draft;
+  external: string;
+  evidence: Excerpt[];
+  group: string[];
+  uses: Match[];
+};
+
+export function blankWorkshopWord(lemma = '', pos = 'NOUN'): WorkshopWord {
+  return { draft: emptyDraft(lemma, pos), evidence: [], group: [], external: '', uses: [] };
+}
+
 export type ReviewItem = {
   occurrence?: string;
   id: string | null;
