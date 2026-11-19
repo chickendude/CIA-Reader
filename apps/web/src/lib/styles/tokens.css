@@ -334,73 +334,69 @@ code {
   }
 }
 
-/* —— Reader word-status highlight modes (T-5.9) ————————————————
- * Each rendered word carries `data-s="0"` (new) … `"5"` (ignored) from
- * TokenSpan. The highlight style is global, switched by `data-hl` on
- * `<html>`: background-tint by default, underline when the user picks
- * the underline style in the reader settings popover (T-5.1b). The
- * scoped `.word` rules in TokenSpan handle hover + cursor + OOV — these
- * rules only paint the status colour. */
-html[data-hl] .word[data-s] {
+/* The reader applies the saved highlight preferences to its root element. */
+[data-hl] .word[data-s] {
   text-underline-offset: 0.15em;
   text-decoration-skip-ink: none;
 }
-html[data-hl='background'] .word[data-s='0'] {
+[data-hl='background'] .word[data-s='0'] {
   background: transparent;
   text-decoration: underline var(--accent) 1px;
 }
-html[data-hl='background'] .word[data-s='1'] {
+[data-hl='background']:where([data-highlight-learning='on']) .word[data-s='1'] {
   background: var(--w-l1-bg);
 }
-html[data-hl='background'] .word[data-s='2'] {
+[data-hl='background']:where([data-highlight-learning='on']) .word[data-s='2'] {
   background: var(--w-l2-bg);
 }
-html[data-hl='background'] .word[data-s='3'] {
+[data-hl='background']:where([data-highlight-learning='on']) .word[data-s='3'] {
   background: var(--w-l3-bg);
 }
 /* Known + ignored render identically — plain body text with no tint,
  * underline, or strike-through. An ignored word is just one the reader
  * never wants flagged (proper nouns, numbers), so it should read like a
  * known word rather than being crossed out. */
-html[data-hl='background'] .word[data-s='4'],
-html[data-hl='background'] .word[data-s='5'] {
+[data-hl='background']:where([data-highlight-learning='off']) .word:is([data-s='1'], [data-s='2'], [data-s='3']),
+[data-hl='background'] .word[data-s='4'],
+[data-hl='background'] .word[data-s='5'] {
   background: var(--w-known-bg);
 }
 
-html[data-hl='underline'] .word[data-s='0'] {
+[data-hl='underline'] .word[data-s='0'] {
   background: transparent;
   text-decoration: underline var(--accent) 1.5px;
 }
-html[data-hl='underline'] .word[data-s='1'] {
+[data-hl='underline']:where([data-highlight-learning='on']) .word[data-s='1'] {
   background: transparent;
   text-decoration: underline oklch(0.78 0.1 80) 1.5px;
 }
-html[data-hl='underline'] .word[data-s='2'] {
+[data-hl='underline']:where([data-highlight-learning='on']) .word[data-s='2'] {
   background: transparent;
   text-decoration: underline oklch(0.7 0.13 75) 2px;
 }
-html[data-hl='underline'] .word[data-s='3'] {
+[data-hl='underline']:where([data-highlight-learning='on']) .word[data-s='3'] {
   background: transparent;
   text-decoration: underline oklch(0.62 0.15 70) 2.5px;
 }
-html[data-hl='colored_text'] .word[data-s='0'] {
+[data-hl='colored_text'] .word[data-s='0'] {
   background: transparent;
   color: var(--accent);
 }
-html[data-hl='colored_text'] .word[data-s='1'] {
+[data-hl='colored_text']:where([data-highlight-learning='on']) .word[data-s='1'] {
   background: transparent;
   color: oklch(0.55 0.11 80);
 }
-html[data-hl='colored_text'] .word[data-s='2'] {
+[data-hl='colored_text']:where([data-highlight-learning='on']) .word[data-s='2'] {
   background: transparent;
   color: oklch(0.5 0.13 75);
 }
-html[data-hl='colored_text'] .word[data-s='3'] {
+[data-hl='colored_text']:where([data-highlight-learning='on']) .word[data-s='3'] {
   background: transparent;
   color: oklch(0.45 0.15 70);
 }
-html[data-hl='colored_text'] .word[data-s='4'],
-html[data-hl='colored_text'] .word[data-s='5'] {
+[data-hl='colored_text']:where([data-highlight-learning='off']) .word:is([data-s='1'], [data-s='2'], [data-s='3']),
+[data-hl='colored_text'] .word[data-s='4'],
+[data-hl='colored_text'] .word[data-s='5'] {
   color: var(--w-known-ink);
 }
 /* —— Admin overlay: flag words with no definition yet (#435) ————————

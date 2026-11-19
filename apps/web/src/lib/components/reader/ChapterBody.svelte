@@ -733,18 +733,22 @@
   .ovl-hotspot:hover {
     background: color-mix(in oklch, var(--accent, var(--color-accent)) 24%, transparent);
   }
+  /* Learning words get the saffron study tint, mirroring tokens.css. */
+  .ovl-hotspot[data-s='2'] {
+    background: color-mix(in oklch, var(--w-l2-bg, #f4c95d) 45%, transparent);
+  }
   /* Known + ignored words drop the fill — the learner already has them. */
+  :global([data-hl='none']) .ovl-hotspot[data-s],
+  :global([data-highlight-learning='off']) .ovl-hotspot[data-s='2'],
   .ovl-hotspot[data-s='4'],
   .ovl-hotspot[data-s='5'] {
     background: transparent;
   }
+  :global([data-hl='none']) .ovl-hotspot:hover,
+  :global([data-highlight-learning='off']) .ovl-hotspot[data-s='2']:hover,
   .ovl-hotspot[data-s='4']:hover,
   .ovl-hotspot[data-s='5']:hover {
     background: color-mix(in oklch, var(--accent, var(--color-accent)) 14%, transparent);
-  }
-  /* Learning words get the saffron study tint, mirroring tokens.css. */
-  .ovl-hotspot[data-s='2'] {
-    background: color-mix(in oklch, var(--w-l2-bg, #f4c95d) 45%, transparent);
   }
   /* Selected word: a clear accent ring (meets the 3:1 non-text UI
      contrast guidance over the page image). */
@@ -790,6 +794,7 @@
     box-shadow: inset 0 -2px 0
       color-mix(in oklch, var(--accent, var(--color-accent)) 55%, transparent);
   }
+  :global([data-highlight-learning='off']) .phrase[data-s='2'],
   .phrase[data-s='4'] {
     /* known phrase — quietest fill, no bottom bar. The user has
        learnt this expression; we still want the grouping cue but
@@ -797,6 +802,7 @@
     background: color-mix(in oklch, var(--accent, var(--color-accent)) 4%, transparent);
     box-shadow: none;
   }
+  :global([data-hl='none']) .phrase[data-s],
   .phrase[data-s='5'] {
     /* ignored — drop the highlight entirely. */
     background: transparent;

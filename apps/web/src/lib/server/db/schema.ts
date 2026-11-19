@@ -57,6 +57,7 @@ export const highlightStyle = pgEnum('highlight_style', [
   'underline',
   'background',
   'colored_text',
+  'none',
 ]);
 
 /**
@@ -255,6 +256,7 @@ export const userLanguages = pgTable(
     fontSize: real('font_size').notNull().default(18),
     lineSpacing: real('line_spacing').notNull().default(1.6),
     highlightStyle: highlightStyle('highlight_style').notNull().default('background'),
+    highlightLearning: boolean('highlight_learning').notNull().default(true),
     readingWidth: readingWidth('reading_width').notNull().default('medium'),
     baseline: languageBaseline('baseline').notNull().default('none'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),

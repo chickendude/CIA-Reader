@@ -192,7 +192,7 @@ export async function saveHindiContextChoice(
             eq(schema.tokenCorrections.tokenId, tokenId),
           ),
         );
-    return token.chapterId;
+    return { chapterId: token.chapterId, textId: row.text.id };
   });
 }
 

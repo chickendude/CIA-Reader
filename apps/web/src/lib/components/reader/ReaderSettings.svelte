@@ -255,11 +255,17 @@
 
     <section>
       <h3>Highlight</h3>
-      <div class="rs-row">
+      <div class="rs-row rs-highlight-style">
         <span class="rs-l">Style</span>
         <SegmentedControl label="Highlight style" value={local.highlightStyle}
-            options={[{ value: 'background', label: 'Tint' }, { value: 'underline', label: 'Underline' }, { value: 'colored_text', label: 'Color' }]}
+            options={[{ value: 'none', label: 'None' }, { value: 'background', label: 'Tint' }, { value: 'underline', label: 'Underline' }, { value: 'colored_text', label: 'Color' }]}
             onChange={(highlightStyle) => commit({ ...local, highlightStyle })} />
+      </div>
+      <div class="rs-row">
+        <span class="rs-l">Learning words</span>
+        <SegmentedControl label="Highlight learning words" value={local.highlightLearning}
+            options={[{ value: true, label: 'On' }, { value: false, label: 'Off' }]}
+            onChange={(highlightLearning) => commit({ ...local, highlightLearning })} />
       </div>
     </section>
 
@@ -350,6 +356,9 @@
     grid-template-columns: 7rem 1fr;
     align-items: center;
     gap: 0.6rem;
+  }
+  @media (max-width: 380px) {
+    .rs-highlight-style { grid-template-columns: 1fr; }
   }
   .rs-l {
     font-size: 0.85rem;

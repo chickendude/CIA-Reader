@@ -85,7 +85,7 @@ export function buildReaderToc(input: ReaderTocInput): ReaderToc {
       number: i + 1,
       title: c.title?.trim() || 'Untitled',
       words: clampInt(c.tokenCount),
-      href: `/reader/${c.textId}?mode=${mode}`,
+      href: `/reader/${c.textId}?mode=${mode}&chapter=0`,
       isCurrent: c.position === input.collection!.position,
     }));
     let currentIndex = entries.findIndex((e) => e.isCurrent);

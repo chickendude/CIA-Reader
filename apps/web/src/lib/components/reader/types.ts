@@ -13,6 +13,7 @@
  *  `lemmas` so the row already carries headword + POS + gloss for
  *  the popup. */
 export type ServerCandidate = {
+  bookFrequency?: number;
   selectedBy?: 'ai' | 'human';
   lemmaId: string;
   headword: string;
@@ -108,6 +109,7 @@ export type ServerNumberForms = {
  *  component renders these spans directly; when null, it falls back
  *  to client-side whitespace tokenization. */
 export type ServerToken = {
+  bookFrequency?: number;
   correctedByViewer?: boolean;
   canVerifyContext?: boolean;
   contextVersion?: string;
@@ -172,6 +174,7 @@ export function withLemmaCorrection(token: ServerToken, lemmaId: string | undefi
   const candidates = token.candidates.filter((candidate) => candidate.lemmaId !== lemmaId);
   if (token.lemmaId) {
     candidates.push({
+      bookFrequency: token.bookFrequency,
       lemmaId: token.lemmaId, headword: token.headword ?? token.surface, pos: token.pos ?? '',
       glossDefault: token.glossDefault, personalGloss: token.personalGloss, status: token.status,
       score: 0, features: token.features, selectedBy: token.selectedBy,
@@ -180,6 +183,7 @@ export function withLemmaCorrection(token: ServerToken, lemmaId: string | undefi
   return {
     ...token,
     correctedByViewer: true,
+    bookFrequency: chosen.bookFrequency,
     lemmaId, headword: chosen.headword, pos: chosen.pos, features: chosen.features,
     glossDefault: chosen.glossDefault, personalGloss: chosen.personalGloss ?? null,
     status: chosen.status ?? 'unknown', selectedBy: chosen.selectedBy,

@@ -19,19 +19,11 @@ export type ProgressAnchor = {
   pctRead: number;
 };
 
-export type ProgressFlushOptions = {
-  /**
-   * Use the browser's keepalive request path. This is important for
-   * pagehide / refresh, where a normal async fetch is commonly
-   * cancelled before the PATCH reaches the server.
-   */
-  keepalive?: boolean;
-};
-
 export class ProgressWriter {
   private readonly textId: string;
   private timer: ReturnType<typeof setTimeout> | null = null;
-  private lastSent: ProgressAnchor | null = null;
+  private lastSaved: ProgressAnchor | null = null;
+  private inFlight: Promise<void> | null = null;
   private pending: ProgressAnchor | null = null;
 
   constructor(textId: string) {
@@ -48,36 +40,44 @@ export class ProgressWriter {
     this.timer = setTimeout(() => this.flush(), DEBOUNCE_MS);
   }
 
-  /** Force-flush any pending anchor immediately (e.g. on page hide). */
-  async flush(opts: ProgressFlushOptions = {}): Promise<void> {
+  /** Flush the latest position in order, including deliberate backward turns. */
+  async flush(): Promise<void> {
     if (this.timer) {
       clearTimeout(this.timer);
       this.timer = null;
     }
+    while (this.inFlight) await this.inFlight;
     const next = this.pending;
     if (!next) return;
-    if (
-      this.lastSent &&
-      this.lastSent.chapterIdx === next.chapterIdx &&
-      this.lastSent.tokenIdx === next.tokenIdx &&
-      this.lastSent.pctRead === next.pctRead
-    ) {
-      this.pending = null;
-      return;
-    }
-    this.lastSent = next;
     this.pending = null;
+    if (
+      this.lastSaved?.chapterIdx === next.chapterIdx &&
+      this.lastSaved.tokenIdx === next.tokenIdx &&
+      this.lastSaved.pctRead === next.pctRead
+    ) return;
+
+    this.inFlight = this.save(next).finally(() => { this.inFlight = null; });
+    await this.inFlight;
+  }
+
+  private async save(anchor: ProgressAnchor): Promise<void> {
     try {
-      await fetch(`/api/v1/me/text-progress/${this.textId}`, {
+      const response = await fetch(`/api/v1/me/text-progress/${this.textId}`, {
         method: 'PATCH',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(next),
-        keepalive: opts.keepalive === true,
+        body: JSON.stringify(anchor),
+        // A tab can be discarded after a debounced save has already started.
+        keepalive: true,
       });
+      if (response.ok) {
+        this.lastSaved = anchor;
+        return;
+      }
     } catch {
-      // Network blips: drop silently. The next debounced flush
-      // recovers, and even if every flush fails the user just
-      // resumes at chapter 0 — annoying but not destructive.
+      // A visibility change or reconnect can retry a failed save.
     }
+    // A lost response may still have committed on the server.
+    this.lastSaved = null;
+    this.pending ??= anchor;
   }
 }

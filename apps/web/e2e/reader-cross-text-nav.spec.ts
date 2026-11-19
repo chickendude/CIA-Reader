@@ -188,3 +188,120 @@ test.describe('Reader cross-text prev navigation', () => {
     expect(end.current).toBe(1);
   });
 });
+
+test.describe('Page mode on a touch screen', () => {
+  test.use({ viewport: { width: 390, height: 740 }, hasTouch: true, isMobile: true });
+
+  test('remembers the same word after reflow, repeated reloads and reopening the book', async ({
+    page,
+  }) => {
+    const { prevChapter } = await findChapterPair();
+    const reader = `/reader/${prevChapter.id}`;
+    await page.goto(`${reader}?mode=page&chapter=0&token=0`);
+    await expect.poll(async () => (await readPageState(page)).total).toBeGreaterThan(3);
+    await page.keyboard.press('ArrowRight');
+    await expect(page.locator('.pager-pages')).toHaveText(/^Page 2 of /);
+    await page.keyboard.press('ArrowRight');
+    await expect(page.locator('.pager-pages')).toHaveText(/^Page 3 of /);
+    const token = Number(new URL(page.url()).searchParams.get('token'));
+    expect(token).toBeGreaterThan(0);
+
+    const word = page.locator(`.reader-page-content [data-token-idx="${token}"]`).first();
+    async function expectPassage() {
+      await expect.poll(() => word.evaluate((el) => {
+        const box = el.getClientRects()[0]!;
+        const clip = el.closest('.reader-page-window')!.getBoundingClientRect();
+        return box.left >= clip.left - 1 && box.left < clip.right &&
+          box.top < clip.bottom && box.bottom > clip.top;
+      })).toBe(true);
+      await expect(page).toHaveURL(new RegExp(`[?&]token=${token}(?:&|$)`));
+    }
+
+    const original = await readPageState(page);
+    // Wait for the new column layout before reloading the tab.
+    await page.setViewportSize({ width: 390, height: 575 });
+    await expect.poll(async () => (await readPageState(page)).total).not.toBe(original.total);
+    await expectPassage();
+    await page.reload();
+    await expectPassage();
+    await page.setViewportSize({ width: 390, height: 740 });
+    await page.reload();
+    await expectPassage();
+    await expect(page.locator('.pager-pages')).toHaveText(/^Page 3 of /);
+    await expect.poll(async () => {
+      const response = await page.request.get(`/api/v1/me/text-progress/${prevChapter.id}`);
+      return (await response.json()).progress?.lastTokenIdx;
+    }).toBe(token);
+    await page.goto(reader);
+    await expectPassage();
+  });
+
+  test('keeps vertical drags still and preserves the passage through resize and chapter turns', async ({
+    page,
+  }) => {
+    const { prevChapter, currentChapter } = await findChapterPair();
+    await page.goto(`/reader/${prevChapter.id}?mode=page&chapter=0&token=0`);
+    const pager = page.locator('.pager-pages');
+    await expect.poll(async () => (await readPageState(page)).total).toBeGreaterThan(3);
+    await page.evaluate(() => document.fonts.ready);
+    const cdp = await page.context().newCDPSession(page);
+    // Reserve space for a visible mobile address bar even when the large viewport is available.
+    await cdp.send('Emulation.setSmallViewportHeightDifferenceOverride', { difference: 64 });
+    await expect.poll(() => page.locator('.reader').evaluate((el) =>
+      window.innerHeight - el.getBoundingClientRect().height,
+    )).toBe(64);
+
+    async function drag(dx: number, dy: number) {
+      await cdp.send('Input.dispatchTouchEvent', {
+        type: 'touchStart', touchPoints: [{ x: 190, y: 360 }],
+      });
+      for (let step = 1; step <= 5; step++) {
+        await cdp.send('Input.dispatchTouchEvent', {
+          type: 'touchMove',
+          touchPoints: [{ x: 190 + dx * step / 5, y: 360 + dy * step / 5 }],
+        });
+      }
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    }
+
+    await drag(-110, 4);
+    await expect(pager).toHaveText(/^Page 2 of /);
+    await drag(0, -150);
+    await drag(0, 150);
+    await expect(pager).toHaveText(/^Page 2 of /);
+    expect(await page.evaluate(() => window.scrollY)).toBe(0);
+    await drag(110, -4);
+    await expect(pager).toHaveText(/^Page 1 of /);
+
+    for (let i = 0; i < 3; i++) await page.keyboard.press('ArrowRight');
+    await expect(pager).toHaveText(/^Page 4 of /);
+    const token = new URL(page.url()).searchParams.get('token');
+    expect(Number(token)).toBeGreaterThan(0);
+    await page.setViewportSize({ width: 390, height: 490 });
+    await expect.poll(() => page.locator(`.reader-page-content [data-token-idx="${token}"]`).first()
+      .evaluate((word) => {
+        const rect = word.getClientRects()[0]!;
+        const clip = word.closest('.reader-page-window')!.getBoundingClientRect();
+        return rect.left >= clip.left - 1 && rect.left < clip.right;
+      })).toBe(true);
+    await page.setViewportSize({ width: 390, height: 740 });
+    await expect(pager).toHaveText(/^Page 4 of /);
+
+    await page.getByRole('button', { name: /Choose chapter/ }).tap();
+    const savedChapter = page.waitForRequest((request) =>
+      request.method() === 'PATCH' &&
+      new URL(request.url()).pathname === `/api/v1/me/text-progress/${currentChapter.id}`,
+    );
+    await page.locator(`[role="menuitemradio"][href^="/reader/${currentChapter.id}?"]`).tap();
+    await expect(page).toHaveURL(new RegExp(currentChapter.id));
+    expect((await savedChapter).postDataJSON().chapterIdx).toBe(0);
+    await expect(pager).toHaveText(/^Page 1 of /);
+    await page.keyboard.press('ArrowLeft');
+    await expect(page).toHaveURL(new RegExp(prevChapter.id));
+    const last = await readPageState(page);
+    expect(last.current).toBeGreaterThan(3);
+    expect(last.current).toBe(last.total);
+    await page.keyboard.press('ArrowLeft');
+    await expect(pager).toHaveText(`Page ${last.total - 1} of ${last.total}`);
+  });
+});

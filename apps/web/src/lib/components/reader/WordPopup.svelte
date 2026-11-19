@@ -372,9 +372,30 @@
   });
   const sheetOpen = $derived(isDesktop || token !== null);
 
-  // Book-wide occurrence count for the current lemma ("appears N× in this
-  // book"), fetched lazily per word so a learner can prioritise frequent ones.
+  // Look up entries opened through dictionary search when the chapter has no count for them.
   let bookFrequency = $state<number | null>(null);
+
+  $effect(() => {
+    const lemmaId = displayedLemmaId;
+    const count = lemmaId === token?.lemmaId ? token?.bookFrequency ?? null : null;
+    bookFrequency = count;
+    if (count !== null || !textId || !lemmaId) return;
+
+    const controller = new AbortController();
+    void (async () => {
+      try {
+        const res = await fetch(`/api/v1/texts/${textId}/lemmas/${lemmaId}/frequency`, {
+          signal: controller.signal,
+        });
+        if (!res.ok) return;
+        const data = (await res.json()) as { book: number };
+        if (!controller.signal.aborted) bookFrequency = data.book;
+      } catch {
+        // The rest of the popup can still render without a count.
+      }
+    })();
+    return () => controller.abort();
+  });
 
   // OpenAI sentence translation for the sentence the current token sits in.
   let sentenceTranslation = $state<string | null>(null);
@@ -406,7 +427,6 @@
     adminRefSuggestions = [];
     headwordEdited = false;
     internalResults = [];
-    bookFrequency = null;
     sentenceTranslation = null;
     translatedSentence = null;
     translating = false;
@@ -440,21 +460,6 @@
         if (!cancelled && version === lookupVersion) {
           loadError = `Network error: ${(e as Error).message}`;
         }
-      }
-    })();
-    // Book-wide frequency — best-effort, non-blocking, doesn't affect the rest
-    // of the popup if it fails.
-    void (async () => {
-      if (!textId) return;
-      try {
-        const res = await fetch(
-          `/api/v1/texts/${textId}/lemmas/${t.lemmaId}/frequency`,
-        );
-        if (cancelled || !res.ok) return;
-        const data = (await res.json()) as { book: number; text: number };
-        bookFrequency = data.book;
-      } catch {
-        /* frequency is a nice-to-have; ignore failures */
       }
     })();
     // If this sentence was already translated (globally cached), show it the
@@ -1697,15 +1702,30 @@
   {:else}
     <div data-testid="word-popup">
       <header class="sp-head">
-        <button
-          type="button"
-          class="sp-close"
-          aria-label="Close"
-          title="Close"
-          onclick={onClose}
-        >
-          ×
-        </button>
+        <div class="sp-title-actions">
+          {#if bookFrequency !== null && bookFrequency > 0}
+            <span
+              class="sp-freq-badge"
+              data-testid="book-frequency"
+              aria-label={`this word appears ${bookFrequency} ${
+                bookFrequency === 1 ? 'time' : 'times'
+              } in the book`}
+            >
+              <span class="sp-freq-count" aria-hidden="true">x{bookFrequency}</span>
+              <!-- prettier-ignore -->
+              <span class="sp-freq-tip" role="tooltip">this word appears {bookFrequency}{bookFrequency === 1 ? ' time' : ' times'} in the book</span>
+            </span>
+          {/if}
+          <button
+            type="button"
+            class="sp-close"
+            aria-label="Close"
+            title="Close"
+            onclick={onClose}
+          >
+            ×
+          </button>
+        </div>
         {#if wordCropStyle}
           <!-- PDF reader: crop of the word from the page image, so a
                misread OCR surface can be checked against the real glyphs
@@ -1766,19 +1786,6 @@
             {#if payload}
               <PosPill pos={payload.lemma.pos} class="sp-pos-pill" />
               {#if token.selectionStatus === 'needs_review'}<small>Selection needs review</small>{/if}
-            {/if}
-            {#if bookFrequency !== null && bookFrequency > 0}
-              <span
-                class="sp-freq-badge"
-                data-testid="book-frequency"
-                aria-label={`this word appears ${bookFrequency} ${
-                  bookFrequency === 1 ? 'time' : 'times'
-                } in the book`}
-              >
-                <span class="sp-freq-count" aria-hidden="true">{bookFrequency}×</span>
-                <!-- prettier-ignore -->
-                <span class="sp-freq-tip" role="tooltip">this word appears {bookFrequency}{bookFrequency === 1 ? ' time' : ' times'} in the book</span>
-              </span>
             {/if}
             {#if internalResults.length > 0}
               <ul class="sp-word-results" role="listbox" data-testid="headword-results">
@@ -2542,6 +2549,13 @@
   .sp-head {
     position: relative;
     margin-bottom: 0.85rem;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: start;
+    column-gap: 0.5rem;
+  }
+  .sp-head > * {
+    grid-column: 1 / -1;
   }
   /* PDF reader: cropped word image. Fixed height; width follows the
      word's pixel aspect via the inline aspect-ratio. A light frame +
@@ -2549,17 +2563,24 @@
   .sp-word-crop {
     height: 2.4rem;
     max-width: 100%;
-    margin: 0 1.9rem 0.5rem 0;
+    margin: 0 0 0.5rem;
     background-repeat: no-repeat;
     background-color: var(--paper, var(--color-bg));
     border: 1px solid var(--rule, var(--color-border));
     border-radius: 4px;
   }
+  .sp-head > .sp-title-actions {
+    grid-column: 2;
+    grid-row: 1;
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+  }
+  .sp-head > .sp-word,
+  .sp-head > .sp-word-crop {
+    grid-column: 1;
+  }
   .sp-close {
-    z-index: 1;
-    position: absolute;
-    top: -0.25rem;
-    right: -0.25rem;
     width: 28px;
     height: 28px;
     display: grid;
@@ -2579,9 +2600,6 @@
   .sp-word {
     position: relative;
     margin: 0 0 0.25rem;
-    /* Reserve room on the right so the freq badge clears the absolutely
-       positioned close button. */
-    padding-right: 1.9rem;
     display: flex;
     align-items: baseline;
     gap: 0.5rem;
@@ -2627,7 +2645,7 @@
     position: absolute;
     top: calc(100% + 4px);
     left: 0;
-    right: 1.9rem;
+    right: 0;
     z-index: 9;
     margin: 0;
     padding: 0.2rem;
@@ -2679,18 +2697,18 @@
   }
   .sp-freq-badge {
     position: relative;
-    margin-left: auto;
-    align-self: center;
+    display: inline-flex;
     flex-shrink: 0;
-    font-family: var(--font-mono-display, var(--font-mono));
-    font-size: 0.8rem;
-    font-weight: 500;
-    color: var(--ink-2, var(--color-fg));
-    background: color-mix(in oklch, var(--ink, var(--color-fg)) 9%, transparent);
-    border-radius: 999px;
-    padding: 0.12rem 0.5rem;
+    padding: 0.125rem 0.25rem;
     cursor: default;
     white-space: nowrap;
+  }
+  .sp-freq-count {
+    font-family: var(--font-sans, system-ui, sans-serif);
+    font-size: 0.625rem;
+    font-weight: 400;
+    font-variant-numeric: tabular-nums;
+    color: color-mix(in srgb, var(--ink-3, var(--color-fg-muted)) 85%, var(--ink-2, var(--color-fg)));
   }
   .sp-freq-tip {
     position: absolute;

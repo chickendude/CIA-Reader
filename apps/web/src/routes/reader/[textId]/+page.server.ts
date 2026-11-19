@@ -95,13 +95,10 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 
   // Clamp anchor params to valid ranges. A bad `?chapter=999` URL
   // shouldn't 500 — it should land on the first chapter.
-  const requestedChapter = endOfChapter
+  const defaultChapter = endOfChapter
     ? result.chapters.length - 1
-    : readInt(
-        url,
-        'chapter',
-        !hasUrlAnchor && savedProgress ? savedProgress.lastChapterIdx : 0,
-      );
+    : !hasUrlAnchor && savedProgress ? savedProgress.lastChapterIdx : 0;
+  const requestedChapter = readInt(url, 'chapter', defaultChapter);
   const chapterIdx = Math.max(
     0,
     Math.min(requestedChapter, result.chapters.length - 1),
@@ -140,6 +137,7 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
         fontSize: row.fontSize,
         lineSpacing: row.lineSpacing,
         highlightStyle: row.highlightStyle,
+        highlightLearning: row.highlightLearning,
         readingWidth: row.readingWidth,
         scriptPreference: row.scriptPreference,
         romanizationScheme: row.romanizationScheme,
@@ -164,7 +162,7 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
   const viewerId = locals.user?.id ?? null;
   const activeChapter = result.chapters[chapterIdx];
   const activeTokens = activeChapter
-    ? await loadChapterTokens(activeChapter.id, viewerId)
+    ? await loadChapterTokens(activeChapter.id, viewerId, params.textId)
     : null;
   // T-14.3: phrase spans for the active chapter, joined with the
   // viewer's known-phrase status. Empty array when the chapter

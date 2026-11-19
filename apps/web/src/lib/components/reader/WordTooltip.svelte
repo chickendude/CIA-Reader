@@ -126,15 +126,18 @@
   style:top="{placement.top}px"
   style:left="{placement.left}px"
 >
-  <div class="tip-head">
-    <span class="tip-w">{token.surface}</span>
-    <!-- T-2.8: for number tokens the romanization field carries the
-         literal digit string ("123" → "123") which is just noise in
-         the head; suppress it and let the spelled-out form below do
-         the work. Same suppression for legacy number tokens whose
-         numberForms payload is missing. -->
-    {#if token.romanization && !numberForm && !isLegacyNumber}
-      <span class="tip-roman">{token.romanization}</span>
+  <div class="tip-title">
+    <div class="tip-head">
+      <span class="tip-w">{token.surface}</span>
+      {#if token.romanization && !numberForm && !isLegacyNumber}
+        <span class="tip-roman">{token.romanization}</span>
+      {/if}
+    </div>
+    {#if token.bookFrequency && token.bookFrequency > 0}
+      <span class="tip-count">
+        <span aria-hidden="true">x{token.bookFrequency}</span>
+        <span class="sr-only">Appears {token.bookFrequency} {token.bookFrequency === 1 ? 'time' : 'times'} in this book</span>
+      </span>
     {/if}
   </div>
   {#if numberForm}
@@ -202,6 +205,30 @@
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.22);
     line-height: 1.4;
     animation: fade-in 120ms ease-out;
+  }
+  .tip-title {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.75rem;
+  }
+  .tip-title .tip-head {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  .tip-count {
+    flex: none;
+    color: color-mix(in srgb, var(--paper, #fdfaf3) 60%, var(--ink, #1f1a14));
+    font-size: 0.625rem;
+    font-variant-numeric: tabular-nums;
   }
   .tip-head {
     display: flex;

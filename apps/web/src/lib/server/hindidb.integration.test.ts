@@ -123,8 +123,8 @@ describe.skipIf(!url)('HindiDB PostgreSQL integration (always rolls back)', () =
           expect((await loadHindiContextChoices(chapter!.id)).get(0)).toMatchObject({
             selectedLemmaIds: [entries[1]!.id], status: 'ai_suggested',
           });
-          const [selectedToken] = (await loadChapterTokens(chapter!.id, user!.id))!;
-          expect(selectedToken).toMatchObject({ lemmaId: entries[1]!.id, selectedBy: 'ai' });
+          const [selectedToken] = (await loadChapterTokens(chapter!.id, user!.id, text!.id))!;
+          expect(selectedToken).toMatchObject({ lemmaId: entries[1]!.id, selectedBy: 'ai', bookFrequency: 1 });
           expect(selectedToken!.candidates.map((c) => c.lemmaId)).toContain(entries[0]!.id);
           const { saveHindiContextChoice } = await import('./texts/hindi-context.js');
           await saveHindiContextChoice(selectedToken!.id,[entries[1]!.id],selectedToken!.contextVersion!,user!);

@@ -15,13 +15,13 @@ export const PATCH: RequestHandler = async (event) => {
   const parsed = input.safeParse(await event.request.json().catch(() => null));
   if (!parsed.success) throw error(400, 'Invalid selection');
   try {
-    const chapterId = await saveHindiContextChoice(
+    const { chapterId, textId } = await saveHindiContextChoice(
       event.params.id,
       parsed.data.selectedLemmaIds,
       parsed.data.expectedVersion,
       user,
     );
-    const token = (await loadChapterTokens(chapterId, user.id))?.find(
+    const token = (await loadChapterTokens(chapterId, user.id, textId))?.find(
       (t) => t.id === event.params.id,
     );
     return json({ token });

@@ -55,7 +55,8 @@ describe('PATCH /api/v1/me/languages/:code', () => {
       fontSize: 22,
       lineSpacing: 1.8,
       readingWidth: 'wide',
-      highlightStyle: 'underline',
+      highlightStyle: 'none',
+      highlightLearning: false,
       wordsPerPage: 300,
     })) as Response;
     expect(res.status).toBe(200);
@@ -66,6 +67,8 @@ describe('PATCH /api/v1/me/languages/:code', () => {
         readerLayoutMode: 'continuous',
         fontSize: 22,
         readingWidth: 'wide',
+        highlightStyle: 'none',
+        highlightLearning: false,
       }),
     );
   });

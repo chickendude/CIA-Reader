@@ -1062,7 +1062,7 @@ describe('WordPopup — book frequency', () => {
     // No "Lemma" label row anymore.
     expect(document.body.querySelector('.sp-head')?.textContent).not.toContain('Lemma');
     const badge = document.body.querySelector('[data-testid="book-frequency"]');
-    expect(badge?.textContent).toContain('4×');
+    expect(badge?.textContent).toContain('x4');
     expect(badge?.getAttribute('aria-label')).toBe('this word appears 4 times in the book');
     expect(badge?.querySelector('.sp-freq-tip')?.textContent).toContain(
       'appears 4 times in the book',

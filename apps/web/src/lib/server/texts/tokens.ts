@@ -17,6 +17,7 @@ import type { LanguageCode } from '@ciareader/shared-types';
 
 import { db, schema } from '../db/index.js';
 import type { TextToken, TokenCorrection, UserKnownLemma } from '../db/schema.js';
+import { lemmaBookFrequencies } from './book-frequency.js';
 import { type HindiStutter, joinReaderStutters } from './hindi-stutters.js';
 import { loadHindiContextChoices, canVerifyHindiContext, contextVersion } from './hindi-context.js';
 
@@ -31,6 +32,7 @@ import { loadHindiContextChoices, canVerifyHindiContext, contextVersion } from '
  * resolvable picks render.
  */
 export type RenderedCandidate = {
+  bookFrequency?: number;
   selectedBy?: 'ai' | 'human';
   lemmaId: string;
   headword: string;
@@ -74,6 +76,7 @@ export type RenderedNumberForms = {
 };
 
 export type RenderedToken = {
+  bookFrequency?: number;
   correctedByViewer?: boolean;
   canVerifyContext?: boolean;
   contextVersion?: string;
@@ -145,6 +148,7 @@ export type RenderedToken = {
 export async function loadChapterTokens(
   chapterId: string,
   viewerId: string | null,
+  textId?: string,
 ): Promise<RenderedToken[] | null> {
   const tokens = (await db
     .select()
@@ -362,6 +366,7 @@ export async function loadChapterTokens(
     ? await loadHindiContextChoices(chapterId) : new Map();
   const canVerifyContext = [...lemmaMetaById.values()].some((entry) => entry.language === 'hi')
     ? await canVerifyHindiContext(chapterId, viewerId) : false;
+  const bookFrequencies = textId ? await lemmaBookFrequencies(textId, lemmaIds) : undefined;
   let sourceOffset = 0;
   const rendered = tokens.map<RenderedToken>((t) => {
     const choice = choices.get(sourceOffset);
@@ -414,6 +419,7 @@ export async function loadChapterTokens(
       if (!meta) return;
       seen.add(lemmaId);
       candidates.push({
+        bookFrequency: bookFrequencies?.get(lemmaId),
         selectedBy: choice?.selectedOrigins[lemmaId],
         lemmaId,
         headword: meta.headword,
@@ -484,6 +490,7 @@ export async function loadChapterTokens(
       // from the dictionary".
       isOov: isMarkedNonWord ? false : t.isOov,
       lemmaId: effectiveLemmaId,
+      bookFrequency: effectiveLemmaId ? bookFrequencies?.get(effectiveLemmaId) : undefined,
       headword: effectiveLemmaId ? lemmaMetaById.get(effectiveLemmaId)?.headword : undefined,
       pos: effectiveLemmaId ? lemmaMetaById.get(effectiveLemmaId)?.pos : undefined,
       romanization: t.romanization,

@@ -13,7 +13,7 @@ import {
 } from '@ciareader/shared-types';
 
 export type ReaderLayoutMode = 'page' | 'paged_scroll' | 'continuous';
-export type HighlightStyle = 'underline' | 'background' | 'colored_text';
+export type HighlightStyle = 'underline' | 'background' | 'colored_text' | 'none';
 export type ReadingWidth = 'narrow' | 'medium' | 'wide';
 export type ScriptPreference =
   | 'native'
@@ -27,6 +27,7 @@ export interface ReaderSettings {
   fontSize: number;
   lineSpacing: number;
   highlightStyle: HighlightStyle;
+  highlightLearning: boolean;
   readingWidth: ReadingWidth;
   scriptPreference: ScriptPreference;
   romanizationScheme: RomanizationScheme;
@@ -49,6 +50,7 @@ export const DEFAULT_READER_SETTINGS: ReaderSettings = {
   fontSize: 18,
   lineSpacing: 1.6,
   highlightStyle: 'background',
+  highlightLearning: true,
   readingWidth: 'medium',
   scriptPreference: 'native',
   romanizationScheme: 'iso15919',

@@ -24,6 +24,7 @@ export type UserLanguagePatch = {
   fontSize?: UserLanguage['fontSize'];
   lineSpacing?: UserLanguage['lineSpacing'];
   highlightStyle?: UserLanguage['highlightStyle'];
+  highlightLearning?: UserLanguage['highlightLearning'];
   readingWidth?: UserLanguage['readingWidth'];
 };
 
@@ -100,6 +101,7 @@ export async function upsertUserLanguage(
     if (patch.fontSize !== undefined) insertValues.fontSize = patch.fontSize;
     if (patch.lineSpacing !== undefined) insertValues.lineSpacing = patch.lineSpacing;
     if (patch.highlightStyle !== undefined) insertValues.highlightStyle = patch.highlightStyle;
+    if (patch.highlightLearning !== undefined) insertValues.highlightLearning = patch.highlightLearning;
     if (patch.readingWidth !== undefined) insertValues.readingWidth = patch.readingWidth;
     const [row] = await db
       .insert(schema.userLanguages)
@@ -122,6 +124,7 @@ export async function upsertUserLanguage(
   if (patch.fontSize !== undefined) setClause.fontSize = patch.fontSize;
   if (patch.lineSpacing !== undefined) setClause.lineSpacing = patch.lineSpacing;
   if (patch.highlightStyle !== undefined) setClause.highlightStyle = patch.highlightStyle;
+  if (patch.highlightLearning !== undefined) setClause.highlightLearning = patch.highlightLearning;
   if (patch.readingWidth !== undefined) setClause.readingWidth = patch.readingWidth;
   if (Object.keys(setClause).length === 1) return existingRow; // only updatedAt — no-op
 

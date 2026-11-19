@@ -131,7 +131,7 @@ export async function reviewTokenWithAi(tokenId: string, actor: Actor) {
     suggestion,
   );
   return {
-    token: (await loadChapterTokens(token.chapterId, actor.id))?.find((t) => t.id === tokenId),
+    token: (await loadChapterTokens(token.chapterId, actor.id, row.text.id))?.find((t) => t.id === tokenId),
     reason: suggestion.reason,
   };
 }

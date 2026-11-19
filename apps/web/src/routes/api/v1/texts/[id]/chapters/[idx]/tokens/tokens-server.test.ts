@@ -156,7 +156,7 @@ describe('GET /api/v1/texts/:id/chapters/:idx/tokens', () => {
         ],
       }
     `);
-    expect(loadChapterTokens).toHaveBeenCalledWith('c1', 'user-1');
+    expect(loadChapterTokens).toHaveBeenCalledWith('c1', 'user-1', VALID_ID);
   });
 
   it('rejects an invalid uuid with 400', async () => {
@@ -191,7 +191,7 @@ describe('GET /api/v1/texts/:id/chapters/:idx/tokens', () => {
     getReadableText.mockResolvedValueOnce(fixtureWithChapters(1));
     await callGet(VALID_ID, '0', null);
     expect(getReadableText).toHaveBeenCalledWith(null, VALID_ID);
-    expect(loadChapterTokens).toHaveBeenCalledWith('c0', null);
+    expect(loadChapterTokens).toHaveBeenCalledWith('c0', null, VALID_ID);
   });
 
   // Regression: the endpoint must authenticate via resolveUser (Bearer-aware),
@@ -205,6 +205,6 @@ describe('GET /api/v1/texts/:id/chapters/:idx/tokens', () => {
     expect(res.status).toBe(200);
     expect(resolveUser).toHaveBeenCalled();
     expect(getReadableText).toHaveBeenCalledWith({ id: 'user-1' }, VALID_ID);
-    expect(loadChapterTokens).toHaveBeenCalledWith('c0', 'user-1');
+    expect(loadChapterTokens).toHaveBeenCalledWith('c0', 'user-1', VALID_ID);
   });
 });

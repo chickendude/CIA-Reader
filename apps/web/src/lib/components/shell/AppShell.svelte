@@ -890,6 +890,12 @@
    * The reader owns the whole window — its × button / Esc are the way out, so
    * the shell's nav chrome is hidden and the content reclaims the full width.
    * (The rail-toggle chevron lives outside .shell and is hidden in markup.) */
+  .shell.reader-route:has(:global(.reader[data-mode='page'])) {
+    min-height: 100svh;
+  }
+  .shell.reader-route .content:has(:global(.reader[data-mode='page'])) {
+    padding-bottom: 0;
+  }
   .shell.reader-route .top-strip,
   .shell.reader-route .bottom-nav {
     display: none;

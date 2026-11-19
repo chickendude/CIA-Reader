@@ -22,7 +22,8 @@ const patchSchema = z
     fontFamily: z.string().min(1).max(80).nullable(),
     fontSize: z.number().min(14).max(28),
     lineSpacing: z.number().min(1.2).max(2.2),
-    highlightStyle: z.enum(['underline', 'background', 'colored_text']),
+    highlightStyle: z.enum(['underline', 'background', 'colored_text', 'none']),
+    highlightLearning: z.boolean(),
     readingWidth: z.enum(['narrow', 'medium', 'wide']),
   })
   .partial()

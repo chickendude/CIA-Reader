@@ -1,17 +1,11 @@
 <!--
-  Compact part-of-speech badge with a hover/focus popover that
-  expands the abbreviation into a full Universal-Dependencies name.
-  Replaces the plain "Part of speech: NOUN" line in the WordPopup
-  header and the inline POS tag in the alt-candidate list, where the
-  raw UD tag spelt out long was visually heavy.
+  Part-of-speech abbreviation with the full name on hover or keyboard focus.
 -->
 <script lang="ts">
   import { posAbbr, posFullName } from './pos-labels.js';
 
   interface Props {
     pos: string;
-    /** Optional class hook so callers can place the pill in flex
-     *  rows without piling extra spans on top of it. */
     class?: string;
   }
 
@@ -21,10 +15,6 @@
   const fullName = $derived(posFullName(pos));
 </script>
 
-<!-- A non-interactive POS chip that still surfaces a tooltip on
-     focus + hover. role="button" is overkill (it doesn't trigger
-     anything), but tabindex on a bare span trips an a11y warning
-     unless we mark it as something the keyboard can land on. -->
 <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
 <span
   class="pos-pill {extraClass}"
@@ -40,20 +30,7 @@
 <style>
   .pos-pill {
     position: relative;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    min-width: 1.6rem;
-    height: 1.25rem;
-    padding: 0 0.45rem;
-    background: color-mix(
-      in oklch,
-      var(--ink, var(--color-fg)) 6%,
-      transparent
-    );
-    color: var(--ink-2, var(--color-fg));
-    border: 1px solid var(--rule, var(--color-border));
-    border-radius: 999px;
+    display: inline-block;
     font-family: var(--font-mono-display, var(--font-mono, monospace));
     font-size: 0.7rem;
     line-height: 1;
@@ -66,7 +43,8 @@
     outline-offset: 2px;
   }
   .pos-abbr {
-    font-weight: 600;
+    font-weight: 400;
+    color: color-mix(in srgb, currentColor 65%, transparent);
   }
   .pos-pop {
     position: absolute;

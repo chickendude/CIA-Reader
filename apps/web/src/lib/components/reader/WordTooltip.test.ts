@@ -50,6 +50,16 @@ afterEach(() => {
 // T-5.28: WordTooltip portals its DOM to <body>, so we query the
 // document body rather than the testing-library `container`.
 describe('WordTooltip — gloss display (T-5.18)', () => {
+  it('shows the book count on the preview and clears it for a word without a count', async () => {
+    const view = render(WordTooltip, {
+      token: makeToken({ bookFrequency: 6 }),
+      anchorRect: ANCHOR,
+    });
+    expect(document.querySelector('.tip-title .tip-count [aria-hidden]')?.textContent).toBe('x6');
+    await view.rerender({ token: makeToken({ lemmaId: null }), anchorRect: ANCHOR });
+    expect(document.querySelector('.tip-count')).toBeNull();
+  });
+
   it('shows only the selected entry when a Hindi occurrence has been confirmed', () => {
     render(WordTooltip, {token:makeToken({surface:'एक',headword:'एक',pos:'NUM',glossDefault:'one (1), a',selectedBy:'human',candidates:[
       {lemmaId:'adj',headword:'एक',pos:'ADJ',glossDefault:'sole, only; united',score:1,features:{}},

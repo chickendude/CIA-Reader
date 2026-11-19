@@ -208,14 +208,17 @@ describe('/reader/[textId] loader', () => {
     const data = (await callLoad(
       `http://x/reader/${VALID_ID}?endOfChapter=1`,
     )) as { anchor: { chapterIdx: number; tokenIdx: number; endOfChapter: boolean } };
-    // 5 chapters → last index is 4. The reader component then
-    // jumps to the last *page* of that chapter via its own
-    // `pendingJumpToLast` effect.
     expect(data.anchor).toEqual({
       chapterIdx: 4,
       tokenIdx: 0,
       endOfChapter: true,
     });
+  });
+
+  it('opens the end of a specific chapter when stepping back within a text', async () => {
+    getReadableText.mockResolvedValueOnce(ownedTextWithChapters(5));
+    const data = await callLoad(`http://x/reader/${VALID_ID}?chapter=2&endOfChapter=1`);
+    expect(data).toMatchObject({ anchor: { chapterIdx: 2, tokenIdx: 0, endOfChapter: true } });
   });
 
   it('clamps a chapter param above the chapter count to the last chapter', async () => {
@@ -250,17 +253,20 @@ describe('/reader/[textId] loader', () => {
       fontFamily: null,
       fontSize: 18,
       lineSpacing: 1.6,
-      highlightStyle: 'background',
+      highlightStyle: 'none',
+      highlightLearning: false,
       readingWidth: 'medium',
       scriptPreference: 'native',
       romanizationScheme: 'iso15919',
     };
     const data = (await callLoad(`http://x/reader/${VALID_ID}`)) as {
       mode: string;
-      readerSettings: { readerLayoutMode: string; readingWidth: string };
+      readerSettings: { readerLayoutMode: string; highlightStyle: string; highlightLearning: boolean };
     };
     expect(data.mode).toBe('continuous');
     expect(data.readerSettings.readerLayoutMode).toBe('continuous');
+    expect(data.readerSettings.highlightStyle).toBe('none');
+    expect(data.readerSettings.highlightLearning).toBe(false);
   });
 
   it('exposes a default readerSettings when the user has no user_languages row (T-5.1b)', async () => {
@@ -449,7 +455,7 @@ describe('/reader/[textId] loader', () => {
     // Single fetch — only the active (chapter 0) chapter is hit;
     // siblings get filled in client-side via the lazy-load endpoint.
     expect(loadChapterTokens).toHaveBeenCalledTimes(1);
-    expect(loadChapterTokens).toHaveBeenCalledWith('c0', USER.id);
+    expect(loadChapterTokens).toHaveBeenCalledWith('c0', USER.id, VALID_ID);
   });
 
   it('keeps sibling chapter bodies out of the SSR payload for mobile (T-12.5)', async () => {
@@ -484,7 +490,7 @@ describe('/reader/[textId] loader', () => {
     // The loader is invoked exactly once, for the requested chapter's
     // chapter id ("c3").
     expect(loadChapterTokens).toHaveBeenCalledTimes(1);
-    expect(loadChapterTokens).toHaveBeenCalledWith('c3', USER.id);
+    expect(loadChapterTokens).toHaveBeenCalledWith('c3', USER.id, VALID_ID);
     expect(data.chapters.map((c) => c.tokens)).toEqual([null, null, null, null, null]);
   });
 

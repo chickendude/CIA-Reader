@@ -40,7 +40,7 @@ export const GET: RequestHandler = async (event) => {
   const chapter = result.chapters.find((c) => c.idx === idx);
   if (!chapter) throw error(404, 'Chapter not found');
 
-  const tokens = await loadChapterTokens(chapter.id, viewer?.id ?? null);
+  const tokens = await loadChapterTokens(chapter.id, viewer?.id ?? null, textId);
   // T-14.3: spans ride alongside tokens. Empty array when the
   // chapter has been processed but contains no phrase matches;
   // null when tokens are also null (unprocessed chapter).

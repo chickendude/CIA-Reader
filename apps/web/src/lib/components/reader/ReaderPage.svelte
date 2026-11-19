@@ -15,18 +15,15 @@
 -->
 <script lang="ts">
   import { goto } from '$app/navigation';
-  import { onMount, tick, untrack } from 'svelte';
+  import { onMount, untrack } from 'svelte';
 
   import ChapterBody from './ChapterBody.svelte';
   import { clampPage, pageCountFor, pageOffset } from './paginate.js';
   import type { ProgressAnchor } from './progress-client.js';
   import {
-    WORD_SELECTOR,
     bookProgressPct,
     buildPageWordIndex,
-    columnIndexForElement,
     computePctRead,
-    findTokenElementAtOrAfter,
     firstWordInColumnFromIndex,
     formatPctRange,
     pageBoundaryAnchor,
@@ -145,36 +142,19 @@
   let pageStride = $state(0);
   let contentW = $state(0);
   let pageInChapter = $state(0);
-  let initialTokenApplied = $state(false);
+  let animateTurn = $state(false);
+  let wordIndex = $state.raw<PageWordIndex | null>(null);
   let restorePaintReady = $state(false);
   let lastReportedKey = '';
+  // Keep the requested word through successive reflows until the reader turns a page.
+  let positionToken = 0;
+  let alignToEnd = false;
   const isRestoringInitialToken = $derived(
-    initialTokenIdx > 0 && (!initialTokenApplied || !restorePaintReady),
+    (initialTokenIdx > 0 || startAtEndOfChapter) && !restorePaintReady,
   );
 
   const pageCount = $derived(pageCountFor(contentW, pageStride));
   const offset = $derived(pageOffset(pageInChapter, pageStride));
-
-  // Reset to the first page whenever the chapter changes — the user
-  // shouldn't see "stuck" mid-page state when they navigate.
-  $effect(() => {
-    void chapterIdx;
-    void initialTokenIdx;
-    pageInChapter = 0;
-    initialTokenApplied = false;
-    restorePaintReady = initialTokenIdx <= 0;
-    lastReportedKey = '';
-    columnIndexCache = null;
-    const seed = computePctRead(chapters, chapterIdx, initialTokenIdx);
-    startPct = seed;
-    endPct = seed;
-  });
-
-  // Keep pageInChapter in range when pageCount shrinks (e.g. window
-  // grows so the chapter fits in fewer pages).
-  $effect(() => {
-    pageInChapter = clampPage(pageInChapter, pageCount);
-  });
 
   const hasPrevPage = $derived(pageInChapter > 0);
   const hasNextPage = $derived(pageInChapter < pageCount - 1);
@@ -210,66 +190,33 @@
     pctPrecisionFor(bookWordsTotal > 0 ? bookWordsTotal : totalTokens),
   );
 
-  // Per-measure cache of word→column mapping. `findFirstWordInColumn`
-  // forces a layout flush per token; building once per measure and
-  // serving both the current-page and next-page anchors from the same
-  // index drops the page-flip cost in half (and keeps it constant
-  // regardless of how many additional anchors we ever query).
-  let columnIndexCache: PageWordIndex | null = null;
-
-  function go(nextIdx: number, opts: { lastPage?: boolean } = {}) {
-    void goto(`/reader/${textId}?mode=page&chapter=${nextIdx}`, {
-      keepFocus: true,
-    });
-    // The new chapter mounts with pageInChapter=0; if we're stepping
-    // backwards into the previous chapter, jump to its last page once
-    // pagination remeasures. Tracked via a flag so the resize $effect
-    // can apply it.
-    pendingJumpToLast = opts.lastPage === true;
+  function turnTo(page: number) {
+    animateTurn = true;
+    pageInChapter = page;
+    alignToEnd = false;
+    positionToken = wordIndex
+      ? firstWordInColumnFromIndex(wordIndex, page)?.tokenIdx ?? 0
+      : 0;
   }
-
-  // Seeded from the cross-text "prev" handoff flag so the new
-  // chapter mounts on its last page. The effect below applies the
-  // jump once measurement finishes (pageCount > 0).
-  let pendingJumpToLast = $state(untrack(() => startAtEndOfChapter));
-  // SvelteKit reuses the page component across navigations between
-  // /reader/<id> URLs — the $state initializer only fires once on
-  // first mount, so a fresh `startAtEndOfChapter=true` prop arriving
-  // via navigation wouldn't otherwise re-trigger the jump. This
-  // effect re-arms `pendingJumpToLast` whenever the prop flips to
-  // true AND forces a re-measure so the consumer effect below sees
-  // the NEW chapter's pageCount rather than whatever was measured
-  // for the previous chapter (otherwise we'd jump to the wrong page
-  // and the clamp would push us to 0).
-  $effect(() => {
-    if (!startAtEndOfChapter) return;
-    pendingJumpToLast = true;
-    measure();
-  });
-  $effect(() => {
-    if (!pendingJumpToLast) return;
-    if (pageCount > 0) {
-      pageInChapter = pageCount - 1;
-      pendingJumpToLast = false;
-    }
-  });
 
   function nextPage() {
     if (hasNextPage) {
-      pageInChapter += 1;
+      turnTo(pageInChapter + 1);
     } else if (hasNextChapter) {
-      go(chapterIdx + 1);
+      void goto(`/reader/${textId}?mode=page&chapter=${chapterIdx + 1}`, { keepFocus: true });
     } else if (nextTextId) {
       // Walk off the end of this text — advance into the next text
       // in the containing collection. Keeps page mode active.
-      void goto(`/reader/${nextTextId}?mode=page`, { keepFocus: true });
+      void goto(`/reader/${nextTextId}?mode=page&chapter=0`, { keepFocus: true });
     }
   }
   function prevPage() {
     if (hasPrevPage) {
-      pageInChapter -= 1;
+      turnTo(pageInChapter - 1);
     } else if (hasPrevChapter) {
-      go(chapterIdx - 1, { lastPage: true });
+      void goto(`/reader/${textId}?mode=page&chapter=${chapterIdx - 1}&endOfChapter=1`, {
+        keepFocus: true,
+      });
     } else if (prevTextId) {
       // Stepping back off the start of this text lands on the LAST
       // page of the previous text — the reading-direction-natural
@@ -311,96 +258,73 @@
     const width = contentEl.getBoundingClientRect().width;
     if (width <= 0) return;
     const gap = Number.parseFloat(window.getComputedStyle(contentEl).columnGap);
+    animateTurn = false;
     pageStride = width + gap;
     contentW = contentEl.scrollWidth;
-    columnIndexCache = null;
+    wordIndex = buildPageWordIndex({
+      root: contentEl,
+      contentEl,
+      pageWidth: pageStride,
+      contentWidth: contentW,
+      fallbackChapterIdx: chapterIdx,
+    });
+    if (alignToEnd) {
+      pageInChapter = pageCount - 1;
+    } else {
+      const word = positionToken > 0
+        ? wordIndex.entries.find((entry) => entry.tokenIdx >= positionToken) ?? wordIndex.entries.at(-1)
+        : null;
+      if (word) positionToken = word.tokenIdx;
+      pageInChapter = clampPage(word?.columnIndex ?? pageInChapter, pageCount);
+    }
   }
 
   onMount(() => {
-    if (typeof ResizeObserver === 'undefined') return;
-    const ro = new ResizeObserver(() => measure());
+    const ro = new ResizeObserver(measure);
     if (contentEl) ro.observe(contentEl);
-    // Seed initial measurements before the observer fires.
-    measure();
-    return () => ro.disconnect();
+    // A downloaded font can change the column breaks while the box stays the same size.
+    document.fonts.addEventListener('loadingdone', measure);
+    return () => {
+      ro.disconnect();
+      document.fonts.removeEventListener('loadingdone', measure);
+    };
   });
 
-  // Re-measure when anything that mutates the content's natural size
-  // changes — chapter, romanization toggle, or any of the typography
-  // settings driven by CSS vars on the .reader root. ResizeObserver
-  // fires on box-size changes only, so font-size / line-height swaps
-  // (which only change scrollWidth) need an explicit nudge.
-  //
-  // `textId` + `chapters` are listed so a cross-text navigation
-  // (chapter-book "prev"/"next" that swaps the whole chapter content
-  // while leaving chapterIdx at 0) also re-measures. Without those
-  // deps, contentW stayed at the OLD chapter's value and pageCount
-  // was stale, so `pendingJumpToLast` jumped to the wrong page (or
-  // got clamped back to 0).
   $effect(() => {
-    void chapterIdx;
     void textId;
-    void chapters;
+    void chapterIdx;
+    positionToken = initialTokenIdx;
+    alignToEnd = startAtEndOfChapter;
+    pageInChapter = 0;
+    restorePaintReady = false;
+    lastReportedKey = '';
+    const initialPct = untrack(() => computePctRead(chapters, chapterIdx, initialTokenIdx));
+    startPct = initialPct;
+    endPct = initialPct;
+    const frame = window.requestAnimationFrame(() => {
+      restorePaintReady = true;
+    });
+    return () => window.cancelAnimationFrame(frame);
+  });
+
+  $effect(() => {
+    void contentEl;
+    void current;
+    void textId;
+    void chapterIdx;
+    void initialTokenIdx;
+    void startAtEndOfChapter;
     void showRomanization;
     void fontSize;
     void lineSpacing;
     void fontFamily;
     void readingWidth;
-    measure();
+    untrack(measure);
   });
 
-  function applyInitialTokenPage() {
-    if (initialTokenApplied || !contentEl || pageStride <= 0 || pageCount <= 0) return;
-    if (initialTokenIdx <= 0) {
-      restorePaintReady = true;
-      initialTokenApplied = true;
-      return;
-    }
-    const tokenEl = findTokenElementAtOrAfter(contentEl, initialTokenIdx);
-    if (tokenEl) {
-      pageInChapter = clampPage(columnIndexForElement(tokenEl, contentEl, pageStride), pageCount);
-    } else if (contentEl.querySelector(WORD_SELECTOR) == null) {
-      // The chapter body hasn't laid down word spans yet — stay
-      // masked and let the effect re-run when contentW/pageStride settle
-      // again. Marking applied now would strand the user on page 0.
-      return;
-    }
-    initialTokenApplied = true;
-    void tick().then(() => {
-      window.requestAnimationFrame(() => {
-        restorePaintReady = true;
-      });
-    });
-  }
-
-  function ensureColumnIndex(): PageWordIndex | null {
-    if (!contentEl) return null;
-    if (
-      !columnIndexCache ||
-      columnIndexCache.pageWidth !== pageStride ||
-      columnIndexCache.contentWidth !== contentW ||
-      columnIndexCache.fallbackChapterIdx !== chapterIdx
-    ) {
-      columnIndexCache = buildPageWordIndex({
-        root: contentEl,
-        contentEl,
-        pageWidth: pageStride,
-        contentWidth: contentW,
-        fallbackChapterIdx: chapterIdx,
-      });
-    }
-    return columnIndexCache;
-  }
-
   function reportProgress() {
-    if (!contentEl) return;
-    // Don't fire while the viewport mask is up — the writer would
-    // see an anchor for whatever pageInChapter happens to be before
-    // applyInitialTokenPage jumps to the saved column, and on a
-    // chapter change we'd briefly mirror tokenIdx=0 to the URL.
-    if (isRestoringInitialToken) return;
-    const index = ensureColumnIndex();
-    if (!index) return;
+    const index = wordIndex;
+    if (!index || isRestoringInitialToken) return;
     const anchor = firstWordInColumnFromIndex(index, pageInChapter);
     if (!anchor) return;
     const nextPageAnchor =
@@ -485,40 +409,20 @@
       : totalWordsInText > 0
         ? (endWordsInText / totalWordsInText) * 100
         : 0;
-    // Resume position is the first word on this page; pctRead reports
-    // how far the user has READ — i.e. the end-of-page boundary —
-    // so the library card matches the reader footer.
+    // A reflow can move the bookmarked word into the middle of the page.
+    // Keep that word for reloads while the footer follows the visible page.
     const next: ProgressAnchor = {
-      ...anchor,
+      chapterIdx: anchor.chapterIdx,
+      tokenIdx: !alignToEnd && positionToken > 0 ? positionToken : anchor.tokenIdx,
       pctRead: endPctPersist,
     };
     const key = `${next.chapterIdx}:${next.tokenIdx}:${next.pctRead}`;
     if (key === lastReportedKey) return;
     lastReportedKey = key;
-    onProgress(next);
+    untrack(() => onProgress?.(next));
   }
 
-  $effect(() => {
-    void initialTokenIdx;
-    void pageCount;
-    void pageStride;
-    void contentW;
-    applyInitialTokenPage();
-  });
-
-  $effect(() => {
-    void chapterIdx;
-    void pageInChapter;
-    void pageCount;
-    void contentW;
-    void pageStride;
-    void showRomanization;
-    void fontSize;
-    void lineSpacing;
-    void fontFamily;
-    void readingWidth;
-    void tick().then(reportProgress);
-  });
+  $effect(reportProgress);
 </script>
 
 <svelte:window onkeydown={onKeydown} />
@@ -580,7 +484,7 @@
       <div
         class="reader-page-track"
         style:transform="translateX(-{offset}px)"
-        data-restoring={isRestoringInitialToken ? '1' : undefined}
+        class:turning={animateTurn}
       >
         <div class="reader-page-content" bind:this={contentEl}>
           {#if current}
@@ -663,6 +567,7 @@
      min-height:0 the viewport grows to fit the content (defeating
      the clip), without flex:1 it collapses to nothing. */
   .reader-page-wrap {
+    touch-action: pinch-zoom;
     position: relative;
     flex: 1;
     min-height: 0;
@@ -673,7 +578,7 @@
   .reader-page-viewport {
     flex: 1;
     min-height: 0;
-    overflow: hidden;
+    overflow: clip;
     padding: 1.25rem 3rem;
     display: flex;
     justify-content: center;
@@ -687,7 +592,7 @@
   /* The "window" is the clipping mask. It fills the remaining width
      of the reader chrome (the rail is static on desktop, so the
      reader column already gets a sensible max width from the
-     viewport - rail). Its overflow:hidden is what hides the off-page
+     viewport - rail). Its overflow clip hides the off-page
      columns sitting to its right. The track inside (translateX
      target) carries the content, and the content's overflow extends
      past the window horizontally. */
@@ -696,7 +601,7 @@
     width: 100%;
     max-width: var(--reader-col-width, 40rem);
     height: 100%;
-    overflow: hidden;
+    overflow: clip;
     position: relative;
   }
   .reader-page-window[data-restoring='1'] {
@@ -710,11 +615,10 @@
   .reader-page-track {
     width: 100%;
     height: 100%;
-    transition: transform 200ms ease;
     will-change: transform;
   }
-  .reader-page-track[data-restoring='1'] {
-    transition: none;
+  .reader-page-track.turning {
+    transition: transform 200ms ease;
   }
 
   /* The gap keeps ink from adjacent pages outside the clipping window. */

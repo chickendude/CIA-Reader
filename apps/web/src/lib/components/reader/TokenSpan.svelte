@@ -4,7 +4,7 @@
   One `<span>` per token, with a numeric `data-s` attribute when we
   have a lemma resolution. The colored highlight rules live in
   `tokens.css` and are switched between background-tint and underline
-  modes via `data-hl` on `<html>`. Whitespace tokens render as plain
+  modes via `data-hl` on the reader. Whitespace tokens render as plain
   text without any classes.
 
   When `showRomanization` is on AND the token has a precomputed
@@ -96,6 +96,9 @@
     background: transparent;
     border-bottom: 1px dashed var(--color-fg-muted);
     border-radius: 0;
+  }
+  :global([data-hl='none']) .oov {
+    border-bottom: 0;
   }
   /* T-9.3: karaoke-style highlight on the word currently being
      spoken in the audio. Higher contrast than hover/anchor so the

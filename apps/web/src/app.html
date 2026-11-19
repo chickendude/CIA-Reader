@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" data-theme="%cia.theme%" data-theme-preference="%cia.themePreference%" data-hl="background">
+<html lang="en" data-theme="%cia.theme%" data-theme-preference="%cia.themePreference%">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -11,11 +11,6 @@
       Resolve the user's theme preference before first paint to avoid a
       light-mode flash for dark-mode users. The server supplies the account
       or cookie preference. System mode follows the browser color scheme.
-
-      `data-hl` controls reader word-status highlighting style
-      (background tint vs. underline). It's a reader-mode setting written
-      by T-5.1b's text-settings popover and persisted client-side; the
-      attribute is set here so first paint already has the right rules.
     -->
     <script>
       (function () {
@@ -28,13 +23,6 @@
           }
           applyTheme();
           scheme.addEventListener('change', applyTheme);
-
-          var hlMatch = document.cookie.match(/(?:^|; )cia_hl=([^;]+)/);
-          var hlPref = hlMatch ? decodeURIComponent(hlMatch[1]) : 'background';
-          document.documentElement.setAttribute(
-            'data-hl',
-            hlPref === 'underline' ? 'underline' : 'background',
-          );
         } catch (_) {}
       })();
     </script>

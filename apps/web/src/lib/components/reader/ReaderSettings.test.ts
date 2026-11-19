@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen } from '@testing-library/svelte';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/svelte';
 
 import ReaderSettings from './ReaderSettings.svelte';
 import { DEFAULT_READER_SETTINGS } from './reader-settings.js';
@@ -29,13 +29,13 @@ describe('ReaderSettings — admin undefined-words overlay (#435)', () => {
     renderPopover({ isAdmin: true });
     expect(screen.getByTestId('rs-admin')).not.toBeNull();
     expect(screen.getByRole<HTMLInputElement>('radio', { name: 'Flag' })).not.toBeNull();
-    expect(screen.getByRole<HTMLInputElement>('radio', { name: 'Off' })).not.toBeNull();
+    expect(within(screen.getByTestId('rs-admin')).getByRole<HTMLInputElement>('radio', { name: 'Off' })).not.toBeNull();
   });
 
   it('marks "Off" active when the overlay is disabled', () => {
     renderPopover({ isAdmin: true, flagUndefined: false });
     expect(
-      screen.getByRole<HTMLInputElement>('radio', { name: 'Off' }).checked,
+      within(screen.getByTestId('rs-admin')).getByRole<HTMLInputElement>('radio', { name: 'Off' }).checked,
     ).toBe(true);
     expect(
       screen.getByRole<HTMLInputElement>('radio', { name: 'Flag' }).checked,
@@ -57,7 +57,7 @@ describe('ReaderSettings — admin undefined-words overlay (#435)', () => {
   it('fires onFlagUndefinedChange(false) when "Off" is clicked', async () => {
     const onFlagUndefinedChange = vi.fn();
     renderPopover({ isAdmin: true, flagUndefined: true, onFlagUndefinedChange });
-    await fireEvent.click(screen.getByRole<HTMLInputElement>('radio', { name: 'Off' }));
+    await fireEvent.click(within(screen.getByTestId('rs-admin')).getByRole<HTMLInputElement>('radio', { name: 'Off' }));
     expect(onFlagUndefinedChange).toHaveBeenCalledWith(false);
   });
 });

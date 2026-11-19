@@ -164,23 +164,6 @@
       .join('; '),
   );
 
-  // tokens.css scopes the word-status highlight rules to
-  // `html[data-hl='…']` (set up-front by app.html so first paint is
-  // correct). Mirror the popover's choice onto <html> so a live change
-  // flips the rules immediately. The previous value is restored on
-  // unmount so the attribute reflects this language's setting only
-  // while the reader is on screen.
-  $effect(() => {
-    if (typeof document === 'undefined') return;
-    const html = document.documentElement;
-    const previous = html.getAttribute('data-hl');
-    html.setAttribute('data-hl', readerSettings.highlightStyle);
-    return () => {
-      if (previous == null) html.removeAttribute('data-hl');
-      else html.setAttribute('data-hl', previous);
-    };
-  });
-
   // #435: mirror the admin overlay flag onto <html> so tokens.css
   // paints `.word.no-definition`. Only admins can turn it on; clearing
   // on unmount keeps the attribute scoped to the reader route.
@@ -198,7 +181,7 @@
     };
   }
 
-  let currentProgressAnchor = $state<ProgressAnchor>(untrack(anchorFromData));
+  let currentProgressAnchor = $derived(anchorFromData());
 
   // Chapter table-of-contents model — drives the shared chapter
   // selector dropdown + the page footer's whole-book progress. Handles
@@ -236,27 +219,16 @@
     }[liveStatus] ?? liveStatus,
   );
 
-  let lastUrlAnchorKey = '';
-
   function mirrorAnchorToUrl(anchor: ProgressAnchor) {
-    if (typeof window === 'undefined') return;
-    const url = new URL(window.location.href);
-    // `endOfChapter=1` is the one-shot cross-text "prev" handoff: it opens the
-    // reader at the chapter's LAST page on arrival, then must be cleared. If it
-    // lingers in the URL, every refresh re-jumps to the last page instead of
-    // resuming the page the reader actually reports — so always strip it once we
-    // have a real anchor, even when the dedup key is unchanged.
-    const hadEndOfChapter = url.searchParams.has('endOfChapter');
-    const key = `${data.mode}:${anchor.chapterIdx}:${anchor.tokenIdx}:${showRomanization ? 1 : 0}`;
-    if (key === lastUrlAnchorKey && !hadEndOfChapter) return;
-    lastUrlAnchorKey = key;
     const next = buildReaderAnchorUrl(window.location.href, {
       mode: data.mode,
       chapterIdx: anchor.chapterIdx,
       tokenIdx: anchor.tokenIdx,
       showRomanization,
     });
-    window.history.replaceState(window.history.state, '', next);
+    if (next !== window.location.href) {
+      window.history.replaceState(window.history.state, '', next);
+    }
   }
 
   function onReaderProgress(anchor: ProgressAnchor) {
@@ -272,7 +244,7 @@
     const anchor = currentProgressAnchor;
     if (progressWriter) {
       progressWriter.schedule(anchor);
-      void progressWriter.flush({ keepalive: true });
+      void progressWriter.flush();
     }
     const params = new URLSearchParams();
     params.set('mode', mode);
@@ -299,9 +271,8 @@
 
   // T-5.6 progress writer. Signed-in readers get one; anonymous
   // viewers of an official text don't have a row to write against.
-  let progressWriter: ProgressWriter | null = null;
-  let pageHideHandler: (() => void) | null = null;
-  let visibilityHandler: (() => void) | null = null;
+  const progressTextId = $derived(data.canPersistSettings ? data.text.id : null);
+  const progressWriter = $derived(progressTextId ? new ProgressWriter(progressTextId) : null);
 
   // The reader's top bar is a full-width fixed element. We measure
   // its height into a `--reader-top-h` CSS variable so the AppShell
@@ -378,30 +349,6 @@
       cleanupPoll = () => window.clearInterval(interval);
     }
 
-    // T-7.7: progress writer for any signed-in reader, not just
-    // owners. user_text_progress is keyed on (user, text) so a
-    // recipient of a shared text or a signed-in reader of an
-    // official text gets their own resume-anchor row. Anonymous
-    // viewers (the only false branch of canPersistSettings) skip.
-    if (data.canPersistSettings) {
-      progressWriter = new ProgressWriter(data.text.id);
-      currentProgressAnchor = anchorFromData();
-      // Flush on refresh / tab close through the keepalive path so
-      // the latest debounced anchor survives the navigation. iOS
-      // Safari doesn't reliably fire `pagehide` when the tab is
-      // backgrounded — `visibilitychange → hidden` is the more
-      // dependable hook there, so we wire both.
-      const flushKeepalive = () => {
-        void progressWriter?.flush({ keepalive: true });
-      };
-      pageHideHandler = flushKeepalive;
-      visibilityHandler = () => {
-        if (document.visibilityState === 'hidden') flushKeepalive();
-      };
-      window.addEventListener('pagehide', pageHideHandler);
-      document.addEventListener('visibilitychange', visibilityHandler);
-    }
-
     // Track the .reader-top height so the rail can sit below it.
     let topRO: ResizeObserver | null = null;
     if (typeof ResizeObserver !== 'undefined' && readerTopEl) {
@@ -418,9 +365,6 @@
     return () => {
       cleanupPoll?.();
       window.removeEventListener('keydown', onKey);
-      if (pageHideHandler) window.removeEventListener('pagehide', pageHideHandler);
-      if (visibilityHandler) document.removeEventListener('visibilitychange', visibilityHandler);
-      void progressWriter?.flush();
       topRO?.disconnect();
       document.documentElement.style.removeProperty('--reader-top-h');
       // Leaving the reader restores the app-shell chrome everywhere else.
@@ -429,14 +373,19 @@
     };
   });
 
-  // Watch URL anchor changes so mode switches and fresh loads start
-  // from the loader's anchor locally. We deliberately don't write it
-  // back immediately; the active reader mode reports the actual
-  // first visible word once it has restored layout.
   $effect(() => {
-    const anchor = anchorFromData();
-    currentProgressAnchor = anchor;
-    lastUrlAnchorKey = `${data.mode}:${anchor.chapterIdx}:${anchor.tokenIdx}:${showRomanization ? 1 : 0}`;
+    const writer = progressWriter;
+    if (!writer) return;
+    const flush = () => { void writer.flush(); };
+    window.addEventListener('pagehide', flush);
+    window.addEventListener('online', flush);
+    document.addEventListener('visibilitychange', flush);
+    return () => {
+      window.removeEventListener('pagehide', flush);
+      window.removeEventListener('online', flush);
+      document.removeEventListener('visibilitychange', flush);
+      flush();
+    };
   });
 </script>
 
@@ -473,7 +422,14 @@
   </div>
 {/snippet}
 
-<div class="reader" class:hide-mobile-arrows={hideMobileArrows} data-mode={usesPageImages ? 'pdf' : data.mode} style={readerStyle}>
+<div
+  class="reader"
+  class:hide-mobile-arrows={hideMobileArrows}
+  data-mode={usesPageImages ? 'pdf' : data.mode}
+  data-hl={readerSettings.highlightStyle}
+  data-highlight-learning={readerSettings.highlightLearning ? 'on' : 'off'}
+  style={readerStyle}
+>
   <header class="reader-top" bind:this={readerTopEl}>
     <div class="reader-top-left">
       <PageCloseLink href="/library" label="Close reader" />
@@ -650,7 +606,7 @@
   language={data.text.language as LanguageCode}
   settings={readerSettings}
   onChange={(next) => {
-    if (next.readerLayoutMode !== data.mode) {
+    if (next.readerLayoutMode !== readerSettings.readerLayoutMode && next.readerLayoutMode !== data.mode) {
       setMode(next.readerLayoutMode);
     }
     readerSettings = next;
@@ -702,9 +658,16 @@
   /* Page mode is meant to behave like a book — no vertical scroll;
      overflow stays inside the viewport, page arrows step through it. */
   .reader[data-mode='page'] {
-    height: 100dvh;
+    height: 100svh;
     min-height: 0;
-    overflow: hidden;
+    overflow: clip;
+  }
+  :global(html:has(.reader[data-mode='page'])),
+  :global(body:has(.reader[data-mode='page'])) {
+    height: 100svh;
+    min-height: 0;
+    overflow: clip;
+    overscroll-behavior: none;
   }
   /* The top bar lives inside the reader's right column (sticky inside
      the AppShell content track, not over the rail). The right side
@@ -875,7 +838,6 @@
   }
   .mobile-picker, .mobile-chapter-footer, .mobile-processing { display: none; }
   @media (max-width: 639px) {
-    .reader :global(.reader-page-wrap),
     .reader :global(.reader-scroll-inner) { touch-action: pan-y pinch-zoom; }
     .hide-mobile-arrows :global(.page-arrow) { display: none; }
     .hide-mobile-arrows :global(.reader-page-viewport),

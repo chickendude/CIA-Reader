@@ -76,9 +76,9 @@ describe('buildReaderToc — chapter-book collection', () => {
     expect(toc.kind).toBe('collection');
     expect(toc.total).toBe(3);
     expect(toc.entries.map((e) => e.href)).toEqual([
-      '/reader/text-a?mode=page',
-      '/reader/text-b?mode=page',
-      '/reader/text-c?mode=page',
+      '/reader/text-a?mode=page&chapter=0',
+      '/reader/text-b?mode=page&chapter=0',
+      '/reader/text-c?mode=page&chapter=0',
     ]);
   });
 
