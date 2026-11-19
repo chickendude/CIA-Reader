@@ -55,10 +55,17 @@ class DatabaseLexicon:
                     if entry.get("group_id"):
                         groups[entry["group_id"]].append(entry)
 
+                parser_keys = {uid: key for key, uid in ids.items()}
+
+                def parser_key(reference):
+                    return parser_keys.get(reference, reference)
+
                 def member_ids(members):
                     live = [lexical_id(e["lemma"], e["pos"]) for e in members]
                     ordered = [
-                        use["id"] for use in members[0].get("group_uses", []) if use["id"] in live
+                        key
+                        for use in members[0].get("group_uses", [])
+                        if (key := parser_key(use["id"])) in live
                     ]
                     return list(dict.fromkeys(ordered + live))
 
@@ -68,7 +75,7 @@ class DatabaseLexicon:
                         {
                             "id": gid,
                             "lemma": members[0]["lemma"],
-                            "primary": members[0].get("group_primary"),
+                            "primary": parser_key(members[0].get("group_primary")),
                             "members": member_ids(members),
                         }
                         for gid, members in groups.items()

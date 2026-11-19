@@ -77,7 +77,9 @@ def main():
         with conn.cursor().copy("COPY workshop_import(key,result,retrieved_at) FROM STDIN") as out:
             for key, payload, retrieved in reference_rows(args.hindidb):
                 out.write_row((key, Jsonb(payload), retrieved))
-        added = conn.execute("""INSERT INTO hindi_reference_cache SELECT * FROM workshop_import
+        added = conn.execute("""INSERT INTO hindi_reference_cache(key,result,retrieved_at)
+            SELECT coalesce('loan:' || h.lemma_id, w.key), w.result, w.retrieved_at FROM workshop_import w
+            LEFT JOIN hindi_entries h ON starts_with(w.key, 'loan:') AND h.external_id=substr(w.key, 6)
             ON CONFLICT (key) DO NOTHING""").rowcount
         library = args.hindidb / ".hindidb/library.sqlite3"
         if library.exists():

@@ -15,7 +15,7 @@ export function officialDeckRows(textId: string, userId?: string) {
       CASE WHEN l.id IS NULL THEN 'unresolved' ELSE coalesce(k.status::text, 'unknown') END AS status,
       coalesce(l.pos = 'PROPN', false) AS proper,
       coalesce((h.entry->>'english_loan')::boolean, EXISTS (
-        SELECT 1 FROM hindi_reference_cache WHERE key = 'loan:' || h.external_id
+        SELECT 1 FROM hindi_reference_cache WHERE key = 'loan:' || h.lemma_id
       )) AS loan
     FROM frequencies f LEFT JOIN lemmas l ON l.id = f.lemma_id
     LEFT JOIN user_known_lemmas k ON k.lemma_id = l.id AND k.user_id = ${userId ?? null}::uuid

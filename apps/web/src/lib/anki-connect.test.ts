@@ -14,7 +14,7 @@ const card = (
   queue = type,
   deckName = 'Hindi',
 ): DesktopCard => ({
-  fields: id ? { HindiDB_ID: { value: id } } : {},
+  fields: id ? { Parhiba_ID: { value: id } } : {},
   type,
   interval,
   queue,
@@ -57,12 +57,12 @@ describe('Anki vocabulary', () => {
     expect(collectEntries(cards, ['Hindi'], defaultMapping)).toEqual({
       missingWord: 1,
       entries: [
-        { id: 'a', headword: 'भी', status: 'ignore' },
-        { id: 'a', status: 'ignore' },
-        { id: 'b', status: 'known' },
-        { id: 'c', status: 'learning' },
-        { id: 'd', status: 'learning' },
-        { id: 'new', status: 'ignore' },
+        { parhibaId: 'a', headword: 'भी', status: 'ignore' },
+        { parhibaId: 'a', status: 'ignore' },
+        { parhibaId: 'b', status: 'known' },
+        { parhibaId: 'c', status: 'learning' },
+        { parhibaId: 'd', status: 'learning' },
+        { parhibaId: 'new', status: 'ignore' },
       ],
     });
     expect(
@@ -73,16 +73,16 @@ describe('Anki vocabulary', () => {
         suspended: 'known',
       }).entries,
     ).toEqual([
-      { id: 'a', headword: 'भी', status: 'known' },
-      { id: 'a', status: 'known' },
-      { id: 'b', status: 'ignore' },
-      { id: 'c', status: 'learning' },
-      { id: 'd', status: 'learning' },
-      { id: 'new', status: 'known' },
+      { parhibaId: 'a', headword: 'भी', status: 'known' },
+      { parhibaId: 'a', status: 'known' },
+      { parhibaId: 'b', status: 'ignore' },
+      { parhibaId: 'c', status: 'learning' },
+      { parhibaId: 'd', status: 'learning' },
+      { parhibaId: 'new', status: 'known' },
     ]);
     expect(
       collectEntries([card('a', 0, 0), card('a', 2, 21)], ['Hindi'], defaultMapping).entries,
-    ).toEqual([{ id: 'a', status: 'ignore' }]);
+    ).toEqual([{ parhibaId: 'a', status: 'ignore' }]);
   });
 
   it('reads a Parhiba ID or an ordinary headword from the selected decks', () => {
@@ -91,10 +91,13 @@ describe('Anki vocabulary', () => {
       { Word: { value: '<b>याद&nbsp;करना</b>' } },
       { Front: { value: 'भी' } },
       { word: { value: 'भी' } },
+      { HindiDB_ID: { value: 'hi_only' } },
     ];
     const cards = noteFields.map((fields) => ({ ...card('', 2, 25), fields }));
-    expect(collectEntries(cards, ['Hindi'], defaultMapping).entries).toEqual([
-      { parhibaId: 'uuid', id: 'old', headword: 'भी', status: 'known' },
+    const batch = collectEntries(cards, ['Hindi'], defaultMapping);
+    expect(batch.missingWord).toBe(1);
+    expect(batch.entries).toEqual([
+      { parhibaId: 'uuid', headword: 'भी', status: 'known' },
       { headword: 'याद करना', status: 'known' },
       { headword: 'भी', status: 'known' },
     ]);

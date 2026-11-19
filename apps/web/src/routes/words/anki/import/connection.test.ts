@@ -64,7 +64,7 @@ it('shows unmatched headwords and only displays IDs from the Parhiba field', asy
   const results: Record<string, unknown> = {
     requestPermission: { permission: 'granted' },
     deckNames: ['Hindi'],
-    findCards: [1],
+    findCards: [1, 2],
     cardsInfo: [
       {
         deckName: 'Hindi',
@@ -73,16 +73,26 @@ it('shows unmatched headwords and only displays IDs from the Parhiba field', asy
         interval: 30,
         fields: { HindiDB_ID: { value: 'hi_retired' }, Lemma: { value: 'याद करना' } },
       },
+      {
+        deckName: 'Hindi',
+        type: 2,
+        queue: 2,
+        interval: 30,
+        fields: { Parhiba_ID: { value: parhibaId }, Lemma: { value: 'मदद करना' } },
+      },
     ],
   };
   vi.stubGlobal(
     'fetch',
     vi.fn(async (url: string, init: RequestInit) => {
       if (url === '/api/v1/me/anki/import') {
+        expect(JSON.parse(String(init.body)).entries).toEqual([
+          { headword: 'याद करना', status: 'known' },
+          { parhibaId, headword: 'मदद करना', status: 'known' },
+        ]);
         return Response.json({
           matched: 0,
           changes: 0,
-          unmatched: ['hi_retired', parhibaId],
           unmatchedEntries: [
             { headword: 'याद करना', parhibaId: null },
             { headword: 'मदद करना', parhibaId },

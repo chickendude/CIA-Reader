@@ -320,6 +320,9 @@ describe.skipIf(!url)('HindiDB PostgreSQL integration (always rolls back)', () =
         const parhibaId = entries[2]!.id;
         const run = (apply: boolean, notes: unknown[]) => importAnkiVocabulary(user!.id,
           ankiImportInput.parse({ apply, entries: notes }));
+        expect(ankiImportInput.safeParse({ apply: false, entries: [
+          { id: 'hi_only', status: 'known' },
+        ] }).success).toBe(false);
         const knownById = [{ parhibaId, headword: shared, status: 'known' }];
         expect(await run(false, knownById)).toMatchObject({ matched: 1, changes: 1 });
         expect(await run(true, knownById)).toMatchObject({ matched: 1, changes: 1 });
@@ -327,9 +330,9 @@ describe.skipIf(!url)('HindiDB PostgreSQL integration (always rolls back)', () =
           .where(eq(schema.userKnownLemmas.userId, user!.id))).toEqual([{ id: parhibaId }]);
 
         const allSenses = [{ headword: shared, status: 'known' }];
-        expect(await run(false, allSenses)).toMatchObject({ matched: 2, changes: 1, unmatched: [] });
+        expect(await run(false, allSenses)).toMatchObject({ matched: 2, changes: 1, unmatchedEntries: [] });
         expect(await run(false, [{ ...allSenses[0], parhibaId: randomUUID() }]))
-          .toMatchObject({ matched: 2, changes: 1, unmatched: [] });
+          .toMatchObject({ matched: 2, changes: 1, unmatchedEntries: [] });
         expect(await run(true, allSenses)).toMatchObject({ matched: 2, changes: 1 });
         expect(await run(true, allSenses)).toMatchObject({ matched: 2, changes: 0 });
 
@@ -340,7 +343,7 @@ describe.skipIf(!url)('HindiDB PostgreSQL integration (always rolls back)', () =
           { id: 'hi_retired', headword: partial, status: 'known' },
         ];
         expect(await run(false, notes)).toMatchObject({
-          matched: 2, changes: 2, counts: { known: 1, learning: 1 }, unmatched: ['hi_retired'],
+          matched: 2, changes: 2, counts: { known: 1, learning: 1 },
           unmatchedEntries: [{ headword: partial, parhibaId: null }],
         });
         expect(await run(false, [

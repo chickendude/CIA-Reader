@@ -76,17 +76,15 @@ function classify(card: DesktopCard): CardType {
 }
 
 const wordFields = ['lemma', 'headword', 'word', 'expression', 'hindi', 'front'];
-const importFields = new Set(['parhiba_id', 'hindidb_id', ...wordFields]);
+const importFields = new Set(['parhiba_id', ...wordFields]);
 
 type EntryIdentity = {
   parhibaId?: string;
-  /** External ID used by older HindiDB decks and import clients. */
-  id?: string;
   headword?: string;
 };
 
 export function ankiEntryKey(entry: EntryIdentity) {
-  return JSON.stringify([entry.parhibaId, entry.headword, entry.id]);
+  return JSON.stringify([entry.parhibaId, entry.headword]);
 }
 
 type ImportEntry = EntryIdentity & {
@@ -113,15 +111,14 @@ export function collectEntries(cards: DesktopCard[], decks: string[], mapping: C
     if (!selectedDecks.has(card.deckName)) continue;
     const fields = new Map(Object.entries(card.fields).map(([k, v]) => [k.toLowerCase(), v.value]));
     const parhibaId = fieldText(fields.get('parhiba_id'));
-    const id = fieldText(fields.get('hindidb_id'));
     const word = wordFields.map((name) => fieldText(fields.get(name))).find(Boolean);
     const headword = word && word.length <= 500 ? word : undefined;
     const status = mapping[classify(card)];
-    if (!parhibaId && !id && !headword) {
+    if (!parhibaId && !headword) {
       if (status !== 'ignore') missingWord++;
       continue;
     }
-    const identity = { parhibaId: parhibaId || undefined, id: id || undefined, headword };
+    const identity = { parhibaId: parhibaId || undefined, headword };
     const key = ankiEntryKey(identity);
     const prior = entries.get(key);
     if (!prior) {

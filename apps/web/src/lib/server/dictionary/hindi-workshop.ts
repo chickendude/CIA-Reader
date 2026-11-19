@@ -90,7 +90,7 @@ async function readEntry(id: string, conn: Executor = db) {
     inferred_loan: boolean;
   }>(sql`
     SELECT l.id,l.headword lemma,l.pos,coalesce(l.gloss_default,'') meaning,h.external_id external,h.entry,
-      EXISTS(SELECT 1 FROM hindi_reference_cache WHERE key='loan:'||h.external_id) inferred_loan,
+      EXISTS(SELECT 1 FROM hindi_reference_cache WHERE key='loan:'||h.lemma_id) inferred_loan,
       ARRAY(SELECT DISTINCT surface FROM lemma_forms WHERE lemma_id=l.id AND quarantined_at IS NULL ORDER BY surface) forms
     FROM lemmas l JOIN hindi_entries h ON h.lemma_id=l.id WHERE l.id=${id} AND l.language='hi'`);
   if (!row) error(404, 'Hindi dictionary entry not found');
@@ -119,8 +119,11 @@ export async function getWorkshopWord(id: string) {
     await db.execute<Match>(sql`SELECT id,headword lemma,pos,coalesce(gloss_default,'') meaning
     FROM lemmas WHERE language='hi' AND headword=${draft.lemma} ORDER BY pos`);
   const group = (entry.group_uses ?? [])
-    .map((use) => uses.find((x) => x.pos === use.pos)?.id)
-    .filter((v): v is string => !!v);
+    .map((use) => use.id)
+    .filter((id) => uses.some((u) => u.id === id));
+  // The workshop shows the primary use first.
+  const primary = entry.group_primary;
+  if (primary) group.sort((a, b) => Number(b === primary) - Number(a === primary));
   const evidence = (entry.definitions ?? []).map((d) => ({
     url: d.source_url ?? '',
     original: d.original ?? '',
@@ -312,10 +315,7 @@ export async function groupUses(id: string, members: string[], actor: string) {
     if (!active || members.some((m) => !rows.some((r) => r.id === m)))
       error(409, 'These POS uses no longer share a dictionary form');
     const gid = active.entry.group_id ?? randomUUID();
-    const uses = members.map((m) => {
-      const pos = rows.find((r) => r.id === m)!.pos;
-      return { id: lexicalId(base.draft.lemma, pos), pos };
-    });
+    const uses = members.map((id) => ({ id, pos: rows.find((row) => row.id === id)!.pos }));
     for (const row of rows) {
       if (!members.includes(row.id) && row.entry.group_id !== gid) continue;
       if (row.entry.group_id && row.entry.group_id !== gid)

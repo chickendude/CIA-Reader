@@ -72,9 +72,15 @@ def main():
         for uid, headword, pos in existing:
             by_key.setdefault((headword, pos), uid)
         conn.execute('CREATE TEMP TABLE hindi_stage (id uuid PRIMARY KEY, external_id text, headword text, pos text, entry jsonb) ON COMMIT DROP')
+        ids = {e['id']: by_key.get((e['lemma'], e['pos']), uuid4()) for e in entries}
+        group_ids = {e['group_id']: str(uuid4()) for e in entries if e.get('group_id')}
         with conn.cursor().copy('COPY hindi_stage FROM STDIN') as copy:
             for entry in entries:
-                copy.write_row((by_key.get((entry['lemma'], entry['pos']), uuid4()), entry['id'], entry['lemma'], entry['pos'], Jsonb(entry)))
+                if entry.get('group_id'):
+                    entry = {**entry, 'group_id': group_ids[entry['group_id']],
+                             'group_primary': str(ids[entry['group_primary']]),
+                             'group_uses': [{**use, 'id': str(ids[use['id']])} for use in entry['group_uses']]}
+                copy.write_row((ids[entry['id']], entry['id'], entry['lemma'], entry['pos'], Jsonb(entry)))
         # Archive user records that cannot be matched, rather than silently losing their meaning.
         unmatched = conn.execute("""SELECT row_to_json(k),l.headword,l.pos FROM user_known_lemmas k JOIN lemmas l ON l.id=k.lemma_id
           WHERE l.language='hi' AND NOT EXISTS(SELECT 1 FROM hindi_stage s WHERE s.headword=l.headword AND s.pos=l.pos)""").fetchall()
@@ -96,7 +102,12 @@ def main():
         conn.execute("DELETE FROM phrases WHERE language='hi'")
         conn.execute("DELETE FROM lemmas WHERE language='hi' AND id NOT IN(SELECT id FROM hindi_stage)")
         conn.execute('INSERT INTO hindi_entries(lemma_id,external_id,entry) SELECT id,external_id,entry FROM hindi_stage')
-        ids = dict(conn.execute('SELECT external_id,id FROM hindi_stage').fetchall())
+        # Reference material can be imported before the dictionary.
+        conn.execute("""WITH moved AS (
+          DELETE FROM hindi_reference_cache c USING hindi_stage s WHERE c.key='loan:'||s.external_id
+          RETURNING s.id,c.result,c.retrieved_at
+        ) INSERT INTO hindi_reference_cache(key,result,retrieved_at)
+          SELECT 'loan:'||id,result,retrieved_at FROM moved ON CONFLICT (key) DO NOTHING""")
         with conn.cursor().copy('COPY lemma_forms(lemma_id,surface,features,created_by) FROM STDIN') as copy:
             for entry in entries:
                 for form in sorted(set(entry.get('forms', []))):
