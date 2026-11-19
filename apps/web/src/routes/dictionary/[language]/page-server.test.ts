@@ -56,7 +56,7 @@ describe('GET /dictionary/:language load', () => {
     )) as {
       language: { code: string; displayName: string };
       lemmas: unknown[];
-      query: { q: string; pos: string[]; hasOfficialTranslation: boolean };
+      query: { q: string; pos: string[] };
     };
     expect(data.language.code).toBe('hi');
     expect(data.language.displayName).toBe('Hindi');
@@ -84,7 +84,7 @@ describe('GET /dictionary/:language load', () => {
     expect(data.limit).toBe(200);
   });
 
-  it('forwards has-official-translation=true to the service', async () => {
+  it('shows all definition sources for old filtered bookmarks', async () => {
     listDictionaryLemmas.mockResolvedValueOnce({
       lemmas: [],
       totalCount: 0,
@@ -94,7 +94,7 @@ describe('GET /dictionary/:language load', () => {
     await callLoad('http://x/dictionary/hi?hasOfficialTranslation=true');
     expect(listDictionaryLemmas).toHaveBeenCalledWith(
       'hi',
-      expect.objectContaining({ hasOfficialTranslation: true }),
+      { q: null, pos: [], limit: 50, offset: 0 },
     );
   });
 

@@ -8,6 +8,8 @@
  * line over the authenticated public API. The route stays a thin Zod + auth
  * shell; the (trivial) shaping lives here so it's unit-testable without HTTP.
  */
+import { createHash } from 'node:crypto';
+import { applyHindiStutters } from './texts/hindi-stutters.js';
 import { nlpClient, type NlpToken } from './nlp-client.js';
 import type { LanguageCode } from '@ciareader/shared-types';
 
@@ -26,5 +28,9 @@ export async function tokenizeText(
   text: string,
 ): Promise<ParseResult> {
   const out = await nlpClient.process(language, text);
+  if (language === 'hi' && out.hindi_analysis && /[-‐‑]/u.test(text)) {
+    const { tokens } = applyHindiStutters(out.tokens, out.hindi_analysis, [], createHash('sha256').update(text).digest('hex'));
+    return { language, tokens };
+  }
   return { language: out.language, tokens: out.tokens };
 }

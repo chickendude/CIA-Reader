@@ -53,7 +53,7 @@ describe('root +layout.server.ts load', () => {
     const data = await load(makeEvent({ locals: {} }));
     if (!data) throw new Error('load returned void');
     expect(data.user).toBeNull();
-    expect(data.availableLanguages).toEqual([]);
+    expect(data.availableLanguages).toContainEqual(expect.objectContaining({ code: 'hi' }));
     expect(userLanguageRows).not.toHaveBeenCalled();
   });
 

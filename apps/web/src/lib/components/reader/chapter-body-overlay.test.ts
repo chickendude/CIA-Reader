@@ -1,8 +1,12 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render } from '@testing-library/svelte';
+import { cleanup, fireEvent, render, screen } from '@testing-library/svelte';
+import { goto } from '$app/navigation';
 
 import ChapterBody from './ChapterBody.svelte';
+import ReaderImage from './ReaderImage.svelte';
 import type { ChapterView, ServerToken } from './types.js';
+
+vi.mock('$app/navigation', () => ({ goto: vi.fn() }));
 
 beforeAll(() => {
   // jsdom doesn't ship matchMedia; WordPopup (mounted by ChapterBody)
@@ -60,6 +64,21 @@ function chapter(tokens: ServerToken[]): ChapterView {
 }
 
 const PAGE_IMAGE = { url: '/pdf-assets/texts/x/pages/0.webp', width: 800, height: 1200 };
+
+it('pages through an illustrated EPUB section with no transcribed text', async () => {
+  const chapters = [0, 1].map((idx) => ({
+    ...chapter([]), id: `scan-${idx}`, idx, pageImageUrl: `/pdf-assets/texts/x/pages/${idx}.png`,
+  }));
+  const props = { chapters, chapterIdx: 0, textId: 'x', language: 'hi' as const };
+  const view = render(ReaderImage, props);
+  expect(screen.getByRole('img', { name: 'Page 1' }).getAttribute('src')).toBe(chapters[0]!.pageImageUrl);
+  expect(screen.queryByRole('button', { name: 'Text' })).toBeNull();
+  await fireEvent.click(screen.getByRole('button', { name: 'Next page' }));
+  expect(goto).toHaveBeenCalledWith('/reader/x?chapter=1', { keepFocus: true });
+  await view.rerender({ ...props, chapterIdx: 1 });
+  expect(screen.getByRole('img', { name: 'Page 2' }).getAttribute('src')).toBe(chapters[1]!.pageImageUrl);
+  expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Next page' }).disabled).toBe(true);
+});
 
 beforeEach(() => {
   // WordPopup mounts unconditionally; stub fetch so any background lookup

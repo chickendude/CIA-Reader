@@ -1,4 +1,6 @@
 // @vitest-environment node
+import JSZip from 'jszip';
+import { getPdfStorage, setPdfStorage } from './pdf/storage.js';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Drizzle's chains return `this` from every builder method and resolve
@@ -234,6 +236,31 @@ describe('createChapterBookCollection', () => {
     title,
     body: `body of chapter ${idx}.`,
     tokenCount: 4,
+  });
+
+  it('removes already written scan pages if a later page fails to import', async () => {
+    const original = getPdfStorage();
+    const store = { put: vi.fn(), delete: vi.fn(), get: vi.fn(), urlFor: vi.fn() };
+    const zip = new JSZip();
+    zip.file('first.png', Buffer.from('89504e470d0a1a0a', 'hex'));
+    zip.file('second.png', 'invalid');
+    setPdfStorage(store);
+    try {
+      queue.push([baseCollection], [{ id: 'illustrated' }]);
+      await expect(createChapterBookCollection({
+        ownerId: OWNER.id, language: 'hi', title: 'Book', sourceType: 'epub',
+        chapters: [{
+          ...draft(0, 'Timeline'), body: '', images: [
+            { mime: 'image/png', file: zip.file('first.png')! },
+            { mime: 'image/png', file: zip.file('second.png')! },
+          ],
+        }],
+      })).rejects.toThrow(/page image/);
+      expect(store.put).toHaveBeenCalledTimes(1);
+      expect(store.delete).toHaveBeenCalledWith('texts/illustrated/pages/0.png');
+    } finally {
+      setPdfStorage(original);
+    }
   });
 
   it('creates collection + N texts + N items + N nlp jobs in one transaction', async () => {

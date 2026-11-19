@@ -1,12 +1,35 @@
 """Atomic Hindi reanalysis, retaining token identities at unchanged source spans."""
 
+import json
+from pathlib import Path
+import subprocess
 from uuid import uuid4
 from psycopg.types.json import Jsonb
 from app.ocr.align import OcrPage, assign_token_boxes
 from app.schemas import BBox
 
 
-def persist_chapter(conn, chapter_id, body, result):
+def apply_web_stutters(body, result, previous):
+    if not any(h in body for h in "-‐‑"):
+        return
+    analysis = result.hindi_analysis
+    script = Path(__file__).resolve().parents[1] / "apps/web/scripts/hindi-stutters.mjs"
+    payload = {"body": body, "previous": previous, "stats": analysis["stats"],
+               "tokens": [t.model_dump(include={"idx", "surface", "is_word", "is_oov"})
+                          for t in result.tokens], "occurrences": analysis["occurrences"]}
+    response = subprocess.run(["node", "--experimental-strip-types", str(script)],
+                              input=json.dumps(payload), text=True, stdout=subprocess.PIPE, check=True)
+    applied = json.loads(response.stdout)
+    prefixes = set(applied["prefixes"])
+    analysis["stats"] = applied["stats"]
+    analysis["occurrences"] = [o for o in analysis["occurrences"] if o["start_idx"] not in prefixes]
+    for i in prefixes:
+        token = result.tokens[i]
+        token.is_word = token.is_oov = token.is_ambiguous = False
+        token.candidates = []
+
+
+def persist_chapter(conn, chapter_id, body, result, *, preserve_phrase_spans=False):
     analysis = result.hindi_analysis
     if not analysis:
         raise ValueError("HindiDB analysis required")
@@ -14,6 +37,8 @@ def persist_chapter(conn, chapter_id, body, result):
         "SELECT id,surface,bbox FROM text_tokens WHERE chapter_id=%s ORDER BY idx",
         (chapter_id,),
     ).fetchall()
+    if preserve_phrase_spans and [row[1] for row in old] != [t.surface for t in result.tokens]:
+        raise ValueError("Token boundaries changed; a full chapter reprocess is required")
     identities, char_boxes, cursor = {}, [None] * len(body), 0
     for uid, surface, bbox in old:
         start = body.find(surface, cursor)
@@ -27,6 +52,14 @@ def persist_chapter(conn, chapter_id, body, result):
             char_boxes[start:cursor] = [BBox(**bbox)] * len(surface)
     boxes = assign_token_boxes(result.tokens, OcrPage(body, char_boxes))
     with conn.transaction():
+        conn.execute("SELECT id FROM text_chapters WHERE id=%s FOR UPDATE", (chapter_id,))
+        previous = conn.execute("SELECT stats FROM hindi_chapter_analyses WHERE chapter_id=%s",
+                                (chapter_id,)).fetchone()
+        apply_web_stutters(body, result, previous[0] if previous else {})
+        if preserve_phrase_spans and not analysis["stats"].get("stutters") and not (
+            previous and previous[0].get("stutters")
+        ):
+            return None
         revision = conn.execute(
             "SELECT revision FROM hindi_dictionary_state WHERE id=1 FOR SHARE"
         ).fetchone()[0]
@@ -79,9 +112,8 @@ def persist_chapter(conn, chapter_id, body, result):
             (chapter_id,),
         )
         conn.execute("DELETE FROM hindi_occurrences WHERE chapter_id=%s", (chapter_id,))
-        conn.execute(
-            "DELETE FROM phrase_chapter_spans WHERE chapter_id=%s", (chapter_id,)
-        )
+        if not preserve_phrase_spans:
+            conn.execute("DELETE FROM phrase_chapter_spans WHERE chapter_id=%s", (chapter_id,))
         with conn.cursor().copy(
             "COPY hindi_occurrences(chapter_id,start_idx,end_idx,lemma_id,source_start,source_end,rules) FROM STDIN"
         ) as copy:

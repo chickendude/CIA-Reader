@@ -11,12 +11,13 @@
  * client-side whitespace tokenizer in that case (still readable, just
  * no lemma colouring).
  */
-import { and, eq, inArray, isNotNull } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull, sql } from 'drizzle-orm';
 
 import type { LanguageCode } from '@ciareader/shared-types';
 
 import { db, schema } from '../db/index.js';
 import type { TextToken, TokenCorrection, UserKnownLemma } from '../db/schema.js';
+import { type HindiStutter, joinReaderStutters } from './hindi-stutters.js';
 import { loadHindiContextChoices, canVerifyHindiContext, contextVersion } from './hindi-context.js';
 
 /**
@@ -166,10 +167,10 @@ export async function loadChapterTokens(
       .where(
         and(
           eq(schema.tokenCorrections.userId, viewerId),
-          inArray(
-            schema.tokenCorrections.tokenId,
-            tokens.map((t) => t.id),
-          ),
+          inArray(schema.tokenCorrections.tokenId, sql`(
+            SELECT ${schema.textTokens.id} FROM ${schema.textTokens}
+            WHERE ${schema.textTokens.chapterId} = ${chapterId}
+          )`),
         ),
       )) as TokenCorrection[];
     for (const r of corrRows) correctionsByTokenId.set(r.tokenId, r);
@@ -362,7 +363,7 @@ export async function loadChapterTokens(
   const canVerifyContext = [...lemmaMetaById.values()].some((entry) => entry.language === 'hi')
     ? await canVerifyHindiContext(chapterId, viewerId) : false;
   let sourceOffset = 0;
-  return tokens.map((t) => {
+  const rendered = tokens.map<RenderedToken>((t) => {
     const choice = choices.get(sourceOffset);
     sourceOffset += [...t.surface].length;
     const selected = choice?.selectedLemmaIds.find((id: string) => t.lemmaCandidates.some((candidate) => candidate.lemmaId === id));
@@ -498,6 +499,11 @@ export async function loadChapterTokens(
       hasDefinition: effectiveGloss != null,
     };
   });
+  const [analysis] = await db.select({
+    stutters: sql<HindiStutter[] | null>`${schema.hindiChapterAnalyses.stats}->'stutters'`,
+  })
+    .from(schema.hindiChapterAnalyses).where(eq(schema.hindiChapterAnalyses.chapterId, chapterId));
+  return joinReaderStutters(rendered, analysis?.stutters ?? []);
 }
 
 /**

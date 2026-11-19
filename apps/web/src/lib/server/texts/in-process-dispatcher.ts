@@ -518,16 +518,17 @@ export async function processTextNow(textId: string): Promise<number> {
     .limit(1)) as Text[];
   if (!text) throw new Error(`Text ${textId} not found`);
   const chapters = (await db
-    .select({ id: schema.textChapters.id, body: schema.textChapters.body })
+    .select({ id: schema.textChapters.id, body: schema.textChapters.body, pageImageKey: schema.textChapters.pageImageKey })
     .from(schema.textChapters)
     .where(eq(schema.textChapters.textId, textId))
-    .orderBy(schema.textChapters.idx)) as Array<Pick<TextChapter, 'id' | 'body'>>;
+    .orderBy(schema.textChapters.idx)) as Array<Pick<TextChapter, 'id' | 'body' | 'pageImageKey'>>;
 
   await markTextProcessing(text.id);
   try {
     const index = await loadLemmaIndex(text.language);
     let total = 0;
     for (const chapter of chapters) {
+      if (chapter.pageImageKey && !chapter.body.trim()) continue;
       total += await processChapter(chapter, text.language, index);
     }
     await markTextReady(text.id);

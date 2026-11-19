@@ -1291,10 +1291,7 @@ export const textChapters = pgTable(
     // Cheap precompute on insert. The reader's library cards and
     // progress bars need it; computing it on read is wasteful.
     tokenCount: integer('token_count').notNull().default(0),
-    // PDF source only: when a chapter represents a PDF page, these hold
-    // the stored page image (rasterized client-side, OCR'd server-side)
-    // so the reader can show the original page with clickable word
-    // overlays. Null for paste / txt / epub / zip chapters.
+    // Original page image for PDF pages and illustrated EPUB sections.
     pageImageKey: text('page_image_key'),
     pageImageMime: text('page_image_mime'),
     pageWidth: integer('page_width'),
@@ -2502,3 +2499,56 @@ export const hindiReferenceCache = pgTable('hindi_reference_cache', {
   result: jsonb('result').notNull(),
   retrievedAt: timestamp('retrieved_at', { withTimezone: true }).notNull().defaultNow(),
 });
+
+export const bookWordFrequencies = pgTable('book_word_frequencies', {
+  textId: uuid('text_id').notNull().references(() => texts.id, { onDelete: 'cascade' }),
+  lemmaId: uuid('lemma_id'),
+  occurrences: integer('occurrences').notNull(),
+}, t => ({
+  entry: unique().on(t.textId, t.lemmaId).nullsNotDistinct(),
+  byLemma: index('book_word_frequencies_lemma_idx').on(t.lemmaId, t.textId),
+}));
+
+export const chapterWordFrequencies = pgTable('chapter_word_frequencies', {
+  chapterId: uuid('chapter_id').notNull().references(() => textChapters.id, { onDelete: 'cascade' }),
+  lemmaId: uuid('lemma_id'),
+  occurrences: integer('occurrences').notNull(),
+}, t => ({
+  entry: unique().on(t.chapterId, t.lemmaId).nullsNotDistinct(),
+}));
+
+export const pendingFrequencyChapters = pgTable('pending_frequency_chapters', {
+  chapterId: uuid('chapter_id').primaryKey(),
+});
+export const pendingFrequencyBooks = pgTable('pending_frequency_books', {
+  textId: uuid('text_id').primaryKey(),
+});
+
+export const readerVocabularyRevisions = pgTable('reader_vocabulary_revisions', {
+  userId: uuid('user_id').primaryKey().references(() => users.id, { onDelete: 'cascade' }),
+  revision: bigint('revision', { mode: 'number' }).notNull(),
+});
+
+export const officialCoverageGeneration = pgTable('official_coverage_generation', {
+  singleton: boolean('singleton').primaryKey(),
+  revision: bigint('revision', { mode: 'number' }).notNull(),
+});
+
+export const officialCoverageLayouts = pgTable('official_coverage_layouts', {
+  revision: bigint('revision', { mode: 'number' }).primaryKey(),
+  bookIds: uuid('book_ids').array().notNull(),
+  words: integer('words').array().notNull(),
+  uniqueWords: integer('unique_words').array().notNull(),
+  unresolved: integer('unresolved').array().notNull(),
+});
+
+export const readerCoverageCache = pgTable('reader_coverage_cache', {
+  userId: uuid('user_id').primaryKey().references(() => users.id, { onDelete: 'cascade' }),
+  catalogRevision: bigint('catalog_revision', { mode: 'number' }).notNull().references(() => officialCoverageLayouts.revision),
+  vocabularyRevision: bigint('vocabulary_revision', { mode: 'number' }).notNull(),
+  knownWords: integer('known_words').array().notNull(),
+  learningWords: integer('learning_words').array().notNull(),
+  knownEntries: integer('known_entries').array().notNull(),
+}, t => ({
+  byLayout: index('reader_coverage_layout_idx').on(t.catalogRevision),
+}));

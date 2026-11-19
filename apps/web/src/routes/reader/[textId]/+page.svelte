@@ -36,7 +36,7 @@
 
   // PDF texts render as a page-image reader (clickable word overlays)
   // regardless of the saved layout mode.
-  const isPdf = $derived(data.text.sourceType === 'pdf');
+  const usesPageImages = $derived(data.text.sourceType === 'pdf' || !!data.chapters[data.anchor.chapterIdx]?.pageImageUrl);
 
   // T-5.16: Immersive mode hides the AppShell rail / bottom-nav so
   // the reader takes the full viewport. T-5.26 moved the actual
@@ -471,7 +471,7 @@
   </div>
 {/snippet}
 
-<div class="reader" class:hide-mobile-arrows={hideMobileArrows} data-mode={isPdf ? 'pdf' : data.mode} style={readerStyle}>
+<div class="reader" class:hide-mobile-arrows={hideMobileArrows} data-mode={usesPageImages ? 'pdf' : data.mode} style={readerStyle}>
   <header class="reader-top" bind:this={readerTopEl}>
     <div class="reader-top-left">
       <PageCloseLink href="/library" label="Close reader" />
@@ -571,7 +571,7 @@
     </p>
   {/if}
 
-  {#if isPdf}
+  {#if usesPageImages}
     <ReaderImage
       chapters={data.chapters}
       chapterIdx={data.anchor.chapterIdx}
@@ -633,7 +633,7 @@
     />
   {/if}
 
-  {#if (isPdf || data.mode !== 'page') && toc.entries.length > 1}
+  {#if (usesPageImages || data.mode !== 'page') && toc.entries.length > 1}
     <footer class="mobile-chapter-footer" aria-label="Chapter navigation">{@render mobileChapterPicker()}</footer>
   {/if}
   {#if data.audio}
@@ -658,7 +658,7 @@
   {showRomanization}
   onRomanizationChange={setRomanization}
   {hideMobileArrows}
-  onMobileArrowsChange={isPdf || data.mode !== 'continuous' ? setMobileArrowsHidden : undefined}
+  onMobileArrowsChange={usesPageImages || data.mode !== 'continuous' ? setMobileArrowsHidden : undefined}
   {flagUndefined}
   onFlagUndefinedChange={setFlagUndefined}
 >

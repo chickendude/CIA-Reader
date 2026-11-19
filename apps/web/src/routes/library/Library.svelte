@@ -1,10 +1,12 @@
 <script lang="ts">
+  import CoverageOrder from '$lib/components/library/CoverageOrder.svelte';
   import Pagination from '$lib/components/input/Pagination.svelte';
   import Button from '$lib/components/input/Button.svelte';
   import SubpageHeading from '$lib/components/shell/SubpageHeading.svelte';
   import '$lib/styles/entry-table.css';
   import { invalidateAll } from '$app/navigation';
   import { coverForId } from '$lib/components/library/cover.js';
+  import BookMetrics from '$lib/components/library/BookMetrics.svelte';
   import BookActions from '$lib/components/library/BookActions.svelte';
   import Modal from '$lib/components/overlay/Modal.svelte';
   import type { PageData } from './$types';
@@ -62,6 +64,7 @@
     const path = data.allBooks ? '/library/all' : '/library';
     const params = new URLSearchParams();
     if (!data.allBooks) params.set('tab', data.tab);
+    if (data.tab === 'official' && data.isAuthenticated) params.set('sort', data.sort);
     if (data.query) params.set('q', data.query);
     if (offset > 0) params.set('offset', String(offset));
     if (activePage.limit !== (data.allBooks ? 10 : 20))
@@ -101,13 +104,8 @@
     </header>
   {/if}
 
-  {#snippet cardTitle(title: string, coverage: number | null)}
-    <div class="title-row">
-      <span class="title-dev">{title}</span>
-      {#if coverage !== null}
-        <span class="chip chip-pct" title="Vocabulary coverage">{coverage}% known</span>
-      {/if}
-    </div>
+  {#snippet bookMetrics(id: string)}
+    <BookMetrics stats={data.stats[id]} signedIn={data.isAuthenticated} showUniqueCoverage={data.tab === 'official' && data.sort === 'unique'} />
   {/snippet}
 
   {#snippet personalActions(card: PageData['page']['cards'][number])}
@@ -115,6 +113,8 @@
       id={card.id}
       title={card.title}
       collection={card.chapterCount != null}
+      canRename={data.user?.role === 'admin' || (data.tab === 'your' &&
+        (card.chapterCount == null || card.visibility !== 'official'))}
       catalogAction={data.user?.role !== 'admin'
         ? undefined
         : card.visibility === 'official'
@@ -131,21 +131,24 @@
     />
   {/snippet}
 
+  {#if data.tab === 'official' && data.isAuthenticated}
+    <CoverageOrder value={data.sort} />
+  {/if}
+
   {#if data.allBooks}
     {#if data.page.cards.length}
       <div class="entry-table-wrap book-table">
         <table class="entry-table" aria-label="Books">
-          <thead><tr><th>Title</th><th>Coverage</th><th>Actions</th></tr></thead>
+          <thead><tr><th>Book</th><th>Actions</th></tr></thead>
           <tbody>
             {#each data.page.cards as card (card.id)}
-              {@const pct = data.textComprehension[card.id]}
               <tr class="linked-row">
                 <td>
                   <a class="row-link" href={card.chapterCount != null ? `/collections/${card.id}` : `/reader/${card.id}`}>
                     {card.title}
                   </a>
+                  <BookMetrics stats={data.stats[card.id]} signedIn={data.isAuthenticated} />
                 </td>
-                <td>{pct == null ? '' : `${pct}% known`}</td>
                 <td class="action-cell">{@render personalActions(card)}</td>
               </tr>
             {/each}
@@ -174,11 +177,13 @@
       {#if data.tab === 'collections'}
         {#each data.collections as col (col.id)}
           <div class="lib-card-wrap">
-            <a class="card lib-card" href={`/collections/${col.id}`}>
+            <div class="card lib-card">
               <div class={`lib-cover cover-${coverForId(col.id)}`}>
-                <div class="cover-title">{col.title}</div>
+                <a class="cover-title" href={`/collections/${col.id}`}>{col.title}</a>
                 <div class="cover-chips">
-                  <span class="chip">{col.kind}</span>
+                  {#if col.kind !== 'chapter_book'}
+                    <span class="chip">{col.kind}</span>
+                  {/if}
                   {#if col.visibility !== 'private'}
                     <span class="chip">{col.visibility}</span>
                   {/if}
@@ -191,72 +196,33 @@
                     >{col.textCount} {col.textCount === 1 ? 'text' : 'texts'}</span
                   >
                 </div>
-                {@render cardTitle(col.title, col.estimatedComprehensionPct)}
+                {@render bookMetrics(col.id)}
               </div>
-            </a>
-            {#if data.user?.role === 'admin' && col.visibility === 'official'}
-              <BookActions id={col.id} title={col.title} collection catalogAction="remove" />
-            {/if}
+            </div>
+            <BookActions id={col.id} title={col.title} collection canRename={col.canRename}
+              catalogAction={data.user?.role === 'admin' && col.visibility === 'official' ? 'remove' : undefined} />
           </div>
         {/each}
       {:else}
-        {#each data.chapterBookCards as col (col.id)}
-          <div class="lib-card-wrap">
-            <a class="card lib-card" href={`/collections/${col.id}`}>
-              <div class={`lib-cover cover-${coverForId(col.id)}`}>
-                <div class="cover-title">{col.title}</div>
-                <div class="cover-chips">
-                  <span class="chip">chapter book</span>
-                  {#if col.visibility !== 'private'}
-                    <span class="chip">{col.visibility}</span>
-                  {/if}
-                </div>
-              </div>
-              <div class="body">
-                <div class="kind-row">
-                  <span class="kind-tag">book</span>
-                  <span class="kind-meta"
-                    >{col.textCount} {col.textCount === 1 ? 'chapter' : 'chapters'}</span
-                  >
-                </div>
-                {@render cardTitle(col.title, col.estimatedComprehensionPct)}
-              </div>
-            </a>
-            {#if data.user?.role === 'admin' && col.visibility === 'official'}
-              <BookActions id={col.id} title={col.title} collection catalogAction="remove" />
-            {/if}
-          </div>
-        {/each}
         {#each data.page.cards as card (card.id)}
-          {@const pct = data.textComprehension?.[card.id] ?? null}
           <div class="lib-card-wrap">
-            <a
-              class="card lib-card"
-              href={card.chapterCount != null
-                ? `/collections/${card.id}`
-                : data.tab === 'official'
-                  ? `/library/${card.id}`
-                  : `/reader/${card.id}`}
-            >
+            <div class="card lib-card">
               <div class={`lib-cover cover-${coverForId(card.id)}`}>
-                <div class="cover-title">{card.title}</div>
+                <a class="cover-title" href={card.chapterCount != null ? `/collections/${card.id}`
+                  : data.tab === 'official' ? `/library/${card.id}` : `/reader/${card.id}`}>{card.title}</a>
                 <div class="cover-chips">
-                  {#if card.chapterCount != null}<span class="chip">chapter book</span>
-                  {:else if card.status !== 'ready'}<span class="chip status-{card.status}">{card.status}</span>{/if}
-                  {#if card.visibility !== 'private'}
+                  {#if card.chapterCount == null && card.status !== 'ready'}
+                    <span class="chip status-{card.status}">{card.status}</span>
+                  {/if}
+                  {#if card.visibility !== 'private' && data.tab !== 'official'}
                     <span class="chip">{card.visibility}</span>
                   {/if}
                 </div>
               </div>
               <div class="body">
-                {#if card.chapterCount != null}
-                  <div class="kind-row">
-                    <span class="kind-meta">{card.chapterCount} {card.chapterCount === 1 ? 'chapter' : 'chapters'}</span>
-                  </div>
-                {/if}
-                {@render cardTitle(card.title, pct)}
+                {@render bookMetrics(card.id)}
               </div>
-            </a>
+            </div>
             {@render personalActions(card)}
           </div>
         {/each}
@@ -273,7 +239,7 @@
     </div>
   {/if}
 
-  {#if data.tab !== 'collections' && data.page.cards.length === 0 && data.chapterBookCards.length === 0}
+  {#if data.tab !== 'collections' && data.page.cards.length === 0}
     <p class="empty">
       {#if data.allBooks}
         {data.query ? 'No books match this search.' : 'No books yet.'}
@@ -348,6 +314,7 @@
   .linked-row:has(:global(.book-actions.open)) {
     z-index: 3;
   }
+  .book-table td:first-child :global(.metrics) { max-width: 28rem; }
   .book-table th:last-child {
     width: 1%;
     white-space: nowrap;
@@ -411,6 +378,8 @@
     min-width: 0;
   }
   .lib-card-wrap > .lib-card {
+    position: relative;
+    isolation: isolate;
     flex: 1;
   }
   .lib-card-wrap:has(:global(.book-actions)) .cover-chips {
@@ -477,16 +446,19 @@
   }
 
   .lib-cover {
-    height: 140px;
-    position: relative;
-    overflow: hidden;
+    min-height: 92px;
+    box-sizing: border-box;
+    display: grid;
+    align-items: center;
     border-bottom: 1px solid var(--card-edge, var(--color-border));
   }
+  .lib-cover:has(.chip),
+  .lib-card-wrap:has(:global(.book-actions)) .lib-cover {
+    padding-top: 2.25rem;
+  }
   .cover-title {
-    position: absolute;
-    inset: 0;
-    display: grid;
-    place-items: center;
+    text-decoration: none;
+    overflow-wrap: anywhere;
     text-align: center;
     font-family: var(--font-serif-dev, var(--font-serif));
     font-size: 1.6rem;
@@ -511,16 +483,6 @@
     border-radius: 999px;
     font-size: 0.66rem;
     background: color-mix(in oklch, var(--paper, var(--color-bg)) 80%, transparent);
-  }
-  .chip-pct {
-    background: color-mix(
-      in oklch,
-      var(--accent, var(--color-accent)) 22%,
-      var(--paper, var(--color-bg))
-    );
-    white-space: nowrap;
-    font-feature-settings: 'tnum';
-    color: var(--ink-2, var(--color-fg));
   }
   .chip.status-failed {
     background: var(--rose-soft, color-mix(in srgb, #b03131 20%, transparent));
@@ -605,20 +567,8 @@
     text-transform: uppercase;
     letter-spacing: 0.04em;
   }
-  .title-row {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: 0.25rem 0.5rem;
-  }
-  .title-dev {
-    overflow-wrap: anywhere;
-    font-family: var(--font-serif-dev, var(--font-serif));
-    font-size: 1.05rem;
-    line-height: 1.3;
-    color: var(--ink, var(--color-fg));
-  }
+  .cover-title::after { content: ''; position: absolute; inset: 0; z-index: 1; }
+  .cover-title:focus-visible::after { outline: 2px solid var(--accent); outline-offset: -3px; border-radius: 14px; }
 
   .upload-card {
     border-style: dashed;

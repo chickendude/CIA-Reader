@@ -25,18 +25,18 @@ export interface Viewer {
 /** Icon names supported by the shell. New entries map to a glyph in
  * `AppShell.svelte`'s icon switch. */
 export type TabIcon =
-  | 'home'
   | 'library'
   | 'upload'
   | 'words'
   | 'profile'
   | 'signin'
+  | 'about'
   | 'moderation';
 
 /** Section heading the tab clusters under in the desktop rail (T-5.11).
  * `null` (the default) renders the tab outside any section, above the
  * first grouped tab. */
-export type TabSection = 'Read' | 'Stats' | 'You' | null;
+export type TabSection = 'Read' | 'Stats' | 'You' | 'About Us' | null;
 
 export interface Tab {
   id: string;
@@ -50,7 +50,6 @@ export interface Tab {
 }
 
 export const TABS: readonly Tab[] = [
-  { id: 'home', label: 'Home', href: '/', auth: 'any', match: ['/'], icon: 'home' },
   {
     id: 'library',
     label: 'Library',
@@ -58,7 +57,7 @@ export const TABS: readonly Tab[] = [
     auth: 'any',
     // /reader/[textId] is reached by clicking a library card, so the
     // Library tab should stay highlighted while reading.
-    match: ['/library', '/reader'],
+    match: ['/', '/library', '/reader', '/collections'],
     icon: 'library',
     section: 'Read',
   },
@@ -111,6 +110,15 @@ export const TABS: readonly Tab[] = [
     match: ['/login'],
     icon: 'signin',
   },
+  {
+    id: 'about',
+    label: 'About',
+    href: '/about',
+    auth: 'any',
+    match: ['/about'],
+    icon: 'about',
+    section: 'About Us',
+  },
 ];
 
 export function visibleTabs(tabs: readonly Tab[], viewer: Viewer): Tab[] {
@@ -153,7 +161,7 @@ export function getActiveTabId(pathname: string, tabs: readonly Tab[]): string |
 export function groupTabsBySection(
   tabs: readonly Tab[],
 ): { section: TabSection; tabs: Tab[] }[] {
-  const order: TabSection[] = [null, 'Read', 'Stats', 'You'];
+  const order: TabSection[] = [null, 'Read', 'Stats', 'You', 'About Us'];
   const buckets = new Map<TabSection, Tab[]>();
   for (const s of order) buckets.set(s, []);
   for (const t of tabs) {

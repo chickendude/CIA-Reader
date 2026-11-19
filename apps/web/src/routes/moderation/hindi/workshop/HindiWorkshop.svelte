@@ -1,5 +1,6 @@
 <script lang="ts">
   import Pagination from '$lib/components/input/Pagination.svelte';
+  import { pushToast } from '$lib/components/toast/toast-store.js';
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
   import { untrack } from 'svelte';
@@ -22,21 +23,34 @@
   }
   let word = $state<Word>(untrack(() => data.initial ?? blank(data.observed)));
   let draft = $state<Draft>(untrack(() => structuredClone($state.snapshot(word.draft))));
+  let selectionSource = $state<'none' | 'editor' | 'list'>(
+    untrack(() => data.initial || data.observed ? 'editor' : 'none'),
+  );
   let tab = $state<'dictionary' | 'review'>(
     untrack(() => ((data.initial || data.browse) && !reviewOnly ? 'dictionary' : 'review')),
   );
   let query = $state(''),
-    kind = $state(untrack(() => (reviewOnly ? 'unresolved' : ''))),
     offset = $state(0),
     refresh = $state(0);
   const limit = 40;
   const bookPreference = $derived(`parhiba.hindi.reviewBook.${page.data.user?.id}`);
+  const kindPreference = $derived(`parhiba.hindi.reviewKind.${page.data.user?.id}`);
+  const reviewTypes = [
+    { value: '', label: 'All items' },
+    { value: 'unresolved', label: 'Unresolved forms' },
+    { value: 'stutter', label: 'Possible stutters' },
+    { value: 'missing-definition', label: 'Missing definitions' },
+    { value: 'ignored', label: 'Ignored in books' },
+  ];
   let rememberedBook = $state('');
+  let rememberedKind = $state<string | null>(null);
   $effect(() => {
     try {
       rememberedBook = localStorage.getItem(bookPreference) ?? '';
+      rememberedKind = localStorage.getItem(kindPreference);
     } catch {
       rememberedBook = '';
+      rememberedKind = null;
     }
   });
   const book = $derived.by(() => {
@@ -44,17 +58,26 @@
     return data.books.find((item) => item.id === requested)?.id ?? '';
   });
 
-  function selectBook(selected: string) {
+  const kind = $derived.by(() => {
+    const requested = page.url.searchParams.get('kind') ?? rememberedKind;
+    return reviewTypes.find(type => type.value === requested)?.value ?? (reviewOnly ? 'unresolved' : '');
+  });
+
+  function selectFilter(param: 'textId' | 'kind', selected: string) {
     const url = new URL(page.url);
-    url.searchParams.set('textId', selected);
+    url.searchParams.set(param, selected);
     void goto(url, { replaceState: true, keepFocus: true, noScroll: true });
     offset = 0;
-    if (active) void open(null);
-    rememberedBook = selected;
+    if (active) {
+      remember();
+      clearSelection();
+    }
+    if (param === 'textId') rememberedBook = selected;
+    else rememberedKind = selected;
     try {
-      localStorage.setItem(bookPreference, selected);
+      localStorage.setItem(param === 'textId' ? bookPreference : kindPreference, selected);
     } catch {
-      message = 'Your browser could not save the selected book for next time.';
+      message = 'Your browser could not save this filter for next time.';
     }
   }
   let rows = $state<Match[]>([]),
@@ -67,6 +90,11 @@
     generation = $state(0);
   let sampleBook = $state('');
   const sample = $derived(active?.samples.find((s) => s.book === sampleBook) ?? active?.samples[0]);
+  function stutterQuestion({ before, match, after }: ReviewItem['samples'][number]['context']) {
+    return 'Does the marked Hindi expression represent a speaker stuttering? Consider ordinary repetition and compounds too. ' +
+      'Answer in English with “Stutter”, “Keep separate”, or “Uncertain”. Give a brief reason and, if it is a stutter, identify the intended word.\n\n' +
+      `${before}【${match}】${after}`.trim();
+  }
   const reviewBook = $derived(data.books.find((b) => b.id === (sample?.book ?? book)));
   let reprocessing = $state(false);
   async function reprocessBook() {
@@ -87,9 +115,11 @@
     }
   }
   let selection = 0;
+  let openingManually = false;
   const drafts = new Map<string, Draft>();
   const key = () => word.draft.id ?? 'new:' + word.draft.lemma + ':' + word.draft.pos;
   function remember() {
+    if (selectionSource === 'none') return;
     if (JSON.stringify(word.draft) !== JSON.stringify(draft))
       drafts.set(key(), $state.snapshot(draft));
     else drafts.delete(key());
@@ -104,22 +134,54 @@
     generation++;
     message = '';
   }
+  function clearSelection() {
+    selection++;
+    openingManually = false;
+    selectionSource = 'none';
+    display(blank(), null, false);
+  }
   async function open(
     id: string | null,
-    lemma = '',
-    row: ReviewItem | null = null,
-    pos = 'NOUN',
-    attach = '',
+    { lemma = '', row = null, pos = 'NOUN', attach = '', fromList = false, signal }: {
+      lemma?: string;
+      row?: ReviewItem | null;
+      pos?: string;
+      attach?: string;
+      fromList?: boolean;
+      signal?: AbortSignal;
+    } = {},
   ) {
     const ticket = ++selection;
+    openingManually = !signal;
     try {
-      const next = id ? await workshop<Word>('word', { id }) : blank(lemma, pos);
-      if (ticket !== selection) return;
+      const next = id ? await workshop<Word>('word', { id }, signal) : blank(lemma, pos);
+      if (ticket !== selection || signal?.aborted) return;
       remember();
       display(next, row);
+      selectionSource = fromList ? 'list' : 'editor';
       if (attach && !draft.other.includes(attach)) draft.other = [...draft.other, attach];
     } catch (e) {
-      if (ticket === selection) message = (e as Error).message;
+      if (ticket === selection && !signal?.aborted) message = (e as Error).message;
+    } finally {
+      if (ticket === selection) openingManually = false;
+    }
+  }
+  function openResult(result: Match | ReviewItem, signal?: AbortSignal) {
+    const row = 'word' in result ? result : null;
+    return open(result.id, { lemma: row?.word, row, fromList: true, signal });
+  }
+  function isSelected(result: Match | ReviewItem) {
+    if ('word' in result) return active?.word === result.word && active.kind === result.kind
+      && active.id === result.id && active.occurrence === result.occurrence;
+    return !active && word.draft.id === result.id;
+  }
+  async function selectFirstIfNeeded(results: (Match | ReviewItem)[], signal: AbortSignal) {
+    if (openingManually || selectionSource === 'editor') return;
+    if (results.slice(0, limit).some(isSelected)) return;
+    if (results[0]) await openResult(results[0], signal);
+    else if (selectionSource === 'list') {
+      remember();
+      clearSelection();
     }
   }
   async function saved(w: Word, advance = false) {
@@ -133,11 +195,31 @@
   }
   async function openFollowing(row: ReviewItem, removed: boolean) {
     const index = queue.findIndex(
-      (r) => r.word === row.word && r.id === row.id && r.kind === row.kind,
+      (r) => r.word === row.word && r.id === row.id && r.kind === row.kind && r.occurrence === row.occurrence,
     );
     const next = index >= 0 ? queue[index + 1] : null;
     if (next && index + 1 === limit && !removed) offset += limit;
-    await open(next?.id ?? null, next?.word ?? '', next ?? null);
+    if (next) await openResult(next);
+    else {
+      remember();
+      clearSelection();
+    }
+  }
+  async function decideStutter(confirm: boolean) {
+    if (!active || !sample || working) return;
+    working = true;
+    try {
+      await workshop('stutter', { chapter: sample.chapterId, start: sample.start,
+        surface: active.word, hash: sample.hash, confirm });
+      await openFollowing(active, true);
+      refresh++;
+      if (confirm) pushToast({ kind: 'success', message: 'Stutter confirmed' });
+      else message = 'Kept as separate words';
+    } catch (e) {
+      message = (e as Error).message;
+    } finally {
+      working = false;
+    }
   }
   async function ignore() {
     if (!active || !sample) return;
@@ -175,6 +257,7 @@
           if (ctrl.signal.aborted) return;
           rows = matches;
           if (!rows.length && start > 0) offset = Math.max(0, start - limit);
+          else await selectFirstIfNeeded(matches, ctrl.signal);
         } else {
           const result = await workshop<{ rows: ReviewItem[]; total: number }>(
             'queue',
@@ -182,9 +265,10 @@
             ctrl.signal,
           );
           if (ctrl.signal.aborted) return;
-          if (!result.rows.length && start > 0) offset = Math.max(0, start - limit);
           queue = result.rows;
           total = result.total;
+          if (!result.rows.length && start > 0) offset = Math.max(0, start - limit);
+          else await selectFirstIfNeeded(result.rows, ctrl.signal);
         }
       } catch (e) {
         if (!ctrl.signal.aborted) message = (e as Error).message;
@@ -238,23 +322,20 @@
         <select
           aria-label="Review book"
           value={book}
-          onchange={(event) => selectBook(event.currentTarget.value)}
+          onchange={(event) => selectFilter('textId', event.currentTarget.value)}
           ><option value="">All books</option>{#each data.books as b}<option value={b.id}
               >{b.title}</option
             >{/each}</select
         >
         <select
           aria-label="Review type"
-          bind:value={kind}
-          onchange={() => {
-            offset = 0;
-            if (active) void open(null);
-          }}
-          ><option value="">All items</option><option value="unresolved">Unresolved forms</option
-          ><option value="missing-definition">Missing definitions</option><option value="ignored"
-            >Ignored in books</option
-          ></select
+          value={kind}
+          onchange={(event) => selectFilter('kind', event.currentTarget.value)}
         >
+          {#each reviewTypes as type}
+            <option value={type.value}>{type.label}</option>
+          {/each}
+        </select>
       {/if}
       <input
         type="search"
@@ -268,7 +349,7 @@
       <div class="controls">
         <Button
           disabled={working}
-          onclick={() => open(null, query.match(/\p{Script=Devanagari}/u) ? query : '')}
+          onclick={() => open(null, { lemma: query.match(/\p{Script=Devanagari}/u) ? query : '' })}
         >New entry</Button>
         <Button onclick={() => refresh++}>Refresh</Button>
         {#if tab === 'review' && reviewBook?.canReprocess}
@@ -280,9 +361,9 @@
       <div class="results" aria-busy={pending}>
         {#if tab === 'dictionary'}
           {#each rows.slice(0, limit) as row}<button
-              class:chosen={word.draft.id === row.id}
+              class:chosen={isSelected(row)}
               disabled={working || pending}
-              onclick={() => open(row.id)}
+              onclick={() => openResult(row)}
               ><strong lang="hi">{row.lemma}</strong> <small>{row.pos}</small><span
                 >{row.meaning}</span
               ></button
@@ -290,11 +371,9 @@
           {#if !rows.length && !pending}<p>No matching entries.</p>{/if}
         {:else}
           {#each queue.slice(0, limit) as row}<button
-              class:chosen={active?.word === row.word &&
-                active?.kind === row.kind &&
-                active?.id === row.id}
+              class:chosen={isSelected(row)}
               disabled={working || pending}
-              onclick={() => open(row.id, row.word, row)}
+              onclick={() => openResult(row)}
               ><strong lang="hi">{row.word}</strong>
               {#if row.pos}<small>{row.pos.toLowerCase()}</small>{/if}
               <small>{row.count}</small><span
@@ -302,7 +381,7 @@
                   ? 'Missing definition'
                   : row.kind === 'ignored'
                     ? 'Ignored'
-                    : 'Unresolved'}</span
+                    : row.kind === 'stutter' ? 'Possible stutter' : 'Unresolved'}</span
               ></button
             >{/each}
           {#if !queue.length && !pending}<p>No items in this view.</p>{/if}
@@ -313,8 +392,9 @@
           hasNext={rows.length > limit} disabled={pending || working} onPage={(next) => (offset = next)} />
       {/if}
     </aside>
-    <article>
+    {#if selectionSource !== 'none' || message}<article>
       {#if active && sample}<div class="context">
+          <div class="context-heading">
           <strong lang="hi">{active.word}</strong>
           {#if active.samples.length > 1}
             <select aria-label="Example book" bind:value={sampleBook}>
@@ -325,39 +405,46 @@
               {/each}
             </select>
           {/if}
-          <a
-            href={'/reader/' +
-              sample.book +
-              '?chapter=' +
-              sample.chapter +
-              '&token=' +
-              sample.token}>{data.books.find((b) => b.id === sample?.book)?.title}</a
-          >
+          <div class="context-links">
+            {#if active.kind === 'stutter'}
+              <Button href={'https://chatgpt.com/?q=' + encodeURIComponent(stutterQuestion(sample.context))}
+                target="_blank" rel="noreferrer">Ask ChatGPT ↗</Button>
+            {/if}
+            <Button title={reviewBook?.title}
+              href={`/reader/${sample.book}?chapter=${sample.chapter}&token=${sample.token}`}>View in text</Button>
+          </div>
+          </div>
           <p lang="hi">{sample.context.before}<mark>{sample.context.match}</mark>{sample.context.after}</p>
-          {#if active.kind !== 'missing-definition'}<button disabled={working} onclick={ignore}
+          {#if active.kind === 'stutter'}
+            <div class="stutter-actions">
+              <Button disabled={working} onclick={() => decideStutter(true)}>Confirm stutter</Button>
+              <Button disabled={working} onclick={() => decideStutter(false)}>Keep separate</Button>
+            </div>
+          {:else if active.kind !== 'missing-definition'}<button disabled={working} onclick={ignore}
               >{active.kind === 'ignored' ? 'Restore in this book' : 'Ignore in this book'}</button
             >{/if}
         </div>{/if}
-      {#key generation}
+      {#if selectionSource !== 'none' && active?.kind !== 'stutter'}{#key generation}
         <WorkshopEditor
           bind:draft
           bind:working
           {word}
           ai={data.ai}
+          context={sample?.context}
           observed={active?.word ?? data.observed}
           review={!!active}
           onsaved={saved}
-          onopen={(id, lemma, pos, attach) => open(id, lemma, active, pos, attach)}
+          onopen={(id, lemma, pos, attach) => open(id, { lemma, row: active, pos, attach })}
           ondeleted={() => {
             drafts.delete(key());
-            display(blank(), null, false);
+            clearSelection();
             refresh++;
             message = 'Entry deleted';
           }}
         />
-      {/key}
+      {/key}{/if}
       {#if message}<p role="status">{message}</p>{/if}
-    </article>
+    </article>{/if}
   </div>
 </div>
 
@@ -402,7 +489,16 @@
     position: sticky;
     top: 0.5rem;
     display: grid;
+    grid-template-columns: minmax(0, 1fr);
     gap: 0.65rem;
+  }
+  aside > select,
+  aside > input {
+    width: 100%;
+    min-width: 0;
+  }
+  .context-heading select {
+    max-width: 100%;
   }
   button,
   input,
@@ -461,8 +557,15 @@
   small {
     font-size: 0.75rem;
   }
-  a {
-    color: var(--accent);
+  .context-heading, .context-links, .stutter-actions {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+  .context-links {
+    margin-inline-start: auto;
+    justify-content: flex-end;
   }
   @media (max-width: 760px) {
     .panes {

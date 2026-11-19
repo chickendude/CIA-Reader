@@ -2,7 +2,7 @@ import { and, eq, inArray, sql } from 'drizzle-orm';
 import { db, schema } from '../db/index.js';
 import type { User } from '../db/schema.js';
 import { requireCanEditDictionary } from './permissions.js';
-import { nlpClient } from '../nlp-client.js';
+import { previewHindiEntry } from './hindi-runtime.js';
 
 import { hindiPatterns } from '$lib/dictionary/hindi-patterns.js';
 
@@ -101,7 +101,7 @@ export async function saveHindiMorphology(
     reviewed_at: new Date().toISOString(),
     reviewer: user.id,
   };
-  const preview = await nlpClient.previewHindiEntry(entry);
+  const preview = await previewHindiEntry(entry);
   await db.transaction(async (tx) => {
     const existing = await tx
       .select()
@@ -143,9 +143,9 @@ export async function hindiPatternPreviews(
     hindiPatterns(lemma, pos, current.paradigm).map(async ({ id, label }) => {
       if (id === 'invariant') return { id, label, forms: [], slots: [] };
       try {
-        const preview = await nlpClient.previewHindiEntry(
+        const preview = await previewHindiEntry(
           { lemma, pos, source, paradigm: id },
-          true,
+          { include_slots: true },
         );
         return { id, label, forms: Object.keys(preview.forms), slots: preview.slots ?? [] };
       } catch {

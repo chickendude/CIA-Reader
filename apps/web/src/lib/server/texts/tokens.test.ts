@@ -25,8 +25,16 @@ const selectFn = vi.fn(() => makeSelectChain());
 vi.mock('./hindi-context.js', () => ({ loadHindiContextChoices: async () => new Map(), canVerifyHindiContext: async () => false, contextVersion: () => 'version' }));
 
 vi.mock('../db/index.js', () => ({
-  db: { select: () => selectFn() },
+  db: {
+    select: (fields?: Record<string, unknown>) => fields && 'stutters' in fields
+      ? { from: () => ({ where: async () => [] }) }
+      : selectFn(),
+  },
   schema: {
+    hindiChapterAnalyses: {
+      chapterId: 'hindi_chapter_analyses.chapter_id',
+      stats: 'hindi_chapter_analyses.stats',
+    },
     textTokens: {
       id: 'text_tokens.id',
       chapterId: 'text_tokens.chapter_id',

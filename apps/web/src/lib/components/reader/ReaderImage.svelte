@@ -100,7 +100,7 @@
       >›</button>
     </div>
 
-    {#if hasImage}
+    {#if hasImage && activeChapter?.body?.trim()}
       <div class="view-toggle" role="group" aria-label="Page view">
         <button
           type="button"
@@ -128,7 +128,7 @@
           {isOwner}
           {isAdmin}
           {textId}
-          pageImage={view === 'image' ? pageImage : null}
+          pageImage={view === 'image' || !activeChapter.body?.trim() ? pageImage : null}
         />
       {/key}
     {/if}

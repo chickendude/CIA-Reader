@@ -7,7 +7,12 @@ ENV PNPM_HOME=/usr/local/pnpm \
 
 RUN corepack enable && corepack prepare pnpm@9.12.0 --activate
 
+RUN apt-get update && apt-get install -y --no-install-recommends python3 python3-psycopg ca-certificates \
+ && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /srv/app
+COPY services/nlp/hindidb services/nlp/hindidb
+COPY services/nlp/parhiba_hindi services/nlp/parhiba_hindi
 
 # Workspace metadata for a cached `pnpm install`.
 COPY pnpm-workspace.yaml package.json ./

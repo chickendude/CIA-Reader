@@ -25,6 +25,8 @@
  */
 import JSZip from 'jszip';
 
+export type EpubImage = { file: JSZip.JSZipObject; mime: string };
+
 export class EpubParseError extends Error {
   constructor(message: string) {
     super(message);
@@ -35,6 +37,7 @@ export class EpubParseError extends Error {
 export type EpubChapter = {
   title: string | null;
   body: string;
+  images?: EpubImage[];
   /** Parent section heading from the publisher's nav doc (e.g. the
    *  "Part 1: Make It Obvious" entry that contains chapters 4–7).
    *  `null` when the chapter sits at the top level of the TOC, when
@@ -217,7 +220,7 @@ function extractFirstTitle(html: string): string | null {
   const t = TITLE_TAG_RE.exec(html);
   if (t) {
     const text = htmlToText(t[1]!).trim();
-    if (text.length > 0) return text;
+    if (!isJunkTitle(text) && !/^part\d{4,}$/i.test(text)) return text;
   }
   const h = HEADING_RE.exec(html);
   if (h) {
@@ -309,7 +312,8 @@ async function loadNavTitles(args: {
     // a navPoint inherit the parent's title as their section.
     const sectionStack: (string | null)[] = [null];
     let p: RegExpExecArray | null;
-    while ((p = NCX_TOKEN_RE.exec(navXml))) {
+    const navMap = /<navMap\b[^>]*>([\s\S]*?)<\/navMap>/i.exec(navXml)?.[1] ?? '';
+    while ((p = NCX_TOKEN_RE.exec(navMap))) {
       const tagSlash = p[1];
       const labelText = p[2];
       const contentSrc = p[3];
@@ -348,7 +352,12 @@ async function loadNavTitles(args: {
     const sectionStack: (string | null)[] = [];
     let depth = 0;
     let a: RegExpExecArray | null;
-    while ((a = NAV_TOKEN_RE.exec(navXml))) {
+    const navs = [...navXml.matchAll(/<nav\b([^>]*)>([\s\S]*?)<\/nav>/gi)];
+    const toc = navs.find((nav) =>
+      /\bepub:type=["']([^"']+)["']/i.exec(nav[1]!)?.[1]?.split(/\s+/).includes('toc'),
+    );
+    const links = (toc ?? navs.find((nav) => !/\bepub:type=/i.test(nav[1]!)))?.[2] ?? '';
+    while ((a = NAV_TOKEN_RE.exec(links))) {
       const tagSlash = a[1];
       const tagName = a[2]?.toLowerCase();
       const href = a[3];
@@ -454,7 +463,17 @@ export async function parseEpub(
   // fallback for items the nav doc doesn't cover.
   const navEntries = await loadNavTitles({ zip, opfPath, opfXml, manifest });
 
+  const imageFiles = new Map<string, EpubImage>();
+  for (const item of manifest.values()) {
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(item.mediaType)) continue;
+    const path = joinPath(opfPath, item.href);
+    const file = zip.file(path);
+    if (file) imageFiles.set(path, { file, mime: item.mediaType });
+  }
   const chapters: EpubChapter[] = [];
+  let activeEntry: EpubChapter | null = null;
+  let firstPublished: EpubChapter | null = null;
+  const preliminaryPages: string[] = [];
   for (const id of spineIds) {
     const item = manifest.get(id);
     if (!item) continue;
@@ -472,29 +491,53 @@ export async function parseEpub(
     if (!chapterEntry) continue;
     const html = await chapterEntry.async('string');
     const navEntry = navEntries.get(chapterPath);
-    // Pick the first non-junk source: nav title → chapter file
-    // <title>/heading → null (the caller renders "Untitled"). Both
-    // sources can produce identifier-shaped garbage (page-marker
-    // numbers, Calibre auto-IDs), so we filter each before taking
-    // it. See `isJunkTitle` for the exact shape.
-    const navTitle = navEntry?.title ?? null;
-    const fileTitle = extractFirstTitle(html);
-    const cleanNav = !isJunkTitle(navTitle) ? navTitle : null;
-    const cleanFile = !isJunkTitle(fileTitle) ? fileTitle : null;
-    const title = cleanNav ?? cleanFile;
-    const section = navEntry?.section ?? null;
     const body = htmlToText(html);
-    if (body.trim().length === 0) {
-      // Empty chapters (e.g. nav landmarks) are useless — skip them
-      // rather than persisting placeholder rows.
+
+    if (navEntry && !isJunkTitle(navEntry.title)) {
+      // A TOC link can point to an illustrated divider. Its text may live
+      // in the following spine files, up to the next named entry.
+      activeEntry = { ...navEntry, body };
+      firstPublished ??= activeEntry;
+      chapters.push(activeEntry);
+      if (body) continue;
+    }
+    if (!body) {
+      if (activeEntry && !activeEntry.body) {
+        for (const tag of html.matchAll(/<(?:img|image)\b([^>]*)>/gi)) {
+          const src = /(?:^|\s)(?:src|(?:xlink:)?href)=["']([^"']+)["']/i.exec(tag[1]!)?.[1];
+          const image = src && imageFiles.get(joinPath(chapterPath, decodeEntities(src)));
+          if (image) (activeEntry.images ??= []).push(image);
+        }
+      }
       continue;
     }
-    chapters.push({ title, body, section });
+    const fileTitle = extractFirstTitle(html);
+    const title = isJunkTitle(fileTitle) ? null : fileTitle;
+    if (!navEntry && !title && activeEntry) {
+      delete activeEntry.images;
+      activeEntry.body = activeEntry.body ? `${activeEntry.body}\n\n${body}` : body;
+    } else if (!navEntry && !title && !chapters.length && navEntries.size > 0) {
+      preliminaryPages.push(body);
+    } else {
+      activeEntry = null;
+      chapters.push({ title, body, section: navEntry?.section ?? null });
+    }
   }
-  if (chapters.length === 0) {
+  if (preliminaryPages.length) {
+    // Keep unlisted front matter in reading order without adding filename
+    // entries ahead of the published contents.
+    const first = chapters[0];
+    if (first === firstPublished && first?.title && !first.images) {
+      first.body = [...preliminaryPages, first.title, first.body].filter(Boolean).join('\n\n');
+    } else {
+      chapters.unshift(...preliminaryPages.map((body) => ({ title: null, section: null, body })));
+    }
+  }
+  const readable = chapters.filter((chapter) => chapter.body || chapter.images?.length);
+  if (!readable.length) {
     throw new EpubParseError(
       'EPUB contains no readable chapters (every spine item was empty or non-HTML)',
     );
   }
-  return { chapters, language };
+  return { chapters: readable, language };
 }

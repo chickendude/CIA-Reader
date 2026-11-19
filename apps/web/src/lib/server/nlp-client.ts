@@ -1,4 +1,3 @@
-import type { Inventory, WorkshopReport } from '$lib/dictionary/hindi-workshop';
 import { Agent, type Dispatcher } from 'undici';
 
 import { NLP_SERVICE_URL } from './env.js';
@@ -221,27 +220,6 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const nlpClient = {
-  hindiWorkshopPreview(
-    entry: Record<string, unknown>,
-    options: { inventory?: boolean; validate_inventory?: boolean; phrase?: string; negative_variants?: boolean },
-  ) {
-    return request<{ forms: Record<string, string[]>; inventory?: Inventory }>('/hindi/preview', {
-      method: 'POST',
-      body: JSON.stringify({ entry, ...options }),
-    });
-  },
-  hindiWorkshopReport(report: string) {
-    return request<WorkshopReport>('/hindi/workshop-report', {
-      method: 'POST',
-      body: JSON.stringify({ report }),
-    });
-  },
-  hindiReference(body: { url?: string; provider?: string; query?: string }) {
-    return request<unknown>('/hindi/reference', { method: 'POST', body: JSON.stringify(body) });
-  },
-  previewHindiEntry(entry: Record<string, unknown>, includeSlots = false): Promise<{ forms: Record<string, string[]>; slots?: { label: string; forms: string[] }[] }> {
-    return request('/hindi/preview', { method: 'POST', body: JSON.stringify({ entry, include_slots: includeSlots }) });
-  },
   health(): Promise<HealthResponse> {
     return request<HealthResponse>('/health');
   },

@@ -3,16 +3,14 @@ import { redirect } from '@sveltejs/kit';
 import {
   DEFAULT_PAGE_SIZE,
   MAX_PAGE_SIZE,
-  listOfficialTexts,
+  listOfficialBooks,
+  catalogSort,
   listPersonalLibrary,
   listSharedTexts,
   type LibraryGridCard,
 } from '$lib/server/texts/library.js';
 import { listCollectionsForUser, listOfficialCollections } from '$lib/server/collections.js';
-import {
-  estimatedComprehensionForCollections,
-  estimatedComprehensionForTexts,
-} from '$lib/server/learning-stats.js';
+import { libraryBookStats, type BookWordStats } from '$lib/server/texts/book-stats.js';
 import type { LanguageCode } from '@ciareader/shared-types';
 import type { PageServerLoad } from './$types';
 
@@ -72,16 +70,16 @@ export async function loadLibrary(
     visibility: string;
     coverUrl: string | null;
     textCount: number;
-    estimatedComprehensionPct: number | null;
+    canRename: boolean;
   };
   let collections: CollectionCard[] = [];
-  let chapterBookCards: CollectionCard[] = [];
+  const sort = catalogSort(url.searchParams.get('sort'), locals.user?.id);
   let collectionsPage = {
     totalCount: 0,
     limit,
     offset,
   };
-  let textComprehension = new Map<string, number | null>();
+  let stats: Record<string, BookWordStats | null> = {};
 
   if (tab === 'your') {
     page = await listPersonalLibrary(
@@ -118,15 +116,6 @@ export async function loadLibrary(
       limit,
       offset,
     };
-    // T-10.2 collection-card badge: bulk-fetch comprehension for
-    // every visible collection. Anonymous viewers can't have
-    // any known lemmas yet, so we skip the lookup for them.
-    const compMap = locals.user
-      ? await estimatedComprehensionForCollections(
-          locals.user.id,
-          paged.map((m) => m.collection.id),
-        )
-      : new Map<string, number | null>();
     collections = paged.map((row) => ({
       id: row.collection.id,
       title: row.collection.title,
@@ -135,49 +124,21 @@ export async function loadLibrary(
       visibility: row.collection.visibility,
       coverUrl: row.collection.coverUrl,
       textCount: row.textCount,
-      estimatedComprehensionPct: compMap.get(row.collection.id) ?? null,
+      canRename: locals.user?.role === 'admin' || Boolean(locals.user &&
+        row.collection.ownerId === locals.user.id && row.collection.visibility !== 'official'),
     }));
   } else {
-    const officialCollections = await listOfficialCollections(language ?? undefined);
-    const books = officialCollections.filter((row) => row.collection.kind === 'chapter_book');
-    const visibleBooks = books.slice(offset, offset + limit);
-    const texts = await listOfficialTexts({
-      limit,
-      offset: Math.max(0, offset - books.length),
-      language: language ?? undefined,
+    const catalog = await listOfficialBooks({
+      limit, offset, language: language ?? undefined, userId: locals.user?.id, sort,
     });
-    page = {
-      cards: texts.cards.slice(0, limit - visibleBooks.length),
-      totalCount: books.length + texts.totalCount,
-      offset,
-      limit,
-    };
-    const compMap = locals.user
-      ? await estimatedComprehensionForCollections(
-          locals.user.id,
-          visibleBooks.map((m) => m.collection.id),
-        )
-      : new Map<string, number | null>();
-    chapterBookCards = visibleBooks.map((row) => ({
-      id: row.collection.id,
-      title: row.collection.title,
-      kind: row.collection.kind,
-      language: row.collection.language,
-      visibility: row.collection.visibility,
-      coverUrl: row.collection.coverUrl,
-      textCount: row.textCount,
-      estimatedComprehensionPct: compMap.get(row.collection.id) ?? null,
-    }));
+    page = catalog;
+    stats = Object.fromEntries(catalog.cards.map(card => [card.id, card.stats]));
   }
 
-  if (locals.user && page.cards.length > 0) {
-    const textIds = page.cards.filter((c) => c.chapterCount == null).map((c) => c.id);
-    const bookIds = page.cards.filter((c) => c.chapterCount != null).map((c) => c.id);
-    const [texts, books] = await Promise.all([
-      estimatedComprehensionForTexts(locals.user.id, textIds),
-      bookIds.length ? estimatedComprehensionForCollections(locals.user.id, bookIds) : [],
-    ]);
-    textComprehension = new Map([...texts, ...books]);
+  if (tab !== 'official') {
+    const textIds = page.cards.filter(card => card.chapterCount == null).map(card => card.id);
+    const collectionIds = [...page.cards.filter(card => card.chapterCount != null), ...collections].map(card => card.id);
+    stats = await libraryBookStats(textIds, collectionIds, locals.user?.id);
   }
 
   return {
@@ -185,9 +146,9 @@ export async function loadLibrary(
     query,
     tab,
     page,
-    textComprehension: Object.fromEntries(textComprehension),
+    stats,
     collections,
-    chapterBookCards,
+    sort,
     collectionsPage,
     language,
     isAuthenticated: Boolean(locals.user),

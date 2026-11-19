@@ -64,12 +64,16 @@ export function emptyDraft(lemma = '', pos = 'NOUN'): Draft {
 }
 export type Match = { id: string; lemma: string; pos: string; meaning: string };
 export type ReviewItem = {
+  occurrence?: string;
   id: string | null;
   pos: string | null;
   word: string;
   kind: string;
   count: number;
   samples: {
+    chapterId?: string;
+    start?: number;
+    hash?: string;
     book: string;
     chapter: number;
     token: number;

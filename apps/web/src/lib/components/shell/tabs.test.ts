@@ -16,7 +16,7 @@ const ADMIN: Viewer = { authenticated: true, role: 'admin' };
 describe('visibleTabs', () => {
   it('shows authenticated + any tabs to signed-in users', () => {
     const shown = visibleTabs(TABS, USER).map((t) => t.id);
-    expect(shown).toContain('home');
+    expect(shown).not.toContain('home');
     expect(shown).toContain('library');
     expect(shown).toContain('upload');
     expect(shown).toContain('profile');
@@ -30,7 +30,7 @@ describe('visibleTabs', () => {
 
   it('shows anonymous + any tabs to signed-out users', () => {
     const shown = visibleTabs(TABS, ANON).map((t) => t.id);
-    expect(shown).toContain('home');
+    expect(shown).not.toContain('home');
     expect(shown).toContain('signin');
     expect(shown).not.toContain('upload');
     expect(shown).not.toContain('profile');
@@ -70,11 +70,9 @@ describe('visibleTabs', () => {
 });
 
 describe('getActiveTabId', () => {
-  it('matches the home tab only on the exact root path', () => {
-    expect(getActiveTabId('/', TABS)).toBe('home');
-    // A deeper path must not collapse back to 'home' just because every
-    // pathname starts with '/'.
-    expect(getActiveTabId('/profile', TABS)).not.toBe('home');
+  it('marks Library as active at the root and on a chapter book', () => {
+    expect(getActiveTabId('/', TABS)).toBe('library');
+    expect(getActiveTabId('/collections/book', TABS)).toBe('library');
   });
 
   it('matches a tab on its exact path', () => {
@@ -108,10 +106,16 @@ describe('getActiveTabId', () => {
 
 describe('groupTabsBySection', () => {
   it('places unsectioned tabs in their own bucket above the sectioned ones', () => {
-    const groups = groupTabsBySection(visibleTabs(TABS, USER));
-    // home has no section, so it's first.
+    const groups = groupTabsBySection(visibleTabs(TABS, ANON));
     expect(groups[0]).toMatchObject({ section: null });
-    expect(groups[0]!.tabs.map((t) => t.id)).toEqual(['home']);
+    expect(groups[0]!.tabs.map((t) => t.id)).toEqual(['signin']);
+  });
+
+  it.each([ANON, USER, CURATOR, ADMIN])('places About last for viewer %j', (viewer) => {
+    const visible = visibleTabs(TABS, viewer);
+    const sidebar = groupTabsBySection(visible).flatMap((group) => group.tabs);
+    expect(sidebar.at(-1)?.id).toBe('about');
+    expect(visible.at(-1)?.id).toBe('about');
   });
 
   it('groups Read-section tabs (Library, Upload, Dictionary) together', () => {

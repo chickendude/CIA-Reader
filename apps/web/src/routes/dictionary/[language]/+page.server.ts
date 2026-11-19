@@ -43,12 +43,10 @@ export const load: PageServerLoad = async ({ params, url, locals }) => {
   const offset = Math.max(readInt(url, 'offset', 0), 0);
   const q = url.searchParams.get('q');
   const pos = url.searchParams.getAll('pos');
-  const hasOfficial = url.searchParams.get('hasOfficialTranslation') === 'true';
 
   const result = await listDictionaryLemmas(language, {
     q,
     pos,
-    hasOfficialTranslation: hasOfficial,
     limit,
     offset,
   });
@@ -77,7 +75,6 @@ export const load: PageServerLoad = async ({ params, url, locals }) => {
     query: {
       q: q ?? '',
       pos,
-      hasOfficialTranslation: hasOfficial,
     },
   };
 };

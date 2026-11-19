@@ -12,7 +12,7 @@ import { error } from '@sveltejs/kit';
 import {
   DEFAULT_PAGE_SIZE,
   MAX_PAGE_SIZE,
-  listOfficialTexts,
+  catalogSort, listOfficialBooks,
 } from '$lib/server/texts/library.js';
 import {
   LANGUAGES,
@@ -28,7 +28,7 @@ function readInt(url: URL, key: string, fallback: number): number {
   return Number.isFinite(n) ? n : fallback;
 }
 
-export const load: PageServerLoad = async ({ url }) => {
+export const load: PageServerLoad = async ({ url, locals }) => {
   const langRaw = url.searchParams.get('language');
   let language: LanguageCode | null = null;
   if (langRaw) {
@@ -44,14 +44,16 @@ export const load: PageServerLoad = async ({ url }) => {
   );
   const offset = Math.max(readInt(url, 'offset', 0), 0);
 
-  const page = await listOfficialTexts({
+  const sort = catalogSort(url.searchParams.get('sort'), locals.user?.id);
+  const page = await listOfficialBooks({
+    userId: locals.user?.id, sort,
     limit,
     offset,
     language: language ?? undefined,
   });
 
   return {
-    page,
+    page, sort,
     language,
     languages: Object.values(LANGUAGES).map((d) => ({
       code: d.code,

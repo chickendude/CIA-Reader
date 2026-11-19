@@ -41,7 +41,8 @@ import {
   prependTitleToBody,
   type ChapterDraft,
 } from './chunking.js';
-import { parseEpub, EpubParseError } from './epub.js';
+import { chapterBookTransaction } from './epub-images.js';
+import { parseEpub, EpubParseError, type EpubImage } from './epub.js';
 import { parseChapterZip, ZipParseError } from './zip.js';
 import { enqueueNlpJob } from './jobs.js';
 import { createChapterBookCollection } from '../collections.js';
@@ -423,6 +424,7 @@ export type ChapterBookResult =
  * the collection detail page.
  */
 export type ChapterDraftWithSection = ChapterDraft & {
+  images?: EpubImage[];
   section: string | null;
 };
 
@@ -441,7 +443,7 @@ export type ChapterDraftWithSection = ChapterDraft & {
  * its parent's part membership.
  */
 function buildChapterDrafts(
-  chapters: Array<{ title: string | null; body: string; section?: string | null }>,
+  chapters: Array<{ title: string | null; body: string; section?: string | null; images?: EpubImage[] }>,
 ): ChapterDraftWithSection[] {
   const drafts: ChapterDraftWithSection[] = [];
   let nextIdx = 0;
@@ -461,6 +463,7 @@ function buildChapterDrafts(
       drafts.push({
         idx: nextIdx,
         title: derivedTitle,
+        ...(c.images?.length ? { images: c.images } : {}),
         body: sub.body,
         tokenCount: sub.tokenCount,
         section,
@@ -516,7 +519,7 @@ async function createSingleChapterFallback(
 /**
  * Create a chapter-book collection from an EPUB.
  *
- * Each spine chapter becomes its own `texts` row (so each gets its
+ * Each imported section becomes its own `texts` row (so each gets its
  * own status, NLP job, progress %, audio binding) inside a
  * `collections` row of kind `chapter_book`. If the EPUB declares
  * `<dc:language>` and it disagrees with the user's selection, the
@@ -583,6 +586,20 @@ export async function createChapterBookFromEpub(
   }
 
   if (drafts.length === 1) {
+    const draft = drafts[0]!;
+    if (draft.images?.length) {
+      const images = draft.images;
+      return chapterBookTransaction(async (tx, writePages) => {
+        const [text] = await tx.insert(schema.texts).values({
+          ownerId: owner.id, language, title, sourceType: 'epub', status: 'ready',
+          visibility: 'private', createdAt: now, updatedAt: now,
+        }).returning();
+        if (!text) throw new Error('Failed to insert illustrated text');
+        const chapters = await writePages(text.id, images, draft.title ?? title, now);
+        chapters.sort((a, b) => a.idx - b.idx);
+        return { kind: 'text', text, chapter: chapters[0]!, chapters };
+      });
+    }
     const single = await createSingleChapterFallback(owner, {
       sourceType: 'epub',
       language,

@@ -20,6 +20,8 @@ import type {
   User,
 } from './db/schema.js';
 import type { LanguageCode } from '@ciareader/shared-types';
+import type { EpubImage } from './texts/epub.js';
+import { chapterBookTransaction } from './texts/epub-images.js';
 import { enqueueNlpJob } from './texts/jobs.js';
 import { prependTitleToBody, type ChapterDraft } from './texts/chunking.js';
 import { estimatedComprehensionForCollections } from './learning-stats.js';
@@ -81,7 +83,7 @@ export type CreateChapterBookInput = {
    *  `collection_items.section_title` so the detail page can group
    *  chapters under their Part heading. ZIP uploads and flat EPUBs
    *  leave it null. */
-  chapters: Array<ChapterDraft & { section?: string | null }>;
+  chapters: Array<ChapterDraft & { section?: string | null; images?: EpubImage[] }>;
   now?: Date;
 };
 
@@ -128,7 +130,7 @@ export async function createChapterBookCollection(
   // committed text and leave the chapter stuck at 'pending'.
   const flushes: Array<() => Promise<void>> = [];
 
-  const result = await db.transaction(async (tx) => {
+  const result = await chapterBookTransaction(async (tx, writePages) => {
     const [collection] = (await tx
       .insert(schema.collections)
       .values({
@@ -160,7 +162,7 @@ export async function createChapterBookCollection(
           language: input.language,
           title: chapterTitle,
           sourceType: input.sourceType,
-          status: 'pending',
+          status: draft.images?.length ? 'ready' : 'pending',
           visibility: 'private',
           createdAt: now,
           updatedAt: now,
@@ -168,27 +170,29 @@ export async function createChapterBookCollection(
         .returning()) as Text[];
       if (!text) throw new CollectionError('text insert returned no row');
 
-      // Prepend the chapter title to the body so the NLP pipeline
-      // tokenizes the title alongside the rest of the content (its
-      // words become clickable + known-word-tracked). The helper is
-      // idempotent: an EPUB whose `htmlToText` output already starts
-      // with the title — e.g. `<h1>Chapter One</h1>` in the body
-      // matching the nav title — doesn't get a duplicated heading.
-      const { body: bodyWithTitle, tokenCount: tokenCountWithTitle } =
-        prependTitleToBody(chapterTitle, draft.body);
-      const [chapterRow] = (await tx
-        .insert(schema.textChapters)
-        .values({
-          textId: text.id,
-          idx: 0,
-          title: chapterTitle,
-          body: bodyWithTitle,
-          tokenCount: tokenCountWithTitle,
-          createdAt: now,
-        })
-        .returning()) as TextChapter[];
-      if (!chapterRow) {
-        throw new CollectionError('chapter insert returned no row');
+      let chapterId: string | undefined;
+      if (draft.images?.length) {
+        await writePages(text.id, draft.images, chapterTitle, now);
+      } else {
+        // Include the title in the text that the reader can tokenize.
+        const { body: bodyWithTitle, tokenCount: tokenCountWithTitle } =
+          prependTitleToBody(chapterTitle, draft.body);
+        const [chapterRow] = (await tx
+          .insert(schema.textChapters)
+          .values({
+            textId: text.id,
+            idx: 0,
+            title: chapterTitle,
+            body: bodyWithTitle,
+            tokenCount: tokenCountWithTitle,
+            createdAt: now,
+          })
+          .returning()) as TextChapter[];
+        if (!chapterRow) {
+          throw new CollectionError('chapter insert returned no row');
+        }
+
+        chapterId = chapterRow.id;
       }
 
       const [item] = (await tx
@@ -203,16 +207,10 @@ export async function createChapterBookCollection(
         .returning()) as CollectionItem[];
       if (!item) throw new CollectionError('item insert returned no row');
 
-      // Insert the nlp_jobs row inside the tx (FK needs the text);
-      // defer the dispatcher until after commit.
-      const enqueued = await enqueueNlpJob({
-        textId: text.id,
-        chapterIds: [chapterRow.id],
-        now,
-        tx,
-      });
-      if (enqueued.flush) flushes.push(enqueued.flush);
-
+      if (chapterId) {
+        const job = await enqueueNlpJob({ textId: text.id, chapterIds: [chapterId], now, tx });
+        if (job.flush) flushes.push(job.flush);
+      }
       createdTexts.push(text);
       createdItems.push(item);
     }

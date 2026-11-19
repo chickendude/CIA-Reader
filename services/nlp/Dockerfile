@@ -19,6 +19,7 @@ RUN apt-get update \
  && apt-get purge -y --auto-remove gcc libc6-dev \
  && rm -rf /var/lib/apt/lists/*
 
+COPY services/nlp/parhiba_hindi /srv/nlp/parhiba_hindi
 COPY services/nlp/app /srv/nlp/app
 COPY services/nlp/hindidb /srv/nlp/hindidb
 COPY services/nlp/tests /srv/nlp/tests

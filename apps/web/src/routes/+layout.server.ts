@@ -8,7 +8,7 @@ import {
   languageOption,
   resolveCurrentLanguage,
 } from '$lib/server/language-context.js';
-import { isSupportedLanguage, type LanguageCode } from '@ciareader/shared-types';
+import { isSupportedLanguage, SUPPORTED_LANGUAGE_CODES, type LanguageCode } from '@ciareader/shared-types';
 import type { LayoutServerLoad } from './$types';
 
 /**
@@ -65,9 +65,8 @@ export const load: LayoutServerLoad = async ({ locals, cookies }) => {
         }
       : null,
     currentLanguage,
-    availableLanguages: activeCodes.map(languageOption),
-    // Only signed-in users can add a language; anonymous visitors get an
-    // empty list (the switcher isn't shown for them anyway).
+    availableLanguages: (locals.user ? activeCodes : SUPPORTED_LANGUAGE_CODES).map(languageOption),
+    // Signed-out visitors can switch languages using the language cookie.
     addableLanguages: locals.user?.id ? addableLanguageOptions(activeCodes) : [],
   };
 };

@@ -3,11 +3,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const listPersonalLibrary = vi.fn();
 const listSharedTexts = vi.fn();
-const listOfficialTexts = vi.fn();
+const listOfficialBooks = vi.fn();
 const listCollectionsForUser = vi.fn();
 const listOfficialCollections = vi.fn();
-const estimatedComprehensionForTexts = vi.fn();
-const estimatedComprehensionForCollections = vi.fn();
+const libraryBookStats = vi.fn();
 
 vi.mock('$lib/server/texts/library.js', async () => {
   const actual = await vi.importActual<typeof import('$lib/server/texts/library.js')>(
@@ -17,19 +16,12 @@ vi.mock('$lib/server/texts/library.js', async () => {
     ...actual,
     listPersonalLibrary: (...a: unknown[]) => listPersonalLibrary(...a),
     listSharedTexts: (...a: unknown[]) => listSharedTexts(...a),
-    listOfficialTexts: (...a: unknown[]) => listOfficialTexts(...a),
+    listOfficialBooks: (...a: unknown[]) => listOfficialBooks(...a),
   };
 });
 
-// T-10.2: loader now decorates each card with comprehension; mock
-// the bulk helpers to "no data" so existing test fixtures don't
-// have to mock the DB. Tests that care can override the resolved
-// value.
-vi.mock('$lib/server/learning-stats.js', () => ({
-  estimatedComprehensionForTexts: (...a: unknown[]) =>
-    estimatedComprehensionForTexts(...a),
-  estimatedComprehensionForCollections: (...a: unknown[]) =>
-    estimatedComprehensionForCollections(...a),
+vi.mock('$lib/server/texts/book-stats.js', () => ({
+  libraryBookStats: (...args: unknown[]) => libraryBookStats(...args),
 }));
 
 // T-8.5: collections tab calls into collections.js; mock to empty.
@@ -66,15 +58,13 @@ async function callLoad(
 beforeEach(() => {
   listPersonalLibrary.mockReset();
   listSharedTexts.mockReset();
-  listOfficialTexts.mockReset();
+  listOfficialBooks.mockReset();
   listCollectionsForUser.mockReset();
   listOfficialCollections.mockReset();
-  estimatedComprehensionForTexts.mockReset();
-  estimatedComprehensionForCollections.mockReset();
+  libraryBookStats.mockReset();
   listCollectionsForUser.mockResolvedValue([]);
   listOfficialCollections.mockResolvedValue([]);
-  estimatedComprehensionForTexts.mockResolvedValue(new Map());
-  estimatedComprehensionForCollections.mockResolvedValue(new Map());
+  libraryBookStats.mockResolvedValue({});
 });
 
 afterEach(() => {
@@ -115,7 +105,7 @@ describe('/library loader', () => {
   });
 
   it("defaults to the 'official' tab for an anonymous visitor", async () => {
-    listOfficialTexts.mockResolvedValueOnce({
+    listOfficialBooks.mockResolvedValueOnce({
       cards: [],
       totalCount: 0,
       limit: 20,
@@ -123,25 +113,21 @@ describe('/library loader', () => {
     });
     const data = (await callLoad('http://x/library', null)) as { tab: string };
     expect(data.tab).toBe('official');
-    expect(listOfficialTexts).toHaveBeenCalled();
+    expect(listOfficialBooks).toHaveBeenCalled();
   });
 
   it('counts official chapter books and standalone texts in the same page', async () => {
-    listOfficialCollections.mockResolvedValue([
-      { collection: { id: 'book', kind: 'chapter_book' }, textCount: 2 },
-    ]);
-    listOfficialTexts.mockResolvedValue({ cards: [{ id: 't1' }, { id: 't2' }], totalCount: 3 });
-    expect(await callLoad('http://x/library?tab=official&limit=2', null)).toMatchObject({
-      chapterBookCards: [{ id: 'book' }],
-      page: { cards: [{ id: 't1' }], totalCount: 4, limit: 2, offset: 0 },
+    listOfficialBooks.mockResolvedValueOnce({ cards: [
+      { id: 'book', chapterCount: 2, stats: { words: 250, uniqueWords: 20, unresolved: 4, knownPct: 80, uniquePct: 40 } },
+      { id: 'text', stats: { words: 100, uniqueWords: 10, unresolved: 0, knownPct: 50, uniquePct: 30 } },
+    ], totalCount: 4, offset: 0, limit: 2 });
+    expect(await callLoad('http://x/library?tab=official&limit=2&sort=unique')).toMatchObject({
+      stats: { book: { knownPct: 80, uniquePct: 40 }, text: { knownPct: 50, uniquePct: 30 } },
+      page: { cards: [{ id: 'book' }, { id: 'text' }], totalCount: 4 },
     });
-
-    listOfficialTexts.mockResolvedValue({ cards: [{ id: 't2' }, { id: 't3' }], totalCount: 3 });
-    expect(await callLoad('http://x/library?tab=official&limit=2&offset=2', null)).toMatchObject({
-      chapterBookCards: [],
-      page: { cards: [{ id: 't2' }, { id: 't3' }], totalCount: 4 },
+    expect(listOfficialBooks).toHaveBeenCalledWith({
+      userId: USER.id, language: 'hi', sort: 'unique', limit: 2, offset: 0,
     });
-    expect(listOfficialTexts).toHaveBeenLastCalledWith({ limit: 2, offset: 1, language: 'hi' });
   });
 
   it("redirects an anonymous visitor asking for the 'your' tab", async () => {
@@ -210,17 +196,10 @@ describe('/library loader', () => {
       textCount: i + 1,
     }));
     listCollectionsForUser.mockResolvedValueOnce(collectionRows);
-    estimatedComprehensionForCollections.mockResolvedValueOnce(
-      new Map([
-        ['c2', 40],
-        ['c3', 60],
-      ]),
-    );
-
     const data = (await callLoad(
       'http://x/library?tab=collections&limit=2&offset=2',
     )) as {
-      collections: Array<{ id: string; estimatedComprehensionPct: number | null }>;
+      collections: Array<{ id: string }>;
       collectionsPage: { totalCount: number; limit: number; offset: number };
     };
 
@@ -230,9 +209,6 @@ describe('/library loader', () => {
       limit: 2,
       offset: 2,
     });
-    expect(estimatedComprehensionForCollections).toHaveBeenCalledWith(
-      USER.id,
-      ['c2', 'c3'],
-    );
+    expect(libraryBookStats).toHaveBeenCalledWith([], ['c2', 'c3'], USER.id);
   });
 });

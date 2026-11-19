@@ -1,4 +1,4 @@
-import { error, json, isHttpError } from '@sveltejs/kit';
+import { error, json } from '@sveltejs/kit';
 import { z } from 'zod';
 import { eq, sql } from 'drizzle-orm';
 import { db, schema } from '$lib/server/db';
@@ -12,10 +12,11 @@ import {
   groupUses,
   mergeHindiWords,
 } from '$lib/server/dictionary/hindi-workshop';
+import { reviewHindiStutter } from '$lib/server/texts/hindidb';
 import { workshopQueue } from '$lib/server/dictionary/hindi-queue';
 import { getHindiEntry } from '$lib/server/dictionary/hindidb';
 import { deleteLemma } from '$lib/server/dictionary/curator';
-import { nlpClient } from '$lib/server/nlp-client';
+import { HindiDictionaryError, hindiReference, hindiWorkshopReport, previewHindiEntry } from '$lib/server/dictionary/hindi-runtime';
 import { translateSentence } from '$lib/server/openai-client';
 import type { RequestHandler } from './$types';
 
@@ -40,10 +41,12 @@ const input = z.discriminatedUnion('action', [
     action: z.literal('queue'),
     offset: z.number().int().nonnegative().default(0),
     book: id.nullable(),
-    kind: z.enum(['', 'unresolved', 'missing-definition', 'ignored']),
+    kind: z.enum(['', 'unresolved', 'missing-definition', 'ignored', 'stutter']),
     query,
     limit,
   }),
+  z.object({ action: z.literal('stutter'), chapter: id, start: z.number().int().nonnegative(),
+    surface: z.string().min(1), hash: z.string().length(64), confirm: z.boolean() }),
   z.object({ action: z.literal('ignore'), book: id, word: query.min(1), ignore: z.boolean() }),
   z.object({ action: z.literal('phrase'), phrase: query, verb: query, negative: z.boolean() }),
   z.object({ action: z.literal('delete'), id, version: z.string() }),
@@ -74,13 +77,13 @@ export const POST: RequestHandler = async ({ request, locals }) => {
         return json([...rows]);
       }
       case 'report':
-        return json(await nlpClient.hindiWorkshopReport(p.report));
+        return json(await hindiWorkshopReport(p.report));
       case 'applyReport': {
         const count = await db.transaction(async (tx) => {
           await tx.execute(
             sql`LOCK TABLE lemmas, translations, hindi_entries, lemma_forms IN SHARE ROW EXCLUSIVE MODE`,
           );
-          const report = await nlpClient.hindiWorkshopReport(p.report);
+          const report = await hindiWorkshopReport(p.report);
           if (report.fingerprint !== p.fingerprint)
             error(409, 'The dictionary changed. Preview the report again.');
           const selected = new Set(p.ids);
@@ -119,6 +122,9 @@ export const POST: RequestHandler = async ({ request, locals }) => {
       case 'group':
         await groupUses(p.id, p.members, actor.id);
         return json(await getWorkshopWord(p.id));
+      case 'stutter':
+        await reviewHindiStutter(actor.id, p.chapter, p.start, p.surface, p.hash, p.confirm);
+        return json({ ok: true });
       case 'ignore': {
         const [book] = await db.execute(
           sql`SELECT id FROM texts WHERE id=${p.book} AND language='hi' AND (owner_id=${actor.id} OR visibility='official')`,
@@ -142,7 +148,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
         const word = verb && (await getHindiEntry(verb.id));
         if (!word) error(400, 'Select an existing Hindi verb');
         return json(
-          await nlpClient.hindiWorkshopPreview(word.entry, {
+          await previewHindiEntry(word.entry, {
             phrase: p.phrase,
             negative_variants: p.negative,
           }),
@@ -172,7 +178,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
             .where(eq(schema.hindiReferenceCache.key, key));
           if (cached) return json(cached);
         }
-        const result = await nlpClient.hindiReference(p);
+        const result = await hindiReference(p);
         const retrievedAt = new Date();
         await db
           .insert(schema.hindiReferenceCache)
@@ -185,11 +191,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
       }
     }
   } catch (e) {
-    if (isHttpError(e)) throw e;
-    if (e instanceof Error && e.message.startsWith('NLP service 400:')) {
-      const detail = JSON.parse(e.message.slice('NLP service 400:'.length)).detail;
-      error(400, typeof detail === 'string' ? detail : 'Invalid entry');
-    }
+    if (e instanceof HindiDictionaryError) error(e.status, e.message);
     throw e;
   }
 };

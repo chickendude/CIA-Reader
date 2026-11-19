@@ -369,6 +369,40 @@ describe('parseEpub — happy path', () => {
     expect(chapters[0]!.title).toBe('1. Compound Effect');
   });
 
+  it('groups numbered files behind illustrated TOC entries and keeps scanned sections', async () => {
+    const chapters = [
+      '<p>Publisher note.</p>', '<img src="scan.png"/>', '<p>1</p><p>First.</p>',
+      '<p>2</p><p>Second.</p>', '<img src="scan.png"/>', '<img src="scan.png"/>',
+      '<p>Closing essay.</p>',
+    ].map((bodyHtml, idx) => {
+      const id = `part000${idx}`;
+      return { id, title: id, href: `${id}.xhtml`, bodyHtml };
+    });
+    const zip = await JSZip.loadAsync(await buildFixtureEpub({
+      chapters,
+      ncx: [
+        { src: 'part0001.xhtml', title: 'पहला भाग' },
+        { src: 'part0004.xhtml', title: 'समय-सन्दर्भ' },
+        { src: 'part0006.xhtml', title: 'उत्तर कथन' },
+      ],
+    }));
+    const opf = await zip.file('OEBPS/content.opf')!.async('string');
+    zip.file('OEBPS/content.opf', opf.replace('</manifest>',
+      '<item id="scan" href="scan.png" media-type="image/png"/></manifest>'));
+    zip.file('OEBPS/scan.png', Uint8Array.of(1, 2, 3));
+    const ncx = await zip.file('OEBPS/toc.ncx')!.async('string');
+    zip.file('OEBPS/toc.ncx', ncx.replace('</ncx>', `<pageList><pageTarget>
+      <navLabel><text>Page 3</text></navLabel><content src="part0002.xhtml"/>
+      </pageTarget></pageList></ncx>`));
+
+    const result = await parseEpub(await zip.generateAsync({ type: 'uint8array' }));
+    expect(result.chapters.map((chapter) => chapter.title)).toEqual(['पहला भाग', 'समय-सन्दर्भ', 'उत्तर कथन']);
+    expect(result.chapters[0]!.body).toBe('Publisher note.\n\nपहला भाग\n\n1\n\nFirst.\n\n2\n\nSecond.');
+    expect(result.chapters[0]!.images).toBeUndefined();
+    expect(result.chapters[1]!.images?.map((img) => img.file.name)).toEqual(['OEBPS/scan.png', 'OEBPS/scan.png']);
+    expect(result.chapters[2]!.body).toBe('Closing essay.');
+  });
+
   it('falls back to <title> for spine items the nav doc does not list', async () => {
     const bytes = await buildFixtureEpub({
       chapters: [

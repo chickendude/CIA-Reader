@@ -1,11 +1,17 @@
 <script lang="ts">
   import { invalidateAll } from '$app/navigation';
+  import { tick } from 'svelte';
+  import Button from '$lib/components/input/Button.svelte';
+  import TextField from '$lib/components/input/TextField.svelte';
+  import Modal from '$lib/components/overlay/Modal.svelte';
+  import { portal } from '$lib/components/overlay/portal.js';
   import { pushToast } from '$lib/components/toast/toast-store.js';
 
-  let { id, title, collection = false, catalogAction, onDelete }: {
+  let { id, title, collection = false, canRename = false, catalogAction, onDelete }: {
     id: string;
     title: string;
     collection?: boolean;
+    canRename?: boolean;
     catalogAction?: 'publish' | 'remove';
     onDelete?: () => void;
   } = $props();
@@ -14,6 +20,44 @@
   let busy = $state(false);
   let container = $state<HTMLDivElement>();
   let trigger = $state<HTMLButtonElement>();
+  let renaming = $state(false);
+  let draft = $state('');
+  let renameError = $state('');
+  let form = $state<HTMLFormElement>();
+
+  async function openRename() {
+    close();
+    draft = title;
+    renameError = '';
+    renaming = true;
+    await tick();
+    form?.querySelector('input')?.select();
+  }
+
+  async function rename(event: SubmitEvent) {
+    event.preventDefault();
+    const name = draft.trim();
+    if (busy || !name) return;
+    busy = true;
+    renameError = '';
+    try {
+      const response = await fetch(`/api/v1/${collection ? 'collections' : 'texts'}/${id}`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ title: name }),
+      });
+      if (!response.ok) {
+        const error = await response.json().catch(() => null);
+        throw new Error(error?.message || 'Could not rename the book.');
+      }
+      await invalidateAll();
+      renaming = false;
+    } catch (error) {
+      renameError = error instanceof Error ? error.message : 'Could not rename the book.';
+    } finally {
+      busy = false;
+    }
+  }
 
   function close() {
     open = false;
@@ -61,7 +105,7 @@
   }
 </script>
 
-{#if catalogAction || onDelete}
+{#if canRename || catalogAction || onDelete}
   <div class="book-actions" class:open bind:this={container}>
     <button type="button" class="trigger" bind:this={trigger} aria-label={`Actions for ${title}`}
       aria-expanded={open} disabled={busy} onclick={() => open = !open}>
@@ -73,6 +117,9 @@
     </button>
     {#if open}
       <div class="choices">
+        {#if canRename}
+          <button type="button" onclick={openRename}>Rename</button>
+        {/if}
         {#if catalogAction}
           <button type="button" onclick={updateCatalog}>{catalogAction === 'publish' ? 'Publish to Official library' : 'Remove from Official library'}</button>
         {/if}
@@ -84,7 +131,23 @@
   </div>
 {/if}
 
+{#if renaming}
+  <div use:portal>
+    <Modal open title="Rename book" width={420} onClose={() => { if (!busy) renaming = false; }}>
+      <form bind:this={form} onsubmit={rename}>
+        <label>Book title <TextField bind:value={draft} maxlength={200} required disabled={busy} /></label>
+        {#if renameError}<p role="alert">{renameError}</p>{/if}
+        <div class="rename-actions">
+          <Button disabled={busy} onclick={() => renaming = false}>Cancel</Button>
+          <Button type="submit" variant="primary" disabled={busy || !draft.trim()}>Save</Button>
+        </div>
+      </form>
+    </Modal>
+  </div>
+{/if}
+
 <style>
+  .rename-actions { display: flex; justify-content: flex-end; gap: .5rem; margin-top: 1rem; }
   .book-actions {
     position: absolute;
     top: .4rem;

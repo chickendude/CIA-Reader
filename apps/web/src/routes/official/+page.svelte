@@ -1,9 +1,19 @@
 <script lang="ts">
+  import Pagination from '$lib/components/input/Pagination.svelte';
+  import CoverageOrder from '$lib/components/library/CoverageOrder.svelte';
+  import { page } from '$app/state';
   import { goto } from '$app/navigation';
+  import BookMetrics from '$lib/components/library/BookMetrics.svelte';
   import BookActions from '$lib/components/library/BookActions.svelte';
   import type { PageData } from './$types';
 
   let { data }: { data: PageData } = $props();
+
+  function pageHref(offset: number) {
+    const url = new URL(page.url);
+    url.searchParams.set('offset', String(offset));
+    return url.pathname + url.search;
+  }
 
   function setLanguage(code: string) {
     const url = new URL(typeof window !== 'undefined' ? window.location.href : 'http://x');
@@ -18,17 +28,13 @@
   <title>Official library | Parhiba</title>
   <meta
     name="description"
-    content="Browse the official library of Hindi, Marathi, and Odia texts curated for the CIA Reader — every text comes with lemma-aware reading, romanization, and shared dictionary entries."
+    content="Browse books in the Parhiba official library and compare vocabulary coverage."
   />
 </svelte:head>
 
 <div class="ol">
   <header class="ol-h">
     <h1 class="page-title">Official library</h1>
-    <p class="ol-h-sub">
-      Curator-promoted texts. Anyone can read; sign in to track known
-      words across visits.
-    </p>
   </header>
 
   <div class="ol-filters">
@@ -46,32 +52,30 @@
     </label>
   </div>
 
+  {#if data.user}<CoverageOrder value={data.sort} />{/if}
   <ul class="ol-list">
     {#each data.page.cards as card (card.id)}
       <li class="ol-card">
-        <a href={`/reader/${card.id}`} class="ol-card-a">
-          <h2 class="ol-title">{card.title}</h2>
+        <div class="ol-card-body">
+          <h2 class="ol-title"><a class="ol-card-a" href={card.chapterCount == null ? `/library/${card.id}` : `/collections/${card.id}`}>{card.title}</a></h2>
           <p class="ol-meta">
             <span class="ol-pill">{card.language}</span>
             <span class="ol-pill ol-pill-source">{card.sourceType}</span>
           </p>
-        </a>
+          <BookMetrics stats={card.stats} signedIn={Boolean(data.user)} showUniqueCoverage={data.sort === 'unique'} />
+        </div>
         {#if data.user?.role === 'admin'}
-          <BookActions id={card.id} title={card.title} catalogAction="remove" />
+          <BookActions collection={card.chapterCount != null} id={card.id} title={card.title} canRename catalogAction="remove" />
         {/if}
       </li>
     {:else}
       <li class="ol-empty">No official texts yet for this language.</li>
     {/each}
   </ul>
+  <Pagination offset={data.page.offset} limit={data.page.limit} total={data.page.totalCount} hrefFor={pageHref} />
 </div>
 
 <style>
-  .ol-h-sub {
-    color: var(--ink-3, var(--color-fg-muted));
-    font-size: 0.9rem;
-    margin: 0 0 1.4rem;
-  }
   .ol-filters {
     margin-bottom: 1rem;
   }
@@ -105,14 +109,15 @@
     border: 1px solid var(--rule, var(--color-border));
     border-radius: 10px;
   }
+  .ol-card-body { padding: 1rem 1.1rem; position: relative; isolation: isolate; }
+  .ol-card-a::after { content: ''; position: absolute; inset: 0; z-index: 1; }
+  .ol-card-a:focus-visible::after { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: 10px; }
   .ol-card-a {
-    display: block;
-    padding: 1rem 1.1rem;
     text-decoration: none;
     color: inherit;
   }
-  .ol-card:has(:global(.book-actions)) .ol-card-a { padding-right: 3.4rem; }
-  .ol-card-a:hover {
+  .ol-card:has(:global(.book-actions)) .ol-card-body { padding-right: 3.4rem; }
+  .ol-card-body:hover {
     background: color-mix(in oklch, var(--ink, var(--color-fg)) 4%, transparent);
   }
   .ol-title {

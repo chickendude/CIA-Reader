@@ -44,9 +44,6 @@
     const params = new URLSearchParams();
     if (data.query.q) params.set('q', data.query.q);
     for (const p of data.query.pos) params.append('pos', p);
-    if (data.query.hasOfficialTranslation) {
-      params.set('hasOfficialTranslation', 'true');
-    }
     if (offset > 0) params.set('offset', String(offset));
     if (data.limit !== 50) params.set('limit', String(data.limit));
     const qs = params.toString();
@@ -99,16 +96,6 @@
       search();
     }}
   >
-    <label class="official-filter">
-      <input
-        type="checkbox"
-        name="hasOfficialTranslation"
-        value="true"
-        checked={data.query.hasOfficialTranslation}
-        onchange={search}
-      />
-      With dictionary or curator definitions
-    </label>
     {#each data.query.pos as pos}<input type="hidden" name="pos" value={pos} />{/each}
     {#if data.limit !== 50}<input type="hidden" name="limit" value={data.limit} />{/if}
     <div class="search-fields">
@@ -218,8 +205,7 @@
   }
   .toolbar,
   .actions,
-  .search-fields,
-  .official-filter {
+  .search-fields {
     display: flex;
     flex-wrap: wrap;
     gap: 0.5rem;
@@ -230,16 +216,11 @@
     margin-bottom: 1rem;
     gap: 0.75rem;
   }
-  .official-filter,
   .detail,
   .pos,
   .muted,
   small {
     color: var(--ink-2);
-  }
-  .official-filter {
-    font-size: 0.85rem;
-    cursor: pointer;
   }
   .word {
     font: 1.1rem var(--font-serif-dev, var(--font-serif));

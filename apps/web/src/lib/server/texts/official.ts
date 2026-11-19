@@ -1,8 +1,11 @@
 import { randomUUID } from 'node:crypto';
 import { and, eq, sql } from 'drizzle-orm';
 import { db, schema } from '../db/index.js';
+import { libraryBookStats } from './book-stats.js';
 import { isStaffMember } from '../auth/staff.js';
 import type { AnkiCard } from '../anki.js';
+import { eligibleForDeck, studyDeckPlan, type DeckOptions, type DeckScope } from '$lib/library/study-deck.js';
+import { officialDeckRows, studyBands } from './study-deck.js';
 
 export class OfficialBookError extends Error {
   constructor(message: string, public status: 400 | 403 | 404) { super(message); }
@@ -14,52 +17,39 @@ export async function getOfficialBook(textId: string, userId?: string) {
     language: schema.texts.language, staffOnly: schema.texts.staffOnly, status: schema.texts.status })
     .from(schema.texts).where(and(eq(schema.texts.id, textId), eq(schema.texts.visibility, 'official'))).limit(1);
   if (!text) return null;
-  const [counts] = await db.execute(sql`
-    SELECT count(*)::int AS occurrences,
-      count(DISTINCT o.lemma_id)::int AS unique_words,
-      count(*) FILTER (WHERE o.lemma_id IS NULL)::int AS unresolved,
-      count(*) FILTER (WHERE k.status='known')::int AS known,
-      count(*) FILTER (WHERE k.status IN ('known','learning'))::int AS learning
-    FROM vocabulary_occurrences o JOIN text_chapters ch ON ch.id=o.chapter_id
-    LEFT JOIN user_known_lemmas k ON k.lemma_id=o.lemma_id AND k.user_id=${userId ?? null}::uuid
-    WHERE ch.text_id=${textId} AND o.is_word=true
-  `);
+  const stats = (await libraryBookStats([textId], [], userId))[textId];
   const [chapters] = await db.execute(sql`
-    SELECT count(*)::int AS chapters, COALESCE(sum(token_count),0)::int AS words
-    FROM text_chapters WHERE text_id=${textId}
+    SELECT count(*)::int AS chapters FROM text_chapters WHERE text_id=${textId}
   `);
   const [stale] = await db.execute(sql`
     SELECT EXISTS(SELECT 1 FROM hindi_chapter_analyses a JOIN text_chapters c ON c.id=a.chapter_id
       JOIN hindi_dictionary_state d ON d.id=1 WHERE c.text_id=${textId} AND a.revision<>d.revision) AS stale
   `);
-  const denominator = Number(counts?.occurrences ?? 0);
-  const percent = (count: unknown) => userId && denominator ? Math.round(Number(count) / denominator * 1000) / 10 : null;
   const [copy] = userId ? await db.select({ textId: schema.officialTextCopies.textId }).from(schema.officialTextCopies)
     .where(and(eq(schema.officialTextCopies.sourceTextId, textId), eq(schema.officialTextCopies.userId, userId))).limit(1) : [];
   const { ownerId, ...metadata } = text;
-  return { ...metadata, words: Number(chapters?.words ?? 0), chapters: Number(chapters?.chapters ?? 0),
-    uniqueWords: Number(counts?.unique_words ?? 0), unresolved: Number(counts?.unresolved ?? 0),
-    knownPct: percent(counts?.known), learningPct: percent(counts?.learning), analysisStale: Boolean(stale?.stale),
+  return { ...metadata, words: stats?.words ?? 0, uniqueWords: stats?.uniqueWords ?? 0,
+    unresolved: stats?.unresolved ?? 0, unparsedWords: stats?.unparsedWords ?? 0, knownPct: stats?.knownPct ?? null,
+    knownWords: stats?.knownWords ?? 0, learningWords: stats?.learningWords ?? 0,
+    learningPct: stats?.learningPct ?? null, uniquePct: stats?.uniquePct ?? null,
+    chapters: Number(chapters?.chapters ?? 0), analysisStale: Boolean(stale?.stale),
     personalTextId: copy?.textId ?? (userId && ownerId === userId ? textId : null) };
 }
 
-export type OfficialDeckScope = 'unknown' | 'learning' | 'all';
+export type OfficialDeckScope = DeckScope;
 
-/** A catalog deck contains dictionary vocabulary and frequency, never book passages. */
-export async function getOfficialBookCards(textId: string, userId: string, scope: OfficialDeckScope): Promise<AnkiCard[]> {
+export async function getOfficialBookCards(
+  textId: string, userId: string, scope: DeckScope,
+  settings: Omit<DeckOptions, 'scope'> = { target: 98, ignoreProper: false, ignoreLoans: false },
+): Promise<AnkiCard[]> {
   if (!(await getOfficialBook(textId))) throw new OfficialBookError('Book not found', 404);
-  const rows = await db.execute(sql`
-    SELECT l.id,l.headword,l.pos,l.gloss_default,count(*)::int AS frequency
-    FROM vocabulary_occurrences o JOIN text_chapters c ON c.id=o.chapter_id
-    JOIN lemmas l ON l.id=o.lemma_id
-    LEFT JOIN user_known_lemmas k ON k.lemma_id=l.id AND k.user_id=${userId}
-    WHERE c.text_id=${textId} AND o.is_word=true
-      AND (${scope}='all' OR (${scope}='unknown' AND COALESCE(k.status::text,'unknown')='unknown')
-        OR (${scope}='learning' AND k.status='learning'))
-    GROUP BY l.id ORDER BY frequency DESC,l.headword,l.pos,l.id
-  `);
-  return rows.map((row) => ({ id: String(row.id), word: String(row.headword), pos: String(row.pos),
-    definition: String(row.gloss_default ?? ''), frequency: Number(row.frequency), minedSentence: null, samples: [] }));
+  const options = { ...settings, scope };
+  const rows = await officialDeckRows(textId, userId);
+  const plan = studyDeckPlan(studyBands(rows), options);
+  return rows.filter(row => eligibleForDeck(row, options)).slice(0, plan.count).map(row => ({
+    id: row.id!, word: row.word!, pos: row.pos!, definition: row.definition ?? '',
+    frequency: row.frequency, minedSentence: null, samples: [],
+  }));
 }
 
 /** Idempotent staff import; copied analyses and selections remain independent of the catalog. */

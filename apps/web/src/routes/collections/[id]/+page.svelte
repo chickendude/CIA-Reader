@@ -1,6 +1,7 @@
 <script lang="ts">
   import { invalidateAll, goto } from '$app/navigation';
   import Modal from '$lib/components/overlay/Modal.svelte';
+  import BookActions from '$lib/components/library/BookActions.svelte';
   import type { PageData } from './$types';
 
   let { data }: { data: PageData } = $props();
@@ -243,9 +244,16 @@
 
 <div class="cd">
   <header class="cd-h">
-    <h1 class="page-title">{data.collection.title}</h1>
+    <div class="collection-heading">
+      <h1 class="page-title">{data.collection.title}</h1>
+      {#if data.user?.role === 'admin' || (data.isOwner && data.collection.visibility !== 'official')}
+        <BookActions id={data.collection.id} title={data.collection.title} collection canRename />
+      {/if}
+    </div>
     <p class="cd-meta">
-      <span class="cd-pill">{data.collection.kind}</span>
+      {#if data.collection.kind !== 'chapter_book'}
+        <span class="cd-pill">{data.collection.kind}</span>
+      {/if}
       <span class="cd-pill">{data.collection.language}</span>
       <span class="cd-pill">{data.collection.visibility}</span>
       <span class="cd-pill">{data.items.length} {data.items.length === 1 ? 'text' : 'texts'}</span>
@@ -441,6 +449,8 @@
 </Modal>
 
 <style>
+  .collection-heading { position: relative; }
+  .collection-heading:has(:global(.book-actions)) { padding-right: 3.5rem; min-height: 3.25rem; }
   .cd-meta {
     display: flex;
     gap: 0.4rem;

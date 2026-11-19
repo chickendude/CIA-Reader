@@ -1,8 +1,8 @@
 <!--
   App shell (T-1.4 → T-5.11).
 
-  Desktop (>=960px): left rail with brand mark, sectioned nav, version
-  stamp + sign-out at the foot. Mobile (<960px): a thin top strip with
+  Desktop (>=960px): left rail with brand mark, sectioned nav and
+  sign-out at the foot. Mobile (<960px): a thin top strip with
   the brand + sign-out, plus a full-width bottom tab bar with icons +
   labels. Each screen owns its own top bar — there is no global
   full-width header on desktop, matching the CIAR design.
@@ -49,8 +49,7 @@
      *  + per-screen filters (T-5.25). Null when the user has no
      *  language data yet (anonymous fresh visitor). */
     currentLanguage?: string | null;
-    /** Languages the signed-in user has a `user_languages` row for —
-     *  the picker's options. Empty for anonymous visitors. */
+    /** Language choices available to this viewer. */
     availableLanguages?: LanguageOption[];
     /** Supported languages the user hasn't added yet — the switcher's
      *  "Add a language" options (#436). Empty for anonymous visitors. */
@@ -114,8 +113,7 @@
     try {
       await switchCurrentLanguage(code);
       langPickerOpen = false;
-      // Re-run every loader so the new currentLanguage is picked up (rail
-      // indicator, home grid, library / words / upload scoping…).
+      // Refresh language-scoped pages and the rail indicator.
       await invalidateAll();
     } catch (e) {
       switchError = (e as Error).message;
@@ -170,7 +168,7 @@
   // (see design-handoff/ciar/project/atoms.jsx). One viewBox + a list
   // of paths keeps the markup small without pulling in an icon font.
   const ICONS: Record<TabIcon, string[]> = {
-    home: ['M3 11.5L12 4l9 7.5', 'M5 10v9h14v-9'],
+    about: ['M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18z', 'M12 11v5', 'M12 8h.01'],
     library: ['M4 5h4v14H4z', 'M10 5h4v14h-4z', 'M16 6l3.5 1-2.5 13L13.5 19'],
     upload: ['M12 4v12', 'M7 9l5-5 5 5', 'M4 18v2h16v-2'],
     words: ['M5 5h14v14H5z', 'M5 9h14', 'M9 5v14'],
@@ -239,7 +237,7 @@
           </span>
         </button>
       {:else}
-        <a class="brand" href="/" aria-label="Parhiba home">
+        <a class="brand" href={user ? '/languages/new' : '/library'} aria-label={user ? 'Add a language' : 'Parhiba Library'}>
           <span class="brand-mark" aria-hidden="true">अ</span>
           <span class="brand-text">
             <span class="brand-name">Parhiba</span>
@@ -279,14 +277,13 @@
       {/each}
     </nav>
 
-    <footer class="rail-foot">
-      <span class="version">v0.5 · alpha</span>
-      {#if user}
+    {#if user}
+      <footer class="rail-foot">
         <form method="post" action="/logout" class="logout-form">
           <button type="submit" class="logout">Sign out</button>
         </form>
-      {/if}
-    </footer>
+      </footer>
+    {/if}
   </aside>
 
   <header class="top-strip" aria-label="Account">
@@ -304,7 +301,7 @@
           <span class="brand-mark" aria-hidden="true">{currentOption.glyph}</span>
         </button>
       {:else}
-        <a class="brand-strip" href="/" aria-label="Parhiba home">
+        <a class="brand-strip" href={user ? '/languages/new' : '/library'} aria-label={user ? 'Add a language' : 'Parhiba Library'}>
           <span class="brand-mark" aria-hidden="true">अ</span>
         </a>
       {/if}
@@ -584,13 +581,10 @@
     border-top: 1px solid var(--rule, var(--color-border));
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    justify-content: flex-end;
     font-family: var(--font-sans, var(--font-ui));
     font-size: 0.72rem;
     color: var(--ink-3, var(--color-fg-muted));
-  }
-  .version {
-    font-feature-settings: 'tnum';
   }
   .logout-form {
     margin: 0;

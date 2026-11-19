@@ -9,6 +9,7 @@
     type Match,
     type Reference,
     type Excerpt,
+    type ReviewItem,
   } from '$lib/dictionary/hindi-workshop';
   import { hindiPatterns } from '$lib/dictionary/hindi-patterns';
   import type { PageData } from './$types';
@@ -19,6 +20,7 @@
     working = $bindable(),
     ai,
     observed,
+    context,
     review,
     onsaved,
     onopen,
@@ -29,6 +31,7 @@
     working: boolean;
     ai: boolean;
     observed: string;
+    context?: ReviewItem['samples'][number]['context'];
     review: boolean;
     onsaved: (w: Word, advance?: boolean) => void;
     onopen: (id: string | null, lemma: string, pos: string, attach?: string) => void;
@@ -96,19 +99,22 @@
       if (!d.lemma.trim()) {
         preview = {};
         template = null;
+        previewError = '';
         return;
       }
       try {
-        const r = await workshop<{ forms: Record<string, string[]>; inventory: Inventory }>(
+        const r = await workshop<{ forms: Record<string, string[]>; inventory?: Inventory }>(
           'preview',
           { draft: d, inventory: true },
           ctrl.signal,
         );
         if (ctrl.signal.aborted) return;
-        if (!r.inventory)
-          throw new Error('Restart the local NLP service to load the workshop slot editor.');
-        template = r.inventory;
         preview = r.forms;
+        template = r.inventory ?? null;
+        if (!r.inventory) {
+          previewError = 'Inflection slot suggestions are unavailable.';
+          return;
+        }
         previewError = '';
         const inv = d.inventory;
         if (!inv || inv.lemma !== d.lemma || inv.pos !== d.pos || inv.paradigm !== d.paradigm) {
@@ -315,19 +321,20 @@
     });
   }
   const dirty = $derived(signature(draft) !== signature(word.draft));
+  const questionWord = $derived(context?.match ?? draft.lemma.trim());
+  const sentence = $derived(context ? (context.before + context.match + context.after).trim() : '');
+  const question = $derived(
+    `Explain the Hindi word 【${questionWord}】 in English. Give its dictionary form, part of speech, full range of meanings, gender where relevant, and inflections. Check Hindwi or Rekhta and explain any spelling variants or disagreements between sources.` +
+      (sentence ? `\nContext: ${sentence}` : ''),
+  );
 </script>
 
 <svelte:window onkeydown={keyboard} />
 <fieldset class="editor" disabled={working}>
   <div class="heading">
     <h2 lang="hi">{draft.lemma || 'Edit a word'}</h2>
-    {#if draft.lemma}<a
-        href={'https://chatgpt.com/?q=' +
-          encodeURIComponent(
-            'Explain the Hindi word ' +
-              draft.lemma +
-              ' in English, including its part of speech, meanings and inflections.',
-          )}
+    {#if questionWord}<a
+        href={'https://chatgpt.com/?q=' + encodeURIComponent(question)}
         target="_blank"
         rel="noreferrer">Ask ChatGPT ↗</a
       >{/if}

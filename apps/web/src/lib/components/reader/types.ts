@@ -219,9 +219,7 @@ export type ChapterView = {
    *  null when the chapter hasn't been processed yet (sibling to
    *  `tokens` null state). */
   phraseSpans: ChapterPhraseSpan[] | null;
-  /** PDF source only: the page image to render in the image reader, and
-   *  its natural pixel size (for the container aspect ratio). Null for
-   *  non-PDF chapters / pages not yet processed. */
+  /** Page image and optional natural dimensions for the image reader. */
   pageImageUrl?: string | null;
   pageWidth?: number | null;
   pageHeight?: number | null;

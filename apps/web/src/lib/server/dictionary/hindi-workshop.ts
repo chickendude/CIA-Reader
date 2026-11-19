@@ -3,7 +3,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { error } from '@sveltejs/kit';
 import { z } from 'zod';
 import { db, schema } from '../db/index.js';
-import { nlpClient } from '../nlp-client.js';
+import { previewHindiEntry } from './hindi-runtime.js';
 import { hindiPatterns } from '$lib/dictionary/hindi-patterns';
 import {
   partsOfSpeech,
@@ -191,9 +191,9 @@ export async function previewDraft(d: Draft, inventory: boolean) {
         ).values(),
       ];
     }
-    return nlpClient.hindiWorkshopPreview({ ...entry, form_evidence: evidence }, { inventory });
+    return previewHindiEntry({ ...entry, form_evidence: evidence }, { inventory });
   }
-  return nlpClient.hindiWorkshopPreview(entry, { inventory });
+  return previewHindiEntry(entry, { inventory });
 }
 export async function saveDraft(d: Draft, actor: string) {
   return db.transaction(async (tx) => {
@@ -214,7 +214,7 @@ export async function saveDraft(d: Draft, actor: string) {
         'This dictionary form and part of speech already exist. Select the existing entry.',
       );
     const entry = lexicalEntry(d, current?.entry ?? {});
-    await nlpClient.hindiWorkshopPreview(entry, { validate_inventory: true });
+    await previewHindiEntry(entry, { validate_inventory: true });
     if (current?.entry.group_id && (d.lemma !== current.draft.lemma || d.pos !== current.draft.pos))
       error(409, 'Ungroup this POS use before changing its identity.');
     if (current)
@@ -359,7 +359,7 @@ export async function mergeHindiWords(
   if (version && from.draft.version !== version)
     error(409, 'The source entry changed. Reopen it before merging.');
   if (from.entry.group_id) error(409, 'Ungroup the source POS use before merging.');
-  const fromForms = await nlpClient.hindiWorkshopPreview(lexicalEntry(from.draft, from.entry), {});
+  const fromForms = await previewHindiEntry(lexicalEntry(from.draft, from.entry));
   const aliases = [
     ...new Set([
       ...((to.entry.merged_entry_ids as string[]) ?? []),

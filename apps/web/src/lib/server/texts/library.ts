@@ -16,6 +16,9 @@
  * a future concern when individual users have thousands of imports —
  * for the first year of MVP a learner has a few dozen at most.
  */
+import { officialCatalog, catalogEntries, NOT_A_CHAPTER_BOOK_MEMBER } from './official-catalog.js';
+import { cachedBookScores, ensureReaderCoverage } from './reader-coverage.js';
+import { scoreBookEntries, unparsedWordCount, type BookWordStats } from './book-stats.js';
 import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 
 import { db, schema } from '../db/index.js';
@@ -106,23 +109,6 @@ function clampPage(opts: { limit?: number; offset?: number }): {
   const offset = Math.max(opts.offset ?? 0, 0);
   return { limit, offset };
 }
-
-/**
- * Exclude texts that exist purely as chapters of a chapter-book
- * collection. The collection card carries the user-facing entry point
- * — surfacing each chapter as its own library card would mean a
- * 30-chapter EPUB clutters the index with 30 extra rows.
- *
- * `course` / `anthology` member texts still surface as their own
- * cards: those collections curate standalone texts that the user may
- * also want to find directly.
- */
-const NOT_A_CHAPTER_BOOK_MEMBER = sql`NOT EXISTS (
-  SELECT 1 FROM collection_items ci
-  INNER JOIN collections c ON c.id = ci.collection_id
-  WHERE ci.text_id = ${schema.texts.id}
-    AND c.kind = 'chapter_book'
-)`;
 
 export type LibraryGridCard = Pick<LibraryCard,
   'id' | 'title' | 'language' | 'sourceType' | 'status' | 'visibility'
@@ -323,4 +309,49 @@ export async function listOfficialTexts(
     limit,
     offset,
   };
+}
+
+export type CoverageSort = 'reading' | 'unique' | 'recent';
+
+export function catalogSort(value: string | null, userId?: string): CoverageSort {
+  if (!userId || value === 'recent') return 'recent';
+  return value === 'unique' ? 'unique' : 'reading';
+}
+
+export async function listOfficialBooks(opts: {
+  language?: LanguageCode; userId?: string; sort: CoverageSort; limit: number; offset: number;
+}) {
+  type Card = LibraryGridCard & { stats: BookWordStats | null };
+  const { limit, offset } = clampPage(opts);
+  const order = opts.sort === 'recent' ? sql`created_at DESC, id`
+    : sql`${opts.sort === 'unique' ? sql`unique_ratio` : sql`reading_ratio`} DESC NULLS LAST, title, id`;
+  if (opts.userId) await ensureReaderCoverage(opts.userId);
+  const rows = await db.execute<{ cards: Card[]; total: number }>(sql`
+    WITH catalog AS (${officialCatalog(opts.language)}), candidates AS (
+      SELECT * FROM catalog
+      ${opts.sort === 'recent' ? sql`ORDER BY created_at DESC, id LIMIT ${limit} OFFSET ${offset}` : sql``}
+    ), scores AS (
+      ${opts.userId ? cachedBookScores(opts.userId) : sql`
+        WITH entries AS (${catalogEntries}) ${scoreBookEntries()}
+      `}
+    ), page AS (
+      SELECT c.*,s.reading_ratio,s.unique_ratio,
+        CASE WHEN s.id IS NOT NULL THEN jsonb_build_object(
+          'words', s.words, 'uniqueWords', s."uniqueWords", 'unresolved', s.unresolved,
+          'unparsedWords', ${unparsedWordCount(sql`
+            SELECT c.id WHERE c."chapterCount" IS NULL
+            UNION ALL SELECT ci.text_id FROM collection_items ci
+            WHERE c."chapterCount" IS NOT NULL AND ci.collection_id = c.id
+          `)},
+          'knownWords', s."knownWords", 'learningWords', s."learningWords",
+          'knownPct', round(100*s.reading_ratio,1), 'learningPct', round(100*s.learning_ratio,1),
+          'uniquePct', round(100*s.unique_ratio,1)) END AS stats
+      FROM candidates c LEFT JOIN scores s USING(id)
+      ORDER BY ${order} LIMIT ${limit} OFFSET ${opts.sort === 'recent' ? 0 : offset}
+    )
+    SELECT (SELECT count(*)::int FROM catalog) AS total,
+      coalesce(jsonb_agg(to_jsonb(page) - 'created_at' - 'reading_ratio' - 'unique_ratio' ORDER BY ${order}), '[]') AS cards
+    FROM page
+  `);
+  return { cards: rows[0]?.cards ?? [], totalCount: rows[0]?.total ?? 0, limit, offset };
 }
