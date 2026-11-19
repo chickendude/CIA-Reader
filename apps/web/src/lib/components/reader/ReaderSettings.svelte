@@ -1,15 +1,6 @@
 <!--
-  Reader settings popover (T-5.1b).
-
-  Sheet that slides in from the right (>=960px) or up from the bottom
-  on phones. Every change is applied to the parent's settings prop
-  immediately (live preview) and persisted via a debounced PATCH to
-  /api/v1/me/languages/:code so the user lands on the same setup the
-  next time they open this language.
-
-  Anonymous viewers (signed-out reads of an official text) see the
-  popover but skip the persistence path — settings live for the
-  session only.
+  Apply settings immediately so readers can preview them. Signed-in readers also save their
+  choices for this language.
 -->
 <script lang="ts">
   import { untrack } from 'svelte';
@@ -50,14 +41,8 @@
      *  reads of an official text) we still live-preview but skip the
      *  network call. */
     canPersist?: boolean;
-    /** #435: when true, the popover shows an admin-only section with
-     *  the "flag undefined words" overlay toggle. */
     isAdmin?: boolean;
-    /** #435: current state of the admin overlay. Owned by the reader
-     *  page (persisted to localStorage there, not via the per-language
-     *  settings API), so it lives outside `settings`. */
     flagUndefined?: boolean;
-    /** #435: called when the admin flips the overlay toggle. */
     onFlagUndefinedChange?: (on: boolean) => void;
     /** Override hook for tests. Real callers omit this. */
     fetcher?: typeof fetch;
@@ -300,10 +285,6 @@
     </section>
     {/if}
 
-    <!-- #435: admin-only overlay that tints words whose lemma has no
-         definition yet, so curators can spot dictionary gaps while
-         reading. Outside the per-language settings persistence — the
-         reader page owns this flag and stores it in localStorage. -->
     {#if isAdmin}
     <section data-testid="rs-admin">
       <h3>Admin</h3>

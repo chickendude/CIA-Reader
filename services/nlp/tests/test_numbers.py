@@ -1,15 +1,5 @@
-"""Unit tests for :mod:`app.numbers` (T-2.8).
-
-The 0–99 spelled-out forms in three languages plus the base-100 / 1k /
-lakh / crore composition rules are easy to typo and hard to spot
-without a native reader, so we pin a sweep of reference values and let
-CI catch regressions.
-
-Reference values were cross-checked against published number tables
-(NCERT Hindi mathematics primers; Marathi BalBharti texts; Odia
-Govt.-of-Odisha textbooks) and curator review on the trickier 50–99
-sandhi forms is part of T-2.8 sign-off.
-"""
+"""Check written and spoken numbers against reference forms, including irregular forms that cannot
+be inferred from their digits."""
 
 from __future__ import annotations
 
@@ -94,7 +84,6 @@ def test_parse_digits_accepts_comma_separators(surface: str, expected: int) -> N
         "1२3",
         "1୨3",
         "१୨३",
-        # Sign / decimal: T-2.8a.
         "-1",
         "+1",
         "−1",
@@ -485,7 +474,7 @@ def test_below_100_sweep_non_empty(converter) -> None:
 def test_number_forms_for_123() -> None:
     nf = number_forms("123")
     assert isinstance(nf, NumberForms)
-    # T-2.8a: ``value`` is the canonical Latin-digit string form so
+    # ``value`` is the canonical Latin-digit string form so
     # signed + decimal numerals can round-trip without floating-point
     # drift. Unsigned integers serialize as plain digits, no sign.
     assert nf.value == "123"
@@ -547,10 +536,6 @@ def test_number_forms_serializes_odia_field() -> None:
         "",
         "abc",
         "१23",  # mixed
-        # Note: `-1` and `1.5` USED to live here when number_forms only
-        # supported the unsigned-integer path. T-2.8a routes them
-        # through parse_number, so they're accepted now — see the new
-        # decimal/negative tests below.
         "1.",  # trailing decimal — still rejected
         ".5",  # leading decimal — still rejected
         "1.2.3",  # multiple decimals
@@ -565,7 +550,7 @@ def test_number_forms_returns_none_for_non_qualifying(surface: str) -> None:
 
 
 # ----------------------------------------------------------------
-# T-2.8a: parse_number — signed / decimal extensions.
+# parse_number, signed / decimal extensions.
 # ----------------------------------------------------------------
 
 
@@ -650,7 +635,7 @@ def test_parse_number_accepts_max_integer_with_fractional() -> None:
 
 
 # ----------------------------------------------------------------
-# T-2.8a: format_in_script — sign + decimal renderer.
+# format_in_script, sign + decimal renderer.
 # ----------------------------------------------------------------
 
 
@@ -679,11 +664,7 @@ def test_format_in_script(
     assert format_in_script(sign, integer, fractional, "orya") == orya  # type: ignore[arg-type]
 
 
-# ----------------------------------------------------------------
-# T-2.8a: spell — composed sign + decimal output. Pinned reference
-# values in each language so a typo in ऋण / उणे / ଋଣ or दशमलव /
-# दशांश / ଦଶମିକ trips CI rather than ships silently.
-# ----------------------------------------------------------------
+# Check the words for minus and the decimal point in each language.
 
 
 @pytest.mark.parametrize(
@@ -729,7 +710,7 @@ def test_spell_signed_decimal(
 
 
 # ----------------------------------------------------------------
-# T-2.8a: number_forms — full integration for signed / decimal.
+# number_forms, full integration for signed / decimal.
 # ----------------------------------------------------------------
 
 

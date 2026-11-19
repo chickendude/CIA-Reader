@@ -1,5 +1,5 @@
 /**
- * Correction-quality stats (T-6.9).
+ * Correction-quality stats.
  *
  * Backs the lightweight admin dashboard at /moderation/stats. Four
  * metric buckets:

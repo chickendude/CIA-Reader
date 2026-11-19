@@ -1,5 +1,5 @@
 /**
- * Alignment import / export (T-9.6).
+ * Alignment import / export.
  *
  * Two formats:
  *

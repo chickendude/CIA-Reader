@@ -2,10 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 const staff = vi.hoisted(() => vi.fn().mockResolvedValue(false));
 vi.mock('./staff.js', () => ({ isStaffMember: staff }));
 
-// canReadText consults three sharing modules via dynamic imports:
-// T-7.2 direct shares, T-7.4 group shares, T-8.4 collection shares.
-// Mock all three to "no share" so this unit test stays focused on
-// visibility / owner branches without hitting the DB.
+// Assume there are no direct, group or collection shares unless the test sets one up.
 vi.mock('../texts/sharing.js', () => ({
   viewerHasDirectShare: async () => false,
 }));
@@ -57,9 +54,7 @@ describe('canReadText', () => {
     expect(await canReadText(OTHER, text({ visibility: 'official' }))).toBe(true);
   });
 
-  it('denies non-owners of texts with visibility=shared (M7 not yet wired)', async () => {
-    // The shared-visibility row exists but the text_shares lookup
-    // hasn't been implemented yet — until M7 lands, deny-by-default.
+  it('denies access to a shared text when the viewer has no matching share', async () => {
     expect(await canReadText(OTHER, text({ visibility: 'shared' }))).toBe(false);
   });
 

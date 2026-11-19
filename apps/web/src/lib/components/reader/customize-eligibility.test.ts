@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { customizableOfficialIds } from './customize-eligibility.js';
 
-describe('customizableOfficialIds (T-3.11)', () => {
+describe('customizableOfficialIds', () => {
   const officials = [{ id: 'o1' }, { id: 'o2' }, { id: 'o3' }];
 
   it('returns the empty set when the viewer is not the owner', () => {

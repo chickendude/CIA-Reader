@@ -1,7 +1,4 @@
 // @vitest-environment node
-/**
- * Route tests for POST /api/v1/admin/phrases/merge (T-14.7).
- */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mergePhrases = vi.fn();

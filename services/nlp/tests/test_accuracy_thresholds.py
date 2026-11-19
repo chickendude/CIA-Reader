@@ -1,23 +1,5 @@
-"""Per-language lemma-accuracy thresholds (T-2.8).
-
-Two layers of coverage:
-
-1. **Corpus-structure sanity** — always on. Loads every language's
-   golden-file JSON, checks IDs are unique and the file isn't empty.
-   Catches malformed JSON and duplicate-id merges before CI has to
-   spin up Stanza. Runs in the default ``pytest`` invocation.
-
-2. **Real-pipeline accuracy** — marked ``@pytest.mark.real_models``,
-   skipped by default. In the ``nlp-accuracy`` CI job we install
-   ``[models]`` (Stanza + IndicNLP), download the Marathi and Basque
-   UD models, and run these. The thresholds — ≥90% Hindi, ≥80%
-   Marathi, ≥70% Odia lemma accuracy — come straight from the plan
-   and are the release gate for the whole pipeline milestone.
-
-Why not merge the two? Because CI signal latency matters. The main
-``nlp`` job must stay under a minute so PR feedback is fast; model
-download + inference adds 5-10 minutes and needs its own lane.
-"""
+"""Check word analyses against a reference corpus. The real_models tests run separately because
+they load language models."""
 
 from __future__ import annotations
 
@@ -28,9 +10,11 @@ import pytest
 from app.eval import evaluate
 from app.eval.corpus import load_corpus
 from app.pipelines import get_pipeline, reset_pipeline_cache
+from app.pipelines.hindidb import HindiDBPipeline
 from app.pipelines.odia import OdiaPipeline
 from app.pipelines.odia.lemmas import default_lemma_table
 from app.pipelines.yiddish import build_yiddish_pipeline
+from hindidb.lexicon import SEED, Lexicon
 
 _GOLDEN_DIR = Path(__file__).resolve().parent / "golden"
 _HINDI_CORPUS = _GOLDEN_DIR / "hindi_corpus.json"
@@ -53,9 +37,6 @@ _YIDDISH_CORPUS = (
     / "golden_corpus.json"
 )
 
-# Per-language lemma-accuracy floors. Stay in sync with the M2 release
-# gate in the plan. Raising these as pipeline quality improves is a
-# follow-up — lowering them is not allowed without an explicit PR.
 HINDI_LEMMA_FLOOR = 0.90
 MARATHI_LEMMA_FLOOR = 0.80
 ODIA_LEMMA_FLOOR = 0.70
@@ -152,14 +133,33 @@ def _clean_pipeline_cache():
 
 
 @pytest.mark.real_models
-def test_hindi_real_pipeline_meets_lemma_floor(_clean_pipeline_cache):
-    pipeline = get_pipeline("hi")
-    result = evaluate(pipeline, load_corpus(_HINDI_CORPUS))
-    summary = result.summary()
-    assert summary["lemma_accuracy"] >= HINDI_LEMMA_FLOOR, (
-        f"Hindi lemma accuracy regressed: {summary}\n"
-        "First failures:\n" + "\n".join(result.failures[:30])
-    )
+def test_hindi_real_pipeline_meets_lemma_floor():
+    lexicon = Lexicon([SEED, _GOLDEN_DIR / "hindi_dictionary.json"])
+    ids = {key: key for key in lexicon.entries}
+
+    class CorpusDictionary:
+        def load(self):
+            return lexicon, ids, 1
+
+    pipeline = HindiDBPipeline(CorpusDictionary())
+    missed = []
+    words = 0
+    for sentence in load_corpus(_HINDI_CORPUS).sentences:
+        actual = pipeline.process(sentence.text).tokens
+        assert [t.surface for t in actual] == [t.surface for t in sentence.tokens], sentence.id
+        for expected, token in zip(sentence.tokens, actual, strict=True):
+            if expected.lemma is None:
+                assert not token.is_word and not token.candidates, (sentence.id, token.surface)
+                continue
+            words += 1
+            assert token.is_word, (sentence.id, token.surface)
+            # The reader shows every possible dictionary match for a word.
+            matches = {(c.lemma, c.pos) for c in token.candidates}
+            if (expected.lemma, expected.pos) not in matches:
+                missed.append(f"{sentence.id}: {token.surface} ({expected.lemma}, {expected.pos})")
+    assert words > 0
+    accuracy = (words - len(missed)) / words
+    assert accuracy >= HINDI_LEMMA_FLOOR, f"Hindi lemma accuracy {accuracy:.2%}. Missing: {missed}"
 
 
 @pytest.mark.real_models

@@ -1,4 +1,4 @@
-"""Tests for the pipeline dispatch layer (T-2.1).
+"""Tests for the pipeline dispatch layer.
 
 These tests isolate the dispatch behavior from the HTTP layer — they go
 directly against :mod:`app.pipelines` so regressions show up with a
@@ -25,9 +25,6 @@ def _clear_cache():
 
 
 def test_get_pipeline_returns_real_pipelines_for_mvp_languages():
-    # After T-2.2 / T-2.3 / T-2.3a, every MVP language routes to its
-    # real implementation. No language is on the stub any more (the
-    # StubPipeline still exists as a test-only factory override target).
     assert isinstance(get_pipeline("hi"), HindiDBPipeline)
     assert isinstance(get_pipeline("mr"), MarathiPipeline)
     assert isinstance(get_pipeline("or"), OdiaPipeline)
@@ -107,8 +104,7 @@ def test_stub_pipeline_returns_valid_token_shape():
 
 
 def test_custom_factory_override_via_registry(monkeypatch):
-    # This is the hook T-2.2 will use: drop-in a real Hindi pipeline without
-    # touching main.py. Verify the dispatcher honors it.
+    # Use a test factory to verify that the language registry selects the requested pipeline.
     class MarkerPipeline(StubPipeline):
         pipeline_id = "marker"
 
@@ -118,7 +114,7 @@ def test_custom_factory_override_via_registry(monkeypatch):
 
 
 # ----------------------------------------------------------------
-# T-2.8: digit-only NUM tokens carry number_forms across all three
+# digit-only NUM tokens carry number_forms across all three
 # pipelines, regardless of source script.
 # ----------------------------------------------------------------
 
@@ -148,9 +144,7 @@ def test_pipeline_attaches_number_forms_for_digit_tokens(
     tok = _find_number_token(out.tokens, number_surface)
     assert tok is not None, f"no token with surface {number_surface!r} in {out.tokens}"
     assert tok.number_forms is not None
-    # T-2.8a widened ``value`` from int to str. For the integer-only
-    # path (no sign, no decimal) the canonical form is the Latin-digit
-    # string of the value — same regardless of source script.
+    # Keep the digits as text to preserve the decimal representation.
     expected_value = (
         str(int(number_surface)) if number_surface.isascii() else None
     )
@@ -164,7 +158,7 @@ def test_pipeline_attaches_number_forms_for_digit_tokens(
 
 
 # ----------------------------------------------------------------
-# T-2.8a: signed and decimal NUM tokens flow through the pipeline
+# signed and decimal NUM tokens flow through the pipeline
 # with their negative / decimal payload populated end-to-end.
 # ----------------------------------------------------------------
 

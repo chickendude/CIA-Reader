@@ -17,11 +17,11 @@ import type { LayoutServerLoad } from './$types';
  * serializable shape — anything touching secret fields must still go
  * through requireUser on a per-route basis.
  *
- * Also resolves the active language (T-5.25): the rail's language
+ * Also resolves the active language: the rail's language
  * indicator + picker reads `availableLanguages` (the user's
  * `user_languages` rows) and `currentLanguage` (cookie-driven
  * choice, validated against the active list). `addableLanguages`
- * (#436) carries the supported languages the user hasn't added yet
+ * carries the supported languages the user hasn't added yet
  * so the switcher can offer "Add a language" inline.
  */
 export const load: LayoutServerLoad = async ({ locals, cookies }) => {
@@ -58,7 +58,7 @@ export const load: LayoutServerLoad = async ({ locals, cookies }) => {
           email: locals.user.email,
           displayName: locals.user.displayName,
           role: locals.user.role,
-          // T-11.7: layout drives the VerifyEmailBanner. Boolean
+          // layout drives the VerifyEmailBanner. Boolean
           // (rather than the timestamp) to keep the page-data
           // surface small and serializable-friendly.
           emailVerified: locals.user.emailVerifiedAt !== null,

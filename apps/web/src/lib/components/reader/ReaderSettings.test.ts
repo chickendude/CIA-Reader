@@ -19,7 +19,7 @@ function renderPopover(props: Record<string, unknown> = {}) {
 
 afterEach(() => cleanup());
 
-describe('ReaderSettings — admin undefined-words overlay (#435)', () => {
+describe('ReaderSettings admin undefined-words overlay', () => {
   it('hides the admin section for non-admins', () => {
     renderPopover({ isAdmin: false });
     expect(screen.queryByTestId('rs-admin')).toBeNull();

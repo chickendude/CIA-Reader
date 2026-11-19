@@ -1,6 +1,6 @@
 // @vitest-environment node
 /**
- * Tests for the dictionary browse service (T-3.6). Mocks the drizzle
+ * Tests for the dictionary browse service. Mocks the drizzle
  * `db` surface — we mostly want to prove that filters wire through and
  * that limit/offset are clamped sanely.
  */
@@ -183,7 +183,7 @@ describe('listDictionaryLemmas', () => {
     ).resolves.toMatchObject({ totalCount: 1 });
   });
 
-  // ---- nukta-agnostic fallback (#318) ----------------------------------
+  // ---- nukta-agnostic fallback ----------------------------------
 
   it('falls back to a nukta-agnostic search when the user typed without nukta but DB has it', async () => {
     // The bug-driving direction: user types `पढना` (no nukta), the
@@ -202,9 +202,8 @@ describe('listDictionaryLemmas', () => {
   });
 
   it('falls back to a nukta-agnostic search when the user typed with nukta but DB strips it', async () => {
-    // Inverse direction: user types `पढ़ना`, DB has `पढना` (e.g.
-    // pre-#316 lemma rows). Same fallback path because both sides
-    // reduce to the same nukta-free key.
+    // A search for पढ़ना can still find an older entry stored as पढना. Both spellings have the
+    // same search key after removing the nukta.
     stage([]);
     stage([{ n: 0 }]);
     stage([lemmaRow({ headword: 'पढना' })]);
@@ -251,14 +250,9 @@ describe('listDictionaryLemmas', () => {
     expect(result.usedNuktaFallback).toBe(false);
   });
 
-  // ---- romanization-aware search (T-3.12) ----------------------------
+  // ---- romanization-aware search ----------------------------
 
   it('transliterates a Latin query to native and searches against the strict tier', async () => {
-    // The headline use case from T-3.12: user types `kitaab` in
-    // Latin, the search runs against `किताब` and finds the lemma row.
-    // We don't introspect the WHERE clause directly but we can prove
-    // the tier landed via the `usedRomanizationTransliteration` flag
-    // and the `effectiveQuery` echoed back in the result.
     stage([lemmaRow({ headword: 'किताब' })]);
     stage([{ n: 1 }]);
     const result = await listDictionaryLemmas('hi', { q: 'kitaab' });

@@ -47,8 +47,6 @@ beforeEach(() => {
     learningCount: 0,
     ignoredCount: 0,
     encounteredCount: 0,
-    // T-14.6: phrase counters default to 0 so loader tests stay
-    // phrase-agnostic; tests that care can override per-call.
     knownPhrasesCount: 0,
     learningPhrasesCount: 0,
     ignoredPhrasesCount: 0,

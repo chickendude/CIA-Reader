@@ -1,6 +1,6 @@
 // @vitest-environment node
 /**
- * Unit tests for the generic Kaikki importer (T-3.10) plus thin
+ * Unit tests for the generic Kaikki importer plus thin
  * smoke tests on the per-language instantiations (kaikki-hindi,
  * kaikki-marathi). The pure transform functions are language-agnostic
  * — testing them once via the Hindi fixture is enough.

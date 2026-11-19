@@ -1,6 +1,6 @@
 // @vitest-environment node
 /**
- * Unit tests for the NLP job lifecycle helpers (T-4.4).
+ * Unit tests for the NLP job lifecycle helpers.
  *
  * Same staged-mock pattern as the rest of lib/server/texts.
  */
@@ -64,9 +64,6 @@ const selectFn = vi.fn(() => {
 const updateFn = vi.fn(() => makeUpdateChain());
 const insertFn = vi.fn(() => makeInsertChain());
 
-// T-8.4: canReadText consults collections.js for collection-share
-// access. Mock to "no share" so getTextStatus visibility tests
-// keep their pre-T-8.4 outcomes.
 vi.mock('../collections.js', () => ({
   viewerHasCollectionShareForText: async () => false,
 }));
@@ -92,13 +89,13 @@ vi.mock('../db/index.js', () => ({
   },
 }));
 
-// T-7.2: getTextStatus' canReadText path now imports sharing.js
+// getTextStatus' canReadText path now imports sharing.js
 // via a dynamic import. Mock to "no share" so existing tests keep
 // their semantics.
 vi.mock('./sharing.js', () => ({
   viewerHasDirectShare: async () => false,
 }));
-// T-7.4: same treatment for the groups module.
+// same treatment for the groups module.
 vi.mock('../groups.js', () => ({
   viewerHasGroupShare: async () => false,
 }));

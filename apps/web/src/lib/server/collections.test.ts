@@ -1082,7 +1082,7 @@ describe('viewerHasCollectionShareForText', () => {
   });
 });
 
-describe('viewerHasCollectionShare (T-8.4)', () => {
+describe('viewerHasCollectionShare', () => {
   it('returns true when the viewer has a share row for the collection', async () => {
     const { viewerHasCollectionShare } = await import('./collections.js');
     queue.push([{ collectionId: 'col-1' }]);

@@ -32,7 +32,7 @@ const selectFn = vi.fn(() => {
   return makeSelectChain();
 });
 
-// T-7.5: listSharedTexts uses db.execute(sql`…`) for the
+// listSharedTexts uses db.execute(sql`…`) for the
 // shared-id union. Test stub returns the next staged result.
 const executeFn = vi.fn(async () => {
   calls.push({ kind: 'select' });

@@ -1,4 +1,4 @@
-"""Unit tests for the rule-based phrase detector (T-14.5).
+"""Unit tests for the rule-based phrase detector.
 
 The detector is pure — feed it tokens and patterns and assert the
 output. Per-language YAML loaders are exercised via the registry's
@@ -227,9 +227,8 @@ class TestPhraseDetector:
             tok(2, "है", pos="AUX"),
         ]
         out = detector.detect(tokens)
-        # Both patterns match at start_idx=0; the detector emits both
-        # so the consumer (T-14.3 reader, T-14.5a worker) can decide
-        # longest-wins or store both.
+        # Keep both patterns that start on the same word. The reader decides which match to
+        # display.
         assert len(out) == 2
         assert {p.pattern_id for p in out} == {"two_step", "three_step"}
 

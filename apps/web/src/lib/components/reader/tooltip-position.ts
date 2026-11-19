@@ -1,5 +1,5 @@
 /**
- * Hover-tooltip positioning helper (T-5.10).
+ * Hover-tooltip positioning helper.
  *
  * The reader's hover tooltip appears above the focused word, centered
  * horizontally. If the word sits too close to the viewport edges we

@@ -1,21 +1,6 @@
 /**
- * POST /api/v1/admin/texts/:id/reprocess (T-4.4 dev affordance,
- * future T-6.8 home).
- *
- * Re-run the NLP pipeline on an existing text — used to recover
- * stuck `pending` texts (e.g. when the dispatcher wasn't registered
- * at upload time) and as the entry point for T-6.8's bulk
- * re-processing after dictionary / override updates.
- *
- * Synchronous (awaits the full process), so the caller can tell
- * whether the run succeeded.
- *
- * Authorization (T-11.3): admin OR text owner. Owners need a retry
- * affordance when their own upload lands in `failed` — gating it
- * behind admin meant a learner whose text bombed had no recourse
- * but to delete + re-upload. Non-owners (even with read access via
- * a share) are still rejected because re-running the pipeline is
- * an active operation, not a read.
+ * Only the owner or an admin can retry processing a text. A successful response confirms the run
+ * finished.
  */
 import { eq } from 'drizzle-orm';
 import { error, json } from '@sveltejs/kit';

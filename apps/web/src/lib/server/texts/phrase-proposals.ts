@@ -1,39 +1,6 @@
 /**
- * Phrase proposals queue + promotion (T-14.5a).
- *
- * The NLP service (T-14.5) emits `proposed_phrases` per chapter
- * after Stanza finishes. This module is the web-side glue: the
- * worker calls `upsertPhraseProposals` after each chapter's
- * `text_tokens` lands, and a periodic admin pass calls
- * `promotePhraseProposals` to fold ≥-N-chapter occurrences into
- * real `phrases` rows with `source='nlp'`.
- *
- * Flow
- * ----
- *
- * 1. Worker writes one row per `(chapter, surface_normalised,
- *    pattern_id)` triple to `phrase_proposals`. Idempotent —
- *    a re-process of the same chapter doesn't duplicate.
- * 2. Periodic promotion (manual via the admin endpoint, or a
- *    cron once the deploy story lands):
- *      a. Group queued proposals by `(language,
- *         surface_normalised)` and count distinct chapter ids.
- *      b. For each group at or above the threshold:
- *         i. Call `createPhrase` (T-14.1) with `source='nlp'`
- *            and the stored `tokens`. The dedupe path returns
- *            the existing phrase id when one already exists,
- *            so re-running the promotion is a no-op once a row
- *            has been created.
- *         ii. Stamp every proposal in the group with
- *            `promoted_at = now()` and
- *            `promoted_phrase_id = <created or reused id>` so
- *            the next promotion pass skips them.
- *
- * Why a queue + threshold rather than inserting `phrases`
- * inline: rule-based detectors throw off false positives at a
- * steady rate; promoting only patterns that recur across N
- * chapters is the simplest filter for noise without a per-
- * pattern precision audit.
+ * Group the parser's proposals by language, spelling and pattern. Count distinct chapters so
+ * repeated occurrences in one chapter cannot promote a phrase on their own.
  */
 import { and, eq, isNull, sql } from 'drizzle-orm';
 
@@ -41,12 +8,6 @@ import { db, schema } from '../db/index.js';
 import { createPhrase } from '../phrases.js';
 import type { LanguageCode } from '@ciareader/shared-types';
 
-/**
- * How many distinct chapters a `(language, surface_normalised)`
- * pair must occur in before promotion. Configurable so a
- * specific deploy can tighten the floor (e.g. 5) without a code
- * change. Default 3 matches the spec in the M14 epic body.
- */
 export const PHRASE_PROMOTION_MIN_CHAPTERS = Number(
   process.env.PHRASE_PROMOTION_MIN_CHAPTERS ?? 3,
 );
@@ -68,17 +29,7 @@ export type UpsertProposalsInput = {
   proposals: WorkerProposal[];
 };
 
-/**
- * Persist a chapter's NLP proposals to the queue. Idempotent on
- * `(chapter_id, surface_normalised, pattern_id)` — a re-process
- * of the same chapter inserts ON CONFLICT DO NOTHING so the
- * queue never grows past one row per occurrence.
- *
- * Called by the worker after `text_tokens` are written.
- * Failures bubble up — same posture as the T-14.2 span resolver
- * hook, so a queue crash flips the text to `failed` rather than
- * leaving the chapter half-indexed.
- */
+/** Report failures to the caller so it can mark the text as failed and retry processing. */
 export async function upsertPhraseProposals(
   input: UpsertProposalsInput,
 ): Promise<number> {
@@ -263,12 +214,7 @@ export type ProposalSummary = {
   promoted: boolean;
 };
 
-/**
- * Summary of the queue grouped by `(language, surface, pattern)`
- * with chapter counts — drives the curator dashboard's "what's
- * in the queue" view (lands with T-14.4a if the curator UI
- * surfaces it).
- */
+/** Count the distinct chapters supporting each proposed phrase. */
 export async function summarizePhraseProposals(args: {
   language?: LanguageCode;
   limit?: number;

@@ -1,5 +1,5 @@
 /**
- * POST /api/v1/me/lemma-proposals (T-6.3).
+ * POST /api/v1/me/lemma-proposals.
  *
  * Submits a new-lemma proposal from the correction modal. Wraps
  * `submitLemmaProposal` in `lemma-proposals.ts`, which writes the

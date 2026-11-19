@@ -1,5 +1,5 @@
 /**
- * Generic Kaikki.org → CIA Reader importer factory (T-3.10).
+ * Generic Kaikki.org → CIA Reader importer factory.
  *
  * Kaikki publishes one JSONL dump per language; the per-line shape is
  * identical across languages, so the parser, POS map, gloss-hashing,

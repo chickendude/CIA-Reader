@@ -1,16 +1,4 @@
-/**
- * Login page (T-1.1 — UI side, deferred from initial M1).
- *
- * Two form actions on this page: `default` (email + password) and
- * `magic` (passwordless email link). Both share the same loader,
- * which honors a `?next=` redirect target so private routes can
- * round-trip through here without losing the user's intent.
- *
- * Authentication itself runs through the same service helpers the
- * /api/v1/auth/login endpoint uses — Lucia-style sessions for the
- * web cookie. Mobile clients keep using the JSON endpoint and its
- * bearer-token response shape.
- */
+/** Keep the original destination when asking a reader to sign in. */
 import { eq } from 'drizzle-orm';
 import { fail, redirect } from '@sveltejs/kit';
 import { z } from 'zod';

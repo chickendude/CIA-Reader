@@ -1,5 +1,5 @@
 /**
- * POST /api/v1/admin/users/:id/role (T-3.4).
+ * POST /api/v1/admin/users/:id/role.
  *
  * Admin-only. Changes a user's role. Refuses to demote the last admin
  * so the system can't accidentally be orphaned.

@@ -1,5 +1,5 @@
 /**
- * Drizzle-backed `DictionaryRepo` (T-3.1).
+ * Drizzle-backed `DictionaryRepo`.
  *
  * Production counterpart to `InMemoryDictionaryRepo`. The shape mirrors
  * the test fake exactly — the import runner can't tell which one it's
@@ -99,9 +99,6 @@ export class DrizzleDictionaryRepo implements DictionaryRepo {
       .from(translations)
       .where(
         and(
-          // T-14.7a: legacy lemma_id column dropped — the
-          // importer dedup lookup now reads via the
-          // polymorphic (target_type, target_id) pair.
           eq(translations.targetType, 'lemma'),
           eq(translations.targetId, lemmaId),
           eq(translations.source, source),
@@ -116,9 +113,6 @@ export class DrizzleDictionaryRepo implements DictionaryRepo {
     const [row] = await this.db
       .insert(translations)
       .values({
-        // T-14.7a: legacy lemma_id column dropped — only the
-        // polymorphic (target_type, target_id) pair is
-        // written. Importer paths are always lemma-target.
         targetType: 'lemma',
         targetId: payload.lemmaId,
         source: payload.source,

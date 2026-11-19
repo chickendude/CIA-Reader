@@ -1,7 +1,4 @@
 // @vitest-environment node
-/**
- * Route tests for PATCH /api/v1/admin/lemmas/:id/lock (T-3.7).
- */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const setLemmaLock = vi.fn();

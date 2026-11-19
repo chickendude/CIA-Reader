@@ -1,14 +1,3 @@
-/**
- * POST /api/v1/admin/lemmas/:id/merge (T-3.7).
- *
- * `:id` is the **winner** — the lemma that will remain after the merge.
- * Body carries the loser id and a human reason. Rewires translations +
- * lemma_forms, deletes the loser, and audits both sides.
- *
- * Out of scope at M3: rewiring `text_tokens`, `user_known_lemmas`, and
- * `form_lemma_overrides`. Those tables land in M5/M6 and the merge
- * function will extend then.
- */
 import { error, json } from '@sveltejs/kit';
 import { z } from 'zod';
 

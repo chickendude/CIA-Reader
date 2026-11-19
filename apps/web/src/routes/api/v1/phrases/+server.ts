@@ -1,17 +1,6 @@
 /**
- * POST /api/v1/phrases  — create or reuse a phrase (T-14.1).
- * GET  /api/v1/phrases  — list phrases for a language.
- *
- * Phrase creation dedupes against `(language, surface_normalised,
- * source)` so a second user submitting the same surface reuses the
- * existing row. The endpoint returns 201 for a fresh insert and 200
- * for a dedupe hit so clients can distinguish the two without re-
- * fetching.
- *
- * The `source` of the row is locked to `user` for non-curator
- * callers — admins and curators may submit `curator` /
- * `official_dictionary` rows via this surface; the dictionary
- * editor in T-14.4 layers a richer admin-only path on top.
+ * Return 201 for a new phrase or 200 when the same source already has that phrase in the
+ * language. Only editors can submit phrases on behalf of a dictionary.
  */
 import { error, json } from '@sveltejs/kit';
 import { z } from 'zod';
@@ -49,7 +38,7 @@ export const POST: RequestHandler = async (event) => {
 
   // Source policy: regular users are locked to source='user'.
   // Curator / admin may set any allowed source. The role check
-  // mirrors the existing dictionary editor (T-3.4).
+  // mirrors the existing dictionary editor.
   const sourceAllowed =
     input.source === 'user' ||
     user.role === 'curator' ||
@@ -96,7 +85,7 @@ const listQuery = z.object({
 
 export const GET: RequestHandler = async (event) => {
   // Listing is anonymous-readable — same posture as the dictionary
-  // browse page (T-3.6). The endpoint returns the phrase header
+  // browse page. The endpoint returns the phrase header
   // only; translations are hydrated by `GET /api/v1/phrases/:id`
   // to keep this list cheap.
   const params = listQuery.safeParse(

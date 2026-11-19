@@ -1,10 +1,4 @@
 // @vitest-environment node
-/**
- * Unit tests for the inverted Kaikki English → Indic-language importer
- * (T-3.10 follow-up). Pure transform functions are tested directly;
- * end-to-end streaming over a small JSONL fixture exercises the
- * per-language smoke for HI / MR / OR.
- */
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 

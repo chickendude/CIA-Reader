@@ -1,16 +1,6 @@
 /**
- * Reader-popup customize-action eligibility (T-3.11 → completes T-3.5).
- *
- * The pop-up shows a "Customize" button on each official translation row.
- * Clicking it forks that official into a personal translation via
- * `POST /api/v1/translations` with `parentTranslationId`. The wire and the
- * server-side validation already exist (T-3.2 / T-3.5 schema work) — this
- * helper just decides which officials should expose the button.
- *
- * Extracted to a pure module so the rule is unit-testable without booting
- * the Svelte component. Vitest excludes `.svelte` files from coverage; the
- * eligibility predicate is the only branch worth covering and it lives
- * here.
+ * Readers can make a personal copy of an official translation. Offer that action only for
+ * eligible rows.
  */
 
 type OfficialTranslation = {

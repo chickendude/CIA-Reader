@@ -1,7 +1,4 @@
 // @vitest-environment node
-/**
- * Tests for /reader/[textId] SSR loader (T-5.1).
- */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
@@ -34,9 +31,6 @@ vi.mock('$lib/server/texts/tokens.js', async () => {
   };
 });
 
-// T-14.3: phrase spans ride alongside the active chapter. Default
-// the loader to an empty array so existing tests stay focused on
-// the chapter / token / progress surfaces.
 vi.mock('$lib/server/texts/phrase-spans.js', async () => {
   const actual = await vi.importActual<
     typeof import('$lib/server/texts/phrase-spans.js')
@@ -58,21 +52,13 @@ vi.mock('$lib/server/texts/progress.js', async () => {
   };
 });
 
-// T-5.1b: the loader looks up user_languages directly. Mock the
-// drizzle query chain to return whatever the test stages in
-// `userLanguagesRow`.
 let userLanguagesRow: Record<string, unknown> | null = null;
 let hindiCuratorGrant = false;
-// T-8.3: the loader now calls readerCollectionContext. Mock to
-// "no collection" by default so existing tests stay focused on the
-// reader surface; tests that care stage a return value.
 const readerCollectionContext = vi.fn();
 vi.mock('$lib/server/collections.js', () => ({
   readerCollectionContext: (...a: unknown[]) => readerCollectionContext(...a),
 }));
 
-// T-9.1: the loader pulls audio for the active text + chapter.
-// Default to "no audio" so existing tests don't have to care.
 vi.mock('$lib/server/audio/audio.js', () => ({
   listAudioForText: async () => [],
 }));
@@ -155,8 +141,6 @@ beforeEach(() => {
   // tokens written yet" so the loader falls back to client-side
   // tokenization in tests that don't care.
   loadChapterTokens.mockResolvedValue(null);
-  // T-14.3: phrase spans default to an empty array — existing
-  // tests stay phrase-agnostic.
   loadChapterPhraseSpans.mockResolvedValue([]);
   // No saved progress unless a test stages it.
   getTextProgress.mockResolvedValue(null);
@@ -185,8 +169,6 @@ describe('/reader/[textId] loader', () => {
       tokenIdx: 0,
       endOfChapter: false,
     });
-    // Default reader_layout_mode is 'page' (matches the user_languages
-    // column default — T-5.1b's loader reads through to that default).
     expect(data.mode).toBe('page');
     expect(data.isOwner).toBe(true);
   });
@@ -245,7 +227,7 @@ describe('/reader/[textId] loader', () => {
     expect(data.mode).toBe('page');
   });
 
-  it('uses the saved reader_layout_mode from user_languages when no ?mode is given (T-5.1b)', async () => {
+  it('uses the saved reader_layout_mode from user_languages when no ?mode is given', async () => {
     getReadableText.mockResolvedValueOnce(ownedTextWithChapters(1));
     userLanguagesRow = {
       readerLayoutMode: 'continuous',
@@ -269,7 +251,7 @@ describe('/reader/[textId] loader', () => {
     expect(data.readerSettings.highlightLearning).toBe(false);
   });
 
-  it('exposes a default readerSettings when the user has no user_languages row (T-5.1b)', async () => {
+  it('exposes a default readerSettings when the user has no user_languages row', async () => {
     getReadableText.mockResolvedValueOnce(ownedTextWithChapters(1));
     const data = (await callLoad(`http://x/reader/${VALID_ID}`)) as {
       readerSettings: { fontSize: number; readingWidth: string };
@@ -278,7 +260,7 @@ describe('/reader/[textId] loader', () => {
     expect(data.readerSettings.readingWidth).toBe('medium');
   });
 
-  it('marks canPersistSettings true for signed-in users and false for anon (T-5.1b)', async () => {
+  it('marks canPersistSettings true for signed-in users and false for anon', async () => {
     getReadableText.mockResolvedValueOnce(ownedTextWithChapters(1));
     const signedIn = (await callLoad(`http://x/reader/${VALID_ID}`)) as {
       canPersistSettings: boolean;
@@ -314,7 +296,7 @@ describe('/reader/[textId] loader', () => {
     expect(res.status).toBe(404);
   });
 
-  it('exposes isAdmin=true only for users with role=admin (T-2.8)', async () => {
+  it('exposes isAdmin=true only for users with role=admin', async () => {
     getReadableText.mockResolvedValueOnce(ownedTextWithChapters(1));
     const adminData = (await callLoad(`http://x/reader/${VALID_ID}`, VALID_ID, {
       id: USER.id,
@@ -378,7 +360,7 @@ describe('/reader/[textId] loader', () => {
     expect(getReadableText).toHaveBeenCalledWith(null, VALID_ID);
   });
 
-  it('reads ?roman=1 as showRomanization=true (T-5.3)', async () => {
+  it('reads ?roman=1 as showRomanization=true', async () => {
     getReadableText.mockResolvedValueOnce(ownedTextWithChapters(1));
     const data = (await callLoad(
       `http://x/reader/${VALID_ID}?roman=1`,
@@ -394,7 +376,7 @@ describe('/reader/[textId] loader', () => {
     expect(data.showRomanization).toBe(false);
   });
 
-  it('resumes from saved progress when the URL has no anchor (T-5.6)', async () => {
+  it('resumes from saved progress when the URL has no anchor', async () => {
     getReadableText.mockResolvedValueOnce(ownedTextWithChapters(5));
     getTextProgress.mockResolvedValueOnce({
       userId: USER.id,
@@ -427,7 +409,7 @@ describe('/reader/[textId] loader', () => {
     expect(data.anchor.chapterIdx).toBe(1);
   });
 
-  it('attaches server tokens to the active chapter only (T-5.1a)', async () => {
+  it('attaches server tokens to the active chapter only', async () => {
     getReadableText.mockResolvedValueOnce(ownedTextWithChapters(3));
     const tokenRow = (id: string, idx: number) => ({
       id,
@@ -458,7 +440,7 @@ describe('/reader/[textId] loader', () => {
     expect(loadChapterTokens).toHaveBeenCalledWith('c0', USER.id, VALID_ID);
   });
 
-  it('keeps sibling chapter bodies out of the SSR payload for mobile (T-12.5)', async () => {
+  it('keeps sibling chapter bodies out of the SSR payload for mobile', async () => {
     const longBody = 'x'.repeat(30_000);
     const fixture = ownedTextWithChapters(5);
     getReadableText.mockResolvedValueOnce({
@@ -481,7 +463,7 @@ describe('/reader/[textId] loader', () => {
     expect(jsonPayloadBytes(data)).toBeLessThan(MOBILE_RESPONSE_BUDGET_BYTES);
   });
 
-  it('lazy-loads only the requested chapter when ?chapter=N is set (T-5.1a)', async () => {
+  it('lazy-loads only the requested chapter when ?chapter=N is set', async () => {
     getReadableText.mockResolvedValueOnce(ownedTextWithChapters(5));
     loadChapterTokens.mockResolvedValueOnce(null);
     const data = (await callLoad(
@@ -494,7 +476,7 @@ describe('/reader/[textId] loader', () => {
     expect(data.chapters.map((c) => c.tokens)).toEqual([null, null, null, null, null]);
   });
 
-  it('attaches phrase spans to the active chapter only (T-14.3)', async () => {
+  it('attaches phrase spans to the active chapter only', async () => {
     getReadableText.mockResolvedValueOnce(ownedTextWithChapters(3));
     loadChapterTokens.mockResolvedValueOnce([
       {
@@ -563,7 +545,7 @@ describe('/reader/[textId] loader', () => {
     expect(jsonPayloadBytes(data)).toBeLessThan(MOBILE_RESPONSE_BUDGET_BYTES);
   });
 
-  it('skips phraseSpans loading when the chapter has no tokens (T-14.3)', async () => {
+  it('skips phraseSpans loading when the chapter has no tokens', async () => {
     getReadableText.mockResolvedValueOnce(ownedTextWithChapters(1));
     loadChapterTokens.mockResolvedValueOnce(null);
     const data = (await callLoad(`http://x/reader/${VALID_ID}`)) as {

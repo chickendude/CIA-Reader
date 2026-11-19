@@ -1,5 +1,5 @@
 /**
- * Bulk curator tools (T-3.9).
+ * Bulk curator tools.
  *
  * Three operations the curator dashboard offers when one-row-at-a-time
  * editing isn't enough:
@@ -190,9 +190,6 @@ export async function bulkImportTranslations(
     const [created] = (await db
       .insert(schema.translations)
       .values({
-        // T-14.7a: legacy lemma_id column dropped in this PR's
-        // migration. Inserts now write only the polymorphic
-        // (target_type, target_id) pair.
         targetType: 'lemma',
         targetId: lemma.id,
         source: 'curator',
@@ -287,9 +284,9 @@ export async function bulkPromoteTranslations(
       skipped.push({ id, reason: 'imported officials cannot be re-tagged' });
       continue;
     }
-    // T-14.1: bulk promote operates on lemma-target translations only.
+    // bulk promote operates on lemma-target translations only.
     // Phrase-target community translations move through the phrase
-    // editor (T-14.4 / T-14.7).
+    // editor.
     if (row.targetType !== 'lemma') {
       skipped.push({ id, reason: 'phrase-target translations not supported here' });
       continue;
@@ -305,7 +302,7 @@ export async function bulkPromoteTranslations(
       continue;
     }
     await recordLemmaEdit({
-      // T-14.7a: read the lemma id via the polymorphic
+      // read the lemma id via the polymorphic
       // target_id (legacy lemma_id is dropped in this PR).
       lemmaId: row.targetId,
       editorId: editor.id,
@@ -377,7 +374,7 @@ export async function bulkUpdateAttribution(
     const scoped = (await db
       .select({
         id: schema.translations.id,
-        // T-14.7a: switched to the polymorphic target_id.
+        // Switched to the polymorphic target_id.
         // Bulk attribution rebrands only operate on lemma-target
         // rows; phrase-target translations are filtered out by
         // the explicit type predicate below.
@@ -428,12 +425,10 @@ export async function bulkUpdateAttribution(
     );
 
   for (const row of before) {
-    // T-14.1: bulk-attribution audit only fires for lemma-target
-    // rows; phrase-target rebrands happen in T-14.7's phrase editor.
+    // Word and phrase edits record their attribution changes through their respective editors.
     if (row.targetType !== 'lemma') continue;
     await recordLemmaEdit({
-      // T-14.7a: lemma id via the polymorphic target_id; the
-      // legacy lemma_id column is dropped in this PR.
+      // lemma id via the polymorphic target_id; the
       lemmaId: row.targetId,
       editorId: editor.id,
       changeType: 'translation_update',

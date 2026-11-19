@@ -1,15 +1,6 @@
 /**
- * Learning stats (T-10.1).
- *
- * Per-language: known / learning / encountered lemma counts plus a
- * per-text breakdown with estimated comprehension. T-10.2's library
- * card badge reads `estimatedComprehensionForText` directly so the
- * grid lookup stays cheap.
- *
- * Estimated comprehension is the fraction of word-token occurrences
- * whose lemma the user has marked 'known' — it answers "how much of
- * this page would I already understand?" and changes meaningfully
- * as the user marks words.
+ * Calculate learning statistics separately for each language. Library cards use the per-text
+ * comprehension estimate.
  */
 import { sql } from 'drizzle-orm';
 
@@ -24,7 +15,7 @@ export type LanguageStats = {
   /** Distinct lemmas seen at least once across the user's owned
    *  texts in this language. */
   encounteredCount: number;
-  /** T-14.6: parallel counters for phrases (M14). The reader
+  /** parallel counters for phrases. The reader
    *  surfaces them in a separate "Known phrases" pane alongside
    *  "Known words" so a learner can see at a glance how their
    *  multi-word vocabulary is growing. `encounteredPhrasesCount`
@@ -93,10 +84,7 @@ export async function getLanguageStats(
   );
   const row = counts[0] ?? { known: 0, learning: 0, ignored: 0 };
 
-  // Distinct lemmas the user has *encountered* in their owned
-  // texts. Counts distinct lemma_id over text_tokens joined back to
-  // texts the user owns. Stays language-bound so cross-language
-  // shares (when M7 sharing lands) don't pollute the count.
+  // Count texts in the requested language even when the reader has shares in other languages.
   const encountered = unwrapRows<{ n: number }>(
     await db.execute(sql`
       SELECT COUNT(DISTINCT tt.lemma_id)::int AS n
@@ -119,11 +107,7 @@ export async function getLanguageStats(
     `),
   );
 
-  // T-14.6: parallel phrase counters. Same shape as the lemma
-  // query above but joined through `user_known_phrases` →
-  // `phrases`. Skipped when the user has no phrase rows yet (the
-  // common case during M14 rollout) — the SUM-of-CASE form
-  // returns NULLs which we coalesce to 0.
+  // Treat an empty sum as zero for readers who have no recorded phrases.
   const phraseCounts = unwrapRows<{
     known: number;
     learning: number;
@@ -333,7 +317,7 @@ export async function listTextStats(
 
 /**
  * Bulk version of `estimatedComprehensionForText` for the library
- * grid (T-10.2). Returns a map keyed by textId so the loader can
+ * grid. Returns a map keyed by textId so the loader can
  * decorate each card with one query instead of N. Texts in the
  * input set that have no tokens (worker hasn't run) are mapped
  * to null; the UI shows a dash rather than a 0%.
@@ -410,12 +394,7 @@ export async function bookComprehensionPct(
   return Math.round((r.known / r.total) * 100);
 }
 
-/**
- * Single-text comprehension lookup for the library card badge
- * (T-10.2). Cheap — same shape as one row of listTextStats but
- * scoped to a single textId so the library grid can fan out one
- * query per card without a wide join.
- */
+/** Estimate comprehension for one book without loading statistics for the whole library. */
 export async function estimatedComprehensionForText(
   userId: string,
   textId: string,
@@ -449,7 +428,7 @@ export type CollectionStats = {
   listeningMinutes: number;
 };
 
-/** Bulk comprehension for the collections grid (T-10.2). */
+/** Bulk comprehension for the collections grid. */
 export async function estimatedComprehensionForCollections(
   userId: string,
   collectionIds: string[],

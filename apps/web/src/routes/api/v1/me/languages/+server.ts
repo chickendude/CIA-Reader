@@ -40,16 +40,7 @@ const addSchema = z.object({
   code: z.string().refine(isSupportedLanguage, { message: 'Unsupported language' }),
 });
 
-/**
- * POST /api/v1/me/languages — add a language to the user's list and make it
- * current in one step (#436, the rail switcher's "Add a language" action).
- *
- * The upsert with an empty patch creates a `user_languages` row carrying the
- * column defaults (baseline `none`, native script) when the user has never
- * read this language, and is a harmless no-op when they already have — so
- * the switcher can POST here whether the target is new or already-added.
- * Setting the cookie too means "add" and "switch" land in a single request.
- */
+/** Add the language to the reader's account and select it in the same request. */
 export const POST: RequestHandler = async (event) => {
   const user = await requireUser(event);
   const { code } = await parseJson(event.request, addSchema);

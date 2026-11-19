@@ -10,9 +10,9 @@ import {
   tokenize,
 } from './types.js';
 
-describe('looksLikeNumberToken (T-2.8 / T-2.8a)', () => {
+describe('looksLikeNumberToken', () => {
   it.each([
-    // T-2.8: unsigned positive integers, with or without comma groups.
+    // unsigned positive integers, with or without comma groups.
     '0',
     '123',
     '1,000',
@@ -24,18 +24,18 @@ describe('looksLikeNumberToken (T-2.8 / T-2.8a)', () => {
     '१,००,०००',
     '୧୨୩',
     '୧,୨୩୪',
-    // T-2.8a: signed integers (ASCII `-` and U+2212).
+    // signed integers (ASCII `-` and U+2212).
     '-1',
     '-123',
     '−5',
     '-१२३',
-    // T-2.8a: decimals (no leading or trailing dot).
+    // decimals (no leading or trailing dot).
     '0.5',
     '3.14',
     '0.001',
     '३.१४',
     '୦.୫',
-    // T-2.8a: signed + decimal.
+    // signed + decimal.
     '-2.5',
     '−2.5',
   ])('accepts %s', (s) => {
@@ -49,7 +49,6 @@ describe('looksLikeNumberToken (T-2.8 / T-2.8a)', () => {
     '१23', // mixed script
     '1२3',
     '1,२३४', // mixed script across comma groups
-    // T-2.8a malformed — intentionally rejected.
     '1.', // trailing dot
     '.5', // leading dot
     '1.2.3', // multiple dots

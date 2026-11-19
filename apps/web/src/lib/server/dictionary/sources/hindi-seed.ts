@@ -1,18 +1,4 @@
-/**
- * Hindi seed dictionary (T-3.1).
- *
- * Small embedded set of ~20 public-domain Hindi lemmas with English
- * glosses, bundled so the import runner has at least one working,
- * testable importer on day one. Large-scale imports (Hindi WordNet /
- * Shabdanjali / Dbnary) land in follow-up PRs where each source's
- * license + fetch pipeline is resolved.
- *
- * The point of *this* file is to prove out the upsert / curator-lock
- * machinery against real data shapes — not to ship a complete Hindi
- * dictionary. The entries here were chosen to be unambiguous
- * dictionary forms (no inflections), common vocabulary, and
- * uncontroversially in the public domain as individual lexical items.
- */
+/** A small Hindi dictionary that can be imported without downloading an external source. */
 import type { DictionaryImportSource, ImportEntry } from '../types.js';
 
 const ENTRIES: ImportEntry[] = [

@@ -1,5 +1,5 @@
 /**
- * POST /api/v1/admin/texts/:id/mark-failed (T-4.4).
+ * POST /api/v1/admin/texts/:id/mark-failed.
  *
  * Admin-only callback for the NLP worker's failure path. Body:
  * `{ error: string }` — the worker's truncated traceback. Empty body

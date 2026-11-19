@@ -7,10 +7,10 @@
   import TextField from '$lib/components/input/TextField.svelte';
   import { enhance } from '$app/forms';
   import type { SubmitFunction } from '@sveltejs/kit';
-  import type { PageData } from './$types';
+  import type { PageProps } from './$types';
   import { encodeStatuses, WORD_STATUSES, type WordStatus } from './word-statuses';
 
-  let { data }: { data: PageData } = $props();
+  let { data }: PageProps = $props();
   const selected = $derived(data.filters.statuses);
   const allSelected = $derived(selected.length === WORD_STATUSES.length);
   let saving = $state(false);

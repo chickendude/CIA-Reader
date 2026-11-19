@@ -1,5 +1,5 @@
 /**
- * GET /api/v1/dictionary/:language/lemmas (T-3.6).
+ * GET /api/v1/dictionary/:language/lemmas.
  *
  * Public, unauthenticated lemma browse + search. Mirrors what the
  * SSR page at `/dictionary/:language` renders, so the two surfaces
@@ -60,10 +60,7 @@ export const GET: RequestHandler = async ({ params, url }) => {
     totalCount: result.totalCount,
     limit: result.limit,
     offset: result.offset,
-    // #318: API consumers (the curator dictionary editor, the
-    // correction modal) need the same signal the SSR pages use so
-    // they can render their own "showing nukta-agnostic results"
-    // hint without re-deriving it from the input.
+    // Tell the caller when spelling marks were ignored so it can explain an unexpected match.
     usedNuktaFallback: result.usedNuktaFallback,
   });
 };

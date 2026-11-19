@@ -1,15 +1,15 @@
 <!--
-  Curator phrase editor detail page (T-14.4a). Read-only view of
+  Curator phrase editor detail page. Read-only view of
   every translation (including hidden) + chapter occurrences +
   recent audit history, plus an inline form for editing the
   phrase's gloss / pos / frequency / source attribution.
 -->
 <script lang="ts">
-  import type { PageData } from './$types';
+  import type { PageProps } from './$types';
 
-  let { data }: { data: PageData } = $props();
+  let { data }: PageProps = $props();
 
-  // T-14.4a: form fields are intentionally local to the editor —
+  // Form fields are intentionally local to the editor,
   // `data` arrives once from the page-server loader and the user
   // edits in place. The `state_referenced_locally` warnings are
   // suppressed because the capture-once semantics are correct for

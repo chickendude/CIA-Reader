@@ -1,5 +1,5 @@
 /**
- * POST /api/v1/collections/:id/reorder { textIds: string[] } (T-8.1).
+ * POST /api/v1/collections/:id/reorder { textIds: string[] }.
  *
  * Rewrites every member's position in one transaction. Submitted
  * id list must match the existing membership exactly.

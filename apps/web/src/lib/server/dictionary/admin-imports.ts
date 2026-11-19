@@ -1,27 +1,6 @@
 /**
- * Server-side helpers for the admin dictionary-sources page (T-3.14).
- *
- * Three responsibilities:
- *
- *  1. Probe each registered source's on-disk cache state
- *     (`apps/web/data/dictionaries/<slug>/raw.jsonl`) without loading
- *     the file — multi-GB Kaikki dumps would OOM otherwise. The cache
- *     status returned by `getDictionaryCacheStatus` is what the page
- *     renders in each row's "Raw cache" column.
- *  2. Aggregate the per-source view: cache status + last
- *     `dictionary_imports` row + current contribution (lemma /
- *     translation row counts where `source = <slug>`). This shape is
- *     what the page loader serializes.
- *  3. Track and trigger background fetch + import jobs. The original
- *     ticket pitched BullMQ + Redis; the codebase doesn't have a
- *     queue at MVP (only a no-op `JobDispatcher` for NLP), so we use
- *     a module-local Map of in-flight Promises. Single web replica
- *     in prod, single process in dev — fine for now. The page polls
- *     `getActiveJob(slug)` to decide when to refresh; no Redis hop.
- *
- * Errors during a triggered import write a `failed` row to
- * `dictionary_imports` with the message, so the UI's "Last import"
- * cell can show the error without us inventing a parallel store.
+ * Check dictionary file sizes without reading the entire file. Active jobs are tracked in this
+ * web process, and completed imports write their results to dictionary_imports.
  */
 import { spawn } from 'node:child_process';
 import { createReadStream } from 'node:fs';

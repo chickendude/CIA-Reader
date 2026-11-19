@@ -63,10 +63,7 @@ async def _health() -> HealthResponse:
     )
 
 
-# /health is the legacy name; /healthz is the canonical one aligned
-# with the rest of the stack (T-13.5 monitoring). Both are backed by
-# the same handler so existing callers (the dev compose's Dockerfile
-# healthcheck) keep working unchanged.
+# Keep both health check URLs working. Older clients use /health and monitoring uses /healthz.
 app.add_api_route("/health", _health, response_model=HealthResponse, methods=["GET"])
 app.add_api_route("/healthz", _health, response_model=HealthResponse, methods=["GET"])
 
@@ -87,13 +84,7 @@ async def process(req: ProcessRequest) -> ProcessResponse:
     pipeline = get_pipeline(req.language)
     result = pipeline.process(text)
 
-    # T-14.5: rule-based phrase detector runs over the Stanza output.
-    # The detector is per-language and lazy-loaded; an empty pattern
-    # set produces an empty proposal list (a brand-new language can
-    # ship without phrase support and still serve a well-formed
-    # response). The web worker (T-14.5a) writes proposals to
-    # `phrase_proposals` and a periodic promotion pass moves
-    # ≥3-chapter occurrences into `phrases` (`source='nlp'`).
+    # A language without phrase patterns can still return its ordinary word analysis.
     detector = get_detector(req.language)
     proposed_phrases = [] if result.hindi_analysis is not None else detector.detect(result.tokens)
 

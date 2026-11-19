@@ -1,17 +1,10 @@
-<!--
-  Translation report queue (T-11.1).
-
-  Curators / admins land here to triage reports filed against community
-  translations. Each row groups a translation with its open reports and
-  exposes Hide / Keep / Dismiss / Promote-reporter actions.
--->
 <script lang="ts">
   import { enhance } from '$app/forms';
   import { goto } from '$app/navigation';
   import { LANGUAGES, SUPPORTED_LANGUAGE_CODES } from '@ciareader/shared-types';
-  import type { ActionData, PageData } from './$types';
+  import type { PageProps } from './$types';
 
-  let { data, form }: { data: PageData; form: ActionData } = $props();
+  let { data, form }: PageProps = $props();
 
   function setQuery(params: Record<string, string | null>) {
     const url = new URL(typeof window !== 'undefined' ? window.location.href : 'http://x');

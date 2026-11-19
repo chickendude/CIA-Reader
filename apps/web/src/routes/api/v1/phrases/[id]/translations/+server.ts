@@ -1,8 +1,8 @@
 /**
- * POST /api/v1/phrases/:id/translations (T-14.1).
+ * POST /api/v1/phrases/:id/translations.
  *
  * Submits a user-authored translation against a phrase. Mirrors
- * `POST /api/v1/translations` (T-3.2) which targets lemmas — the
+ * `POST /api/v1/translations` which targets lemmas, the
  * service surface is `submitUserPhraseTranslation`. Like the lemma
  * path, this is not rate-limited: it's the reader's own annotation
  * loop, and shared-dictionary abuse is handled by moderation.
@@ -24,9 +24,7 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
 const body = z.object({
   body: z.string().min(1).max(MAX_BODY_LEN),
-  // T-3.5 customize fork applies to phrase translations too — a
-  // user can fork a curator phrase translation into their own
-  // edit; the parent stays in everyone else's view.
+  // Keep the original translation when a reader creates a personal copy.
   parentTranslationId: z.string().uuid().nullish(),
   targetLanguage: z.string().min(2).max(3).optional(),
   isPrivate: z.boolean().optional(),

@@ -3,11 +3,13 @@
   import { invalidateAll } from '$app/navigation';
   import { isThemePreference, resolveTheme } from '$lib/theme/index.js';
   import Button from '$lib/components/input/Button.svelte';
-  import { pushToast } from '$lib/components/toast/toast-store.js';
+  import { getToastStore } from '$lib/components/toast/toast-store.js';
   import type { SubmitFunction } from '@sveltejs/kit';
-  import type { ActionData, PageData } from './$types';
+  import type { PageProps } from './$types';
 
-  let { data, form }: { data: PageData; form: ActionData } = $props();
+  const { pushToast } = getToastStore();
+
+  let { data, form }: PageProps = $props();
 
   const SCRIPT_PREF_LABELS: Record<string, string> = {
     native: 'Native script only',

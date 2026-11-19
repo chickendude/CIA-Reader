@@ -1,4 +1,4 @@
-import { pushToast, updateToast, type PushToastInput } from '$lib/components/toast/toast-store.js';
+import type { PushToastInput, ToastStore } from '$lib/components/toast/toast-store.js';
 
 export type ReprocessProgress = (completed: number, total: number) => void;
 
@@ -42,7 +42,10 @@ export async function reprocessWithProgress(
   }
 }
 
-export async function reprocessWithToast(text: { id: string; title: string; sourceType: string }): Promise<boolean> {
+export async function reprocessWithToast(
+  text: { id: string; title: string; sourceType: string },
+  { pushToast, updateToast }: ToastStore,
+): Promise<boolean> {
   const pdf = text.sourceType === 'pdf';
   const label = pdf ? 'Pages parsed' : 'Chapters parsed';
   const toastId = pushToast({

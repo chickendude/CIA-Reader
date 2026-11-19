@@ -1,5 +1,5 @@
 <!--
-  Centered modal overlay (T-5.15).
+  Centered modal overlay.
 
   Renders a backdrop + a centered card. Esc closes; clicking the
   backdrop closes; focus is trapped inside the modal while open and

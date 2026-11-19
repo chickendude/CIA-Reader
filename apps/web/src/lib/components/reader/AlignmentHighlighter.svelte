@@ -1,16 +1,4 @@
-<!--
-  Alignment-driven highlighting (T-9.3).
-
-  Subscribes to audio-bus, fetches the active audio file's
-  alignment timeline once, then per timeupdate runs a binary
-  search over (startMs, endMs) and toggles `.playing` on the
-  matching `<span data-token-id>`. Smooth-scrolls to keep the
-  current word in view.
-
-  Headless component (renders nothing). Mounted alongside the
-  reader modes; the body of the reader stays exactly as
-  T-5.x rendered it.
--->
+<!-- Follow the audio timestamps to highlight the word being played and keep it in view. -->
 <script lang="ts">
   import { onMount } from 'svelte';
 
@@ -53,7 +41,7 @@
       if (!res.ok) return;
       const data = (await res.json()) as { alignments: AlignmentListItem[] };
       alignments = data.alignments ?? [];
-      // T-9.4: publish a tokenId → startMs map so ChapterBody's
+      // publish a tokenId → startMs map so ChapterBody's
       // click handler can seek the player without re-fetching.
       const m = new Map<string, number>();
       for (const a of alignments) m.set(a.tokenId, a.startMs);

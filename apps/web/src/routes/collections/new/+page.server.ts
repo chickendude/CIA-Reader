@@ -1,5 +1,5 @@
 /**
- * /collections/new (T-8.1) — owner picks language + kind + title,
+ * /collections/new, owner picks language + kind + title,
  * then we redirect to the detail page where they add texts.
  */
 import { redirect } from '@sveltejs/kit';

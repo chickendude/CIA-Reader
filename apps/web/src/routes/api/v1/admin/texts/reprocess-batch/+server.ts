@@ -1,5 +1,5 @@
 /**
- * POST /api/v1/admin/texts/reprocess-batch (T-6.8).
+ * POST /api/v1/admin/texts/reprocess-batch.
  *
  * Bulk variant of the per-text reprocess endpoint. Walks the
  * library filtered by language + status and dispatches the NLP

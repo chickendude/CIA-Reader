@@ -9,7 +9,9 @@
 -->
 <script lang="ts">
   import type { Toast as ToastType } from './toast-store.js';
-  import { dismissToast } from './toast-store.js';
+  import { getToastStore } from './toast-store.js';
+
+  const { dismissToast } = getToastStore();
 
   let { toast }: { toast: ToastType } = $props();
 

@@ -35,7 +35,7 @@ it('reconnects on return after a successful connection and supports a manual ret
       return Response.json({ result, error: null });
     }),
   );
-  const mount = () => render(ImportPage, { data });
+  const mount = () => render(ImportPage, { params: {}, form: null, data });
   mount();
   expect(calls).toEqual([]);
   const connect = () =>
@@ -103,7 +103,7 @@ it('shows unmatched headwords and only displays IDs from the Parhiba field', asy
       return Response.json({ result: results[JSON.parse(String(init.body)).action], error: null });
     }),
   );
-  render(ImportPage, { data });
+  render(ImportPage, { params: {}, form: null, data });
   await fireEvent.click(screen.getByRole('button', { name: 'Connect to Anki Desktop' }));
   await fireEvent.click(await screen.findByRole('checkbox', { name: 'Hindi' }));
   await fireEvent.click(screen.getByRole('button', { name: 'Preview import' }));

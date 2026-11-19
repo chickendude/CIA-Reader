@@ -1,5 +1,5 @@
 /**
- * Admin controls for role + curator-language assignments (T-3.4).
+ * Admin controls for role + curator-language assignments.
  *
  * Kept separate from `permissions.ts` because those are read-side
  * checks; these are write-side ops reachable only by admins. Tests mock

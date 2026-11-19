@@ -1,7 +1,4 @@
 // @vitest-environment node
-/**
- * Tests for /moderation/+layout.server.ts guard (T-3.7).
- */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const listGrantedLanguages = vi.fn();

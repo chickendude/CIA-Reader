@@ -1,5 +1,5 @@
 /**
- * GET + POST /api/v1/texts/:id/group-shares (T-7.4).
+ * GET + POST /api/v1/texts/:id/group-shares.
  *
  * Owner / admin only. POST { groupId } — grant a group access.
  */

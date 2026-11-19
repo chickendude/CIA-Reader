@@ -1,6 +1,6 @@
 // @vitest-environment node
 /**
- * Unit tests for the phrase-span resolver (T-14.2).
+ * Unit tests for the phrase-span resolver.
  *
  * `resolveSpans` is pure — feed it tokens and phrase entries and
  * assert the output. The DB-bound `rebuildChapterSpans` and

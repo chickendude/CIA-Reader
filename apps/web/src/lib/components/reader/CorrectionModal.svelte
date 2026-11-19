@@ -1,29 +1,3 @@
-<!--
-  Wrong-word correction modal (T-6.2).
-
-  Opens from the WordPopup's "Fix" button. Surfaces:
-
-    a. The candidate list — same data the alternate-meanings
-       disclosure uses, but here it's the primary affordance.
-    b. Script-agnostic dictionary search via <ScriptAwareInput> +
-       /api/v1/dictionary/:language/lemmas?q=…
-    c. Quick mark_* buttons (proper noun / foreign / not a word).
-    d. "Add new word" — defers to T-6.3's new-lemma form (the
-       parent supplies the open callback).
-
-  Footer: "Also report to moderators" checkbox. Default OFF for
-  pick_candidate (the reader's own correction is enough); default
-  ON for manual_lemma + new_lemma since those involve
-  curator-relevant judgment.
-
-  Submission flow:
-
-    1. POST /api/v1/me/token-corrections (always).
-    2. If "Also report" is checked AND the type is non-trivial,
-       POST /api/v1/me/parse-reports.
-    3. Surface optimistic correction back to the parent so the
-       reader re-renders the token immediately + close the modal.
--->
 <script lang="ts">
   import { LANGUAGES, type LanguageCode } from '@ciareader/shared-types';
   import Modal from '$lib/components/overlay/Modal.svelte';
@@ -65,7 +39,7 @@
     fetcher = fetch,
   }: Props = $props();
 
-  // T-6.3: opens NewLemmaForm on top of this modal when the user
+  // opens NewLemmaForm on top of this modal when the user
   // taps "Add new word" from the empty search-state.
   let showNewLemma = $state(false);
 
@@ -112,9 +86,8 @@
     }
   }
 
-  // T-6.2 default-checkbox rules. We compute it per-action (not as
-  // a single state value) since the user could mix actions in one
-  // session.
+  // Choose the default separately for each action. A reader can make several kinds of correction
+  // in one session.
   function defaultReportFor(type: CorrectionType): boolean {
     return type === 'manual_lemma';
   }
@@ -139,8 +112,6 @@
         const text = await res.text().catch(() => '');
         throw new Error(text || `HTTP ${res.status}`);
       }
-      // T-6.5 wiring: optionally file a parse_report alongside the
-      // per-user correction so curators see the issue.
       const shouldReport = alsoReport ?? defaultReportFor(type);
       if (shouldReport && type !== 'pick_candidate') {
         await fetcher('/api/v1/me/parse-reports', {

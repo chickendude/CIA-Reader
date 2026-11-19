@@ -1,35 +1,6 @@
 /**
- * Public lemma-browsing service (T-3.6 + T-3.12).
- *
- * The backing page is `/dictionary/:language` — public, unauthenticated-
- * accessible, rendered server-side so it ranks for "<lemma> meaning"
- * searches. This service is also the backing for the JSON endpoint used
- * by the dictionary editor (T-3.7) and the correction modal (T-6.2), so
- * it stays free of HTML concerns.
- *
- * Search is a case-insensitive prefix match on the NFC-normalized
- * headword. T-3.12 added romanization-aware search: when the submitted
- * query is in Latin (`kitaab`), we run the same client-side ITRANS-
- * flavored `latinToNative` transliterator the `<ScriptAwareInput>`
- * uses, then prefix-match the resulting native form against the
- * existing `headword` index. This keeps the change to a pure-server
- * change — no new index, no NLP-service round trip — and the UX
- * matches the input field (whatever the user sees as the native
- * preview is what the server searches for). A future quality bump
- * could route through aksharamukha server-side, but the ITRANS-based
- * helper is good enough that "kitaab" → "किताब" finds the headword.
- *
- * Nukta-agnostic fallback (#318): when the user's query has zero
- * exact-prefix hits AND the query strips down to something different
- * (i.e. it itself contained a nukta marker, OR an entry in the table
- * has nuktas the query lacks), we re-run the search against the
- * `headword_nukta_stripped` generated column with the query also
- * nukta-stripped. This is **lossy by design** (`ज़रा` and `जरा` collapse
- * to the same key), so the result advertises `usedNuktaFallback` and
- * the UI surfaces a "showing nukta-agnostic results" hint. The same
- * pattern applies to the romanization tier: results from a transliterated
- * query carry `usedRomanizationTransliteration` so the UI can render
- * "showing matches for किताब (transliterated from kitaab)".
+ * The dictionary page and correction editor use the same search. Readers can enter a word in its
+ * own script or type a romanized spelling.
  */
 import { and, asc, count, eq, gte, ilike, inArray, lte, sql } from 'drizzle-orm';
 
@@ -69,17 +40,12 @@ export type BrowseResult = {
   limit: number;
   offset: number;
   /**
-   * #318: True when these results came from the nukta-agnostic
-   * fallback tier — i.e. the strict ILIKE on `headword` returned zero
-   * hits AND we re-queried against `headword_nukta_stripped`. The UI
-   * uses this to render a "showing nukta-agnostic results" hint so
-   * the lossy step is visible to the user. False whenever the result
-   * came from the strict tier (including when both tiers would have
-   * been empty — there's no fallback to advertise).
+   * True when ignoring nukta marks produced the results. The interface uses this to explain why
+   * the spelling may differ.
    */
   usedNuktaFallback: boolean;
   /**
-   * T-3.12: True when the user submitted a Latin query that we
+   * True when the user submitted a Latin query that we
    * transliterated to the language's native script before searching.
    * The UI surfaces "showing matches for `${effectiveQuery}` (from
    * `${query.q}`)" so the user can see what we actually queried —
@@ -90,7 +56,7 @@ export type BrowseResult = {
    */
   usedRomanizationTransliteration: boolean;
   /**
-   * T-3.12: The native-script query the search actually ran against.
+   * The native-script query the search actually ran against.
    * Equal to the input `q` when no transliteration was needed. Empty
    * string when `q` itself was empty.
    */
@@ -120,7 +86,7 @@ function normalizeQuery(q: string | null | undefined): string | null {
 }
 
 /**
- * T-3.12: detect a Latin-script query and transliterate to the
+ * detect a Latin-script query and transliterate to the
  * language's native script using the same ITRANS-flavored mapping
  * the `<ScriptAwareInput>` uses on the client. Pure function — no
  * I/O, no NLP-service round trip — so adding it costs nothing on the
@@ -222,7 +188,7 @@ async function runSearchTier(
  * Returns both the rows and a total-count so the UI can render a page
  * indicator without a second round trip.
  *
- * Search tiers (#318):
+ * Search tiers:
  *  1. Strict: case-insensitive ILIKE prefix on `headword` (NFC).
  *  2. Nukta-agnostic fallback: ILIKE prefix on
  *     `headword_nukta_stripped` with the query also stripped. Fires
@@ -245,7 +211,7 @@ export async function listDictionaryLemmas(
   const offset = clampOffset(query.offset);
   const rawQ = normalizeQuery(query.q);
 
-  // T-3.12: transliterate Latin queries to the native script before
+  // transliterate Latin queries to the native script before
   // running the strict tier. Empty / native-script queries pass
   // through unchanged.
   const { value: q, transliterated } = rawQ

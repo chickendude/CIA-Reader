@@ -1,50 +1,6 @@
 /**
- * Chapter phrase span resolver (T-14.2).
- *
- * Builds `phrase_chapter_spans` for one chapter — every contiguous,
- * surface-exact occurrence of any `phrases` row whose language
- * matches the chapter's language. The resolver runs after the NLP
- * worker writes `text_tokens` (see `in-process-dispatcher.ts`) and
- * on every text reprocess. The result is read by `loadChapterTokens`
- * (T-5.2) and surfaced to the reader UI in T-14.3.
- *
- * Algorithm
- * ---------
- *
- * 1. Load every `phrase_tokens` row for the chapter's language,
- *    bucketed by first-token surface. A phrase with N tokens
- *    contributes one bucket entry plus the rest of its surfaces.
- * 2. Walk `text_tokens` in `idx` order. At each position `i` look
- *    up first-surface buckets matching `tokens[i].surface`. For
- *    each candidate phrase, try to extend by checking that the
- *    next `length-1` token surfaces match in order.
- * 3. Refuse to emit a span that crosses a `sentence_idx` boundary.
- *    The constraint lives here, not in the phrase table — phrases
- *    are sentence-agnostic dictionary entries; "is this a valid
- *    chapter occurrence" is the resolver's job.
- * 4. Replace any prior spans for the chapter with the freshly
- *    computed set in a single transaction-shaped DELETE+INSERT.
- *
- * Multi-occurrence and overlap
- * ----------------------------
- *
- * The PK on `phrase_chapter_spans` is `(chapter_id, start_token_idx,
- * phrase_id)` — multiple phrases can start at the same position
- * (longest-wins is a render-time decision, T-14.3) and a single
- * phrase can occur multiple times in the chapter at different start
- * positions. The resolver emits everything; downstream layers
- * filter.
- *
- * MVP scope
- * ---------
- *
- * Contiguous, surface-exact matching only. Discontinuous (gappy)
- * matches like `इंतज़ार ... किया` split by an intervening adverb are
- * an explicit follow-up — when that ships the change will live
- * entirely in this resolver, no schema migration. Per-user filters
- * (e.g. honouring `mark_not_a_word` corrections from T-6.4) are
- * not applied here either; spans are per-chapter and shared. T-14.3
- * may layer per-user filtering at render time.
+ * Match phrases within sentences after a chapter's tokens have been saved. Keep overlapping
+ * matches so the reader can choose what to highlight without running the search again.
  */
 import { eq, inArray } from 'drizzle-orm';
 
@@ -134,12 +90,6 @@ export function resolveSpans(
       let ok = true;
       for (let k = 1; k < len; k++) {
         const t = ordered[i + k]!;
-        // T-14.2: same-sentence constraint. Spans cannot cross a
-        // sentence break — `sentence_idx` is set by the worker
-        // (currently always 0 in the in-process dispatcher; once
-        // sentence segmentation lands, this guard activates
-        // automatically). The phrase table itself is sentence-
-        // agnostic.
         if (t.sentenceIdx !== head.sentenceIdx) {
           ok = false;
           break;
@@ -175,13 +125,7 @@ export function resolveSpans(
 // DB-bound rebuild.
 // -----------------------------------------------------------------------
 
-/**
- * Rebuild `phrase_chapter_spans` for one chapter. Called by the
- * worker after `text_tokens` is written (and by the T-6.8 admin
- * reprocess action via the same path).
- *
- * Returns the number of spans written so callers can log progress.
- */
+/** Rebuild the chapter's matches after processing its words, including when a chapter is reprocessed. */
 export async function rebuildChapterSpans(args: {
   chapterId: string;
   language: LanguageCode;
@@ -282,7 +226,7 @@ async function loadLanguagePhrases(
 }
 
 /**
- * Public projection consumed by the reader (T-14.3). Mirrors the
+ * Public projection consumed by the reader. Mirrors the
  * on-disk row shape minus `chapter_id` (the caller already knows
  * the chapter), with the phrase's `glossDefault` and the viewer's
  * known-status pre-joined so the reader renders in one pass.
@@ -299,17 +243,7 @@ export type RenderedPhraseSpan = {
   status: 'known' | 'learning' | 'ignored' | 'unknown';
 };
 
-/**
- * Sibling loader to `loadChapterTokens` (T-5.2). The reader page-
- * server (T-14.3) calls both — keeping this as a parallel export
- * rather than threading an extra return value through every
- * existing `loadChapterTokens` consumer keeps the diff small and
- * the failure modes independent: a phrase-spans rebuild crashing
- * mid-test never breaks the existing token rendering path.
- *
- * Returns an empty array when the chapter has no spans (also the
- * common case for chapters processed before T-14.2 lands).
- */
+/** Load chapter matches with the current reader's phrase statuses. */
 export async function loadChapterPhraseSpans(
   chapterId: string,
   viewerId: string | null,
@@ -330,8 +264,7 @@ export async function loadChapterPhraseSpans(
 
   const phraseIds = Array.from(new Set(spanRows.map((s) => s.phraseId)));
 
-  // Hydrate gloss in one SELECT — phrases.gloss_default is the
-  // tooltip surface for hover state in T-14.3.
+  // Load the short definitions together for use in phrase tooltips.
   const phraseMetaRows = (await db
     .select({
       id: schema.phrases.id,

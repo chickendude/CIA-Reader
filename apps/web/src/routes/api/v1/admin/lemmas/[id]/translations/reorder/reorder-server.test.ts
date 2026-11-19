@@ -1,7 +1,4 @@
 // @vitest-environment node
-/**
- * Route tests for PATCH /api/v1/admin/lemmas/:id/translations/reorder (T-3.13).
- */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const reorderTranslations = vi.fn();

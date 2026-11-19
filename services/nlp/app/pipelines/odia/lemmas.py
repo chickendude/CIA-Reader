@@ -1,16 +1,5 @@
-"""Odia lemma table for the custom pipeline (T-2.3a).
-
-At MVP this is a tiny hand-curated seed — just enough to exercise the
-morphology rules in :mod:`app.pipelines.odia.morph` and drive the
-golden-file tests in T-2.3b. The large-scale import from Odia WordNet
-(ISI Kolkata) and OdiaNLP resources lands in T-3.1; at that point this
-module stops being the source of truth and the Postgres ``lemmas``
-table takes over.
-
-The seed is a data file (``data/seed_lemmas.json``) rather than a
-Python literal so T-2.3b golden-file contributors can extend it
-without needing a code review round-trip on pure data additions.
-"""
+"""Look up Odia headwords in the bundled seed dictionary. Loading the entries from JSON lets
+contributors add vocabulary without editing Python."""
 
 from __future__ import annotations
 
@@ -23,16 +12,6 @@ from pathlib import Path
 
 @dataclass(frozen=True, slots=True)
 class OdiaLemma:
-    """A minimal lemma record for the Odia seed table.
-
-    Richer fields (frequency rank, translations, variant spellings)
-    live on the Postgres ``lemmas`` table that T-3.1 will populate.
-    Here we only track what the pipeline itself needs: the headword
-    (for stem matching), UD POS (to constrain morphology rules), and
-    an optional short gloss (surfaced by the stub-translation path
-    before real dictionary entries attach).
-    """
-
     headword: str
     pos: str
     gloss: str | None = None

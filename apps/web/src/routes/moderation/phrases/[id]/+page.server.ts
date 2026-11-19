@@ -1,5 +1,5 @@
 /**
- * Curator phrase editor detail page (T-14.4a).
+ * Curator phrase editor detail page.
  *
  * Loads the full editor view (phrase + tokens + every
  * translation including hidden + chapter occurrences + recent

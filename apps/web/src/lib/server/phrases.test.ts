@@ -1,6 +1,6 @@
 // @vitest-environment node
 /**
- * Unit tests for the phrase service (T-14.1).
+ * Unit tests for the phrase service.
  *
  * Drizzle is mocked via the staged-result chain pattern used by
  * `dictionary/translations.test.ts` — every chained call resolves

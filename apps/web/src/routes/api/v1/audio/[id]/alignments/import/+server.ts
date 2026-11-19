@@ -1,5 +1,5 @@
 /**
- * POST /api/v1/audio/:id/alignments/import (T-9.6).
+ * POST /api/v1/audio/:id/alignments/import.
  *
  * Body: { format: 'whisper' | 'webvtt', payload: <string|object> }.
  * Maps imported word timings to text_tokens by reading-order index

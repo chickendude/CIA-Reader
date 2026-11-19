@@ -1,5 +1,5 @@
 <!--
-  App shell (T-1.4 → T-5.11).
+  App shell.
 
   Desktop (>=960px): left rail with brand mark, sectioned nav and
   sign-out at the foot. Mobile (<960px): a thin top strip with
@@ -9,7 +9,7 @@
 -->
 <script lang="ts">
   import PageLayout from './PageLayout.svelte';
-  import { page } from '$app/stores';
+  import { page } from '$app/state';
   import { invalidateAll } from '$app/navigation';
   import { onMount } from 'svelte';
   import {
@@ -42,17 +42,17 @@
       id: string;
       displayName: string | null;
       email: string;
-      /** T-3.14: drives the curator/admin-gated nav entries (Moderation). */
+      /** drives the curator/admin-gated nav entries (Moderation). */
       role: ViewerRole;
     } | null;
     /** Active language for the current visit. Drives the rail indicator
-     *  + per-screen filters (T-5.25). Null when the user has no
+     *  + per-screen filters. Null when the user has no
      *  language data yet (anonymous fresh visitor). */
     currentLanguage?: string | null;
     /** Language choices available to this viewer. */
     availableLanguages?: LanguageOption[];
     /** Supported languages the user hasn't added yet — the switcher's
-     *  "Add a language" options (#436). Empty for anonymous visitors. */
+     *  "Add a language" options. Empty for anonymous visitors. */
     addableLanguages?: LanguageOption[];
     children: Snippet;
   }
@@ -69,7 +69,7 @@
     availableLanguages.find((l) => l.code === currentLanguage) ?? null,
   );
 
-  // T-5.25: language picker. Click the top-left brand icon → custom
+  // language picker. Click the top-left brand icon → custom
   // dropdown anchored beneath it, listing every active language.
   // Selecting one PUTs the cookie + reloads layout data so every
   // loader picks up the new pick.
@@ -101,7 +101,7 @@
   });
 
   // Switch to a language the user already reads. Adding a *new* language
-  // happens on the dedicated /languages/new page (#436), not here.
+  // happens on the dedicated /languages/new page, not here.
   async function pickLanguage(code: string) {
     if (switching) return;
     if (code === currentLanguage) {
@@ -128,19 +128,15 @@
       role: user?.role ?? null,
     }),
   );
-  const activeId = $derived(getActiveTabId($page.url.pathname, tabs));
+  const activeId = $derived(getActiveTabId(page.url.pathname, tabs));
 
   // The reader is immersive: it renders full-bleed over the shell and owns
   // its own exit (the × button / Esc). Hide the rail-toggle chevron there so
   // no nav chrome pokes through on top of the text.
-  const onReader = $derived($page.url.pathname.startsWith('/reader/'));
+  const onReader = $derived(page.url.pathname.startsWith('/reader/'));
   const groups = $derived(groupTabsBySection(tabs));
 
-  // T-5.26: hamburger toggle for the rail / shell chrome. Reuses the
-  // same `data-reader-immersive` attribute + `cia_reader_immersive`
-  // sessionStorage key from T-5.16 so the existing CSS keeps working
-  // — only the button location and icon change. Bootstrap on mount
-  // so a refresh keeps the user's preference.
+  // The shell and reader share the immersive-mode setting for this browser tab.
   let collapsed = $state(false);
   onMount(() => {
     collapsed = readPersistedImmersive();
@@ -177,12 +173,12 @@
       'M4 20a8 8 0 0116 0',
     ],
     signin: ['M11 8V5a2 2 0 012-2h6a2 2 0 012 2v14a2 2 0 01-2 2h-6a2 2 0 01-2-2v-3', 'M3 12h12', 'M9 8l-4 4 4 4'],
-    // T-3.14: shield outline for the curator/admin moderation tab.
+    // shield outline for the curator/admin moderation tab.
     moderation: ['M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6l8-3z'],
   };
 </script>
 
-<!-- T-5.26: chevron toggles the rail / shell chrome. Positioned fixed
+<!-- chevron toggles the rail / shell chrome. Positioned fixed
      so it stays clickable in both states — sits flush against the
      rail's inner-right edge when expanded (chevron points left, "tuck
      it in"), and snaps to the viewport's left edge when collapsed
@@ -350,10 +346,6 @@
   </nav>
 </div>
 
-<!-- T-5.25 / #436: language switcher. Anchored under the top-left brand
-     icon. Lists the languages you read (switch in place); adding a new
-     language is its own page, reached via the "Add a language" button at
-     the foot. Fine-grained per-language settings live on /profile. -->
 {#snippet langDropdown()}
   <div class="lang-dropdown" role="menu" aria-label="Languages">
     {#if availableLanguages.length === 0}
@@ -394,7 +386,7 @@
 
     {#if addableLanguages.length > 0}
       <div class="lang-foot">
-        <!-- Adding a language is its own page (#436). -->
+        <!-- Adding a language is its own page. -->
         <a class="lang-add-btn" href="/languages/new">Add a language</a>
       </div>
     {/if}
@@ -667,7 +659,7 @@
     height: 18px;
   }
 
-  /* —— Chevron / rail-toggle button (T-5.26) ————————————————
+  /* Chevron / rail-toggle button
    * Mobile-only now. The rail is static on desktop, so there's
    * nothing to expand/collapse there; on mobile we keep the toggle as
    * an immersive-mode affordance (hides top-strip + bottom-nav for
@@ -702,7 +694,7 @@
     color: var(--accent-ink, var(--color-accent-fg, #fff));
   }
 
-  /* —— Language picker dropdown (T-5.25) ————————————————————————
+  /* Language picker dropdown
    * Anchored to the top-left brand icon (rail on desktop, top-strip
    * on mobile). The brand-mark glyph reflects the current language so
    * the trigger doubles as a status indicator. */
@@ -843,7 +835,7 @@
     margin: 0;
   }
 
-  /* —— Footer action (#436) —————————————————————————————————————
+  /* Footer action
    * A single "Add a language" button under the active list, separated
    * by a rule. It navigates to the dedicated add page rather than
    * adding inline. */

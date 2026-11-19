@@ -1,7 +1,4 @@
 // @vitest-environment node
-/**
- * Tests for the dictionary permission helpers (T-3.4).
- */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const staged: Array<unknown[]> = [];

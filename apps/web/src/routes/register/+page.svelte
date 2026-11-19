@@ -1,9 +1,9 @@
 <script lang="ts">
   import { enhance } from '$app/forms';
   import { untrack } from 'svelte';
-  import type { ActionData, PageData } from './$types';
+  import type { PageProps } from './$types';
 
-  let { data, form }: { data: PageData; form: ActionData } = $props();
+  let { data, form }: PageProps = $props();
 
   let email = $state(untrack(() => form?.values?.email ?? ''));
   let password = $state('');

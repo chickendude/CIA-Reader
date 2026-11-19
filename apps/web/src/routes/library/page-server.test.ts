@@ -24,7 +24,7 @@ vi.mock('$lib/server/texts/book-stats.js', () => ({
   libraryBookStats: (...args: unknown[]) => libraryBookStats(...args),
 }));
 
-// T-8.5: collections tab calls into collections.js; mock to empty.
+// collections tab calls into collections.js; mock to empty.
 vi.mock('$lib/server/collections.js', () => ({
   listCollectionsForUser: (...a: unknown[]) => listCollectionsForUser(...a),
   listOfficialCollections: (...a: unknown[]) => listOfficialCollections(...a),
@@ -40,7 +40,6 @@ async function callLoad(
   const event = {
     locals: { user },
     url: new URL(url),
-    // #436: the library scopes to the layout's resolved current language.
     parent: async () => ({ currentLanguage }),
   };
   try {
@@ -156,7 +155,7 @@ describe('/library loader', () => {
     );
   });
 
-  it('scopes the listing to the current language (#436)', async () => {
+  it('scopes the listing to the current language', async () => {
     listPersonalLibrary.mockResolvedValueOnce({
       cards: [],
       totalCount: 0,
@@ -170,7 +169,7 @@ describe('/library loader', () => {
     );
   });
 
-  it('echoes the current language back to the page (#436)', async () => {
+  it('echoes the current language back to the page', async () => {
     listPersonalLibrary.mockResolvedValueOnce({
       cards: [],
       totalCount: 0,
@@ -183,7 +182,7 @@ describe('/library loader', () => {
     expect(data.language).toBe('or');
   });
 
-  it('paginates collection cards before fetching comprehension (T-12.5)', async () => {
+  it('paginates collection cards before fetching comprehension', async () => {
     const collectionRows = Array.from({ length: 5 }, (_, i) => ({
       collection: {
         id: `c${i}`,

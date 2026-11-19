@@ -1,19 +1,7 @@
 /**
- * Dictionary import runner (T-3.10 rewrite).
- *
- * Replaces the original .mjs script which inlined the Hindi seed
- * because it couldn't import TS directly. With `tsx` in devDeps, this
- * script imports the same `runDictionaryImport` and source modules the
- * production code uses, so adding a new importer is one entry in
- * `sources/index.ts` and nothing else.
- *
- *   pnpm dictionary:import              # run every registered source
- *   pnpm dictionary:import kaikki-hindi # run just one
- *   pnpm dictionary:import --list       # show available sources
- *
- * The runner is idempotent — re-running upserts on
- * `(language, source, source_id)` and writes a `dictionary_imports`
- * audit row each run.
+ * Run all registered dictionary imports with `pnpm dictionary:import`, pass a source name to run
+ * just that source, or use `--list` to see the choices. Each run updates entries by language,
+ * source and source ID and records its result in dictionary_imports.
  */
 import { config as loadEnv } from 'dotenv';
 import { fileURLToPath } from 'node:url';

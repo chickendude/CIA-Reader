@@ -1,12 +1,3 @@
-"""Unit tests for :mod:`app.romanize` (T-2.5).
-
-Covers both directions (native → roman, roman → native), both MVP
-scripts (Devanagari for Hindi/Marathi, Odia for Odia), the round-trip
-invariant for each supported scheme, empty-input behavior, and the
-unsupported-script / unsupported-scheme error cases (Hunterian in
-particular — it's in the registry but not in this module).
-"""
-
 from __future__ import annotations
 
 import unicodedata

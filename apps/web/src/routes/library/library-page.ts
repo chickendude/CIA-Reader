@@ -96,7 +96,7 @@ export async function loadLibrary(
   } else if (tab === 'shared') {
     page = await listSharedTexts({ id: locals.user!.id }, { limit, offset, language: language ?? undefined });
   } else if (tab === 'collections') {
-    // T-8.5: collections tab. Signed-in users see their own + the
+    // collections tab. Signed-in users see their own + the
     // official catalog; anonymous see only the official catalog.
     const ownItems = locals.user ? await listCollectionsForUser(locals.user.id) : [];
     const officialItems = await listOfficialCollections(language ?? undefined);

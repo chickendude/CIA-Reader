@@ -1,5 +1,5 @@
 /**
- * Reader page-mode pagination helpers (T-5.23).
+ * Reader page-mode pagination helpers.
  *
  * Page mode renders the whole chapter into a fixed-size viewport and
  * slides between "pages" with a CSS transform. The helpers are

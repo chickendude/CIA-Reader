@@ -4,12 +4,6 @@ Native Android client (Kotlin + Jetpack Compose) for Parhiba. It talks
 to the same `/api/v1/*` surface the web app uses; there is no Android-specific
 backend.
 
-## Status
-
-**Phase 0 — scaffold.** The project opens in Android Studio and builds a
-placeholder Compose screen. Networking, auth, and the reader are subsequent
-phases (see the repo task list / the `apps/android` tickets).
-
 ## Prerequisites
 
 - **Android Studio** (Ladybug or newer).

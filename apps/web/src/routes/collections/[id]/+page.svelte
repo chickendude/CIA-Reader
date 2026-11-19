@@ -2,9 +2,9 @@
   import { invalidateAll, goto } from '$app/navigation';
   import Modal from '$lib/components/overlay/Modal.svelte';
   import BookActions from '$lib/components/library/BookActions.svelte';
-  import type { PageData } from './$types';
+  import type { PageProps } from './$types';
 
-  let { data }: { data: PageData } = $props();
+  let { data }: PageProps = $props();
 
   import { untrack } from 'svelte';
 
@@ -195,7 +195,7 @@
     });
   }
 
-  // T-8.4 — manage sharing. Owner enters a recipient email; the API
+  // manage sharing. Owner enters a recipient email; the API
   // looks up the user and inserts a row in `collection_shares`. The
   // grant also flips visibility from 'private' to 'shared' so the
   // canReadText fallback path picks it up.

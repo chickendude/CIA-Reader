@@ -1,5 +1,5 @@
 /**
- * Body-scroll lock for overlays (T-5.15).
+ * Body-scroll lock for overlays.
  *
  * Designed to be safe under nesting — multiple overlays open at once
  * each call `lockScroll()` and the body only unlocks once every

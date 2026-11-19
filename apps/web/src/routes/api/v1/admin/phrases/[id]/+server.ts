@@ -1,17 +1,4 @@
-/**
- * GET + PATCH /api/v1/admin/phrases/:id (T-14.4a).
- *
- * Curator dictionary editor detail view + edit. Mirror of the
- * lemma editor's GET/PATCH from T-3.7, scoped to phrases.
- *
- * GET returns the full editor view (phrase + tokens + every
- * translation including hidden + chapter occurrences + recent
- * audit history). PATCH updates editable fields and implicitly
- * flips `curator_locked=true`.
- *
- * Permission: curator or admin with edit rights on the phrase's
- * language.
- */
+/** Editing a phrase locks it so later imports preserve the curator's changes. */
 import { error, json } from '@sveltejs/kit';
 import { z } from 'zod';
 
@@ -54,7 +41,7 @@ export const GET: RequestHandler = async (event) => {
     await requireCanEditDictionary(user, view.phrase.language as LanguageCode);
     return json({
       phrase: { ...publicPhrase(view.phrase, view.tokens), hidden: view.phrase.hidden },
-      // T-14.4a: editor surfaces every translation including
+      // editor surfaces every translation including
       // hidden — the moderation toggle lives on the phrase
       // editor and the curator needs to see what's been hidden.
       translations: view.translations.map(publicTranslation),

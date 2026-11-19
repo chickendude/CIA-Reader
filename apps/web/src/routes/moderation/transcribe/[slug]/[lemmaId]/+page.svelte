@@ -1,9 +1,9 @@
 <script lang="ts">
   import { enhance } from '$app/forms';
   import ScanCropPane from '$lib/components/moderation/ScanCropPane.svelte';
-  import type { ActionData, PageData } from './$types';
+  import type { PageProps } from './$types';
 
-  let { data, form }: { data: PageData; form: ActionData } = $props();
+  let { data, form }: PageProps = $props();
 
   type Crop = { x: number; y: number; w: number; h: number };
   type SenseRow = { translationId: string; body: string; lang: string };

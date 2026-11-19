@@ -1,20 +1,4 @@
-"""Morphology gloss formatter (T-2.4).
-
-Converts UD-style feature dicts into the human-readable strings the
-reader's word pop-up shows ("3sg fem present habitual of bolnā"). The
-pop-up component (M5) is the only current consumer — it already knows
-how to italicize the lemma, bold the features, etc., so the formatter
-returns a plain string and leaves styling to the UI layer.
-
-The templates are intentionally compact and LingQ-like: each feature
-maps to a short abbreviation (``Sing`` → ``sg``, ``Pres`` → ``present``,
-``3`` → ``3``). That's a stable, internationally-readable vocabulary
-for the MVP's target audience (English-speaking learners of Hindi /
-Marathi / Odia). When M6 / M14 add native-language gloss preferences,
-the formatter grows a language-of-explanation argument; for now
-English is the one output language so we don't build infrastructure
-for a choice that doesn't exist yet.
-"""
+"""Format a word's grammatical features as a short explanation for the reader."""
 
 from __future__ import annotations
 

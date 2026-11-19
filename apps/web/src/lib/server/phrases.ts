@@ -1,22 +1,6 @@
 /**
- * Phrase service (T-14.1, M14 phrase-level translations).
- *
- * Multi-word dictionary entries — the moral parallel to `lemmas` for
- * units like Hindi `इंतज़ार करना` ("to wait"), Marathi `मदत करणे`, or
- * fixed expressions like `के बारे में`. Three sources author phrases:
- * users (multi-token select in the reader, T-14.3), curators (the
- * dictionary editor, T-14.4), and the NLP rule-based detector (T-14.5).
- *
- * Identity is the ordered `phrase_tokens` rows. `surface_normalised`
- * on `phrases` is just the dedupe lookup column — see `normalizeTokens`
- * for how it's derived. Per-source duplication is allowed by design
- * (mirrors lemmas merge story from T-3.10); the curator merge UI in
- * T-14.7 reconciles duplicates.
- *
- * MVP matching is contiguous-only — discontinuous (gappy) phrases like
- * `इंतज़ार ... किया` (split by an intervening adverb) are an explicit
- * follow-up. The schema is shaped so that change is a resolver-only
- * change with no migration.
+ * Identify a phrase by its ordered words. The normalized spelling helps find duplicates, and
+ * entries from different sources can coexist until a curator merges them.
  */
 import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 
@@ -66,7 +50,7 @@ export type CreatePhraseInput = {
   language: LanguageCode;
   /** Ordered surface forms. Each element is a single token's surface
    *  text — exact form as it must appear in the chapter for the
-   *  contiguous matcher (T-14.2) to pick it up. */
+   *  contiguous matcher to pick it up. */
   tokens: string[];
   pos?: string | null;
   glossDefault?: string | null;
@@ -106,7 +90,7 @@ function normalizeToken(s: string): string {
 /**
  * Build the `surface_normalised` value from an ordered token list.
  * Joined with a single space — the dedupe lookup is purely literal
- * after this step. The chapter-span resolver (T-14.2) matches on the
+ * after this step. The chapter-span resolver matches on the
  * canonical `phrase_tokens` rows, NOT on this string, so this column
  * never participates in detection.
  */
@@ -153,7 +137,7 @@ function validateTokens(input: CreatePhraseInput): string[] {
  * `इंतज़ार करना` reuses the original row. The `source` is part of
  * the dedupe key on purpose — a curator phrase and a user phrase
  * with the same surface stay as distinct rows for the merge UI
- * (T-14.7) to reconcile, exactly like lemmas do (T-3.10).
+ * to reconcile, exactly like lemmas do.
  *
  * Writes are split across two tables (`phrases`, `phrase_tokens`).
  * No native FK on `translations.target_id`; existence checks live
@@ -166,9 +150,8 @@ export async function createPhrase(
   const tokens = validateTokens(input);
   const surfaceNormalised = joinTokens(tokens);
 
-  // Dedupe lookup: a row with the same (language, surface, source)
-  // is reused. Different sources for the same surface stay
-  // distinct — `T-14.7 merge` reconciles those.
+  // Reuse the entry from the same source. A curator can merge matching entries from different
+  // sources.
   const [existing] = (await db
     .select()
     .from(schema.phrases)
@@ -215,37 +198,23 @@ export async function createPhrase(
         phraseId: phrase.id,
         position,
         surface,
-        // T-14.1: lemma_id is a soft hint, not part of identity.
-        // Resolution is deferred to T-14.4's curator editor; new
-        // phrases land with NULL component lemmas.
+        // Words in a new phrase can have a spelling before they are linked to dictionary entries.
         lemmaId: null,
       })),
     )
     .returning()) as PhraseToken[];
   tokenRows.sort((a, b) => a.position - b.position);
 
-  // Note: callers that need the `submittedBy` audit (e.g. user
-  // submissions) should also write a row to T-14.7's
-  // lemma_edit_history with change_type='phrase_insert'. T-14.1
-  // ships the schema and core CRUD — the audit-log integration
-  // lands when `lemma_edit_change_type` is extended in T-14.7.
   void input.submittedBy;
 
   return { phrase, tokens: tokenRows, reused: false };
 }
 
-/**
- * Fetch a phrase + its ordered tokens + visible translations
- * (target_type='phrase'). `hidden` translations are filtered out at
- * this layer; curator/admin views must use a separate path that
- * pulls the moderation rows (lands with T-14.4).
- */
+/** Load a phrase with its words in order and its visible translations. */
 export async function getPhrase(
   id: string,
   options: {
-    /** T-14.7: when set true, the loader returns hidden phrases
-     *  too (used by the curator editor in T-14.4a). Default
-     *  false — anonymous + user views never see a hidden phrase. */
+    /** Include hidden phrases when loading them for review. */
     includeHidden?: boolean;
   } = {},
 ): Promise<{
@@ -259,7 +228,7 @@ export async function getPhrase(
     .where(eq(schema.phrases.id, id))
     .limit(1)) as Phrase[];
   if (!phrase) return null;
-  // T-14.7: hidden gate. For default (non-curator) callers,
+  // hidden gate. For default (non-curator) callers,
   // treat a hidden phrase as if it didn't exist so the
   // moderation surface stays clean.
   if (phrase.hidden && !options.includeHidden) return null;
@@ -284,11 +253,6 @@ export async function getPhrase(
   return { phrase, tokens, translations };
 }
 
-/**
- * List phrases for a language. Pagination is offset-based to match
- * the dictionary browse page's pattern (T-3.6); the curator editor
- * in T-14.4 layers source/locale filters on top of this.
- */
 export async function listPhrasesForLanguage(args: {
   language: LanguageCode;
   source?: Phrase['source'];
@@ -315,16 +279,7 @@ export async function listPhrasesForLanguage(args: {
   return rows;
 }
 
-// -----------------------------------------------------------------------
-// User-known status (T-14.1 mirror of T-5.5 setKnownLemmaStatus).
-// -----------------------------------------------------------------------
 
-/**
- * Upsert the user's known-status for a phrase. Mirrors
- * `setKnownLemmaStatus` exactly — same enum values, same per-language
- * cache recompute, same shape of returned row. Reader hooks this
- * from a phrase-popup status button in T-14.3.
- */
 export async function setKnownPhraseStatus(args: {
   userId: string;
   phraseId: string;
@@ -443,18 +398,9 @@ export function publicPhrase(phrase: Phrase, tokens: PhraseToken[]) {
 }
 
 // -----------------------------------------------------------------------
-// Curator merge + moderation (T-14.7).
+// Curator merge + moderation.
 // -----------------------------------------------------------------------
 
-/**
- * Status precedence for `mergePhrases`. When the merge collapses
- * two `user_known_phrases` rows pointing at the dropped phrase
- * and the kept phrase, the higher status wins so a learner who
- * marked the dropped phrase 'known' doesn't accidentally lose
- * their progress to a 'learning' on the keep side.
- *
- * Order matches the lemma-side merge convention from T-3.7.
- */
 const STATUS_RANK: Record<'unknown' | 'learning' | 'known' | 'ignored', number> = {
   unknown: 0,
   learning: 1,
@@ -505,25 +451,9 @@ export class PhraseMergeMismatchError extends Error {
 }
 
 /**
- * Merge two duplicate phrases. Reassigns every per-phrase row
- * (`translations` polymorphic targets, `phrase_chapter_spans`,
- * `user_known_phrases`) from `dropId` onto `keepId`, deletes the
- * dropped phrase row, and writes one audit row on each side
- * (the `phrase_merge` change type carries direction-specific
- * payloads so a future revert can reconstruct).
- *
- * Validation:
- *  - Both phrases must exist.
- *  - Both phrases must share `language` and `surface_normalised` —
- *    cross-language or cross-surface merges go through a separate
- *    "consolidate variants" flow that doesn't ship in T-14.7.
- *  - `keepId !== dropId`.
- *
- * Conflict resolution:
- *  - `user_known_phrases` collisions: the higher status wins
- *    (`known` > `ignored` > `learning` > `unknown`).
- *  - `phrase_chapter_spans` collisions are dropped silently
- *    (the kept phrase already covers that occurrence).
+ * Merge phrases with the same language and normalized spelling. Move translations, chapter
+ * matches and readers' progress to the surviving entry. If both have a match in the same place,
+ * keep one. If a reader has both statuses, keep the higher one.
  */
 export async function mergePhrases(
   input: MergePhrasesInput,
@@ -765,14 +695,6 @@ export async function mergePhrases(
   };
 }
 
-/**
- * Toggle the `hidden` moderation flag on a phrase. Hidden
- * phrases stay visible to curators / admins (so they can review
- * + unhide) but disappear from anonymous and user views. T-14.4
- * popup `getPhrase` already filters `phrases.hidden=false` for
- * its translations payload — endpoints layered on top of this
- * service apply the same filter for the phrase row itself.
- */
 export async function setPhraseHidden(args: {
   phraseId: string;
   hidden: boolean;
@@ -815,13 +737,7 @@ export async function setPhraseHidden(args: {
   return updated;
 }
 
-/**
- * Toggle the `curator_locked` flag on a phrase, parallel to the
- * lemma-side lock from T-3.7. A locked phrase is skipped by the
- * import path — neither user submissions nor T-14.5a's NLP
- * promotion can clobber its gloss / frequency / source after a
- * human has approved it.
- */
+/** Lock a phrase to protect a curator's edits during imports. */
 export async function setPhraseLocked(args: {
   phraseId: string;
   locked: boolean;
@@ -864,9 +780,6 @@ export async function setPhraseLocked(args: {
   return updated;
 }
 
-// -----------------------------------------------------------------------
-// Curator editor service (T-14.4a — admin dictionary surface).
-// -----------------------------------------------------------------------
 
 export type AdminPhraseListItem = {
   id: string;
@@ -880,8 +793,7 @@ export type AdminPhraseListItem = {
   hidden: boolean;
   /** Visible (non-hidden) translation count for this phrase. */
   translationCount: number;
-  /** Number of distinct chapters this phrase has matched in via
-   *  T-14.2's resolver — gives curators a quick read on usage. */
+  /** Counts distinct chapters containing the phrase. Repeated matches in one chapter count once. */
   chapterCount: number;
   createdAt: Date;
   updatedAt: Date;

@@ -1,5 +1,5 @@
 /**
- * Alignments service (T-9.3 / T-9.5 / T-9.6).
+ * Alignments service.
  *
  * Owners + admins write alignments; everyone with read access on
  * the parent text can list them.

@@ -1,13 +1,4 @@
-/**
- * OpenAPI generator (T-12.1).
- *
- * The v1 API surface is defined by SvelteKit route files. Rather than keep a
- * parallel hand-written path list, this generator scans `src/routes/api/v1`
- * for exported HTTP handlers and emits an OpenAPI 3.1 operation for each one.
- * Route-specific Zod schemas still live beside handlers today; M12's later
- * contract tests can tighten individual JSON shapes without losing this
- * coverage guard.
- */
+/** Build the API path list from exported route handlers so newly added endpoints appear in the reference. */
 import { readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';

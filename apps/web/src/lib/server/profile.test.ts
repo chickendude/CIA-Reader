@@ -170,7 +170,7 @@ describe('upsertUserLanguage', () => {
     expect(fakeDb.update).not.toHaveBeenCalled();
   });
 
-  it('writes T-5.1b reader-popover columns when supplied', async () => {
+  it('saves the supplied reader settings', async () => {
     chain.limit.mockReturnValueOnce([{ userId: 'u1', language: 'hi' }]);
     const updated = {
       userId: 'u1',
@@ -196,7 +196,7 @@ describe('upsertUserLanguage', () => {
     expect('lineSpacing' in setArg).toBe(false);
   });
 
-  it('inserts T-5.1b reader-popover columns on first save', async () => {
+  it('saves reader settings when creating the language preference', async () => {
     chain.limit.mockReturnValueOnce([]);
     chain.returning.mockReturnValueOnce([
       {

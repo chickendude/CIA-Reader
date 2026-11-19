@@ -1,5 +1,5 @@
 /**
- * Classroom / group dashboard (T-7.8).
+ * Classroom / group dashboard.
  *
  * Owner-or-admin only. Aggregates per-member reading progress on
  * the texts shared with the group.

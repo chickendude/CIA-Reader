@@ -1,25 +1,6 @@
 /**
- * NLP job lifecycle helpers (T-4.4).
- *
- * Every uploaded text needs to be tokenized + lemmatized before the
- * reader can show known-words or pop-ups. The actual NLP work is an
- * arq job in services/nlp; this module is the web app's view of the
- * lifecycle:
- *
- *   - `enqueueNlpJob(textId)` — called right after upload. Inserts
- *     the bookkeeping row in `nlp_jobs` and dispatches via the
- *     pluggable `JobDispatcher`. The default dispatcher is a no-op,
- *     which is fine for tests + dev where the worker isn't running;
- *     the prod wiring (Redis push + arq pickup) lands as a
- *     dispatcher implementation in T-13.x.
- *   - `markTextProcessing` / `markTextReady` / `markTextFailed` —
- *     status transitions the worker calls back into via an admin
- *     endpoint. Mirrors the NLP service's `TextStore` contract from
- *     services/nlp/app/worker/store.py so the worker can be wired
- *     against Postgres or against a fake.
- *   - `getTextStatus(textId, viewer)` — polling endpoint backing the
- *     reader's "processing" → "ready" UX. Owner-scoped; null for
- *     anyone else (we don't leak text existence).
+ * Track queued jobs separately from running jobs so the reader can show the current processing
+ * state.
  */
 import { and, count, desc, eq } from 'drizzle-orm';
 
@@ -27,12 +8,8 @@ import { db, schema } from '../db/index.js';
 import type { NlpJob, Text, User } from '../db/schema.js';
 
 /**
- * Pluggable transport for actually triggering the worker. The default
- * implementation is a no-op — fine for tests + early dev. A later
- * ticket adds a Redis-backed dispatcher that pushes onto the arq
- * queue. Keeping this an injected interface (rather than a hardcoded
- * Redis call) means tests don't need a Redis mock, and the prod
- * dispatcher can be swapped without touching upload code.
+ * Connect job creation to the processor. Tests can supply a dispatcher that records which
+ * chapters were queued.
  */
 export interface JobDispatcher {
   dispatch(args: { jobId: string; textId: string; chapterIds: string[] }): Promise<void>;
@@ -40,17 +17,13 @@ export interface JobDispatcher {
 
 const NOOP_DISPATCHER: JobDispatcher = {
   async dispatch() {
-    // Intentionally empty — see file header.
+    // Tests can queue jobs without starting a processor.
   },
 };
 
 let activeDispatcher: JobDispatcher = NOOP_DISPATCHER;
 
-/**
- * Swap the dispatcher used by `enqueueNlpJob`. Production wiring calls
- * this once at boot with the Redis-backed implementation; tests can
- * pass a spy here.
- */
+/** Choose how queued jobs are started. Tests can supply their own dispatcher. */
 export function setJobDispatcher(d: JobDispatcher): void {
   activeDispatcher = d;
 }
@@ -191,7 +164,7 @@ export type StatusView = {
 
 /**
  * Status lookup for the polling endpoint, gated by the central
- * `canReadText` helper (T-4.6). Returns null for missing or
+ * `canReadText` helper. Returns null for missing or
  * unreadable texts; the endpoint maps that to 404 so we don't leak
  * text existence to non-readers.
  */

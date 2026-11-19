@@ -1,65 +1,5 @@
-"""Romanization + transliteration utilities (T-2.5).
-
-Thin, typed wrapper over ``indic-transliteration``'s ``sanscript`` —
-bidirectional conversion between a language's native script and a
-romanization scheme, driven by the shared language registry so no
-caller hardcodes "Devanagari."
-
-Two directions:
-
-* :func:`to_roman` — produces the optional romanization layer the
-  reader shows above each word (precomputed at token-processing time
-  and stored on ``text_tokens``; cheap reads at render time).
-* :func:`to_native` — used by the script-aware input component
-  (T-6.2a) to convert keystrokes / pasted text back into the native
-  script for dictionary search and correction submissions. The
-  client-side mirror of this uses ``sanscript.js`` so keystrokes are
-  instant; this server-side copy is used in places where we need a
-  single canonical conversion (e.g. batch correction tools).
-
-Supported scripts at MVP: ``Deva`` (Hindi, Marathi), ``Orya`` (Odia).
-Supported schemes: ``iso15919``, ``iast``, ``itrans``, ``velthuis``.
-Hunterian is declared in the language registry but intentionally not
-implemented here — ``sanscript`` doesn't ship a Hunterian scheme, and
-a faithful implementation needs a custom mapping table that will
-land in a follow-up ticket (see docstring on :data:`SUPPORTED_SCHEMES`).
-
-Script + scheme tokens are the registry's canonical codes (ISO 15924
-script + the ``RomanizationScheme`` Literal). Calling code never
-touches ``sanscript``'s internal names.
-
-Hindi schwa deletion
-====================
-
-Hindi drops the Devanagari inherent schwa in most positions
-(राम → ``rām``, कमल → ``kamal``, भारत → ``bhārat``), and the schemes
-sanscript ships from a Sanskrit baseline don't model that — sanscript
-alone produces ``rāma``, ``kamala``, ``bhārata``. Marathi and Odia
-retain the schwa, so the bug is Hindi-specific.
-
-When :func:`to_roman` is called with ``language="hi"`` we route the
-Devanagari input through aksharamukha's ``RemoveSchwaHindi`` pre-rule,
-which emits the same Devanagari with explicit viramas where the schwa
-should be silent (e.g. कमला → कम्ला). That schwa-deleted Devanagari is
-then handed to sanscript like any other input, so every supported
-scheme (ISO / IAST / ITRANS / Velthuis) picks up the deletion
-uniformly — we don't depend on aksharamukha's romanization output.
-
-A second Hindi-specific quirk: ISO 15919 distinguishes ``ē/ō`` (long)
-from ``e/o`` (short). Hindi merged that distinction phonologically —
-there is only one /e/ and one /o/ — but sanscript still emits
-``ē/ō`` because the underlying Devanagari े/ो are mechanically the
-"long" forms. For ``language="hi"`` + ``to_scheme="iso15919"`` we
-fold ``ē → e`` and ``ō → o`` after transliteration so the output
-matches reader expectations. Marathi and Odia keep the macrons — they
-genuinely use the length distinction.
-
-The ``language`` kwarg is opt-in. Callers without language context
-(round-trip dictionary tooling, the script-aware editor's reverse
-``to_native`` direction) keep getting raw sanscript output, which
-is reversible. Schwa-deleted Hindi output is intentionally lossy —
-``rām`` doesn't round-trip back to राम — so it's display-only.
-"""
+"""Convert native text to romanized spellings for the reader and convert romanized input back into
+native script for dictionary searches."""
 
 from __future__ import annotations
 
@@ -70,12 +10,7 @@ from indic_transliteration import sanscript
 
 from app.aksharamukha_compat import transliterate as _aksharamukha
 
-# Script codes (ISO 15924) → the sanscript scheme name. The registry
-# ships more script codes than we implement right now (Beng, Guru,
-# Gujr are future languages); they're pre-wired here so adding a new
-# language in M14 is a one-line registry change, not a romanize.py
-# refactor. ``Arab`` (Urdu / Sindhi Perso-Arabic) is deliberately
-# omitted — that lands with M15 and needs its own mapping pass.
+# Map registry script codes to the names used by the transliteration library.
 _SCRIPT_TO_SANSCRIPT: dict[str, str] = {
     "Deva": sanscript.DEVANAGARI,
     "Orya": sanscript.ORIYA,
@@ -85,14 +20,8 @@ _SCRIPT_TO_SANSCRIPT: dict[str, str] = {
 }
 
 
-# Romanization scheme (our registry names) → sanscript scheme name.
-# Hunterian is in the registry's supported_romanizations for Hindi /
-# Marathi but not implemented here — sanscript has no Hunterian scheme
-# and the Hunterian transliteration table is its own project. Users
-# who pick "hunterian" in their profile today see a validation error
-# from :func:`to_roman` / :func:`to_native`; the web layer catches
-# this and falls back to iso15919 for display. Follow-up: build a
-# native Hunterian table alongside the rest when M2 is closed out.
+# Map supported romanization schemes to the library's names. Hunterian has no corresponding table
+# here.
 _SCHEME_TO_SANSCRIPT: dict[str, str] = {
     "iso15919": sanscript.ISO,
     "iast": sanscript.IAST,
@@ -249,7 +178,7 @@ _HINDI_ISO_FOLD = str.maketrans({"ē": "e", "ō": "o", "Ē": "E", "Ō": "O"})
 # spelled etymologically and unpointed — שבת is pronounced "shabes",
 # not the letter-by-letter "shbs" this table produces. Same tier of
 # honesty as the Odia pipeline: rule output is a best effort, and the
-# dictionary's per-lemma romanizations (M3) override it where it's
+# dictionary's per-lemma romanizations override it where it's
 # wrong. Display-only, like the Hindi schwa-deleted output.
 #
 # Sequences are matched longest-first. Pointed letters are the NFC
@@ -560,13 +489,8 @@ def to_roman(
 
 
 def to_native(text: str, *, target_script: str, from_scheme: str) -> str:
-    """Transliterate romanized text into a target native script.
-
-    The inverse of :func:`to_roman`. Output is NFC-normalized so every
-    downstream comparator (``OdiaLemmaTable.lookup``, Hindi /
-    Marathi lemma lookups in M3, ``form_lemma_overrides``) sees a
-    single canonical form regardless of how the input was typed.
-    """
+    """Convert romanized text to native script. Normalize the result to NFC so dictionary lookups
+    compare equivalent spellings consistently."""
     if not text:
         return ""
     if target_script == "Hebr":

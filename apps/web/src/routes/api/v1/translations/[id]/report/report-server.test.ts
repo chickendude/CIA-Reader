@@ -1,6 +1,6 @@
 // @vitest-environment node
 /**
- * Route tests for POST /api/v1/translations/:id/report (T-11.1).
+ * Route tests for POST /api/v1/translations/:id/report.
  *
  * The service is covered by `reports.test.ts`; here we only verify the
  * HTTP shape — auth gate, status codes, rate-limit headers, JSON

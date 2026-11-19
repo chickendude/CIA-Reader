@@ -1,5 +1,5 @@
 /**
- * /stats/:language — per-language learning stats (T-10.1).
+ * /stats/:language, per-language learning stats.
  *
  * Auth-gated; aggregates the user's known/learning lemma counts +
  * per-text and per-collection comprehension breakdowns.

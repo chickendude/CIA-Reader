@@ -1,18 +1,5 @@
-"""Unit tests for :class:`app.pipelines.hindi.HindiPipeline` (T-2.2).
-
-We inject a minimal fake Stanza-like object rather than running the real
-model, so these tests exercise the pipeline's output shaping logic —
-feature parsing, POS-aware ``is_word`` / ``is_oov``, token indexing
-across sentences — without a ~600MB model download. The trade-off is
-we're testing our adapter, not Stanza itself; Stanza's own accuracy is
-covered by the golden-file suite (T-2.8).
-
-The shared output-shaping logic was extracted into
-:mod:`app.pipelines.stanza_ud` in T-2.3 so Marathi could reuse it; the
-feature-parsing tests target ``parse_feats`` at its new public home but
-the HindiPipeline behavior tests stay here to pin down the
-language-specific contract.
-"""
+"""Test the Hindi adapter with sample model responses. The separate corpus tests measure accuracy
+on real text."""
 
 from __future__ import annotations
 
@@ -150,9 +137,7 @@ def test_process_flags_oov_when_lemma_equals_surface_for_content_word():
 
 
 def test_process_does_not_flag_oov_for_proper_nouns():
-    # Proper nouns legitimately have lemma == surface. Marking them OOV
-    # would trigger the correction UX in M6 for every name in the text,
-    # which would be terrible UX. The PROPN guard prevents that.
+    # Treat names as words even when they have no dictionary entry.
     doc = FakeDoc(
         sentences=[
             FakeSentence(words=[FakeWord(text="रवि", lemma="रवि", upos="PROPN")])

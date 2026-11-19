@@ -1,7 +1,4 @@
 // @vitest-environment node
-/**
- * Route tests for POST /api/v1/admin/translations/bulk-attribution (T-3.9).
- */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const bulkUpdateAttribution = vi.fn();

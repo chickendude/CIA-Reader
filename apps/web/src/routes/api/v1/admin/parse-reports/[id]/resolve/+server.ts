@@ -1,10 +1,3 @@
-/**
- * POST /api/v1/admin/parse-reports/:id/resolve (T-6.6).
- *
- * Updates the report's status to one of resolved / rejected /
- * duplicate / deferred / triaged. Reject + resolve + duplicate
- * require a non-empty resolution note.
- */
 import { error, json } from '@sveltejs/kit';
 import { z } from 'zod';
 

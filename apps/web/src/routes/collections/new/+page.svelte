@@ -1,9 +1,9 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
-  import type { PageData } from './$types';
+  import type { PageProps } from './$types';
 
   import { untrack } from 'svelte';
-  let { data }: { data: PageData } = $props();
+  let { data }: PageProps = $props();
 
   let title = $state('');
   let language = $state(untrack(() => data.languages[0]?.code ?? 'hi'));

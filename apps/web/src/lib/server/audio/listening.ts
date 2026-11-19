@@ -1,5 +1,5 @@
 /**
- * Listening stats service (T-10.5).
+ * Listening stats service.
  *
  * The browser reports small playback deltas; this service validates the
  * audio/text relationship and rolls them into one aggregate row per

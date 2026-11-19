@@ -1,4 +1,4 @@
-"""Unit tests for :class:`app.pipelines.odia.OdiaPipeline` (T-2.3a).
+"""Unit tests for :class:`app.pipelines.odia.OdiaPipeline`.
 
 Three concerns covered here:
 

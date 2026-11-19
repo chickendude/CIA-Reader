@@ -1,14 +1,3 @@
-/**
- * Curator dictionary list (T-3.7).
- *
- * Reuses the public browse service so curators see the same index the
- * public does — filtered to the languages the current curator is granted
- * on. Admins see every MVP language.
- *
- * The curator-only affordances (merge, split, edit) live on the detail
- * page at /moderation/dictionary/[id]. This page is the jumping-off
- * point.
- */
 import { error } from '@sveltejs/kit';
 import {
   DEFAULT_PAGE_SIZE,

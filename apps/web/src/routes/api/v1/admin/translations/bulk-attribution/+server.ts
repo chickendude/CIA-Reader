@@ -1,5 +1,5 @@
 /**
- * POST /api/v1/admin/translations/bulk-attribution (T-3.9).
+ * POST /api/v1/admin/translations/bulk-attribution.
  *
  * Admin-only. Rewrites `sourceAttribution` on every translation matching
  * (source, oldAttribution, language?) in one pass. Used when an upstream

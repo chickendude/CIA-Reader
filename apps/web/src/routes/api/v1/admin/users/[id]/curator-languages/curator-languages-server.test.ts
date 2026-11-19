@@ -1,7 +1,4 @@
 // @vitest-environment node
-/**
- * Route tests for GET + POST /api/v1/admin/users/:id/curator-languages (T-3.4).
- */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const listCuratorLanguages = vi.fn();

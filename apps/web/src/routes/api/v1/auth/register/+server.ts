@@ -43,7 +43,7 @@ export const POST: RequestHandler = async ({ request, cookies, url }) => {
   const session = await createSession(created.id);
   setSessionCookie(cookies, session.token, session.expiresAt, isSecureRequest(url));
 
-  // Send a verification magic-link (T-11.7). Same handler as
+  // Send a verification magic-link. Same handler as
   // /login's "Email me a link" — the consumer in
   // $lib/server/auth/magic-link.ts sets email_verified_at on
   // click, so this email both welcomes and verifies. Failures

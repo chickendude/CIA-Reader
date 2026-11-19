@@ -13,7 +13,7 @@ import { setJobDispatcher } from '$lib/server/texts/jobs.js';
 import { inProcessDispatcher } from '$lib/server/texts/in-process-dispatcher.js';
 
 // Register the in-process NLP dispatcher at module load. Until
-// services/nlp's arq worker is deployed (T-13.x), the SvelteKit
+// services/nlp's arq worker is deployed, the SvelteKit
 // process does the NLP work itself — fire-and-forget per upload —
 // and writes tokens back via the same JobDispatcher seam the arq
 // worker will plug into later.

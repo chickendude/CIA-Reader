@@ -1,5 +1,5 @@
 /**
- * User ↔ language membership (#436).
+ * User ↔ language membership.
  *
  * "Adding a language" creates a `user_languages` row carrying the chosen
  * proficiency baseline. Distinct from `upsertUserLanguage` in profile.ts,

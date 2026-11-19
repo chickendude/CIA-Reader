@@ -17,7 +17,10 @@
   plain `let`.
 -->
 <script lang="ts">
-  import { pushToast } from '../toast-store.js';
+  import { createToastStore, setToastStore } from '../toast-store.js';
+  import ToastHost from '../ToastHost.svelte';
+
+  const { pushToast } = setToastStore(createToastStore());
 
   type Input = { ok: true; lemmasProcessed: number; removed: number; inserted: number };
   let { input }: { input: Input | null } = $props();
@@ -33,4 +36,4 @@
   });
 </script>
 
-<div data-testid="fixture"></div>
+<ToastHost />

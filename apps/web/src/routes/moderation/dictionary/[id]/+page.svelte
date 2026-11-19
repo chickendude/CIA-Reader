@@ -6,12 +6,12 @@
   import LemmaInlineField from './LemmaInlineField.svelte';
   import HindiPatternPicker from './HindiPatternPicker.svelte';
   import LemmaInlinePos from './LemmaInlinePos.svelte';
-  import type { ActionData, PageData } from './$types';
+  import type { PageProps } from './$types';
 
   let {
     data,
     form,
-  }: { data: PageData; form: ActionData } = $props();
+  }: PageProps = $props();
 
   const lemma = $derived(data.lemma);
   const formsList = $derived(data.forms ?? []);

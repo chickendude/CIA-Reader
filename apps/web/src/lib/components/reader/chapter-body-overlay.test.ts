@@ -1,7 +1,8 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen } from '@testing-library/svelte';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { goto } from '$app/navigation';
 
+import { emptyDraft } from '$lib/dictionary/hindi-workshop';
 import ChapterBody from './ChapterBody.svelte';
 import ReaderImage from './ReaderImage.svelte';
 import type { ChapterView, ServerToken } from './types.js';
@@ -91,6 +92,41 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
+});
+
+it('reopens a saved form at another occurrence while the chapter is refreshing', async () => {
+  const missing = { surface: 'खोजियों', lemmaId: null, isOov: true, hasDefinition: false, glossDefault: null };
+  const occurrences = [word(missing), word({ ...missing, id: 't2', idx: 1 })];
+  const draft = { ...emptyDraft('खोजी'), id: 'seeker', meaning: 'seeker', other: [missing.surface] };
+  const entry = { id: draft.id, headword: draft.lemma, glossDefault: draft.meaning, pos: draft.pos };
+  vi.stubGlobal('scrollTo', vi.fn());
+  const refresh = Promise.withResolvers<Response>();
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+    if (url.endsWith('/chapters/0/tokens')) return refresh.promise;
+    if (url.endsWith('/workshop/actions')) {
+      return Response.json({ draft, external: '', uses: [], evidence: [], group: [] });
+    }
+    return Response.json({ lemma: entry, translations: { personal: [], official: [], community: [] } });
+  }));
+  const view = render(ChapterBody, {
+    props: { chapter: chapter(occurrences), language: 'hi', textId: 'book' },
+    context: new Map([['readerHindiDictionary', () => ({ ai: false })]]),
+  });
+  const words = view.container.querySelectorAll<HTMLElement>('[data-token-id]');
+  await fireEvent.click(words[0]!);
+  expect(screen.getByRole('button', { name: 'Add dictionary entry' })).toBeTruthy();
+  window.dispatchEvent(new CustomEvent('reader-dictionary-saved', { detail: draft }));
+  await fireEvent.click(words[1]!);
+  await waitFor(() => expect(words[1]?.dataset.lemmaId).toBe(draft.id));
+  await fireEvent.click(await screen.findByRole('button', { name: 'Edit dictionary entry' }));
+  const dialog = await screen.findByRole('dialog', { name: 'Hindi dictionary entry' });
+  refresh.resolve(Response.json({
+    chapterId: 'chap-0',
+    tokens: occurrences.map((t) => ({ ...t, lemmaId: draft.id, isOov: false, status: 'known' })),
+  }));
+  await waitFor(() => expect(words[1]?.dataset.s).toBe('4'));
+  expect(dialog.isConnected).toBe(true);
+  expect(screen.getByLabelText<HTMLInputElement>('Dictionary form').value).toBe('खोजी');
 });
 
 describe('ChapterBody — PDF image overlay', () => {

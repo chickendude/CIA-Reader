@@ -1,6 +1,6 @@
 // @vitest-environment node
 /**
- * Loader + action tests for /moderation/dictionary/sources (T-3.14).
+ * Loader + action tests for /moderation/dictionary/sources.
  *
  * Mocks the admin-imports service to avoid filesystem and database
  * touches; the goal here is the routing surface — that the loader

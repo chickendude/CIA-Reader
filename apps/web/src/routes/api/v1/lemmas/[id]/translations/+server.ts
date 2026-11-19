@@ -1,13 +1,6 @@
 /**
- * GET /api/v1/lemmas/:id/translations (T-3.3).
- *
- * Public read — no auth required (dictionary browse is public, and the
- * reader pop-up loads this shape on every tap). When the caller IS
- * authenticated, their own submissions are pulled into the `personal`
- * bucket so the UI can render them at the top of the pop-up per T-3.8.
- *
- * Hidden community rows are suppressed for anonymous + non-curator
- * viewers; curators and admins see everything.
+ * Group the signed-in reader's own translations first. Anonymous readers have no personal
+ * translations.
  */
 import { error, json } from '@sveltejs/kit';
 

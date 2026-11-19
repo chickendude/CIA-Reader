@@ -68,7 +68,7 @@ export const EMAIL_NOT_VERIFIED = 'EMAIL_NOT_VERIFIED';
  * Like `requireUser`, but additionally rejects users whose
  * `email_verified_at` is null. Used to gate content-creating actions
  * (translations, votes, reports) so a brand-new signup can't post
- * publicly-visible content under an unverified email (T-11.7).
+ * publicly-visible content under an unverified email.
  */
 export async function requireVerifiedUser(event: RequestEvent): Promise<User> {
   const user = await requireUser(event);

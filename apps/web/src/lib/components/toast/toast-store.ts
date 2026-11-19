@@ -1,18 +1,5 @@
-/**
- * App-wide toast store.
- *
- * Anything that wants to surface a transient notification calls
- * `pushToast({ kind, message, duration? })`. A single `<ToastHost />`
- * in the root layout subscribes to this store and renders the active
- * stack — callers never need to mount anything component-side.
- *
- * The store is a plain Svelte `writable` so it works equally well
- * inside `.svelte` components (`$store` syntax) and `.ts` modules
- * (the imperative API below). Toasts auto-dismiss after `duration`
- * ms; pass `duration: null` for a sticky toast the user has to
- * close by hand.
- */
-import { writable, type Readable } from 'svelte/store';
+import { createContext } from 'svelte';
+import { readonly, writable } from 'svelte/store';
 
 export type ToastKind = 'success' | 'error' | 'info';
 
@@ -26,17 +13,6 @@ export type Toast = {
   duration: number | null;
 };
 
-const inner = writable<Toast[]>([]);
-
-/**
- * Read-only view of the active toasts. Public consumers shouldn't
- * mutate the list directly — they go through the helpers below so the
- * store stays the single mutation point.
- */
-export const toasts: Readable<Toast[]> = { subscribe: inner.subscribe };
-
-let counter = 0;
-
 export type PushToastInput = {
   kind?: ToastKind;
   message: string;
@@ -45,39 +21,40 @@ export type PushToastInput = {
   duration?: number | null;
 };
 
-/**
- * Append a toast to the stack and return its id. The id can be
- * passed to `dismissToast` to remove it programmatically (useful
- * when a long-running operation wants to clear a "loading…" toast
- * once it succeeds).
- */
-export function pushToast(input: PushToastInput): string {
-  counter += 1;
-  const id = `toast-${counter}-${Date.now()}`;
-  inner.update((list) => [...list, makeToast(id, input)]);
-  return id;
-}
+export type ToastStore = ReturnType<typeof createToastStore>;
 
-export function updateToast(id: string, input: PushToastInput): boolean {
-  let found = false;
-  inner.update((list) => list.map((toast) => {
-    if (toast.id !== id) return toast;
-    found = true;
-    return makeToast(id, input);
-  }));
-  return found;
+export const [getToastStore, setToastStore] = createContext<ToastStore>();
+
+export function createToastStore() {
+  const inner = writable<Toast[]>([]);
+  let counter = 0;
+
+  function pushToast(input: PushToastInput): string {
+    counter += 1;
+    const id = `toast-${counter}-${Date.now()}`;
+    inner.update((list) => [...list, makeToast(id, input)]);
+    return id;
+  }
+
+  function updateToast(id: string, input: PushToastInput): boolean {
+    let found = false;
+    inner.update((list) => list.map((toast) => {
+      if (toast.id !== id) return toast;
+      found = true;
+      return makeToast(id, input);
+    }));
+    return found;
+  }
+
+  function dismissToast(id: string): void {
+    inner.update((list) => list.filter((toast) => toast.id !== id));
+  }
+
+  return { toasts: readonly(inner), pushToast, updateToast, dismissToast };
 }
 
 function makeToast(id: string, {
   kind = 'info', message, progress, duration = kind === 'success' ? 2000 : 5000,
 }: PushToastInput): Toast {
   return { id, kind, message, duration, progress };
-}
-
-export function dismissToast(id: string): void {
-  inner.update((list) => list.filter((t) => t.id !== id));
-}
-
-export function clearToasts(): void {
-  inner.set([]);
 }

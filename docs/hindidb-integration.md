@@ -64,8 +64,8 @@ Books already owned by the viewer remain in **Your library** and show **Open in
 my library**, without creating another copy.
 
 Anki exports use a temporary SQLite database because `.apkg` contains Anki's
-SQLite collection. Application data remains in PostgreSQL. Export requires
-Node 22.13 or newer and supports decks larger than the former 16 MB limit.
+SQLite collection. Application data remains in PostgreSQL. Node's built-in
+SQLite supports decks larger than the former 16 MB limit.
 
 Admins can use **Add to Official** on a ready book in their personal library.
 New promotions restrict full reading to staff while exposing catalog metadata.

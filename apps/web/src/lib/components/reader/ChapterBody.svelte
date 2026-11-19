@@ -1,16 +1,6 @@
 <!--
-  Renders one chapter's body (T-5.2, T-5.3, T-5.4, hover tooltip in T-5.10).
-
-  Click handling lives here so the popup is mounted at most once per
-  chapter render — wiring it on every TokenSpan would explode for
-  large chapters. We delegate via event bubbling.
-
-  Two surfaces:
-    - Hover (mouseover): a lightweight WordTooltip that reads only
-      what's on the token row. Cheap; no fetch.
-    - Click: the full WordPopup side panel. Fetches translations,
-      offers status flips + add-translation form. Locks until the
-      user closes / picks another word.
+  Handle word interactions once per chapter. Hover reads the saved word details. Clicking opens
+  the full dictionary entry.
 -->
 <script lang="ts">
   import { looksLikeNumberToken, withLemmaCorrection } from './types.js';
@@ -47,7 +37,7 @@
     pageImage = null,
   }: {
     chapter: ChapterView;
-    /** T-6.2: drives the CorrectionModal's dictionary-search
+    /** drives the CorrectionModal's dictionary-search
      *  language + script. */
     language: LanguageCode;
     showRomanization?: boolean;
@@ -98,11 +88,8 @@
     return () => window.removeEventListener('dictionary-definition-changed', update);
   });
 
-  // T-6.1: per-token lemma corrections live here so picking an
-  // alternate meaning in the popup re-renders that token with the
-  // chosen lemma immediately. Server-side persistence happens in
-  // T-6.4's loader join; this state is purely for the current
-  // session.
+  // Show the reader's choice immediately. On the next visit the chapter loader reads the saved
+  // correction.
   let lemmaCorrections = $state(new Map<string, string>());
   // Mirror of personal-translation edits made in the popup so the
   // hover tooltip refreshes without a chapter reload. Value is the
@@ -167,14 +154,7 @@
       : paragraphsOfTokens(tokenize(chapter.body)),
   );
 
-  // T-14.3: phrase spans are segmented per paragraph at render
-  // time. The resolver (T-14.2) emits at most one span per
-  // (startIdx, phraseId), and longest-wins is applied here for the
-  // visible `<phrase>` wrapper — shorter overlapping spans ride
-  // along as `overlaps` so the popup (T-14.4) can surface them as
-  // alternatives. An empty `phraseSpans` array (chapter processed,
-  // no matches) costs one Map allocation per paragraph; a `null`
-  // value (chapter not yet processed) renders as bare tokens.
+  // Show the longest phrase when matches overlap. Keep the shorter phrases as alternatives.
   const phraseSpans = $derived(chapter.phraseSpans ?? []);
   const segmentedParagraphs = $derived.by(() => {
     if (!serverParagraphs) return null;
@@ -225,12 +205,8 @@
     bottom: number;
     right: number;
   } | null>(null);
-  // T-14.3: when the click target is inside a `<phrase>` wrapper,
-  // the popup opens with the phrase header above the token body.
-  // Cleared whenever the click lands on a bare token or the popup
-  // is closed.
   let activePhrase = $state<ChapterPhraseSpan | null>(null);
-  // T-14.3a: pending phrase-create selection. Set when the user
+  // pending phrase-create selection. Set when the user
   // shift-clicks a token that's at least 2 tokens away from the
   // anchor — the popup opens in create mode showing the
   // surfaces and a Save/Cancel pair. Cleared on close.
@@ -243,7 +219,7 @@
   let pendingSelection = $state<PendingPhraseSelection | null>(null);
   let selectionError = $state<string | null>(null);
 
-  // T-14.3b: while the user is constructing a phrase via shift-
+  // while the user is constructing a phrase via shift-
   // click, bracket the contiguous run of segments whose tokens
   // fall inside the proposed range under a single `pending` group.
   // The renderer wraps that group in a `<phrase>`-like element so
@@ -259,14 +235,8 @@
     );
   });
 
-  // T-14.3b: while pending is active the popup renders the proposed
-  // phrase as if it were a single multi-word lemma — same body
-  // shape, headword = joined surfaces. WordPopup short-circuits its
-  // translations fetch on `lemmaId === null`, so the body shows the
-  // surface header + an empty translations list rather than the
-  // anchor word's data. Phrase persistence + lemma-style writes
-  // (status flips, add-translation) are followups; for now the
-  // popup is a read-only view of the proposed phrase.
+  // Show the selected words together while the reader creates a phrase. Looking up the first word
+  // here would display the wrong translations.
   const popupToken = $derived.by<ServerToken | null>(() => {
     if (pendingSelection) {
       return {
@@ -317,7 +287,7 @@
   }
 
   /**
-   * T-14.3a: build a pending phrase-create selection from the
+   * build a pending phrase-create selection from the
    * range `[anchorIdx, targetIdx]`. Pure validation logic lives
    * in `phrase-selection.ts` so it can be unit-tested without
    * the Svelte component shell; this wrapper just adapts the
@@ -345,7 +315,7 @@
     };
   }
 
-  // T-14.3b: shift-click in a browser would otherwise extend the
+  // shift-click in a browser would otherwise extend the
   // native text selection from the previous caret position to the
   // click target, drawing the system selection colour over our
   // pending-phrase highlight. Suppressing the gesture on
@@ -379,7 +349,7 @@
       return;
     }
 
-    // T-14.3a: shift-click range select. When the user clicks
+    // shift-click range select. When the user clicks
     // a second token while holding shift and an existing
     // anchor (`activeToken`) is set, treat the pair as a
     // phrase-create selection. Falls through to the regular
@@ -419,16 +389,13 @@
       bottom: rect.bottom,
       right: rect.right,
     };
-    // T-14.3: surface the containing phrase (if any) so the popup
-    // can render its phrase header above the token body. A click on
-    // a bare token clears any prior phrase context.
     activePhrase = findPhrase(event.target as HTMLElement);
-    // T-14.3a: clear any pending phrase-create state — a regular
+    // Clear any pending phrase-create state, a regular
     // click cancels the create flow.
     pendingSelection = null;
     // Hide the hover tooltip so it doesn't double up with the panel.
     preview.close();
-    // T-9.4: tap-to-seek. If audio is loaded for this text and the
+    // tap-to-seek. If audio is loaded for this text and the
     // tapped token has an alignment row, seek the player to that
     // word's startMs and pause so the user can read at their own
     // pace. The popup stays open (it auto-pauses by definition —
@@ -473,24 +440,12 @@
     selectionError = null;
   }
 
-  // T-14.3a: invoked by WordPopup on a successful phrase-create.
-  // We refetch the active chapter's tokens / spans so the new
-  // phrase highlights immediately. For now this nudges a route
-  // invalidation by issuing a light fetch against the lazy-tokens
-  // endpoint and re-running the segmenter — the simplest path
-  // that doesn't require threading a SvelteKit `invalidate` import
-  // through the popup callback.
   async function onPhraseCreated(_phraseId: string) {
-    // Server-side spans are rebuilt on the next chapter
-    // re-process; for the current paint, we close the popup and
-    // expect the next route navigation (or the user's next
-    // chapter open) to surface the new phrase. A targeted
-    // refresh is a follow-up — see T-14.3b in the issue tracker.
     void _phraseId;
     closePopup();
   }
 
-  // T-5.1c: long-press as a tap alternative on touch devices. A
+  // long-press as a tap alternative on touch devices. A
   // 500ms hold over a word fires the same WordPopup the click
   // handler does. The detector cancels on movement so a scroll-y
   // touch never triggers a spurious popup.
@@ -549,16 +504,14 @@
     personalGlossOverrides = next;
   }
 
-  // T-6.2b: after a correction commits, surface a toast offering
+  // after a correction commits, surface a toast offering
   // bulk-apply across the rest of the chapter / text.
   let toastTokenId = $state<string | null>(null);
 
   function onCorrectionApplied(tokenId: string, chosenLemmaId: string | null) {
     const next = new Map(lemmaCorrections);
     if (chosenLemmaId == null) {
-      // T-6.2 mark_* path: the user declared this surface isn't a
-      // learnable word. Clear any prior pick so the next render
-      // falls through to the worker's (now cleared) primary.
+      // Clear the previous choice when the reader marks a token as something other than a word.
       next.delete(tokenId);
     } else {
       next.set(tokenId, chosenLemmaId);
@@ -572,11 +525,7 @@
 
   function applyEverywhereLocally(scope: 'same-context' | 'all-contexts') {
     void scope;
-    // Server has already replicated the row. The reader's next
-    // navigation will pick up the bulk-applied corrections via
-    // T-6.4's loader join. We could optimistically expand the local
-    // override map here, but a full chapter walk is enough work that
-    // we'd rather let the next loader pass do it canonically.
+    // Other occurrences will show the saved correction the next time their chapter loads.
   }
   void applyEverywhereLocally; // referenced in toast onApplied wiring
 </script>
@@ -698,10 +647,7 @@
 />
 
 <style>
-  /* Inherit font-size + line-height from the reader's content rule
-     so page mode and scroll mode look identical (T-5.29 fixed an
-     earlier mismatch where this paragraph rule shadowed the parent
-     at 1.05rem). */
+  /* Inherit the reader's font size and line height so a paragraph looks the same in each layout. */
   .body {
     margin: 0 0 1rem;
   }
@@ -769,7 +715,7 @@
   :global(html[data-flag-undefined]) .ovl-hotspot.no-definition {
     box-shadow: 0 0 0 1px var(--magenta, #c026d3);
   }
-  /* T-14.3 / T-14.3b: phrase wrappers are an unknown element so we
+  /* Phrase wrappers are an unknown element so we
      have to opt them into inline display explicitly. The visible
      highlight is a soft accent fill behind the run plus a
      continuous bottom-bar — both painted via box-shadow so the
@@ -816,7 +762,7 @@
     background: transparent;
     box-shadow: none;
   }
-  /* T-14.3b: in-progress shift-click selection. Soft accent fill
+  /* in-progress shift-click selection. Soft accent fill
      plus a 2px outer accent ring so the proposed range reads as
      one clear unit — the per-word anchor outline is suppressed
      while pending is active (see `isAnchor` wiring in this file),

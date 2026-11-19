@@ -1,7 +1,4 @@
 // @vitest-environment node
-/**
- * Unit tests for the correction service (T-6.1).
- */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const rows: Array<Record<string, unknown>> = [];
@@ -82,7 +79,7 @@ describe('writeTokenCorrection', () => {
       chosenLemmaId: 'lem-2',
     });
     expect(row.chosenLemmaId).toBe('lem-2');
-    // Two inserts: token_corrections + user_known_lemmas seed (T-6.4).
+    // Two inserts: token_corrections + user_known_lemmas seed.
     expect(fakeDb.insert).toHaveBeenCalledTimes(2);
   });
 
@@ -151,12 +148,12 @@ describe('writeTokenCorrection', () => {
     expect(row.chosenLemmaId).toBeNull();
     const insertArg = chain.values.mock.calls[0]?.[0] as Record<string, unknown>;
     expect(insertArg.chosenLemmaId).toBeNull();
-    // T-6.4: mark_* corrections must NOT seed a user_known_lemmas
+    // mark_* corrections must NOT seed a user_known_lemmas
     // row — there's no chosen lemma to seed against.
     expect(chain.onConflictDoNothing).not.toHaveBeenCalled();
   });
 
-  it('seeds a user_known_lemmas row on pick_candidate (T-6.4)', async () => {
+  it('seeds a user_known_lemmas row on pick_candidate', async () => {
     chain.limit
       .mockReturnValueOnce([{ id: 'tok-1' }])
       .mockReturnValueOnce([{ id: 'lem-2' }]);

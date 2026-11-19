@@ -1,5 +1,5 @@
 /**
- * POST /api/v1/admin/parse-reports/:id/accept (T-6.6).
+ * POST /api/v1/admin/parse-reports/:id/accept.
  *
  * Promotes the report's chosen lemma into form_lemma_overrides
  * (worker + reader fallback consume that for everyone) and

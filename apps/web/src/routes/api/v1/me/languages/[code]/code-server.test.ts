@@ -1,7 +1,4 @@
 // @vitest-environment node
-/**
- * Route tests for PATCH /api/v1/me/languages/:code (T-5.1b extends).
- */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const upsertUserLanguage = vi.fn();

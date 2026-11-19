@@ -1,6 +1,6 @@
 """Shared output-shaping for Stanza UD-style pipelines.
 
-Hindi (T-2.2) and Marathi (T-2.3) both run Stanza's UD pipeline and
+Hindi and Marathi both run Stanza's UD pipeline and
 produce the same :class:`Token` shape. The language-agnostic parts —
 iterating over ``doc.sentences[*].words``, parsing UD ``feats`` into a
 dict, applying the OOV / ``is_word`` POS heuristics — live here so one
@@ -60,7 +60,7 @@ _TRAILING_SPLIT_MARKS: tuple[str, ...] = ("।", "॥", "?", "!")
 # glues to the first word of a quotation — "–Ondo" / "—Ondo" — when no
 # space follows the dash. Left attached, the dash blocks dictionary
 # lookup and, worse, drags the word through Stanza's character seq2seq
-# lemma fallback, which mangled "–Ondo" into the lemma "hondo" (#437).
+# lemma fallback, which mangled "–Ondo" into the lemma "hondo".
 # Restricted to the en/em dash: the ASCII hyphen-minus is deliberately
 # excluded so compounds ("kale-garbitzaile") and negative numbers
 # ("-15") keep their shape.
@@ -136,7 +136,7 @@ def _needs_lowercase_relemma(surface: str) -> bool:
     through to the character seq2seq model. That fallback drops or
     duplicates letters in all-caps headings ("HITZAURREA" → "hitzaure"
     instead of "hitzaurre") and *inserts* an etymological h in sentence-
-    or dialogue-initial title-case words ("Ondo" → "hondo", #437).
+    or dialogue-initial title-case words ("Ondo" → "hondo").
     Re-lemmatizing a lowercased copy recovers the cached lemma in both
     cases.
 

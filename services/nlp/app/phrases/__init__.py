@@ -1,22 +1,4 @@
-"""Rule-based phrase detector (T-14.5).
-
-Sits on top of an existing :class:`app.pipelines.base.PipelineResult`
-— the Stanza output already carries POS tags, lemmas, and
-morphology features per token. The detector matches per-language
-YAML patterns against those tokens and emits
-:class:`app.schemas.ProposedPhrase` rows; the web worker (T-14.5a
-follow-up) persists them to ``phrase_proposals`` and a periodic
-promotion pass moves them into ``phrases`` (``source='nlp'``) once
-each surface has occurred in ≥ N chapters across the corpus.
-
-Patterns ship as YAML so curators can extend without redeploying
-the Python service. See :mod:`.base` for the loader + match logic
-and :mod:`.patterns` for the per-language seed files.
-
-The :func:`get_detector` registry lazy-loads each language's
-patterns on first use and caches the result for subsequent calls,
-so there's no per-request YAML parse on the hot path.
-"""
+"""Propose phrases by matching a language's patterns against the words returned by the parser."""
 
 from __future__ import annotations
 

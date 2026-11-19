@@ -1,20 +1,4 @@
-"""Canned pipeline used until the real per-language pipelines land.
-
-Splits the input into ALTERNATING word and whitespace / punctuation
-runs and emits a :class:`Token` per run, preserving the original
-layout: word tokens get one top-K candidate (lemma = surface, OOV
-= True), and the runs in between (whitespace, punctuation) become
-non-word tokens whose surface is the literal text. The reader renders
-non-word tokens as plain text, so spaces + paragraph breaks survive.
-
-Word tokens carry an ISO-15919 romanization computed via
-:mod:`app.romanize`, so the reader's "Show romanization" toggle has
-something to display even before real Stanza models are wired up.
-
-Kept separate from :mod:`app.main` so that T-2.2 / T-2.3 / T-2.3a can
-plug real Stanza / IndicNLP models in by swapping the registry entry in
-:mod:`app.pipelines.__init__` — no changes to the HTTP layer.
-"""
+"""Provide predictable word analyses for development and tests that run without language models."""
 
 from __future__ import annotations
 

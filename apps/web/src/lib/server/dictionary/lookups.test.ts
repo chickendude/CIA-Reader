@@ -1,6 +1,6 @@
 // @vitest-environment node
 /**
- * Unit tests for `bucketTranslations` (T-3.3).
+ * Unit tests for `bucketTranslations`.
  *
  * The ordering contract is the important thing — covered with literal
  * rows. The DB-backed `getLemmaTranslations` is an integration concern
@@ -114,7 +114,7 @@ describe('bucketTranslations — ordering', () => {
     expect(out.official.map((t) => t.body)).toEqual(['cur', 'imp']);
   });
 
-  it('orders community translations by vote score, then newest-first (T-10.4)', () => {
+  it('orders community translations by vote score, then newest-first', () => {
     const rows: Translation[] = [
       row({
         source: 'user',
@@ -157,7 +157,7 @@ describe('bucketTranslations — ordering', () => {
     expect(out.community.map((t) => t.body)).toEqual(['new', 'old']);
   });
 
-  it('honors curator-set displayRank ahead of source-rank within officials (T-3.13)', () => {
+  it('honors curator-set displayRank ahead of source-rank within officials', () => {
     const rows: Translation[] = [
       row({
         source: 'curator',
@@ -177,7 +177,7 @@ describe('bucketTranslations — ordering', () => {
     expect(out.official.map((t) => t.body)).toEqual(['imp-first', 'cur-second']);
   });
 
-  it('falls back to source-rank when displayRank is null (T-3.13)', () => {
+  it('falls back to source-rank when displayRank is null', () => {
     // Same setup as the non-rank test above but with all ranks null —
     // proves the displayRank path doesn't disturb existing behavior.
     const rows: Translation[] = [
@@ -198,7 +198,7 @@ describe('bucketTranslations — ordering', () => {
     expect(out.official.map((t) => t.body)).toEqual(['cur', 'imp']);
   });
 
-  it('places null-rank rows after non-null within the same bucket (T-3.13)', () => {
+  it('places null-rank rows after non-null within the same bucket', () => {
     const rows: Translation[] = [
       row({
         source: 'official_dictionary',
@@ -217,7 +217,7 @@ describe('bucketTranslations — ordering', () => {
     expect(out.official.map((t) => t.body)).toEqual(['ranked', 'unranked']);
   });
 
-  it('honors displayRank within the community bucket too (T-3.13)', () => {
+  it('honors displayRank within the community bucket too', () => {
     const rows: Translation[] = [
       row({
         source: 'user',
@@ -260,7 +260,7 @@ describe('bucketTranslations — ordering', () => {
   });
 });
 
-describe('deriveProvenance — viewer-relative classification (T-3.8)', () => {
+describe('deriveProvenance viewer-relative classification', () => {
   it('returns personal/null when the viewer authored the row', () => {
     const r = row({ source: 'user', submittedBy: 'u1' });
     expect(deriveProvenance(r, { id: 'u1' })).toEqual({

@@ -1,29 +1,3 @@
-/**
- * Lemma-form repository + form-editor service layer.
- *
- * Backs the form-editor section on the curator's lemma page (T-3.7
- * extension). The shapes here are deliberately narrow — a curator
- * can:
- *
- *   - list the forms attached to a lemma (with their grammar pills)
- *   - add a new form by hand
- *   - edit an existing form's surface / features / romanization
- *   - delete a form
- *   - search across `lemma_forms.surface` to find which lemma a
- *     surface belongs to (the type-ahead in the form editor)
- *   - assign / remove a paradigm + stem
- *   - regenerate forms from the assigned paradigm
- *
- * Regenerate semantics: drop every `created_by != 'curator'` row for
- * the lemma, then insert one new `created_by='generator'` row per
- * paradigm slot. Curator-edited rows survive a regenerate, which is
- * what makes the editor safe to use repeatedly. Quarantined rows
- * also survive (they're already excluded from lookup); a follow-up
- * cleanup pass deals with them.
- *
- * All writes accept a Drizzle transaction handle so callers in
- * `curator.ts` can compose them with audit-row inserts.
- */
 import { and, asc, desc, eq, ilike, isNotNull, isNull, ne, or, sql } from 'drizzle-orm';
 
 import { db, schema } from '../db/index.js';

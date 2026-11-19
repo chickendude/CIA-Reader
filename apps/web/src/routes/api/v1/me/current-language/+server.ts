@@ -1,5 +1,5 @@
 /**
- * PUT /api/v1/me/current-language (T-5.25).
+ * PUT /api/v1/me/current-language.
  *
  * Sets the cia_lang cookie that the layout loader uses to drive the
  * rail's language indicator. Body: `{ code: 'hi' | 'mr' | 'or' }`.

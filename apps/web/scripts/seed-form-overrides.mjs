@@ -1,5 +1,5 @@
-// One-shot seeder for the curator-side form_lemma_overrides rows
-// (T-2.7). Stanza's Hindi UD model lemmatizes finite copulas (है,
+// One-shot seeder for the curator-side form_lemma_overrides rows.
+// Stanza's Hindi UD model lemmatizes finite copulas (है,
 // हैं, था, हूँ, …) to themselves rather than to होना; ditto for
 // रहना's finite forms. The override table fixes those at processing
 // time without baking the patch into the Python pipeline.
@@ -47,11 +47,8 @@ const HINDI_OVERRIDES = [
   { surface: 'रहे', lemma: 'रहना', pos: 'VERB' },
 ];
 
-// Basque (eu) — Stanza's UD_Basque-BDT model lemmatizes these inflected
-// forms wrong (verified against the live model): case/directional suffixes
-// left unstripped, over-stripped, or mis-tagged as verbs. Fix them at the
-// surface level until the Phase 3 suffix-rule tier (mirroring odia/morph.py)
-// generalizes across whole inflection families.
+// These spellings need explicit entries because Stanza can remove too much or too little
+// of a Basque word ending, or assign the wrong part of speech.
 //
 // `gloss` seeds gloss_default when the lemma has to be created so the new
 // dictionary entry isn't bare. `aspaldion` is a genuine lexeme of its own
@@ -63,19 +60,11 @@ export const BASQUE_OVERRIDES = [
   { surface: 'arrastiko', lemma: 'arrasti', pos: 'NOUN', gloss: 'afternoon; evening' },
   { surface: 'mendebalerantz', lemma: 'mendebal', pos: 'NOUN', gloss: 'west' },
   { surface: 'badiara', lemma: 'badia', pos: 'NOUN', gloss: 'bay' },
-  // Base/other inflected forms of the same stems that Stanza also gets
-  // wrong (`badia`→`badi`, `mendebalera`→`mendebale`). Each is a
-  // distinct surface, so it needs its own row until the Phase 3
-  // suffix-rule tier generalizes across the paradigm.
+  // Each spelling needs its own entry, even when two forms share a dictionary headword.
   { surface: 'badia', lemma: 'badia', pos: 'NOUN', gloss: 'bay' },
   { surface: 'mendebalera', lemma: 'mendebal', pos: 'NOUN', gloss: 'west' },
   { surface: 'aspaldion', lemma: 'aspaldion', pos: 'ADV', gloss: 'lately; recently' },
-  // Second batch of Stanza mislemmatizations (verified against the live
-  // model). Over-strips, an unrecognized form, a -tzat prolative trio,
-  // a context-unstable verbal noun, and one malformed seq2seq lemma
-  // (`hamargarren` came back as the literal edit-script string
-  // "hamaR+garren!"). The -tzat cases + the case/number over-strips are
-  // interim fixes until the Phase 3 suffix-rule tier generalizes them.
+  // For hamargarren the model returned the literal edit instruction "hamaR+garren!".
   { surface: 'gurea', lemma: 'gure', pos: 'DET', gloss: 'our; ours' },
   { surface: 'aztarnak', lemma: 'aztarna', pos: 'NOUN', gloss: 'trace; footprint' },
   { surface: 'menturaz', lemma: 'mentura', pos: 'NOUN', gloss: 'chance; fortune' },
@@ -89,10 +78,7 @@ export const BASQUE_OVERRIDES = [
   { surface: 'hamargarren', lemma: 'hamargarren', pos: 'ADJ', gloss: 'tenth' },
 ];
 
-// Latin script is case-bearing and overrides match `token.surface` exactly,
-// so a sentence-initial "Badiara" won't hit a lowercase "badiara" row. Seed
-// the Title-case variant of each surface too. (The Phase 3 rule tier removes
-// the need for this.)
+// Seed title-case spellings too for lookups that compare the word exactly as written.
 /**
  * @template {{ surface: string }} T
  * @param {T[]} entries

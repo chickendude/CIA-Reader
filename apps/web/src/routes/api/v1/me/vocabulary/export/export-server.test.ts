@@ -46,7 +46,7 @@ afterEach(() => {
 });
 
 describe('GET /api/v1/me/vocabulary/export', () => {
-  it('returns a CSV attachment with kind/headword/pos/gloss/status (T-14.6)', async () => {
+  it('returns a CSV attachment with kind/headword/pos/gloss/status', async () => {
     getVocabularyForExport.mockResolvedValueOnce([
       {
         kind: 'lemma',

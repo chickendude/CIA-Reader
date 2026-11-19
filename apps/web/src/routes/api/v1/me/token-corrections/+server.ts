@@ -1,13 +1,6 @@
 /**
- * POST /api/v1/me/token-corrections (T-6.1).
- *
- * The reader's WordPopup posts here when the user picks an
- * alternate lemma, marks the token as a proper noun, or otherwise
- * overrides the worker's parse. The body is a single correction;
- * upserts on (user, token).
- *
- * The endpoint is intentionally per-token. T-6.2b's "apply
- * everywhere" follow-up writes a separate batch surface.
+ * Save one correction per reader and token. Applying a correction to other occurrences is a
+ * separate operation.
  */
 import { error, json } from '@sveltejs/kit';
 import { z } from 'zod';
@@ -27,7 +20,7 @@ import type { RequestHandler } from './$types';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-// T-11.2: corrections per hour. Active proofreading bursts can hit
+// corrections per hour. Active proofreading bursts can hit
 // dozens of corrections in a session; 200/hour leaves comfortable
 // headroom while catching scripted spam.
 const CORRECTIONS_PER_HOUR = 200;

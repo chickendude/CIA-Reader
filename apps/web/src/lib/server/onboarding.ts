@@ -8,13 +8,8 @@ export type LanguageBaseline = 'none' | 'beginner' | 'intermediate';
 const ONBOARDING_PATH = '/onboarding';
 
 /**
- * Routes an onboarded user never needs to be bounced to the onboarding
- * page from. Auth flows, the onboarding page itself, and the API surface
- * (mobile clients handle onboarding their own way) all skip the redirect.
- *
- * Returning a function rather than a regex so future tickets can add
- * conditional rules (e.g. bypass for specific pricing pages) without
- * rewriting the matcher.
+ * Sign-in, onboarding and API routes must remain reachable while a reader is setting up their
+ * account.
  */
 export function shouldRedirectToOnboarding(
   user: Pick<User, 'onboardedAt'> | null,

@@ -22,12 +22,8 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
-            <!--
-              Magic-link sign-in: email link (<APP_BASE_URL>/auth/magic/<token>)
-              opens the app. autoVerify is off until @string/magic_link_host is a
-              real host serving /.well-known/assetlinks.json (Phase 6 / infra);
-              until then this still catches the link via the app chooser.
-            -->
+            <!-- Android offers the app for sign-in links through the app chooser.
+                 Automatic verification requires assetlinks.json on the configured host. -->
             <intent-filter android:autoVerify="false">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />

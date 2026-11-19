@@ -1,6 +1,6 @@
 // @vitest-environment node
 /**
- * Runner unit tests (T-3.1).
+ * Runner unit tests.
  *
  * The runner is a small orchestrator over `DictionaryRepo`; every test
  * here wires it to `InMemoryDictionaryRepo` and asserts on counts +

@@ -1,6 +1,5 @@
 /**
- * GET /api/v1/audio/:id/alignments/export?format=whisper|webvtt
- * (T-9.6).
+ * GET /api/v1/audio/:id/alignments/export?format=whisper|webvtt.
  */
 import { error } from '@sveltejs/kit';
 import { resolveUser } from '$lib/server/auth/require-user.js';

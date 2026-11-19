@@ -1,11 +1,11 @@
 /**
- * Collection detail page (T-8.2 + T-8.4).
+ * Collection detail page.
  *
  * Loads the collection + ordered member texts. Visible to:
  *   - Owner (always).
  *   - Admin (always).
  *   - Anyone, when visibility='official'.
- *   - Members of share grants (T-8.4): when the viewer has a row in
+ *   - Members of share grants: when the viewer has a row in
  *     `collection_shares` for this collection, they can view the
  *     detail page and read every member text. The reader-side
  *     `canReadText` already grants per-text access via the same
@@ -45,10 +45,7 @@ export const load: PageServerLoad = async ({ params, locals }) => {
     locals.user && detail.collection.ownerId === locals.user.id,
   );
   const isAdmin = locals.user?.role === 'admin';
-  // T-8.4: a non-owner non-admin viewer with a share row passes too.
-  // The per-text canReadText gate also honours these rows, so a
-  // viewer who lands on the detail page can click into any member
-  // text without a second permission denial.
+  // Sharing a collection also grants read access to its member texts.
   const hasShare =
     !isOwner &&
     !isAdmin &&
@@ -121,13 +118,13 @@ export const load: PageServerLoad = async ({ params, locals }) => {
       };
     }),
     aggregatedPctRead,
-    // T-8.6: completion stats badge — number of finished texts on
+    // Completion stats badge, number of finished texts on
     // course-kind collections. Counts pctRead >= 100.
     completedCount: detail.items.filter(
       (i) => (progressByTextId[i.text.id]?.pctRead ?? 0) >= 100,
     ).length,
     isOwner,
-    // T-8.4: existing share grants for the inline manage-sharing
+    // existing share grants for the inline manage-sharing
     // form. Loaded only for the owner so non-owners never see who
     // else has access. Each share is decorated with the recipient's
     // email + display name (or null when the user was deleted).

@@ -1,12 +1,4 @@
-/**
- * GET + POST /api/v1/collections/:id/shares (T-8.4).
- *
- * The POST endpoint accepts EITHER `recipientUserId` (UUID) OR
- * `recipientEmail`. The email path is what the inline manage-shares
- * UI uses — it's the only piece of identifying information the owner
- * actually knows about a recipient. The UUID path stays available
- * for tooling / future API consumers that already have a user id.
- */
+/** Accept a recipient's email from the sharing form or a user ID from a client that already knows it. */
 import { error, json } from '@sveltejs/kit';
 import { eq } from 'drizzle-orm';
 import { z } from 'zod';

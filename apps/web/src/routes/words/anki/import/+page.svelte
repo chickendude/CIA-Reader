@@ -1,7 +1,7 @@
 <script lang="ts">
   import Button from '$lib/components/input/Button.svelte';
   import { onMount } from 'svelte';
-  import type { PageData } from './$types';
+  import type { PageProps } from './$types';
   import SubpageHeading from '$lib/components/shell/SubpageHeading.svelte';
   import SegmentedControl from '$lib/components/input/SegmentedControl.svelte';
   import DeckPicker from './DeckPicker.svelte';
@@ -23,7 +23,7 @@
     value,
     label: value.charAt(0).toUpperCase() + value.slice(1),
   }));
-  let { data }: { data: PageData } = $props();
+  let { data }: PageProps = $props();
   let decks = $state<string[]>([]),
     chosen = $state<string[]>([]);
   let mapping = $state<CardMapping>({ ...defaultMapping });

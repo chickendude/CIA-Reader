@@ -1,5 +1,5 @@
 <!--
-  Hover tooltip (T-5.10).
+  Hover tooltip.
 
   Lightweight read-only popover that follows the cursor on word
   hover. Shows the surface form, romanization (when present), and
@@ -23,7 +23,7 @@
     token: ServerToken;
     anchorRect: AnchorRect;
     /** Reading language — drives which spelled-out form the tooltip
-     *  surfaces for digit-only NUM tokens (T-2.8). The side panel
+     *  surfaces for digit-only NUM tokens. The side panel
      *  shows all three; the tooltip is meant to be glanceable, so it
      *  only shows the one matching the text being read. Optional for
      *  backward-compat with callers that haven't been updated yet —
@@ -56,7 +56,7 @@
     }
   });
 
-  // T-2.8: legacy data fallback. The chapter was processed before the
+  // legacy data fallback. The chapter was processed before the
   // worker started writing number_forms, so we have no spelled-out
   // payload — but we can at least recognize the surface as a number
   // and stop the tooltip from claiming "No translations" / "No
@@ -68,7 +68,7 @@
   let tipEl: HTMLDivElement | null = $state(null);
   let measured = $state<{ w: number; h: number } | null>(null);
 
-  // T-5.28: portal to <body>. `position: fixed` sits relative to the
+  // portal to <body>. `position: fixed` sits relative to the
   // nearest ancestor with `transform`, `backdrop-filter`, `filter`,
   // or `will-change` (a CSS containing-block gotcha). The reader
   // wraps tokens in a translateY-driven page slider, and Sheet's
@@ -90,7 +90,7 @@
   // re-runs whenever the parent rebinds the tooltip to a new word.
   // Defaults seed the first paint near the word; the $effect below
   // refines once we measure for real.
-  // T-5.1c: when the soft keyboard is up, `window.visualViewport.height`
+  // When the soft keyboard is up, `window.visualViewport.height`
   // shrinks. Using it as the placement viewport keeps the tooltip
   // visible above the keyboard instead of slipping behind it.
   const placement = $derived.by(() => {
@@ -141,7 +141,7 @@
     {/if}
   </div>
   {#if numberForm}
-    <!-- T-2.8: digit-only NUM token. Show the spelled-out form for
+    <!-- digit-only NUM token. Show the spelled-out form for
          the reading language + its romanization (the click panel has
          more). Latin-script languages (Basque) carry no separate
          romanization, so the stripe is suppressed when it's empty. -->
@@ -165,7 +165,7 @@
       </section>
     {/each}
   {:else if token.isOov && !token.personalGloss}
-    <!-- T-5.20: surface the top translation when we have one, fall
+    <!-- Surface the top translation when we have one, fall
          back to an italic "No translations" otherwise so the user
          always knows whether the lookup is empty or just absent. The
          tooltip stays no-fetch — it reads `glossDefault` off the token
@@ -258,12 +258,12 @@
     font-size: 0.78rem;
     line-height: 1.35;
   }
-  /* T-2.8: small romanization stripe inside the gloss row for
+  /* small romanization stripe inside the gloss row for
    * number tokens. Same colour ramp as the head romanization. */
   .num-roman {
     margin-left: 0.45rem;
   }
-  /* T-5.20: italic "no match" / "no translations" copy. */
+  /* italic "no match" / "no translations" copy. */
   .tip-def.empty {
     color: color-mix(in oklch, var(--paper, #fdfaf3) 65%, transparent);
     font-style: italic;

@@ -1,5 +1,5 @@
 /**
- * Touch-gesture helpers for the reader (T-5.1c).
+ * Touch-gesture helpers for the reader.
  *
  * Pure logic split out so swipe / long-press behavior is unit-tested
  * without rendering a Svelte component. The Svelte side (page mode,

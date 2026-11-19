@@ -1,5 +1,5 @@
 /**
- * GET/PATCH /api/v1/me/text-progress/:textId (T-5.6).
+ * GET/PATCH /api/v1/me/text-progress/:textId.
  *
  * PATCH: reader writes its debounced anchor here as the user scrolls /
  * paginates. The values are persisted to user_text_progress. A 404

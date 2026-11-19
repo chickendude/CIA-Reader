@@ -1,5 +1,5 @@
 /**
- * Curator / admin permission checks (T-3.4).
+ * Curator / admin permission checks.
  *
  * Every dictionary-editing code path routes through one of these helpers
  * so the logic "who can edit this row?" exists exactly once and can be

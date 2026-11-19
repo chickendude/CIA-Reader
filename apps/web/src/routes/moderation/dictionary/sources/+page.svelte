@@ -1,9 +1,9 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
   import { invalidateAll } from '$app/navigation';
-  import type { PageData } from './$types';
+  import type { PageData, PageProps } from './$types';
 
-  let { data, form }: { data: PageData; form: Record<string, unknown> | null } = $props();
+  let { data, form }: PageProps = $props();
 
   // SSR data is the initial truth; the polling refresh below
   // overwrites it. Re-syncs to the loader output whenever the page

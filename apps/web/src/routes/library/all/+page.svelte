@@ -1,7 +1,7 @@
 <script lang="ts">
   import Library from '../Library.svelte';
-  import type { PageData } from './$types';
-  let { data }: { data: PageData } = $props();
+  import type { PageProps } from './$types';
+  let { data }: PageProps = $props();
 </script>
 
 <Library {data} />

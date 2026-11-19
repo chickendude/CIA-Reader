@@ -1,5 +1,5 @@
 /**
- * POST /api/v1/admin/translations/bulk-promote (T-3.9).
+ * POST /api/v1/admin/translations/bulk-promote.
  *
  * Admin-only. Re-tags a set of community (`source='user'`) translations
  * as curator translations in one pass. Officials are explicitly skipped

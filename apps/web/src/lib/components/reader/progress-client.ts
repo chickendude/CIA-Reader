@@ -1,5 +1,5 @@
 /**
- * Reader progress write-through (T-5.6).
+ * Reader progress write-through.
  *
  * The reader emits frequent "where am I?" events as the user
  * scrolls / paginates. We debounce them in-process so we PATCH at

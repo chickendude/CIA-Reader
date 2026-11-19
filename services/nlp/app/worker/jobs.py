@@ -1,4 +1,4 @@
-"""Job functions executed by the arq worker (T-2.6).
+"""Job functions executed by the arq worker.
 
 Currently one job: :func:`process_text`. It takes a ``text_id`` and
 the ids of its chapters, loads each chapter's raw text, runs the
@@ -45,7 +45,7 @@ def _optional_override_store(ctx: dict[str, Any]) -> Any:
     # Explicit key only — unlike text/token stores we do NOT fall back
     # to ctx['store'], because a unified backend that implements the
     # other protocols won't necessarily also implement OverrideStore.
-    # on_startup (M4) can alias ``ctx['override_store'] = ctx['store']``
+    # on_startup can alias ``ctx['override_store'] = ctx['store']``
     # when the real DB-backed class happens to satisfy all three.
     return ctx.get("override_store")
 

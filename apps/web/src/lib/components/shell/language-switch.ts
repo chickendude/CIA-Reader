@@ -1,14 +1,6 @@
 /**
- * Client helpers for the language switcher (#436).
- *
- * Two endpoints back the switcher because the two actions differ:
- *   - switching to a language you already read only moves the cookie, and
- *     works for anonymous visitors too → PUT /api/v1/me/current-language;
- *   - adding a language mutates `user_languages`, so it needs auth and also
- *     sets the cookie (add + switch in one request) → POST /api/v1/me/languages.
- *
- * Both throw on a non-2xx response so callers can surface the error and
- * skip the follow-up reload / navigation.
+ * Switching languages updates a cookie and also works when signed out. Adding a language saves it
+ * to the reader's account and selects it in the same request.
  */
 
 async function send(url: string, method: 'PUT' | 'POST', code: string): Promise<void> {

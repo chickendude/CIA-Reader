@@ -1,7 +1,4 @@
 // @vitest-environment node
-/**
- * Tests for GET /api/v1/texts/:id/chapters/:idx/tokens (T-5.1a).
- */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { jsonContract } from '$lib/test/json-contract.js';
@@ -37,10 +34,6 @@ vi.mock('$lib/server/texts/tokens.js', async () => {
   };
 });
 
-// T-14.3: phrase spans ride alongside tokens; mock the loader so
-// existing tests stay focused on the lazy-token path. The default
-// resolves to an empty array so the endpoint shape includes
-// `phraseSpans: []` without each test having to stage it.
 vi.mock('$lib/server/texts/phrase-spans.js', async () => {
   const actual = await vi.importActual<
     typeof import('$lib/server/texts/phrase-spans.js')

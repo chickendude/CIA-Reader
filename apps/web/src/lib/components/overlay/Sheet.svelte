@@ -1,9 +1,9 @@
 <!--
-  Sheet overlay (T-5.15).
+  Sheet overlay.
 
   Slides up from the bottom on narrow viewports (<960px) and in from
   the right on wide viewports (>=960px). Designed for the reader's
-  side-panel (T-5.10), the lang-picker (T-5.11), and any other
+  side-panel, the lang-picker, and any other
   contextual surface that wants to feel like a panel rather than a
   modal dialog.
 
@@ -28,7 +28,7 @@
     /** When `false`, the backdrop captures clicks (so clicking outside
      *  still closes the sheet) but stays transparent — no dim, no
      *  blur. The reader's word side-panel uses this so the surrounding
-     *  paragraph remains readable while a word is locked (T-5.17). */
+     *  paragraph remains readable while a word is locked. */
     dimmed?: boolean;
     children?: Snippet;
     footer?: Snippet;
@@ -48,7 +48,7 @@
   let panelEl: HTMLDivElement | null = $state(null);
   let trap: FocusTrap | null = null;
   let releaseScroll: (() => void) | null = null;
-  // T-5.1c: track soft-keyboard inset so the bottom sheet on mobile
+  // Track soft-keyboard inset so the bottom sheet on mobile
   // lifts above the keyboard when an input inside it gains focus.
   // 0 on desktop / when no keyboard is visible.
   let kbInsetPx = $state(0);
@@ -166,9 +166,7 @@
     flex-direction: column;
     overflow: hidden;
   }
-  /* Bottom-sheet layout (mobile / narrow). T-5.1c: --sheet-kb-inset
-   * lifts the sheet above the soft keyboard when an input inside it
-   * gets focus; 0 when no keyboard is visible. */
+  /* Leave room for the on-screen keyboard when an input has focus. */
   @media (max-width: 959.98px) {
     .sheet {
       left: 0;

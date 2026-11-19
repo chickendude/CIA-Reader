@@ -1,6 +1,6 @@
 // @vitest-environment node
 /**
- * Cache-status probing tests for the admin sources page (T-3.14).
+ * Cache-status probing tests for the admin sources page.
  *
  * Hits the real filesystem under a tmpdir so the streaming line
  * counter and stat-based probes exercise the actual code path

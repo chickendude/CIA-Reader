@@ -1,5 +1,5 @@
 /**
- * Soft-keyboard inset tracker for the reader (T-5.1c).
+ * Soft-keyboard inset tracker for the reader.
  *
  * iOS Safari + most Android browsers expose `window.visualViewport`,
  * which reports the visible area after the soft keyboard is shown.

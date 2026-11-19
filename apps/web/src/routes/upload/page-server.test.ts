@@ -1,7 +1,4 @@
 // @vitest-environment node
-/**
- * Tests for /upload SSR loader + default action (T-4.1).
- */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const createPastedText = vi.fn();
@@ -44,7 +41,6 @@ async function callLoad(
   const event = {
     locals: { user },
     url: new URL(urlStr),
-    // #436: the upload target follows the layout's current language.
     parent: async () => ({ currentLanguage }),
   } as unknown as Parameters<Mod['load']>[0];
   try {
@@ -143,7 +139,7 @@ describe('/upload loader', () => {
     expect(res.location).toBe('/login?next=%2Fupload');
   });
 
-  it('targets the current language (#436)', async () => {
+  it('targets the current language', async () => {
     const data = (await callLoad(USER, 'eu')) as {
       selectedLanguage: string;
       selectedLanguageName: string;

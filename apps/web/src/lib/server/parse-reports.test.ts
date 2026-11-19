@@ -1,7 +1,4 @@
 // @vitest-environment node
-/**
- * Tests for the parse_reports service (T-6.5).
- */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const rows: Array<Record<string, unknown>> = [];
@@ -104,7 +101,7 @@ describe('fileParseReport', () => {
     expect(setArg.duplicateCount).toBe(4);
   });
 
-  it('honors initialStatus when provided (T-6.7 system reports land triaged)', async () => {
+  it('can create an already triaged report', async () => {
     chain.limit.mockReturnValueOnce([]);
     chain.returning.mockReturnValueOnce([{ id: 'pr-1', status: 'triaged' }]);
     await fileParseReport({ ...baseInput, initialStatus: 'triaged' });

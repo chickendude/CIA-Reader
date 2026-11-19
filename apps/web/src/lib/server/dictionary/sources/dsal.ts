@@ -1,29 +1,7 @@
 /**
- * Generic DSAL → CIA Reader importer factory.
- *
- * Consumes the normalized JSONL that `pnpm dsal:parse <slug>` writes
- * (see ../dsal/records.ts) and yields `ImportEntry` values, mirroring
- * how `makeKaikkiSource` wraps Kaikki dumps. Each dictionary gets a
- * thin `makeDsalSource({...})` instantiation in `dsal-<name>.ts`.
- *
- * Stable upstream identity — print-artifact key, not gloss hash:
- *   dsal:<dict>:<raw headword>:<page>:<ord>
- * (ord = homograph ordinal among same headword + page). Unlike
- * Wiktionary, a DSAL digitization is static — the only upstream text
- * changes are DSAL-side OCR corrections, which we WANT to update the
- * same row in place rather than fork a merge candidate. Keying on the
- * 19th/20th-century print artifact also survives re-scrapes and any
- * future orthographic-normalizer change (the id uses the RAW scraped
- * headword; the normalized form goes on the lemma), so enabling a
- * curator fixup table later never orphans rows. Entries whose page ref
- * is missing fall back to a sense-hash key.
- *
- * This supersedes the unmerged `feat/t-3.10d-molesworth` TEI importer
- * (commit 3ef786e) — the TEI XML dump it targeted was never obtainable.
- * Carried over from that branch: the `OrthographicNormalizer` seam
- * (NFC-only default; the curator-reviewed archaic-spelling fixup table
- * remains a follow-up that plugs in here) and the raw-headword
- * source_id philosophy.
+ * Identify printed entries by dictionary, raw headword, page and occurrence on that page.
+ * Correcting the spelling or definition on a later import should update the same entry. Entries
+ * without a page use a hash of the sense instead.
  */
 import { createHash } from 'node:crypto';
 import { createReadStream } from 'node:fs';

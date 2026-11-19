@@ -1,18 +1,4 @@
-/**
- * Definition of the top/bottom navigation tabs used by AppShell.
- *
- * A single source of truth — adding a new top-level destination (Library,
- * Groups, Collections, …) means adding an entry here, not editing every
- * layout file that references navigation.
- *
- * `auth`:
- *   - `any`: shown to everyone
- *   - `authenticated`: only signed-in users
- *   - `anonymous`: only signed-out users
- *   - `curator-or-admin`: signed-in users with role `curator` or `admin`
- *     (T-3.14 — exposes the moderation surface in the rail without
- *     forcing a separate "admin section" UI)
- */
+/** Desktop and mobile navigation share these destinations and visibility rules. */
 export type TabAuth = 'any' | 'authenticated' | 'anonymous' | 'curator-or-admin';
 
 export type ViewerRole = 'user' | 'curator' | 'admin' | null;
@@ -33,7 +19,7 @@ export type TabIcon =
   | 'about'
   | 'moderation';
 
-/** Section heading the tab clusters under in the desktop rail (T-5.11).
+/** Section heading the tab clusters under in the desktop rail.
  * `null` (the default) renders the tab outside any section, above the
  * first grouped tab. */
 export type TabSection = 'Read' | 'Stats' | 'You' | 'About Us' | null;
@@ -90,10 +76,6 @@ export const TABS: readonly Tab[] = [
     section: 'You',
   },
   {
-    // T-3.14: top-level entry into the moderation surface so curators
-    // and admins don't have to hand-type `/moderation/...` URLs.
-    // Lands on the dictionary editor; the page itself surfaces
-    // admin-only sub-links (Bulk tools, Sources) in its sub-nav.
     id: 'moderation',
     label: 'Moderation',
     href: '/moderation/dictionary',
@@ -154,7 +136,7 @@ export function getActiveTabId(pathname: string, tabs: readonly Tab[]): string |
   return best?.id ?? null;
 }
 
-/** Group visible tabs by their `section` for the desktop rail (T-5.11).
+/** Group visible tabs by their `section` for the desktop rail.
  * Tabs with `section: null | undefined` go in the unsectioned bucket
  * (rendered above the first sectioned group). Order within a section
  * preserves the order in `tabs`. */

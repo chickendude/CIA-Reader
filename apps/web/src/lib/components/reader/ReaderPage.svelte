@@ -1,17 +1,6 @@
 <!--
-  Page-mode reader (T-5.1, token-aware in T-5.2, chrome polish in T-5.9,
-  no-scroll pagination in T-5.23, horizontal column flow now).
-
-  The chapter renders into a fixed-size viewport that hides overflow
-  and uses one CSS column per page, with a gutter between pages.
-  translateX slides between pages — like flipping a book's spread —
-  instead of slicing the chapter vertically. Off-screen content stays
-  in the DOM (screen readers + Cmd-F still find it).
-
-  Side arrows + keyboard ←/→ step through pages within a chapter and
-  spill over into the prev/next chapter at the boundaries. The
-  bottom progress foot reports both the page-in-chapter and the
-  overall chapter position.
+  Each CSS column is one page. Keeping the whole chapter in the document lets browser search find
+  words on other pages.
 -->
 <script lang="ts">
   import { goto } from '$app/navigation';
@@ -229,7 +218,7 @@
     }
   }
 
-  // T-5.7: ←/→ flip pages. Skip when typing in a form / textarea so
+  // ←/→ flip pages. Skip when typing in a form / textarea so
   // the popup's add-translation form keeps Enter/Esc behavior.
   function isTypingInsideElement(target: EventTarget | null): boolean {
     if (!(target instanceof HTMLElement)) return false;
@@ -397,11 +386,8 @@
     startPct = display.startPct;
     endPct = display.endPct;
     if (!onProgress) return;
-    // PERSIST value — per-loaded-text pctRead, keeping the
-    // `completed → 100` guarantee that T-8.6 course gating + the
-    // library cards depend on. Deliberately NOT the whole-book display
-    // value above: persistence stays per-text so each chapter of a
-    // chapter-book still reaches 100% on its own.
+    // Save progress for this text even when the reader displays progress for the whole book. Each
+    // text in a course needs to reach 100% independently.
     const ratio = domTotal > 0 ? currentChapterWords / domTotal : 0;
     const endWordsInText = wordsBeforeChapter + domThroughPage * ratio;
     const endPctPersist = boundary.completed
@@ -427,7 +413,7 @@
 
 <svelte:window onkeydown={onKeydown} />
 
-<!-- T-5.1c: swipe gestures supplement the visible arrows + keyboard
+<!-- swipe gestures supplement the visible arrows + keyboard
      ←/→; role="region" appeases the static-element-interactions a11y
      check without claiming this div is the primary control. -->
 <div

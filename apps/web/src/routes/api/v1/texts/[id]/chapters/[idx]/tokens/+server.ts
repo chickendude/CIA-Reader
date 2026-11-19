@@ -1,16 +1,6 @@
 /**
- * GET /api/v1/texts/:id/chapters/:idx/tokens (T-5.1a).
- *
- * The reader's lazy chapter loader. The page-level SSR loader only
- * ships the active chapter's tokens; this endpoint backs the
- * per-chapter fetches that fill in siblings as the user navigates
- * (page/paged_scroll mode hands a new active chapter through goto())
- * or scrolls into them (continuous mode prefetches near the bottom).
- *
- * Visibility goes through the same `getReadableText` gate the reader
- * page uses — owner OR official OR shared, never wider. Anonymous
- * viewers get tokens for official texts; status comes back as
- * 'unknown' for everyone since they have no `user_known_lemmas` row.
+ * Fetch chapter text, words and phrase matches as the reader needs them. Apply the same access
+ * checks as the reader page.
  */
 import { error, json } from '@sveltejs/kit';
 
@@ -41,9 +31,7 @@ export const GET: RequestHandler = async (event) => {
   if (!chapter) throw error(404, 'Chapter not found');
 
   const tokens = await loadChapterTokens(chapter.id, viewer?.id ?? null, textId);
-  // T-14.3: spans ride alongside tokens. Empty array when the
-  // chapter has been processed but contains no phrase matches;
-  // null when tokens are also null (unprocessed chapter).
+  // Return null while the words are still being processed. No phrase matches gives an empty list.
   const phraseSpans = tokens
     ? await loadChapterPhraseSpans(chapter.id, viewer?.id ?? null)
     : null;

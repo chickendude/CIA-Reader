@@ -1,5 +1,5 @@
 /**
- * Visual mapping for the translation `provenance` discriminator (T-3.8).
+ * Visual mapping for the translation `provenance` discriminator.
  *
  * Lifted out of `ProvenanceBadge.svelte` so the label / tooltip / tone
  * decisions are unit-testable without spinning up jsdom. The component

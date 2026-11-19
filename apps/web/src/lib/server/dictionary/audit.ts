@@ -1,23 +1,6 @@
 /**
- * Dictionary-edit audit log (T-3.4).
- *
- * `recordLemmaEdit` is the single write path into `lemma_edit_history`.
- * The editor UI (T-3.7) + moderation queue (T-6.6) never write that
- * table directly — they call through here so the before/after diff
- * and enum discriminator stay consistent.
- *
- * Reason was previously required (min 3 chars) — the requirement was
- * dropped because in a small-team / solo curator setup the friction
- * outweighed the audit value, and the field was being filled with
- * `"x"` / `"fix"` to bypass anyway. Empty/missing reasons now write
- * a `'(no reason given)'` placeholder so the audit chain stays
- * unbroken; `MissingReasonError` is kept exported for backwards-
- * compat with existing call sites + tests, but is never thrown.
- *
- * T-14.7: phrase audit rows live in the same table — `recordPhraseEdit`
- * is the parallel write path, setting `phrase_id` and leaving
- * `lemma_id` null. The DB CHECK constraint (`lemma_id XOR phrase_id`)
- * keeps the table honest.
+ * Word and phrase edits share an audit log. Record the target, the reason and the values before
+ * and after each edit.
  */
 import { desc, eq } from 'drizzle-orm';
 
@@ -99,7 +82,7 @@ export async function listLemmaHistory(
 }
 
 /**
- * T-14.7: phrase audit write path. Mirror of `recordLemmaEdit`,
+ * phrase audit write path. Mirror of `recordLemmaEdit`,
  * sets `phrase_id` instead of `lemma_id`. The DB CHECK constraint
  * (`lemma_id XOR phrase_id`) makes "exactly one set" a database
  * invariant rather than a TS type one.
@@ -124,8 +107,8 @@ export async function recordPhraseEdit(
 }
 
 /**
- * T-14.7: parallel to `listLemmaHistory` for phrase audit rows.
- * Filters on `phrase_id` so the curator phrase editor (T-14.4a)
+ * parallel to `listLemmaHistory` for phrase audit rows.
+ * Filters on `phrase_id` so the curator phrase editor
  * can render the same sidebar shape.
  */
 export async function listPhraseHistory(

@@ -1,7 +1,4 @@
 // @vitest-environment node
-/**
- * Tests for reader touch gestures (T-5.1c).
- */
 import { describe, expect, it, vi } from 'vitest';
 
 import { LongPressDetector, classifySwipe } from './touch-gestures.js';

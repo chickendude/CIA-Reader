@@ -1,5 +1,5 @@
 {
-  "__description__": "Hindi golden-file corpus (T-2.8). Scored against the real Stanza UD Hindi model in the `nlp-accuracy` CI job — the default pytest run skips the real_models-marked tests. Format is the one at app/pipelines/odia/data/golden_corpus.json: per-token expectations are optional (missing fields mean 'don't enforce'), so contributors can pin only what they're confident about. These sentences are deliberately kept small and common-vocabulary so lemma expectations match Stanza's UD output; expand post-MVP as the pipeline quality becomes load-bearing on curriculum coverage.",
+  "__description__": "Hindi sentences with the dictionary headword and part of speech expected for each word. Spaces and punctuation have no dictionary entry.",
   "sentences": [
     {
       "id": "hi-001",
@@ -9,7 +9,7 @@
         {
           "surface": "यह",
           "lemma": "यह",
-          "pos": "DET"
+          "pos": "PRON"
         },
         {
           "surface": " "
@@ -24,13 +24,11 @@
         },
         {
           "surface": "है",
-          "lemma": "है",
-          "pos": "AUX"
+          "lemma": "होना",
+          "pos": "VERB"
         },
         {
-          "surface": "।",
-          "lemma": "।",
-          "pos": "PUNCT"
+          "surface": "।"
         }
       ]
     },
@@ -65,13 +63,11 @@
         },
         {
           "surface": "हूँ",
-          "lemma": "है",
-          "pos": "AUX"
+          "lemma": "होना",
+          "pos": "VERB"
         },
         {
-          "surface": "।",
-          "lemma": "।",
-          "pos": "PUNCT"
+          "surface": "।"
         }
       ]
     },
@@ -106,13 +102,11 @@
         },
         {
           "surface": "है",
-          "lemma": "है",
-          "pos": "AUX"
+          "lemma": "होना",
+          "pos": "VERB"
         },
         {
-          "surface": "।",
-          "lemma": "।",
-          "pos": "PUNCT"
+          "surface": "।"
         }
       ]
     },
@@ -139,7 +133,7 @@
         },
         {
           "surface": "पीती",
-          "lemma": "पीतना",
+          "lemma": "पीना",
           "pos": "VERB"
         },
         {
@@ -147,13 +141,11 @@
         },
         {
           "surface": "है",
-          "lemma": "है",
-          "pos": "AUX"
+          "lemma": "होना",
+          "pos": "VERB"
         },
         {
-          "surface": "।",
-          "lemma": "।",
-          "pos": "PUNCT"
+          "surface": "।"
         }
       ]
     },
@@ -181,20 +173,18 @@
         {
           "surface": "रहे",
           "lemma": "रहना",
-          "pos": "AUX"
+          "pos": "VERB"
         },
         {
           "surface": " "
         },
         {
           "surface": "हैं",
-          "lemma": "है",
-          "pos": "AUX"
+          "lemma": "होना",
+          "pos": "VERB"
         },
         {
-          "surface": "।",
-          "lemma": "।",
-          "pos": "PUNCT"
+          "surface": "।"
         }
       ]
     },
@@ -205,8 +195,8 @@
       "tokens": [
         {
           "surface": "मेरा",
-          "lemma": "मैं",
-          "pos": "PRON"
+          "lemma": "मेरा",
+          "pos": "DET"
         },
         {
           "surface": " "
@@ -229,13 +219,11 @@
         },
         {
           "surface": "है",
-          "lemma": "है",
-          "pos": "AUX"
+          "lemma": "होना",
+          "pos": "VERB"
         },
         {
-          "surface": "।",
-          "lemma": "।",
-          "pos": "PUNCT"
+          "surface": "।"
         }
       ]
     },
@@ -266,9 +254,7 @@
           "pos": "VERB"
         },
         {
-          "surface": "।",
-          "lemma": "।",
-          "pos": "PUNCT"
+          "surface": "।"
         }
       ]
     },
@@ -299,9 +285,7 @@
           "pos": "VERB"
         },
         {
-          "surface": "।",
-          "lemma": "।",
-          "pos": "PUNCT"
+          "surface": "।"
         }
       ]
     },
@@ -332,9 +316,7 @@
           "pos": "VERB"
         },
         {
-          "surface": "।",
-          "lemma": "।",
-          "pos": "PUNCT"
+          "surface": "।"
         }
       ]
     },
@@ -370,20 +352,18 @@
         {
           "surface": "रही",
           "lemma": "रहना",
-          "pos": "AUX"
+          "pos": "VERB"
         },
         {
           "surface": " "
         },
         {
           "surface": "हैं",
-          "lemma": "है",
-          "pos": "AUX"
+          "lemma": "होना",
+          "pos": "VERB"
         },
         {
-          "surface": "।",
-          "lemma": "।",
-          "pos": "PUNCT"
+          "surface": "।"
         }
       ]
     },
@@ -395,7 +375,7 @@
         {
           "surface": "आज",
           "lemma": "आज",
-          "pos": "NOUN"
+          "pos": "ADV"
         },
         {
           "surface": " "
@@ -418,13 +398,11 @@
         },
         {
           "surface": "है",
-          "lemma": "है",
-          "pos": "AUX"
+          "lemma": "होना",
+          "pos": "VERB"
         },
         {
-          "surface": "।",
-          "lemma": "।",
-          "pos": "PUNCT"
+          "surface": "।"
         }
       ]
     },
@@ -444,14 +422,14 @@
         {
           "surface": "कल",
           "lemma": "कल",
-          "pos": "NOUN"
+          "pos": "ADV"
         },
         {
           "surface": " "
         },
         {
           "surface": "बाज़ार",
-          "lemma": "बाजार",
+          "lemma": "बाज़ार",
           "pos": "NOUN"
         },
         {
@@ -463,9 +441,7 @@
           "pos": "VERB"
         },
         {
-          "surface": "।",
-          "lemma": "।",
-          "pos": "PUNCT"
+          "surface": "।"
         }
       ]
     },
@@ -508,13 +484,11 @@
         },
         {
           "surface": "है",
-          "lemma": "है",
-          "pos": "AUX"
+          "lemma": "होना",
+          "pos": "VERB"
         },
         {
-          "surface": "।",
-          "lemma": "।",
-          "pos": "PUNCT"
+          "surface": "।"
         }
       ]
     },
@@ -534,7 +508,7 @@
         {
           "surface": "अभी",
           "lemma": "अभी",
-          "pos": "PRON"
+          "pos": "ADV"
         },
         {
           "surface": " "
@@ -549,13 +523,11 @@
         },
         {
           "surface": "हूँ",
-          "lemma": "है",
-          "pos": "AUX"
+          "lemma": "होना",
+          "pos": "VERB"
         },
         {
-          "surface": "।",
-          "lemma": "।",
-          "pos": "PUNCT"
+          "surface": "।"
         }
       ],
       "comment": "Ambiguity sanity case: 'सोना' can be noun (gold) or verb (to sleep). In this sentence the verb-adjacent AUX 'हूँ' forces the verb reading; the test doesn't pin is_ambiguous because Stanza UD doesn't currently expose homograph ambiguity the way our top-K softmax does — candidate ambiguity is a later quality bar."
@@ -583,7 +555,7 @@
         },
         {
           "surface": "पीता",
-          "lemma": "पीतना",
+          "lemma": "पीना",
           "pos": "VERB"
         },
         {
@@ -591,13 +563,11 @@
         },
         {
           "surface": "है",
-          "lemma": "है",
-          "pos": "AUX"
+          "lemma": "होना",
+          "pos": "VERB"
         },
         {
-          "surface": "।",
-          "lemma": "।",
-          "pos": "PUNCT"
+          "surface": "।"
         }
       ]
     }

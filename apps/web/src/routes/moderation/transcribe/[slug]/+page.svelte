@@ -2,8 +2,8 @@
   import Pagination from '$lib/components/input/Pagination.svelte';
   import { page } from '$app/state';
   import { enhance } from '$app/forms';
-  import type { PageData } from './$types';
-  let { data }: { data: PageData } = $props();
+  import type { PageProps } from './$types';
+  let { data }: PageProps = $props();
 
   function pageHref(offset: number) {
     const url = new URL(page.url);

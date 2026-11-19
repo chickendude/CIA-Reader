@@ -1,5 +1,5 @@
 /**
- * POST /api/v1/translations (T-3.2).
+ * POST /api/v1/translations.
  *
  * Submits a user-authored translation against a lemma. Consumes the same
  * auth surface (session cookie OR bearer access token) as every other
@@ -23,7 +23,7 @@ import type { RequestHandler } from './$types';
 const body = z.object({
   lemmaId: z.string().uuid(),
   body: z.string().min(1).max(MAX_BODY_LEN),
-  // Optional — present for T-3.5's "customize an official" flow.
+  // Identifies the original translation when saving a personal copy.
   parentTranslationId: z.string().uuid().nullish(),
   targetLanguage: z.string().min(2).max(3).optional(),
   // A private note is visible only to its author.

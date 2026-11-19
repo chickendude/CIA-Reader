@@ -1,19 +1,4 @@
-/**
- * Object-storage abstraction for audio blobs (T-9.1).
- *
- * Two backends:
- *
- *   - 'local' (default in dev): writes to a directory under the
- *     repo root (or wherever AUDIO_LOCAL_ROOT points). Useful in
- *     CI + local without standing up a real S3.
- *   - 's3' (prod): Hetzner Object Storage / any S3-compatible
- *     service. Reads AUDIO_S3_* env vars at startup.
- *
- * The interface is intentionally small (`put`, `delete`, `url`) so
- * a route handler doesn't have to reason about which backend is
- * active. The default export is a singleton wired from the
- * environment.
- */
+/** Audio files are stored under AUDIO_LOCAL_ROOT, which defaults to /tmp/ciareader-audio. */
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 
@@ -21,8 +6,7 @@ export interface AudioStorage {
   /** Writes the blob and returns the storage key. */
   put(key: string, body: Uint8Array, mime: string): Promise<void>;
   delete(key: string): Promise<void>;
-  /** Returns the URL the player should fetch. May be a local
-   *  /audio/<key> path (dev) or a presigned S3 URL (prod). */
+  /** URL the player uses to request this recording. */
   urlFor(key: string): string;
 }
 
@@ -58,8 +42,6 @@ let singleton: AudioStorage | null = null;
 
 export function getAudioStorage(): AudioStorage {
   if (!singleton) {
-    // S3 wiring lives in the deployment ticket (T-13.x). For
-    // dev + tests the local backend is the only branch.
     singleton = new LocalAudioStorage();
   }
   return singleton;
@@ -96,7 +78,7 @@ export function isAllowedAudioMime(mime: string): boolean {
   return ALLOWED_MIME.has(mime.toLowerCase());
 }
 
-/** Hard cap on the upload body size (T-9.1). 80MB covers a typical
+/** Hard cap on the upload body size. 80MB covers a typical
  * 60-minute MP3 at 192kbps with margin; larger files almost
  * always indicate uncompressed WAV that we want the user to
  * re-encode before uploading. */

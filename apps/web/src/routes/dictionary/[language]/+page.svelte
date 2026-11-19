@@ -7,8 +7,8 @@
   import { patternLabel } from '$lib/dictionary/hindi-patterns.js';
   import EditableDefinition from '$lib/components/reader/EditableDefinition.svelte';
   import ScriptAwareInput from '$lib/components/input/ScriptAwareInput.svelte';
-  import type { PageData } from './$types';
-  let { data }: { data: PageData } = $props();
+  import type { PageProps } from './$types';
+  let { data }: PageProps = $props();
 
 
   let searchForm: HTMLFormElement;
@@ -114,7 +114,7 @@
 
   {#if data.usedRomanizationTransliteration}
     <!--
-      T-3.12: the user typed Latin and we transliterated to native
+      the user typed Latin and we transliterated to native
       before searching. Show what we actually queried so an unexpected
       ITRANS mapping (e.g. `S` vs `Sh`) is debuggable from the UI.
     -->
@@ -126,10 +126,8 @@
 
   {#if data.usedNuktaFallback}
     <!--
-      #318: Nukta-agnostic fallback fired. Tell the user the strict
-      match missed and we found these by ignoring nuktas. `ज़रा` and
-      `जरा` collapse to the same key, so the user might be looking at
-      a different word than they typed.
+      Removing a nukta can change a word's meaning. Tell the reader when the search used this
+      fallback.
     -->
     <p class="nukta-fallback" role="status">
       No exact matches for <strong>{data.query.q}</strong>. Showing nukta-agnostic results.

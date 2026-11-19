@@ -1,5 +1,5 @@
 /**
- * DELETE /api/v1/groups/:id/members/:userId (T-7.3).
+ * DELETE /api/v1/groups/:id/members/:userId.
  */
 import { error, json } from '@sveltejs/kit';
 

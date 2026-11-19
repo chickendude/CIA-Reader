@@ -45,7 +45,7 @@ export const scriptPreference = pgEnum('script_preference', [
   'romanization_only',
 ]);
 
-// Three reader layout modes per the plan (M5). Stored per-language so a
+// Save layout per language so a
 // user can prefer `page` for Hindi but `continuous` for Odia.
 export const readerLayoutMode = pgEnum('reader_layout_mode', [
   'page',
@@ -60,24 +60,14 @@ export const highlightStyle = pgEnum('highlight_style', [
   'none',
 ]);
 
-/**
- * Per-user reading column width. Drives the max-width of the reader's
- * text column — narrow for tight focus, wide for laptop-screen full-
- * bleed. Stored per-language so a user can prefer wider columns for
- * Devanagari and tighter for Odia (or vice versa). T-5.1b.
- */
+/** Save column width per language so the reader can choose what feels comfortable for each script. */
 export const readingWidth = pgEnum('reading_width', [
   'narrow',
   'medium',
   'wide',
 ]);
 
-/**
- * Assumed-known baseline captured during onboarding. Used in a future
- * ticket to seed `user_known_lemmas` against frequency_rank buckets —
- * `beginner` pre-marks the top-100 most-frequent lemmas as 'known',
- * `intermediate` the top-1000. At MVP we persist the choice only.
- */
+/** The starting level the reader chose for this language during onboarding. */
 export const languageBaseline = pgEnum('language_baseline', [
   'none',
   'beginner',
@@ -227,14 +217,8 @@ export const magicLinks = pgTable(
 );
 
 /**
- * Per-user, per-language preferences. A row is created the first time a user
- * engages with a given language (onboarding in T-1.5, or first text import).
- * Reader layout + typography live here because they're language-specific —
- * a Devanagari font shortlist doesn't apply to Odia.
- *
- * `knownWordsCountCache` is a denormalized count over `user_known_lemmas`
- * (added in a later milestone) so the stats page doesn't need a GROUP BY on
- * every page load. Refreshed whenever a lemma's status changes.
+ * Reading preferences belong to each user and language. Keeping a count of known words here saves
+ * the stats page from counting every entry on each visit.
  */
 export const userLanguages = pgTable(
   'user_languages',
@@ -246,9 +230,6 @@ export const userLanguages = pgTable(
     scriptPreference: scriptPreference('script_preference').notNull().default('native'),
     romanizationScheme: romanizationScheme('romanization_scheme').notNull().default('iso15919'),
     knownWordsCountCache: integer('known_words_count_cache').notNull().default(0),
-    // T-14.1: parallel counter for phrases (M14). `setKnownPhraseStatus`
-    // recomputes this in the same transaction as the status flip,
-    // mirroring the words counter. Surfaced in T-14.6's stats panes.
     knownPhrasesCountCache: integer('known_phrases_count_cache').notNull().default(0),
     readerLayoutMode: readerLayoutMode('reader_layout_mode').notNull().default('page'),
     wordsPerPage: integer('words_per_page').notNull().default(250),
@@ -276,12 +257,8 @@ export const translationSource = pgEnum('translation_source', [
   'official_dictionary',
   'curator',
   'user',
-  // T-14.5a: rule-based NLP-promoted phrase entries. The
-  // detector (T-14.5, services/nlp/app/phrases) emits proposals;
-  // a periodic promotion pass (this ticket) creates `phrases`
-  // rows with this source once a proposal crosses the chapter
-  // occurrence threshold. `lemmas` rows never carry this
-  // source — `nlp` is phrase-only.
+  // Phrases found by the parser receive this source after they appear in enough distinct
+  // chapters.
   'nlp',
 ]);
 
@@ -291,18 +268,8 @@ export const translationVoteValue = pgEnum('translation_vote_value', [
 ]);
 
 /**
- * Polymorphic target for `translations` (T-14.1).
- *
- * A translation row attaches to either a single `lemmas` row (the
- * legacy default — every pre-M14 row was implicitly 'lemma') or to a
- * `phrases` row (M14 phrase-level translations). The (target_type,
- * target_id) pair is the canonical join key going forward; the
- * legacy `lemma_id` column on `translations` is kept populated for
- * 'lemma' rows during T-14.1's overlap window and dropped in T-14.7.
- *
- * No native Postgres FK on `target_id` because it points at two
- * tables — application layer (`translations.ts` / `phrases.ts`)
- * enforces target existence on every write.
+ * A translation can belong to a word or a phrase. The target type determines which table holds
+ * the ID, so the application checks that the target exists.
  */
 export const translationTargetType = pgEnum('translation_target_type', [
   'lemma',
@@ -310,20 +277,8 @@ export const translationTargetType = pgEnum('translation_target_type', [
 ]);
 
 /**
- * Dictionary headwords (T-3.1). A lemma is identified by (language, headword,
- * pos) — the same surface may be multiple lemmas across POS (e.g. Hindi "सोना"
- * as noun "gold" vs. verb "to sleep"). `script` is an ISO 15924 code (Deva /
- * Orya / etc.) — redundant with `language` for MVP but kept explicit so Urdu
- * / Sindhi (multi-script) slot in cleanly later.
- *
- * `source_attribution` is the human-readable credit shown in the pop-up and
- * on the browse page (T-3.8). `source_id` is the upstream primary key so a
- * re-import can UPDATE rather than duplicate (idempotency).
- *
- * `curator_locked = true` means "a human has touched this and future
- * imports MUST NOT clobber it." The import runner enforces that invariant;
- * curators can unlock in the dictionary editor (T-3.7) if they want to
- * accept a fresh upstream payload over their edit.
+ * Different sources may give the same word different entries. Keep their attribution, and skip
+ * curator-locked entries during import.
  */
 export const lemmas = pgTable(
   'lemmas',
@@ -341,19 +296,9 @@ export const lemmas = pgTable(
     curatorLocked: boolean('curator_locked').notNull().default(false),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
-    // #318: fold-agnostic search column. Postgres-side mirror of
-    // the JS `stripNukta` helper in `@ciareader/shared-types/nukta`:
-    // NFD-normalize so atomic precomposed nukta consonants
-    // (U+0958..U+095F + U+0929) decompose to base + U+093C, then
-    // delete every U+093C; additionally fold the Hebrew ligatures
-    // (U+05F0 װ / U+05F1 ױ / U+05F2 ײ → letter pairs) and normalize
-    // pasekh-on-first-yud to pasekh-on-second so both Yiddish typing
-    // conventions hit the same key. The result is what the search
-    // query also gets reduced to before the fallback compares them.
-    // STORED because we read it on every fallback search; the index
-    // below must be on the materialized column. Generated columns
-    // require an IMMUTABLE expression — `normalize`, `translate` and
-    // `replace` all are. Keep in lockstep with stripNukta.
+    // Keep this search key in sync with stripNukta. It removes Devanagari nukta marks and folds
+    // equivalent Yiddish spellings. Postgres stores the result so fallback searches can use an
+    // index.
     headwordNuktaStripped: text('headword_nukta_stripped')
       .notNull()
       .generatedAlwaysAs(
@@ -371,13 +316,8 @@ export const lemmas = pgTable(
     stem: text('stem'),
   },
   (t) => ({
-    // T-3.10: per-source duplication is allowed by design — Kaikki and
-    // IndoWordNet may both ship "किताब/NOUN" and we keep both rows so a
-    // curator can reconcile via the existing T-3.7 merge UI. The
-    // formerly-unique `lemmas_language_headword_pos_uq` is replaced
-    // with a non-unique index of the same shape so the merge-candidate
-    // lookup ("show me other lemmas with this headword + POS") stays
-    // cheap.
+    // Preserve each source's entry even when two dictionaries give the same headword and part of
+    // speech.
     headwordIdx: index('lemmas_language_headword_pos_idx').on(
       t.language,
       t.headword,
@@ -388,9 +328,6 @@ export const lemmas = pgTable(
     // Lookup by (language, source, source_id) is the idempotent-upsert key
     // for re-running an importer — indexed so re-imports don't full-scan.
     sourceIdx: index('lemmas_source_lookup_idx').on(t.language, t.source, t.sourceId),
-    // #318: index for the nukta-agnostic ILIKE prefix fallback. Same
-    // shape as the canonical headword index so the planner can pick
-    // it without a re-collation.
     headwordStrippedIdx: index('lemmas_language_headword_stripped_idx').on(
       t.language,
       t.headwordNuktaStripped,
@@ -399,11 +336,8 @@ export const lemmas = pgTable(
 );
 
 /**
- * Known inflected forms per lemma. Populated opportunistically by the NLP
- * pipeline (a surface it successfully lemmatized) and by dictionary imports
- * that ship form tables. Used as a fallback lookup cache and as input to
- * T-6.2's "apply-to-all-instances" flow. `romanization` is precomputed at
- * write time so the script-aware input can display it instantly.
+ * Recorded word forms connect an inflected spelling to its dictionary entry and help find other
+ * occurrences of a correction.
  */
 export const lemmaForms = pgTable(
   'lemma_forms',
@@ -549,21 +483,8 @@ export const grammarFeatures = pgTable(
 );
 
 /**
- * Multi-word dictionary entries (T-14.1, M14 phrase-level translations).
- *
- * A phrase is identified by its ordered token sequence (see
- * `phrase_tokens`) — `surface_normalised` is only the dedupe lookup
- * column (joined surfaces, NFC, single-space). Per-source duplicates
- * are allowed by design (mirrors lemmas merge story from T-3.10): a
- * curator phrase and a Kaikki-imported phrase with the same surface
- * are kept as separate rows and reconciled via the merge UI in T-14.7.
- *
- * Sources reuse the existing `translation_source` enum. T-14.5
- * extends that enum with `'nlp'` for compound/conjunct verb
- * proposals from the rule-based detector.
- *
- * `curator_locked = true` mirrors the same flag on `lemmas`: a human
- * has touched this row and importers must not clobber it.
+ * Entries from different sources can share a phrase spelling. Keep them separate until a curator
+ * merges them.
  */
 export const phrases = pgTable(
   'phrases',
@@ -581,7 +502,7 @@ export const phrases = pgTable(
     sourceAttribution: text('source_attribution'),
     sourceId: text('source_id'),
     curatorLocked: boolean('curator_locked').notNull().default(false),
-    // T-14.7: moderation flag mirroring the lemma-side translation
+    // moderation flag mirroring the lemma-side translation
     // hidden bit. A `hidden` phrase is invisible to anonymous and
     // user-role viewers but still visible to curators / admins so
     // they can review and unhide. Used both for spam mitigation
@@ -592,8 +513,6 @@ export const phrases = pgTable(
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({
-    // Non-unique by design — per-source duplication is reconciled in
-    // T-14.7's merge UI, same as lemmas (T-3.10).
     surfaceIdx: index('phrases_language_surface_idx').on(t.language, t.surfaceNormalised),
     languageIdx: index('phrases_language_idx').on(t.language),
     frequencyIdx: index('phrases_language_frequency_idx').on(t.language, t.frequencyRank),
@@ -604,7 +523,7 @@ export const phrases = pgTable(
 );
 
 /**
- * Ordered token components of a phrase (T-14.1). The canonical
+ * Ordered token components of a phrase. The canonical
  * identity of a phrase is the ordered `(surface)` rows here — the
  * `phrases.surface_normalised` column is just a fast dedupe lookup.
  *
@@ -629,40 +548,20 @@ export const phraseTokens = pgTable(
   },
   (t) => ({
     pk: primaryKey({ columns: [t.phraseId, t.position] }),
-    // Drives the chapter-span resolver in T-14.2: "every phrase
-    // whose first surface is X" is a single index lookup.
+    // Find candidate phrases by their first word before comparing the rest.
     surfaceIdx: index('phrase_tokens_surface_idx').on(t.surface),
   }),
 );
 
 /**
- * Translation rows for a lemma OR a phrase (T-14.1 polymorphic).
- * Officials, curator edits, and user submissions all live here and
- * are distinguished by `source`. A user can fork an official into a
- * personal copy via `parent_translation_id` (T-3.5) — the fork is
- * visible only to the forker and renders at the top of the pop-up
- * for them specifically.
- *
- * `hidden` is the moderation switch for community translations;
- * officials are edited in place (with an audit trail in T-3.4's
- * `lemma_edit_history`) rather than hidden.
- *
- * Polymorphic target (T-14.1): the canonical join key is
- * `(target_type, target_id)`. T-14.7a dropped the legacy
- * `lemma_id` column after every read/write path moved to the
- * target pair.
- *
- * No native FK on `target_id` because it points at two tables —
- * the service layer (`translations.ts` / `phrases.ts`) enforces
- * target existence on every write.
+ * A translation belongs to either a word or a phrase. A personal copy keeps a link to its
+ * original so the reader can see where it came from.
  */
 export const translations = pgTable(
   'translations',
   {
     id: uuid('id').primaryKey().defaultRandom(),
     targetType: translationTargetType('target_type').notNull().default('lemma'),
-    // Canonical polymorphic target. T-14.7a dropped the legacy
-    // `lemma_id` column; reads / writes go through this pair.
     targetId: uuid('target_id').notNull(),
     source: translationSource('source').notNull(),
     submittedBy: uuid('submitted_by').references(() => users.id, { onDelete: 'set null' }),
@@ -680,7 +579,7 @@ export const translations = pgTable(
     // and from the submission rate-limit count. Officials/curator rows are
     // never private. Defaults false so existing rows stay public.
     isPrivate: boolean('is_private').notNull().default(false),
-    // Curator-set display order within a translation bucket (T-3.13).
+    // Curator-set display order within a translation bucket.
     // NULL = use the bucket's default tiebreaker (curator > imported,
     // then createdAt). When non-null, smaller ranks sort earlier within
     // the same bucket. Stored on every row even though most stay NULL —
@@ -691,15 +590,10 @@ export const translations = pgTable(
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({
-    // T-14.1 canonical lookup index. Reader pop-up + dictionary
-    // editor read by (target_type, target_id) and re-import dedup
-    // adds `source` as the third column for the importer fast path.
     targetIdx: index('translations_target_idx').on(t.targetType, t.targetId, t.source),
     submittedByIdx: index('translations_submitted_by_idx').on(t.submittedBy),
-    // T-14.7a: importer dedup key. Replaces the legacy
-    // `(lemma_id, source, source_id)` index that was dropped
-    // alongside the column. The polymorphic shape lets future
-    // phrase-source importers re-use the same path.
+    // Identify each imported translation by its target and original source record so repeated
+    // imports update the same row.
     sourceLookupIdx: index('translations_source_lookup_idx').on(
       t.targetType,
       t.targetId,
@@ -710,7 +604,7 @@ export const translations = pgTable(
 );
 
 /**
- * Per-user votes on community translations (T-10.4).
+ * Per-user votes on community translations.
  *
  * Official and curator translations are not reordered by votes; this table is
  * read only for `source='user'` rows in the community bucket. One user gets one
@@ -743,25 +637,8 @@ export const translationVotes = pgTable(
 );
 
 /**
- * Reader-submitted reports flagging community translations for moderation
- * (T-11.1). Officials and curator rows are edited in place by curators; this
- * queue exists for `source='user'` translations only and is the input to the
- * `/moderation/translations` review page.
- *
- * Resolution semantics:
- *  - `resolved_hidden` — moderator hid the translation. The hide flip and the
- *    `bulkResolveByTranslation` write happen in one transaction so the
- *    `lemma_edit_history` audit row and the report status stay consistent.
- *  - `resolved_kept` — moderator reviewed and decided the translation is fine.
- *    Future reports on the same row create new open rows; "kept" is the
- *    decision on this batch only.
- *  - `dismissed` — moderator closed a single report without acting on the
- *    translation (e.g. duplicate of an existing open report from the same
- *    reporter, or a misuse of the flow). Other open reports on the same
- *    translation are unaffected.
- *
- * `(reporter_id, translation_id)` is unique so a single user can't pile up
- * reports on the same translation. Re-submitting from the API yields 409.
+ * Readers can report a community translation once each. Hiding or keeping it resolves the open
+ * reports for that translation. Dismissing a single report leaves the others open.
  */
 export const translationReportReason = pgEnum('translation_report_reason', [
   'spam',
@@ -810,16 +687,8 @@ export const translationReports = pgTable(
 );
 
 /**
- * Audit row per dictionary-import run. One row written per `runImport(...)`
- * invocation so we can answer "when did we last pull Hindi WordNet and
- * what changed?" without re-reading the source file or scanning lemmas.
- *
- * T-3.14 added `triggered_by_user_id`, `status`, and `error_message` so
- * the admin sources page can show "who kicked it off" and surface a
- * failure without scraping logs. CLI runs via
- * `pnpm dictionary:import` leave `triggered_by_user_id` null — they're
- * still recorded as `succeeded` (or `failed`) so the page's "last
- * import" cell is honest about CLI activity too.
+ * Record each import's source, result and initiating user so an admin can see when it ran and why
+ * it failed.
  */
 export const dictionaryImports = pgTable(
   'dictionary_imports',
@@ -916,7 +785,7 @@ export const sentenceTranslations = pgTable(
 );
 
 /**
- * Per-language curator grants (T-3.4).
+ * Per-language curator grants.
  *
  * A user with `role='curator'` has edit rights on a language only when a
  * row exists here. A user with `role='admin'` is treated as a curator on
@@ -942,11 +811,11 @@ export const curatorLanguages = pgTable(
 );
 
 /**
- * Audit log for dictionary edits (T-3.4).
+ * Audit log for dictionary edits.
  *
  * One row per curator action that mutates a lemma, its translations, or
  * its forms. `change` carries a `{ before, after }` diff so the
- * dictionary editor (T-3.7) can render "what did this curator change?"
+ * dictionary editor can render "what did this curator change?"
  * and a revert control without needing a separate history table per
  * edit kind.
  *
@@ -964,18 +833,18 @@ export const lemmaEditChangeType = pgEnum('lemma_edit_change_type', [
   'translation_unhide',
   'form_insert',
   'form_delete',
-  // T-3.7: merge and split write to the history of *both* lemmas so the
+  // merge and split write to the history of *both* lemmas so the
   // timeline is complete from either side. `change` carries a full
   // snapshot of the loser (for merge) or of the translations/forms that
   // moved (for split), so a revert has enough information to reconstruct.
   'lemma_merge',
   'lemma_split',
-  // T-3.13: a curator reordered the translations on a lemma. `change`
+  // a curator reordered the translations on a lemma. `change`
   // carries `before: {translationId, displayRank}[]` and the
   // corresponding `after` snapshot so the audit can reconstruct either
   // state.
   'translation_reorder',
-  // T-14.7: phrase-side audit rows ride on the same table — the
+  // Phrase-side audit rows ride on the same table, the
   // `lemma_edit_history` row gets `phrase_id` set instead of
   // `lemma_id`. Rationale in the table comment below.
   'phrase_update',
@@ -997,11 +866,7 @@ export const lemmaEditHistory = pgTable(
   'lemma_edit_history',
   {
     id: uuid('id').primaryKey().defaultRandom(),
-    // T-14.7: nullable as of M14 so phrase audit rows live in the
-    // same table without a parallel `phrase_edit_history`. Each
-    // row sets exactly one of `lemmaId` / `phraseId` (enforced
-    // via CHECK in migration 0028); the change-type enum tells
-    // the audit reader which side to interpret.
+    // Each edit refers to one word or one phrase.
     lemmaId: uuid('lemma_id').references(() => lemmas.id, {
       onDelete: 'cascade',
     }),
@@ -1016,7 +881,7 @@ export const lemmaEditHistory = pgTable(
   },
   (t) => ({
     lemmaIdx: index('lemma_edit_history_lemma_idx').on(t.lemmaId, t.createdAt),
-    // T-14.7: parallel index for phrase audit lookups so
+    // parallel index for phrase audit lookups so
     // `selectPhraseHistory(phraseId)` is one indexed scan.
     phraseIdx: index('lemma_edit_history_phrase_idx').on(t.phraseId, t.createdAt),
     editorIdx: index('lemma_edit_history_editor_idx').on(t.editorId),
@@ -1025,7 +890,7 @@ export const lemmaEditHistory = pgTable(
 
 /**
  * JSON shape written into `lemma_edit_history.change`. Kept as an open
- * record so merge/split (T-3.7) can store richer payloads without a
+ * record so merge/split can store richer payloads without a
  * schema migration — the revert logic in the UI discriminates on
  * `change_type` and knows which fields to expect per type.
  *
@@ -1060,14 +925,10 @@ export type LemmaEditChangePayload = {
   splitInto?: Record<string, unknown>;
   splitFrom?: Record<string, unknown>;
   direction?: 'winner' | 'loser' | 'source' | 'created';
-  // T-3.9 bulk-tool discriminators. The history viewer uses these to
-  // group "ran one CSV" / "promoted N rows" / "rebranded an attribution"
-  // into a single visible action even though each touched row writes
-  // its own audit entry.
   bulkImportRow?: number;
   bulkPromote?: boolean;
   bulkAttribution?: boolean;
-  // T-3.13: ordered snapshots of `(translationId, displayRank)` before
+  // ordered snapshots of `(translationId, displayRank)` before
   // and after a `translation_reorder`. Stored as parallel arrays so the
   // history viewer can render either side as a list.
   translationOrderBefore?: Array<{ translationId: string; displayRank: number | null }>;
@@ -1082,27 +943,8 @@ export type LemmaEditChangePayload = {
 };
 
 /**
- * User-imported texts (T-4.1, milestone M4).
- *
- * `source_type` records how the text was uploaded so we can show a
- * friendly badge in the library and run source-specific re-import logic
- * later (e.g. re-parsing the original EPUB after we improve chapter
- * detection). `status` is the NLP processing state — at T-4.1 every new
- * text starts `pending` and is flipped to `ready` once T-4.4 wires up
- * the worker; `failed` lets the library show a retry affordance instead
- * of a stuck spinner.
- *
- * `visibility` defaults to `private`. `shared` is granted via a row in
- * `text_shares` / `text_group_shares` (M7); `official` can only be set
- * by an admin/curator after a "make official" request and is gated on
- * licensing review (T-7.1). owner_id is nullable because official
- * curated texts are not owned by any one user.
- *
- * `text_chapters` is the natural pagination unit (EPUB chapters are
- * preserved; pasted texts default to one chapter; long .txt files are
- * auto-split at paragraph boundaries in T-4.2 / T-5.1a). The reader
- * loads one chapter at a time, so the chapter table holds the raw
- * `body` plus precomputed `token_count` for progress / library cards.
+ * The library uses the processing status to tell readers when they can open an uploaded text or
+ * retry a failed import.
  */
 export const textSourceType = pgEnum('text_source_type', [
   'paste',
@@ -1134,9 +976,7 @@ export const texts = pgTable(
   'texts',
   {
     id: uuid('id').primaryKey().defaultRandom(),
-    // Nullable so curated/official texts can exist without a user owning
-    // them. The auth helper in T-4.6 (`assertCanRead`) treats a null
-    // owner_id as "publicly readable iff visibility='official'."
+    // An official text can remain publicly readable after its owner's account is removed.
     ownerId: uuid('owner_id').references(() => users.id, {
       onDelete: 'cascade',
     }),
@@ -1155,25 +995,11 @@ export const texts = pgTable(
     // Library "your texts" tab needs a fast scan over the user's own
     // imports ordered by recency.
     ownerIdx: index('texts_owner_idx').on(t.ownerId, t.createdAt),
-    // Public official-library page needs a fast scan over (visibility,
-    // language) — see T-4.5.
     visibilityIdx: index('texts_visibility_idx').on(t.visibility, t.language),
   }),
 );
 
-/**
- * Per-recipient text shares (T-7.2).
- *
- * The owner of a text can grant individual readers explicit access
- * even when the text's visibility is 'private'. canReadText (T-4.6)
- * extends to allow any (text_id, viewer.id) pair that has a row
- * here. Group shares (T-7.4) live in a sibling `text_group_shares`
- * table; the two are independent so a curator can share with a
- * group AND specific extra individuals without juggling membership.
- *
- * Permission column reserved for future read/write distinctions —
- * MVP only models 'read'.
- */
+/** A direct share gives one recipient access to a text. Group shares are recorded separately. */
 export const textSharePermission = pgEnum('text_share_permission', ['read']);
 
 export const textShares = pgTable(
@@ -1195,20 +1021,11 @@ export const textShares = pgTable(
   },
   (t) => ({
     pk: primaryKey({ columns: [t.textId, t.sharedWithUserId] }),
-    // "What's shared with me?" lookup for the T-7.5 inbox.
     recipientIdx: index('text_shares_recipient_idx').on(t.sharedWithUserId),
   }),
 );
 
-/**
- * User groups (T-7.3) — classroom rosters, study clubs, etc.
- *
- * `owner_id` is the group's admin (creator + manager). M7 keeps
- * groups simple: no role hierarchy beyond owner / member, no
- * invitations workflow (the owner adds members directly by email
- * resolution). T-7.8's classroom dashboard surfaces aggregate stats
- * for the owner.
- */
+/** The group owner manages the roster and can view the group's learning statistics. */
 export const groups = pgTable(
   'groups',
   {
@@ -1253,7 +1070,7 @@ export const groupMemberships = pgTable(
 );
 
 /**
- * Per-group text shares (T-7.4). Sibling of `text_shares` —
+ * Per-group text shares. Sibling of `text_shares`,
  * granting at the group level extends read access to every
  * member of the group at the time canReadText runs (memberships
  * checked dynamically so adds / removes take effect immediately).
@@ -1323,23 +1140,7 @@ export type TranslationReport = InferSelectModel<typeof translationReports>;
 export type DictionaryImport = InferSelectModel<typeof dictionaryImports>;
 export type CuratorLanguage = InferSelectModel<typeof curatorLanguages>;
 export type LemmaEditHistoryEntry = InferSelectModel<typeof lemmaEditHistory>;
-/**
- * NLP job bookkeeping (T-4.4).
- *
- * One row per "process this text" job. Inserted by the upload service
- * right after the `texts` row + chapters land; the NLP worker (T-2.6)
- * consumes from a Redis queue and writes back to this table when it
- * picks the job up, finishes successfully, or hits an error.
- *
- * Why a separate table from `texts.status`:
- *  - A text can be re-processed (T-6.8 admin re-run) without dropping
- *    the original audit trail; a new `nlp_jobs` row records the
- *    second run while the previous one stays in history.
- *  - Errors are captured per-job, not per-text — useful when the
- *    second attempt succeeds.
- *  - The web UI's status badge reads from `texts.status`; this table
- *    drives admin/monitoring views.
- */
+/** Track when an uploaded text is queued, starts processing, finishes or fails. */
 export const nlpJobStatus = pgEnum('nlp_job_status', [
   'pending',
   'processing',
@@ -1367,18 +1168,8 @@ export const nlpJobs = pgTable(
 );
 
 /**
- * Per-token output from the NLP worker (T-2.6 / T-5.2).
- *
- * One row per surface token in a chapter, in reading order. The
- * reader joins this against `user_known_lemmas` to colour known /
- * learning / unknown words. Tokens without a `lemma_id` are
- * punctuation, whitespace, or unresolved OOV — they render as plain
- * text without the pop-up.
- *
- * `lemma_candidates` stores the top-K candidate list the pipeline
- * returned (T-2.2's contract); `is_ambiguous` is set when 2nd-place
- * is within the confidence threshold of the top. M6's
- * disambiguation UX reads both.
+ * Store tokens in reading order. Keep the parser's alternate entries alongside its first choice
+ * so the reader can choose another meaning.
  */
 export const textTokens = pgTable(
   'text_tokens',
@@ -1411,7 +1202,7 @@ export const textTokens = pgTable(
     isWord: boolean('is_word').notNull().default(true),
     sentenceIdx: integer('sentence_idx').notNull().default(0),
     romanization: text('romanization'),
-    /** T-2.8: digit-only NUM tokens carry a per-language spelled-out
+    /** digit-only NUM tokens carry a per-language spelled-out
      *  + ISO-15919 romanization payload so the reader pop-up can show
      *  e.g. "123 → एक सौ तेईस / ek sau teīs" without re-deriving on
      *  the client. Null on every other token. The shape mirrors
@@ -1451,7 +1242,7 @@ export const textTokens = pgTable(
 );
 
 /**
- * Per-user known-words ledger (T-5.2).
+ * Per-user known-words ledger.
  *
  * Status:
  *  - 'unknown'  — never marked. The default for any lemma the user
@@ -1501,28 +1292,9 @@ export const userKnownLemmas = pgTable(
 );
 
 /**
- * Materialised phrase occurrences per chapter (T-14.2).
- *
- * The chapter-span resolver (`server/texts/phrase-spans.ts`) builds
- * this table when the worker writes `text_tokens` and on every text
- * reprocess. Each row is one occurrence of a `phrases` row inside a
- * chapter — `start_token_idx` and `end_token_idx` are inclusive
- * `text_tokens.idx` values for the first and last tokens covered by
- * the span.
- *
- * Why a materialised table rather than computing on chapter load:
- * resolution joins phrase_tokens by first-surface against the
- * chapter's tokens. For a 7000-token chapter against the language's
- * full phrase set, that's a non-trivial pass to repeat per page
- * load. Building once on write keeps the reader hot path cheap and
- * makes T-14.6's "phrases this user has seen" stats query trivial.
- *
- * The same start position can host multiple phrases — longer phrase
- * winning over a shorter one is a render-time decision, not a
- * storage one. PK is `(chapter_id, start_token_idx, phrase_id)` so
- * overlapping phrases coexist; T-14.3's reader UI picks the longest
- * containing span for the visible wrapper element and exposes the
- * shorter ones via `data-phrase-overlap`.
+ * Save phrase matches when processing the chapter so opening it does not repeat the search. Both
+ * token positions are inclusive. Overlapping matches are stored separately so the reader can
+ * display the longest one.
  */
 export const phraseChapterSpans = pgTable(
   'phrase_chapter_spans',
@@ -1543,13 +1315,12 @@ export const phraseChapterSpans = pgTable(
     // Drives `loadChapterTokens` — every span in this chapter in
     // one indexed scan.
     chapterIdx: index('phrase_chapter_spans_chapter_idx').on(t.chapterId),
-    // Drives T-14.6 stats — every chapter a given phrase appears in.
     phraseIdx: index('phrase_chapter_spans_phrase_idx').on(t.phraseId),
   }),
 );
 
 /**
- * Queue of NLP-detected phrase proposals (T-14.5a).
+ * Queue of NLP-detected phrase proposals.
  *
  * The web worker writes one row here per `(chapter,
  * surface_normalised, pattern_id)` triple emitted by
@@ -1619,7 +1390,7 @@ export const phraseProposals = pgTable(
 );
 
 /**
- * Per-user known-status for phrases (T-14.1). Direct parallel to
+ * Per-user known-status for phrases. Direct parallel to
  * `user_known_lemmas` — the `known_lemma_status` enum is reused
  * because the semantics (unknown / learning / known / ignored) are
  * identical for phrases. `setKnownPhraseStatus` updates this table
@@ -1647,7 +1418,7 @@ export const userKnownPhrases = pgTable(
 );
 
 /**
- * Per-user reading progress (T-5.6).
+ * Per-user reading progress.
  *
  * One row per (user, text). The reader writes this debounced as the
  * user scrolls / paginates so the library card can show "Page 4 of
@@ -1678,34 +1449,8 @@ export const userTextProgress = pgTable(
 );
 
 /**
- * Form → lemma override map (T-2.7).
- *
- * The NLP worker's lemmatizer guesses a lemma per token. When the
- * guess is wrong (e.g. Stanza's Hindi UD model lemmatizes ``है`` to
- * itself instead of ``होना``), we override it from this table:
- * the dispatcher pre-loads every override for the language at
- * processing time and prefers the table's pick over Stanza's
- * candidate.
- *
- * Two sources of rows:
- *
- * 1. Curator seed — high-impact treebank quirks the team hand-fixes
- *    once and ships in a migration / seed script.
- * 2. Crowdsourced (T-6.7) — the aggregation worker promotes
- *    `token_corrections` to this table when ≥K distinct users have
- *    made the same correction on a matching `(surface, context)`.
- *
- * `context_signature` is a sha1-16 hash of `(prev_pos, cur_pos,
- * next_pos)` matching the worker's helper in
- * services/nlp/app/worker/overrides.py — so the override is
- * applied only when the surface appears in a similar POS context,
- * preventing a homograph fix from over-applying. The empty-string
- * value `''` is a wildcard match that ignores context — used for
- * curator seeds where the surface is unambiguous regardless of
- * context (the copula seeds are this case).
- *
- * Each row tracks `vote_count` (how many user corrections aggregated
- * into it) + `promoted_at` / `promoted_by` for the audit trail.
+ * When enough different readers make the same correction in the same context, the worker can use
+ * their choice for later occurrences.
  */
 export const formLemmaOverrides = pgTable(
   'form_lemma_overrides',
@@ -1742,26 +1487,8 @@ export const formLemmaOverrides = pgTable(
 );
 
 /**
- * Per-user lemma corrections on a specific token (T-6.1 + onwards).
- *
- * The reader's WordPopup shows the NLP worker's top guess; when the
- * user knows it's wrong they can:
- *
- *  - pick_candidate     — select one of the top-K lemma_candidates
- *                         the worker returned (T-6.1 — the cheapest
- *                         flow; data already on-row).
- *  - manual_lemma       — search the dictionary and pick a lemma
- *                         that wasn't in the candidate list (T-6.2).
- *  - new_lemma          — propose a new lemma that doesn't exist
- *                         yet (T-6.3 — also creates a lemma_proposal).
- *  - mark_proper_noun / — soft "this surface isn't a learnable word"
- *    mark_foreign /       flags. They suppress the OOV / unknown
- *    mark_not_a_word      colouring without surfacing a lemma at all.
- *
- * Primary-keyed on (user, token) so re-correcting overwrites — a
- * user changes their mind, the reader reflects the new pick. The
- * crowdsourced aggregation worker (T-6.7) reads this table to
- * promote consensus picks into `form_lemma_overrides`.
+ * Store a reader's correction for one token. They can choose a dictionary entry, propose a
+ * missing word or mark the token as a proper name, punctuation or another non-word.
  */
 export const tokenCorrectionType = pgEnum('token_correction_type', [
   'pick_candidate',
@@ -1782,17 +1509,10 @@ export const tokenCorrections = pgTable(
       .notNull()
       .references(() => textTokens.id, { onDelete: 'cascade' }),
     type: tokenCorrectionType('type').notNull(),
-    // Set for `pick_candidate` / `manual_lemma`. NULL for the
-    // mark_* and new_lemma branches (new_lemma also writes a
-    // lemma_proposals row that carries the proposed entry —
-    // landing in T-6.3). On lemma deletion the row is kept (set
-    // null) so the audit trail isn't lost; the reader treats a
-    // null chosen_lemma_id like any other absent correction.
+    // A proposed word may have no dictionary ID yet. Its details are stored in lemma_proposals.
     chosenLemmaId: uuid('chosen_lemma_id').references(() => lemmas.id, {
       onDelete: 'set null',
     }),
-    // Free-form reporter note. Optional today; T-6.5 surfaces it on
-    // the moderation dashboard.
     note: text('note'),
     createdAt: timestamp('created_at', { withTimezone: true })
       .notNull()
@@ -1804,7 +1524,7 @@ export const tokenCorrections = pgTable(
   (t) => ({
     pk: primaryKey({ columns: [t.userId, t.tokenId] }),
     tokenIdx: index('token_corrections_token_idx').on(t.tokenId),
-    // Aggregation worker (T-6.7) groups by (lemma, type) — index
+    // Aggregation worker groups by (lemma, type), index
     // matches that lookup so the cron stays cheap.
     lemmaIdx: index('token_corrections_chosen_lemma_idx').on(
       t.chosenLemmaId,
@@ -1813,26 +1533,7 @@ export const tokenCorrections = pgTable(
   }),
 );
 
-/**
- * User-submitted new-lemma proposals (T-6.3).
- *
- * When the correction modal's dictionary search comes up empty, the
- * user can propose a new lemma via the new-lemma form. We don't
- * write directly to `lemmas` — that table is the curator-validated
- * dictionary and bulk-imports / promotions go through the
- * dictionary editor — but the proposer needs to see the entry
- * immediately on the page they're reading. So we:
- *
- *   1. Insert a `lemma_proposals` row with status='pending'.
- *   2. Insert a `token_corrections` row (type=new_lemma, chosen_lemma_id=null).
- *   3. File a `parse_reports` row so the curator dashboard surfaces it.
- *
- * Curator acceptance in T-6.6 copies the proposal into `lemmas` and
- * back-fills `token_corrections.chosen_lemma_id` on every row that
- * was created against this proposal. Rejection just flips the
- * proposal status — the user's per-token correction stays as a
- * 'new_lemma' marker so the surface remains uncoloured.
- */
+/** Accepting a proposal creates a dictionary entry and links the reader's correction to that entry. */
 export const lemmaProposalStatus = pgEnum('lemma_proposal_status', [
   'pending',
   'accepted',
@@ -1880,33 +1581,8 @@ export const lemmaProposals = pgTable(
 );
 
 /**
- * Curator moderation queue for parse / lemma errors (T-6.5).
- *
- * Distinct from `token_corrections`: corrections are *per-user*
- * picks the reader applies to their own view. A `parse_report` is
- * a *site-wide* claim that the worker (or the dictionary) is
- * mis-modeling a specific surface — surfaced to curators on T-6.6's
- * moderation page, who promote accepted reports to
- * `form_lemma_overrides` (the global override table) and/or fix
- * the dictionary itself.
- *
- * Two routes file rows here:
- *
- *  - User-initiated: T-6.2's correction modal optionally checks
- *    "Also report to moderators" when the user picks a manual
- *    lemma / proposes a new one. (Default OFF for `pick_candidate`,
- *    ON for `manual_lemma` / `new_lemma`.)
- *
- *  - System-initiated: T-6.7's aggregation worker auto-files a
- *    `triaged`-status report when ≥K users converge on the same
- *    correction. The curator's choice in T-6.6 promotes or vetoes.
- *
- * Duplicate merging: a new report whose
- * `(language, surface_nfc, context_signature, corrected_lemma_id)`
- * matches an existing open / triaged row increments that row's
- * `duplicate_count` instead of creating a new row. Resolved /
- * rejected rows do NOT collide — re-files after a curator
- * resolution start a new conversation.
+ * A personal correction changes one reader's view. A parse report asks a curator to review the
+ * problem for everyone.
  */
 export const parseReportStatus = pgEnum('parse_report_status', [
   'open',
@@ -1926,9 +1602,8 @@ export const parseReports = pgTable(
     }),
     language: language('language').notNull(),
     surfaceNfc: text('surface_nfc').notNull(),
-    // sha1-16 of (prev_pos, cur_pos, next_pos) — same shape as
-    // form_lemma_overrides.context_signature so the dedup math
-    // matches what T-6.7's aggregation worker writes downstream.
+    // Use the same context signature as form_lemma_overrides so repeated reports can be matched
+    // to the saved correction.
     contextSignature: text('context_signature').notNull().default(''),
     // Snapshot of the worker's top-K candidate list at report time —
     // useful for the moderation UI even when the underlying token
@@ -2001,22 +1676,8 @@ export type GroupMembership = InferSelectModel<typeof groupMemberships>;
 export type TextGroupShare = InferSelectModel<typeof textGroupShares>;
 
 /**
- * Collections — chapter books, courses, anthologies (T-8.1).
- *
- * A collection is an ordered group of texts that share a language.
- * `kind` drives the per-item behaviour:
- *
- *   - `chapter_book`: the standard ordered grouping (e.g. a novel
- *     split into chapter-per-text imports).
- *   - `course`: stricter ordering (T-8.6 — the next item is gated
- *     until the prior is finished, overridable).
- *   - `anthology`: order is curatorial but not enforced; the reader
- *     surfaces "next" but doesn't gate it.
- *
- * Visibility mirrors `texts.visibility`. An admin can promote a
- * collection to `official` for the public-library path (T-7.6
- * surfaces texts; T-8.5 surfaces collections in the same library
- * tab).
+ * A collection groups texts in reading order. Courses can require completion before advancing.
+ * Collections can also appear in the official library.
  */
 export const collectionKind = pgEnum('collection_kind', [
   'chapter_book',
@@ -2056,17 +1717,8 @@ export const collections = pgTable(
 );
 
 /**
- * Ordered membership of a text in a collection. A text can belong
- * to multiple collections (an excerpt that's part of both a
- * chapter book AND a course); `position` carries the curator's
- * intended order WITHIN the collection. The (collection_id, text_id)
- * primary key + the (collection_id, position) index covers the
- * "show me this collection's items in order" lookup that the detail
- * page hits.
- *
- * Reorder is by rewriting `position` on every member — O(n) but n
- * is small (a chapter book of 100+ items is unusual). T-8.1's drag-
- * and-drop UI calls a single PATCH that hands back the new order.
+ * Position is local to the collection. Reordering a book in one collection leaves its position in
+ * other collections alone.
  */
 export const collectionItems = pgTable(
   'collection_items',
@@ -2100,18 +1752,8 @@ export const collectionItems = pgTable(
 );
 
 /**
- * Per-recipient share grant on a collection (T-8.4). The owner
- * grants a single user read access to the whole collection;
- * canReadText extends to allow any (text_id, viewer.id) pair where
- * the text is a member of a collection the viewer has been granted.
- *
- * Adding a text to a collection propagates the grant automatically
- * — the share row is on the COLLECTION, not on individual member
- * texts, so the join is computed at read time instead of expanded
- * at grant time.
- *
- * MVP only models 'read' permission. Reserved for read/write
- * distinctions later.
+ * A collection share covers its current texts and any added later. Access is checked against
+ * membership when the text is opened.
  */
 export const collectionShares = pgTable(
   'collection_shares',
@@ -2142,7 +1784,7 @@ export type CollectionItem = InferSelectModel<typeof collectionItems>;
 export type CollectionShare = InferSelectModel<typeof collectionShares>;
 
 /**
- * Audio attached to texts / chapters (T-9.1).
+ * Audio attached to texts / chapters.
  *
  * `audio_files` stores the metadata + storage location; the actual
  * blob lives in object storage (local volume in dev; Hetzner Object
@@ -2156,7 +1798,7 @@ export type CollectionShare = InferSelectModel<typeof collectionShares>;
  * <audio> element the right hint (mp3 / m4a / ogg are all in
  * scope).
  *
- * `attribution` (T-9.7) is the human-readable credit shown in the
+ * `attribution` is the human-readable credit shown in the
  * player when present. `license` is the per-file license string;
  * official audio uploads carry an explicit license. User-uploaded
  * audio carries the redistribution-rights checkbox text from the
@@ -2192,7 +1834,7 @@ export const audioFiles = pgTable(
 );
 
 /**
- * Aggregate listening time per user/audio file (T-10.5).
+ * Aggregate listening time per user/audio file.
  *
  * The audio player sends small playback deltas while a signed-in reader is
  * listening. We store an aggregate rather than an event stream so the stats
@@ -2232,18 +1874,8 @@ export const userAudioListening = pgTable(
 );
 
 /**
- * Per-token timing for an audio file (T-9.3 / T-9.5 / T-9.6).
- *
- * One row per (audio_file, token) pair. Optional — a chapter can
- * have audio without alignments (the player still works, just no
- * karaoke highlight). Times are stored in milliseconds from the
- * start of the audio file. Indexed on (audio_file_id, start_ms)
- * for the timeupdate-driven binary search the reader runs every
- * frame while playback is active.
- *
- * Source: `manual` (T-9.5 editor) or `imported` (T-9.6 JSON / VTT
- * import), with `whisper` reserved for the future ASR-aligned
- * branch.
+ * Audio timestamps link words in the text to positions in the recording. The source records how
+ * the timing was obtained.
  */
 export const alignmentSource = pgEnum('alignment_source', [
   'manual',

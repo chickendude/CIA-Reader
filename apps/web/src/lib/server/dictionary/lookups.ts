@@ -1,26 +1,6 @@
 /**
- * Read-side dictionary queries (T-3.3).
- *
- * Keeps the service layer between the HTTP surface and Drizzle narrow
- * and typed. The translation-retrieval endpoint's ordering contract
- * lives here so it's unit-testable in isolation.
- *
- * Ordering (per T-3.3 + T-3.8):
- *
- *   1. `personal`   — translations the viewer themselves authored. Empty
- *                     for anonymous callers. `parentTranslationId`
- *                     customization forks land here too (T-3.5).
- *   2. `official`   — rows with `source IN ('official_dictionary',
- *                     'curator')`. Curator-edited rows sort ahead of
- *                     raw imports because a curator has explicitly
- *                     signed off on them. Hidden officials are
- *                     suppressed even though the moderation flow
- *                     doesn't write `hidden=true` on officials today.
- *   3. `community`  — other users' `source='user'` submissions.
- *                     Ordered newest-first at MVP; T-10.4 will swap in
- *                     a vote-weighted sort once `translation_votes`
- *                     lands. Hidden rows excluded for anonymous + non-
- *                     curator viewers.
+ * Keep a reader's personal translations together and give curator-reviewed definitions priority
+ * over raw dictionary imports.
  */
 import { and, eq, ne, sql } from 'drizzle-orm';
 
@@ -31,21 +11,8 @@ import type { Lemma, Translation, User } from '../db/schema.js';
 import type { TranslationVoteValue } from './votes.js';
 
 /**
- * Viewer-relative provenance category (T-3.8). The reader pop-up renders
- * one badge per translation — the badge reads off `provenance.kind`,
- * NOT off `source`, because "personal" requires knowing who the viewer
- * is (a user's own `source='user'` row shows a different badge than the
- * same row displayed to a different viewer).
- *
- *  - `personal`   — the viewer themselves authored this row (or forked
- *                   an official via T-3.5). Badge: "yours".
- *  - `curator`    — `source='curator'`. A curator has explicitly signed
- *                   off on this row. Badge: "curator".
- *  - `imported`   — `source='official_dictionary'`. Carries the upstream
- *                   attribution (e.g. "Hindi WordNet"). Badge: the
- *                   attribution text.
- *  - `community`  — anyone else's `source='user'` submission. Badge:
- *                   "community".
+ * A personal translation belongs to the current reader, including copies they made of official
+ * translations.
  */
 export type TranslationProvenance =
   | { kind: 'personal'; attribution: null }
@@ -192,7 +159,7 @@ export function bucketTranslations(
   const byCreatedAtDesc = (a: TranslationWithVotes, b: TranslationWithVotes) =>
     b.createdAt.getTime() - a.createdAt.getTime();
 
-  // T-3.13: a curator-set `displayRank` overrides the bucket's default
+  // a curator-set `displayRank` overrides the bucket's default
   // tiebreaker. NULL ranks sort after any non-NULL rank within the same
   // bucket, then fall through to the bucket-specific secondary sort.
   // The personal bucket doesn't accept curator reordering — it's
@@ -330,12 +297,6 @@ export async function getLemmaTranslations(
     .from(schema.translations)
     .where(
       and(
-        // T-14.7a: switched from the legacy `lemma_id` column to
-        // the polymorphic (target_type, target_id) pair so the
-        // legacy column can be dropped. Phrase translations
-        // (target_type='phrase') are filtered out by this
-        // explicit type predicate — the lemma reader path never
-        // wants them.
         eq(schema.translations.targetType, 'lemma'),
         eq(schema.translations.targetId, lemmaId),
         // Hidden rows are filtered in memory via `bucketTranslations`
@@ -345,24 +306,7 @@ export async function getLemmaTranslations(
       ),
     );
 
-  // T-3.14: when the directly-linked lemma has no translations of its
-  // own, fall back to sibling lemmas (same language + same headword,
-  // any POS). This matters because the NLP pipeline frequently tags a
-  // word with a context-dependent POS — "पार्क" inside "ग्लेशियर नेशनल पार्क"
-  // gets PROPN — while the dictionary entry that ships the gloss is
-  // under a different POS (NOUN). The user clicked the token expecting
-  // its meaning, not a metadata lecture about how the parser tagged
-  // it. Only triggered on empty primaries so the cost is paid exactly
-  // when it would otherwise be a dead-end click.
-  //
-  // #318: Two-stage fallback. First try exact-headword siblings
-  // (T-3.14's original behavior). If that's also empty, try
-  // nukta-stripped siblings — the directly-linked lemma might be a
-  // nukta-stripped form (e.g. pre-#316 `पढना`) while the dictionary
-  // entry that ships the gloss is under the canonical with-nukta
-  // form (`पढ़ना`), or vice-versa. Both sides reduce to the same
-  // stripped key, so the second tier finds the entry the first
-  // tier's strict-equality `headword =` clause missed.
+  // For languages that allow fallback, try the exact headword before ignoring nukta marks.
   const lemmaTyped = lemma as Lemma;
   // A viewer's own definition is stored on the directly-linked lemma, so once
   // they save one the primary is no longer empty. That used to suppress the
@@ -390,7 +334,7 @@ export async function getLemmaTranslations(
       .from(schema.translations)
       .innerJoin(
         schema.lemmas,
-        // T-14.7a: join on the polymorphic target_id (with the
+        // join on the polymorphic target_id (with the
         // target_type='lemma' filter) instead of the legacy
         // lemma_id column.
         eq(schema.translations.targetId, schema.lemmas.id),
@@ -406,20 +350,14 @@ export async function getLemmaTranslations(
     rows = joined.map((r) => r.translation as Translation);
   }
   if (rows.length === 0 && lemmaTyped.language !== 'hi') {
-    // #318: Run the nukta-stripped tier even when the linked
-    // lemma's own headword has no nukta. The strict tier above
-    // matched on `headword = X`, so it missed any sibling whose
-    // headword has nuktas X lacks (e.g. linked lemma is `पढना` and
-    // the canonical entry under `पढ़ना` ships the gloss). The
-    // stripped column is nukta-free on both sides, so it catches
-    // both directions of the mismatch.
+    // Either spelling can be the one with the nukta, so compare the search keys on both sides.
     const stripped = stripNukta(lemmaTyped.headword);
     const joinedStripped = await db
       .select({ translation: schema.translations })
       .from(schema.translations)
       .innerJoin(
         schema.lemmas,
-        // T-14.7a: same target_id-based join as the strict tier
+        // same target_id-based join as the strict tier
         // above. The stripped tier inherits the type predicate
         // because phrase target rows wouldn't match any
         // `lemmas.id` anyway, but the explicit filter keeps the

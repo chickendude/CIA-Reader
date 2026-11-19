@@ -1,19 +1,6 @@
 /**
- * Phrase-create selection helpers (T-14.3a).
- *
- * The shift-click gesture in `ChapterBody.svelte` produces a
- * `[anchorIdx, targetIdx]` range over the chapter's tokens; this
- * helper validates the range and projects it to the surfaces +
- * idx range that `WordPopup` needs to drive its phrase-create
- * banner. Extracted as a pure function so the validation
- * (sentence-boundary refusal, MIN/MAX token count) can be tested
- * independently of the Svelte component plumbing.
- *
- * Sentence-boundary detection uses a regex over Devanagari /
- * Indic / Western sentence-ending marks. The resolver in T-14.2
- * remains the source of truth on the server; this is a client-
- * side preflight so a user gets immediate feedback rather than
- * "the phrase saved but never shows up".
+ * Check the selection before the reader saves a phrase. A selection that crosses a sentence
+ * boundary could never match during chapter processing.
  */
 import type { ServerToken } from './types.js';
 
@@ -30,17 +17,8 @@ export type SelectionValidationResult =
   | { kind: 'error'; message: string };
 
 /**
- * Validate the user's shift-click range against:
- *  - same-token rejection (single-token isn't a phrase),
- *  - MIN / MAX token count (2..8 — matches `phrases.ts`),
- *  - sentence-boundary refusal — any non-word token *between*
- *    the anchor and the target whose surface contains a
- *    sentence-ending mark fails the selection.
- *
- * `tokens` should be the full chapter token list in idx order;
- * the helper iterates over it to gather surfaces. Punctuation
- * tokens between anchor and target are skipped from the
- * surfaces list (the matcher in T-14.2 only matches words).
+ * Skip punctuation between the selected words so the selection matches the words used by the
+ * phrase matcher.
  */
 export function validatePhraseSelection(
   tokens: ServerToken[],

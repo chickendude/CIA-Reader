@@ -109,7 +109,7 @@ vi.mock('../nlp-client.js', () => ({
   nlpClient: { process: (...a: unknown[]) => nlpProcess(...a) },
 }));
 
-// T-14.2: stub the phrase-span resolver so existing dispatcher
+// stub the phrase-span resolver so existing dispatcher
 // tests don't have to stage extra DB calls. The hook itself is
 // covered by `phrase-spans.test.ts` (rebuild + loader) and the
 // `'rebuilds chapter phrase spans after writing text_tokens'` case
@@ -119,7 +119,7 @@ vi.mock('./phrase-spans.js', () => ({
   rebuildChapterSpans: (...a: unknown[]) => rebuildChapterSpans(...a),
 }));
 
-// T-14.5a: stub the phrase-proposals queue write. The hook is
+// stub the phrase-proposals queue write. The hook is
 // covered by `phrase-proposals.test.ts`; this fake is just so
 // existing dispatcher tests don't have to stage extra DB calls.
 const upsertPhraseProposals = vi.fn();
@@ -164,7 +164,7 @@ describe('processTextNow', () => {
     stage([
       { id: 'lemma-bolnaa', headword: 'बोलना', pos: 'verb' },
     ]);
-    // form_lemma_overrides preload (T-2.7) — empty for this test.
+    // form_lemma_overrides preload, empty for this test.
     stage([]);
     stage([]); // lemma_forms surface preload — empty for this test.
 
@@ -300,7 +300,7 @@ describe('processTextNow', () => {
     expect(tokenInsert[0]!.isOov).toBe(false);
   });
 
-  it('honors a form_lemma_overrides row over the Stanza candidate (T-2.7)', async () => {
+  it('honors a form_lemma_overrides row over the Stanza candidate', async () => {
     stage([{ id: 'text-1', language: 'hi' }]);
     stage([{ id: 'chap-1', body: 'वह है।' }]);
     // lemma index: होना already exists in the dictionary.
@@ -541,7 +541,7 @@ describe('processTextNow', () => {
     expect(tokenInsert[0]!.romanization).toBe('shabes');
   });
 
-  it('does not auto-create a lemma row for digit-only number tokens (T-2.8)', async () => {
+  it('does not auto-create a lemma row for digit-only number tokens', async () => {
     // Stanza tags "1,013,322" as NUM with lemma=surface. Without the
     // looksLikeNumberToken short-circuit, ensureLemma would write a
     // "1,013,322 / NUM" row to the lemmas table, and the popup would
@@ -600,7 +600,7 @@ describe('processTextNow', () => {
     expect(tokenInsert[0]!.numberForms?.value).toBe('1013322');
   });
 
-  it('resolves a post-#316 nukta candidate onto an existing pre-#316 lemma row (#320)', async () => {
+  it('matches पढ़ना to an existing entry spelled पढना', async () => {
     // The transition scenario: the lemmas table has an old `पढना`
     // (no nukta) row from before the lemma-restoration fix.
     // Post-fix, the NLP pipeline emits `पढ़ना` (with nukta) as the
@@ -608,7 +608,6 @@ describe('processTextNow', () => {
     // mint a duplicate row and split known-words tracking.
     stage([{ id: 'text-1', language: 'hi' }]);
     stage([{ id: 'chap-1', body: 'वह पढ़ती है।' }]);
-    // lemma index: only the pre-#316 row exists.
     stage([{ id: 'lemma-padhna-old', headword: 'पढना', pos: 'VERB' }]);
     stage([]); // form_lemma_overrides
     stage([]); // lemma_forms surface preload — empty for this test.
@@ -624,9 +623,6 @@ describe('processTextNow', () => {
           is_ambiguous: false,
           is_oov: false,
           romanization: 'paṛhtī',
-          // Post-#316 lemma carries the nukta — strict-POS and
-          // loose-headword tiers both miss the `पढना` row; the
-          // nukta-stripped tier catches it.
           candidates: [
             { lemma: 'पढ़ना', pos: 'VERB', score: 1.0, features: {} },
           ],
@@ -649,7 +645,7 @@ describe('processTextNow', () => {
     expect(tokenInsert[0]!.lemmaId).toBe('lemma-padhna-old');
   });
 
-  it('resolves a pre-#316 nukta-free candidate onto an existing canonical lemma row (#320)', async () => {
+  it('matches पढना to an existing entry spelled पढ़ना', async () => {
     // Inverse: lemma table has the canonical `पढ़ना` row, but the
     // candidate this run produced lacks the nukta (could be a
     // legacy text re-process after the fix landed but before the
@@ -691,7 +687,7 @@ describe('processTextNow', () => {
     expect(tokenInsert[0]!.lemmaId).toBe('lemma-padhna-canon');
   });
 
-  it('still prefers a strict-POS match over the nukta-stripped tier (#320)', async () => {
+  it('still prefers a strict-POS match over the nukta-stripped tier', async () => {
     // Both rows are loaded: one nukta-free `पढना VERB` and one
     // canonical `पढ़ना VERB`. A candidate that exactly matches the
     // canonical row's `headword` + `pos` should resolve to it via
@@ -764,7 +760,7 @@ describe('processTextNow', () => {
     ).toMatch(/NLP service 500/);
   });
 
-  it('rebuilds chapter phrase spans after writing text_tokens (T-14.2)', async () => {
+  it('rebuilds chapter phrase spans after writing text_tokens', async () => {
     stage([{ id: 'text-1', language: 'hi' }]); // text lookup
     stage([{ id: 'chap-1', body: 'one' }]); // chapters
     stage([{ id: 'lemma-bolnaa', headword: 'बोलना', pos: 'verb' }]); // lemmas
@@ -798,7 +794,7 @@ describe('processTextNow', () => {
     });
   });
 
-  it('persists NLP phrase proposals when the response includes proposed_phrases (T-14.5a)', async () => {
+  it('persists NLP phrase proposals when the response includes proposed_phrases', async () => {
     stage([{ id: 'text-1', language: 'hi' }]);
     stage([{ id: 'chap-1', body: 'one' }]);
     // Pre-seed the lemma index with both candidate lemmas so
@@ -866,7 +862,7 @@ describe('processTextNow', () => {
     });
   });
 
-  it('skips the proposals upsert when the NLP response has no proposed_phrases (T-14.5a)', async () => {
+  it('skips the proposals upsert when the NLP response has no proposed_phrases', async () => {
     stage([{ id: 'text-1', language: 'hi' }]);
     stage([{ id: 'chap-1', body: 'one' }]);
     stage([{ id: 'lemma-bolnaa', headword: 'बोलना', pos: 'verb' }]);

@@ -1,23 +1,3 @@
-"""Tests for :mod:`app.worker.overrides` (T-2.7).
-
-Two layers of coverage:
-
-1. :func:`context_signature` — deterministic, stable across the
-   aggregation-side writer (T-6.7) and the worker-side reader here.
-   If these two ever disagree, overrides silently stop applying; the
-   hash is simple enough that pinning the exact format here is the
-   cheapest way to guarantee they stay in sync.
-2. :func:`apply_overrides` — the swap itself: a hit becomes the new
-   top candidate, ``is_oov``/``is_ambiguous`` both clear, the
-   original candidates are preserved underneath (so the "alternate
-   meanings" UI at T-6.1 can still render them), and non-word /
-   punctuation tokens are passed through untouched.
-
-An integration test through :func:`process_text` pins the full wiring
-the worker uses in production: Stanza says X, the override store says
-Y, we persist Y.
-"""
-
 from __future__ import annotations
 
 import pytest
@@ -150,7 +130,7 @@ async def test_apply_overrides_hit_prepends_override_candidate():
     assert hit_tok.candidates[0].score == 1.0
     assert hit_tok.candidates[0].features == {"Person": "3", "Number": "Sing"}
     # The original Stanza guess is preserved below the promoted override
-    # so the alternate-meanings UI (T-6.1) can still surface it.
+    # so the alternate-meanings UI can still surface it.
     assert hit_tok.candidates[1].lemma == "बोलना_wrong"
     assert len(hit_tok.candidates) == 2
 
@@ -274,8 +254,6 @@ async def test_process_text_applies_overrides_before_persisting():
 
 @pytest.mark.asyncio
 async def test_process_text_skips_overrides_when_store_missing():
-    # The MVP default pre-T-6.7 — no override store in ctx — still
-    # processes successfully. This is how jobs run on day one.
     text_store = _FakeTextStore(
         {"ch-1": ChapterPayload(chapter_id="ch-1", language="hi", text="नमस्ते")}
     )

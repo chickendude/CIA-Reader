@@ -16,7 +16,7 @@ def test_health_ok():
 
 
 def test_healthz_alias_returns_same_payload():
-    # /healthz is the canonical name (T-13.5); /health stays as a
+    # /healthz is the canonical name; /health stays as a
     # backwards-compat alias for callers like the dev compose
     # Dockerfile healthcheck.
     resp_health = client.get("/health")

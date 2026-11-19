@@ -1,4 +1,4 @@
-# Backups (T-13.3)
+# Backups
 
 A `backup` sidecar service runs alongside the prod stack, executing two cron jobs:
 
@@ -115,7 +115,7 @@ docker run --rm \
 
 ## Test-restore-once checklist
 
-Per the T-13.3 ticket spec — verify a restore actually works once, before betting real data on it.
+Test a restore before relying on the backup for real data.
 
 1. Trigger a one-shot DB dump (see "Verify backups").
 2. `docker compose -f infra/docker-compose.prod.yml --env-file infra/.env exec postgres psql -U ciareader -d ciareader -c "SELECT count(*) FROM lemmas;"` — note the count.

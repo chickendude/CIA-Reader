@@ -1,5 +1,5 @@
 /**
- * Public dictionary browse page loader (T-3.6).
+ * Public dictionary browse page loader.
  *
  * Renders server-side — no auth required — so each language's lemma
  * index is crawlable. Search, filters, and pagination are driven by
@@ -64,11 +64,8 @@ export const load: PageServerLoad = async ({ params, url, locals }) => {
     totalCount: result.totalCount,
     limit: result.limit,
     offset: result.offset,
-    // #318: Surface the nukta-agnostic fallback so the page can
-    // render a hint when an exact-match search missed and we showed
-    // the user the closest nukta-stripped match instead.
     usedNuktaFallback: result.usedNuktaFallback,
-    // T-3.12: surface the romanization-transliteration tier so the
+    // Surface the romanization-transliteration tier so the
     // page can render "showing matches for किताब (from kitaab)".
     usedRomanizationTransliteration: result.usedRomanizationTransliteration,
     effectiveQuery: result.effectiveQuery,

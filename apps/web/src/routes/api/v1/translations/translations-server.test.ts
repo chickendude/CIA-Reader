@@ -1,6 +1,6 @@
 // @vitest-environment node
 /**
- * Route tests for POST /api/v1/translations (T-3.2).
+ * Route tests for POST /api/v1/translations.
  *
  * The service layer's behavior is already covered by
  * `translations.test.ts`; here we only care about the HTTP shape — auth

@@ -1,45 +1,5 @@
-"""Hindi pipeline backed by Stanza's ``hi`` UD model.
-
-Stanza handles tokenization, POS tagging, lemmatization, and UD-style
-morphology features. All of the output-shaping logic (feature parsing,
-OOV heuristics, idx sequencing) lives in
-:class:`app.pipelines.stanza_ud.StanzaUDPipeline` so this module is a
-thin wrapper that sets the canonical ``pipeline_id`` and provides a
-factory that constructs the real Stanza model at startup.
-
-Top-K caveat (see T-2.2 in the plan): Stanza's lemmatizer exposes a
-single best lemma per word. Real top-K lemma candidates with softmax-
-normalized scores require either beam decoder internals or a dictionary-
-side fallback — both land later (dictionary candidates in M3, beam
-alternates in a future pass). Until then we emit a single-candidate
-top-K, and :attr:`Token.is_ambiguous` is always ``False``. Downstream
-UX (M6) only branches on ``is_ambiguous``, so it gracefully degrades
-to "no chevron" for now.
-
-OOV heuristic: when Stanza returns the surface as the lemma *and* the
-UD POS isn't punctuation / symbol / number / proper-noun, we treat it
-as OOV. That matches the plan's "Stanza returns surface + no dictionary
-match" definition closely enough for MVP — real dictionary attachment
-happens in M3 and will refine ``is_oov`` at that point.
-
-Lemma overrides for finite copulas (``है`` → ``होना`` and friends)
-land via the ``form_lemma_overrides`` table (T-2.7) — the dispatcher
-consults that map BEFORE accepting Stanza's top candidate, so this
-module stays focused on the raw UD output.
-
-Nukta restoration: Stanza's ``hi_hdtb`` model strips the nukta
-(U+093C) from lemmas of nukta-bearing verbs and nouns — surface
-``पढ़ता`` lemmatizes to ``पढना`` instead of the correct ``पढ़ना``,
-and the same bug hits ``बढ़ना``, ``चढ़ना``, ``लड़ना``, ``पकड़ना``,
-``छोड़ना``, etc. The HDTB treebank itself has inconsistent nukta
-marking, so this is upstream-baked. We compensate with a
-deterministic post-processor (:func:`_restore_nukta_in_lemma`) that
-copies any nuktas surviving in the surface back into the lemma at
-the aligned stem position. Runs on every word token's candidates
-*after* the base class has set ``is_oov`` from the raw Stanza output,
-so a fixed lemma that happens to equal the surface (e.g. when the
-infinitive itself appears in text) doesn't spuriously flip OOV.
-"""
+"""Use Stanza's best dictionary form for each Hindi word. Restore nukta marks from the original
+spelling where the model dropped them."""
 
 from __future__ import annotations
 

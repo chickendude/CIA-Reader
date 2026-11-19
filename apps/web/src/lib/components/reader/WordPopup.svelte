@@ -1,22 +1,3 @@
-<!--
-  Word side panel (T-5.4 → T-5.10).
-
-  Opens on tap/click of a word. Renders inside a <Sheet> so it slides
-  up from the bottom on <960px and in from the right on >=960px,
-  matching the CIAR design's reader side-panel.
-
-  Content (unchanged from T-5.4):
-    a. Surface form + romanization + headword + POS
-    b. Personal → official → community translations (T-3.3 ordering)
-    c. "+ Add my translation" form (T-3.2)
-    d. Status buttons — Learning / Known / Ignored (T-5.5)
-    e. "N alternate meanings" disclosure when is_ambiguous=true
-       (T-6.1 wires the candidate-pick action)
-    f. "No dictionary match" copy when is_oov=true (T-5.4a)
-
-  Keyboard: Sheet handles Esc + focus trap. We keep k/l/i status
-  shortcuts so the existing keyboard-first flow (T-5.7) still works.
--->
 <script lang="ts">
   import { getContext, untrack } from 'svelte';
   import Button from '$lib/components/input/Button.svelte';
@@ -95,12 +76,7 @@
     romanized: string;
   };
 
-  // anchorRect is accepted but unused — anchor positioning was used
-  // before T-5.10 switched to Sheet. Kept on the prop signature for
-  // backward compat with callers that still pass it.
-  // `token` is nullable now: the side panel renders unconditionally
-  // on desktop (static layout) and shows an empty-state prompt when
-  // the user hasn't picked a word yet.
+  // The desktop panel also renders with no word selected. Callers may still pass anchorRect.
   let {
     token,
     chapterTokens,
@@ -124,27 +100,18 @@
      *  crop of the clicked word (using the token's bbox) for verifying
      *  OCR against the real glyphs. Null in the text reader. */
     pageImage?: { url: string; width: number | null; height: number | null } | null;
-    /** T-14.3: surface the longest phrase containing the click
-     *  target. When non-null, the popup renders a phrase banner
-     *  (status flips + gloss + headword) above the existing token
-     *  body. The component lemma stays underneath so a click on a
-     *  phrase token still surfaces the lemma's translations. */
+    /** The longest phrase containing the selected word. The word keeps its own definitions. */
     phrase?: import('./types.js').ChapterPhraseSpan | null;
-    /** T-14.3a: a multi-token selection waiting to be saved as a
-     *  new phrase. When non-null, the popup renders a "Create
-     *  phrase" surface listing the selected words with Save /
-     *  Cancel buttons; on save it POSTs to /api/v1/phrases and
-     *  notifies the parent via `onPhraseCreated`. */
+    /** The words the reader has selected for a new phrase but has not saved yet. */
     pendingSelection?: {
       language: LanguageCode;
       surfaces: string[];
       rangeIdx: { start: number; end: number };
     };
-    /** T-14.3a: surface from the parent if shift-click validation
+    /** Surface from the parent if shift-click validation
      *  failed (e.g. selection crossed a sentence boundary). */
     selectionError?: string;
-    /** Drives the CorrectionModal's dictionary search + script
-     *  selection. Required from T-6.2 forward. */
+    /** Selects the language and script for dictionary searches. */
     language: LanguageCode;
     anchorRect?: { top: number; left: number; bottom: number; right: number };
     isOwner: boolean;
@@ -159,10 +126,10 @@
       lemmaId: string,
       status: 'unknown' | 'learning' | 'known' | 'ignored',
     ) => void;
-    /** T-6.1: parent applies the new lemma to the token's render so
+    /** parent applies the new lemma to the token's render so
      *  the reader reflects the correction without a page reload. */
     onCorrectionApplied?: (tokenId: string, chosenLemmaId: string | null) => void;
-    /** T-14.3a: fired after a successful phrase-create POST so
+    /** fired after a successful phrase-create POST so
      *  the parent can refetch chapter spans / close the popup. */
     onPhraseCreated?: (phraseId: string) => void;
     /** Fired after a personal translation is added, edited, or
@@ -179,13 +146,19 @@
   const readerDictionary = getContext<(() => { ai: boolean } | null) | undefined>('readerHindiDictionary');
   const hindiDictionary = $derived(language === 'hi' ? readerDictionary?.() : null);
   let editor = $state<{ tokenId: string; lemmaId: string | null; headword: string } | null>(null);
-  let dictionaryNotice = $state('');
+  let savedTokenId = $state<string>();
 
+  const selectedTokenId = $derived(token?.id);
+  $effect(() => {
+    // A chapter refresh can replace the token object while the same word is open.
+    if (editor && editor.tokenId !== selectedTokenId) editor = null;
+    if (savedTokenId !== selectedTokenId) savedTokenId = undefined;
+  });
   function dictionarySaved(word: WorkshopWord) {
     const { id, lemma, meaning, pos } = word.draft;
     if (!id) return;
     editor = null;
-    dictionaryNotice = 'Dictionary entry saved.';
+    savedTokenId = token?.id;
     window.dispatchEvent(new CustomEvent('reader-dictionary-saved', { detail: word.draft }));
     window.dispatchEvent(new CustomEvent('dictionary-definition-changed', {
       detail: { lemmaId: id, body: meaning },
@@ -217,10 +190,7 @@
     );
   });
 
-  // T-14.3: optimistic phrase status, mirroring the lemma path.
-  // Re-syncs from the prop whenever the user clicks into a
-  // different phrase. The PATCH happens against
-  // /api/v1/me/known-phrases/:phraseId.
+  // Show the new status while saving. Selecting another phrase restores its own status.
   let optimisticPhraseStatus = $state<
     'unknown' | 'learning' | 'known' | 'ignored'
   >(untrack(() => phrase?.status ?? 'unknown'));
@@ -253,12 +223,6 @@
     }
   }
 
-  // T-14.4: phrase translations. Mirrors the lemma translation
-  // fetch below — when a phrase is active, GET the phrase detail
-  // (which includes its visible translations) and render them
-  // inside the phrase banner. The "Add translation" form posts to
-  // POST /api/v1/phrases/:id/translations (T-14.1), the same path
-  // T-3.5's customize fork uses for lemma-target rows.
   type PhraseTranslation = {
     id: string;
     body: string;
@@ -346,13 +310,13 @@
   let loadingLookup = $state(false);
   let loadError = $state<string | null>(null);
   let showAlternates = $state(false);
-  // T-6.2: opens the CorrectionModal layered on top of the popup.
+  // opens the CorrectionModal layered on top of the popup.
   let showCorrectionModal = $state(false);
   let optimisticStatus = $state<'unknown' | 'learning' | 'known' | 'ignored'>(
     untrack(() => token?.status ?? 'unknown'),
   );
   let writeError = $state<string | null>(null);
-  // T-6.1: tracks the in-flight candidate pick so the "This one"
+  // tracks the in-flight candidate pick so the "This one"
   // button can disable itself while the POST resolves and so the
   // user sees a visible "saving" state.
   let pickingLemmaId = $state<string | null>(null);
@@ -410,8 +374,6 @@
   $effect(() => {
     const t = token;
     const version = ++lookupVersion;
-    editor = null;
-    dictionaryNotice = '';
     loadingLookup = false;
     showAlternates = false;
     // Clear the reference panel whenever the popup rebinds to a different
@@ -745,7 +707,7 @@
   function handleKeydown(e: KeyboardEvent) {
     if ((!isOwner && !isAdmin) || isNumberToken || !token?.lemmaId) return;
     if (document.querySelector('.sheet-back.dimmed')) return;
-    // T-5.21: skip the k/l/i shortcuts whenever the user is typing
+    // Skip the k/l/i shortcuts whenever the user is typing
     // into a form field — otherwise typing 'l' in the add-translation
     // textarea would silently flip the lemma to learning.
     const target = e.target as HTMLElement | null;
@@ -754,7 +716,7 @@
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
       if (target.isContentEditable) return;
     }
-    // T-5.7: power-user shortcuts. Only fire when modifier-free so we
+    // power-user shortcuts. Only fire when modifier-free so we
     // don't fight the browser's own shortcuts (Cmd-K, Ctrl-L, etc.).
     if (e.metaKey || e.ctrlKey || e.altKey) return;
     if (e.key === 'k' || e.key === 'K') {
@@ -918,7 +880,7 @@
   // Admin: whether the collapsed "N hidden" list is expanded (to unhide rows).
   let showHidden = $state(false);
 
-  // T-11.1 — translation report flow. The set of translations the viewer
+  // translation report flow. The set of translations the viewer
   // has reported in this session is tracked client-side so the popup can
   // re-render the Report button as a "Reported" badge without refetching.
   // The set survives across word-to-word navigation in one mount but
@@ -928,12 +890,8 @@
   let reportedIds = $state<Set<string>>(new Set());
   let reportToast = $state<string | null>(null);
 
-  // T-2.8: a token is treated as a number whenever the NLP service
-  // populated `numberForms` OR the raw surface looks like one.
-  // The second arm catches chapters processed before the comma-fix
-  // landed (their text_tokens.number_forms column is null even though
-  // the surface is clearly a number) so the popup doesn't fall back
-  // to the bogus auto-created lemma row for those tokens.
+  // Older chapters can have a dictionary entry for a numeral but no saved number forms. Check the
+  // spelling too so the popup still recognizes the number.
   const isNumberToken = $derived(
     token != null &&
       (token.numberForms != null || looksLikeNumberToken(token.surface)),
@@ -986,7 +944,7 @@
   type PostError = { message: string; status: number };
 
   async function postTranslation(body: string): Promise<void> {
-    // T-14.3b: when the popup is showing a pending phrase selection
+    // When the popup is showing a pending phrase selection
     // (lemmaId is null because the synthetic token in ChapterBody
     // stands in for a not-yet-saved phrase), route the submission
     // through the phrase create-or-reuse endpoint and then attach
@@ -1055,7 +1013,7 @@
     }
   }
 
-  // T-5.22: re-fetch the lemma payload after a write so the new row
+  // re-fetch the lemma payload after a write so the new row
   // definitely shows. The optimistic prepend was unreliable across
   // payload-may-be-null states and Svelte 5 $state proxy edge cases,
   // and would have placed customize-fork rows in the wrong position
@@ -1170,7 +1128,7 @@
     }
   }
 
-  // T-5.21: Enter submits, Shift+Enter inserts a newline, Esc cancels
+  // Enter submits, Shift+Enter inserts a newline, Esc cancels
   // the form (without closing the panel). The textarea handler stops
   // propagation on Esc so Sheet doesn't also close itself.
   function onAddFormKeydown(e: KeyboardEvent) {
@@ -1353,11 +1311,8 @@
     }
   }
 
-  // T-6.1: write a `pick_candidate` correction. The reader's
-  // colour rendering for this token is updated optimistically via
-  // the `onCorrectionApplied` callback so the user sees the new
-  // lemma immediately; the server row backs the change for next
-  // read (handled by T-6.4's loader join).
+  // Show the new dictionary entry as soon as the reader chooses it. The saved correction takes
+  // effect when the chapter is loaded again.
   async function pickCandidate(lemmaId: string) {
     if (!token) return false;
     const tokenId = token.id;
@@ -1486,7 +1441,7 @@
 
 <svelte:window onkeydown={handleKeydown} />
 
-<!-- T-5.17: dimmed=false so the reader paragraph remains readable
+<!-- dimmed=false so the reader paragraph remains readable
      while a word is locked in the panel.
      The panel is always open on desktop (static right column) and
      conditional on mobile (slides up only when a word is picked). -->
@@ -1621,11 +1576,6 @@
     <p class="err small sp-phrase-select-err">{selectionError}</p>
   {/if}
   {#if phrase}
-    <!-- T-14.3 / T-14.4: phrase banner. Header (eyebrow + gloss) +
-         status flips ride from T-14.3; T-14.4 adds the visible
-         translations list and the "Add translation" form so a
-         learner can attach meaning to a phrase the same way
-         T-3.5 lets them customize a lemma translation. -->
     <section class="sp-phrase" data-testid="word-popup-phrase">
       <header class="sp-phrase-head">
         <span class="sp-phrase-eyebrow">Phrase</span>
@@ -1638,7 +1588,7 @@
       {#if isOwner && token?.lemmaId}
         {@render phraseStudyStatus()}
       {/if}
-      <!-- T-14.4: translations list. The phrase detail endpoint
+      <!-- translations list. The phrase detail endpoint
            (GET /api/v1/phrases/:id) returns visible translations
            ordered curator > imported > user > vote. -->
 
@@ -1809,7 +1759,7 @@
           </h2>
         {/if}
       {#if token.numberForms}
-        <!-- T-2.8: digit-only NUM token. Show the Latin digits beside
+        <!-- digit-only NUM token. Show the Latin digits beside
              the text language's native-script digits, then the
              language-specific spelled-out form + ISO 15919 romanization.
              The lemma / translation / status panes are skipped —
@@ -1826,12 +1776,7 @@
           </div>
         </div>
       {:else if isNumberToken}
-        <!-- T-2.8: legacy token from a chapter processed before the
-             number-form support landed. We can detect that the surface
-             is a number but the worker never wrote per-language
-             spelled-out forms, so we deliberately suppress the (almost
-             always wrong) auto-created lemma row and ask the owner to
-             reprocess the text. -->
+        <!-- Older chapters can contain numerals without saved readings. -->
         <p class="muted small" data-testid="number-needs-reprocess">
           Reprocess this text to see written-out number forms in each language.
         </p>
@@ -1892,7 +1837,7 @@
           headword: headwordInput.trim() || token.surface,
         };
       }}>{displayedLemmaId ? 'Edit dictionary entry' : 'Add dictionary entry'}</Button>
-      {#if dictionaryNotice}<p role="status">{dictionaryNotice}</p>{/if}
+      {#if savedTokenId === token.id}<p role="status">Dictionary entry saved.</p>{/if}
     {/if}
     {#if !isNumberToken}
     {#if isOwner && token.lemmaId && payload && (payload.canEdit || payload.translations.personal.length > 0)
@@ -2343,9 +2288,7 @@
       </section>
     {/if}
 
-    <!-- T-6.2: "Fix" affordance — every popup gets it, even the
-         non-ambiguous ones (a learner may know the worker got the
-         lemma wrong on a token where the model wasn't unsure). -->
+    <!-- Readers can correct a word even when the parser gave it only one possible meaning. -->
     {#if isOwner}
       <button
         type="button"
@@ -2442,10 +2385,6 @@
     text-align: center;
     padding: 1.5rem 0.5rem;
   }
-  /* T-14.3: phrase banner. Sits above the token block when the
-     user clicked inside a phrase wrapper. Lightweight visual
-     treatment so it doesn't compete with the (richer) token /
-     lemma section underneath. */
   .sp-phrase {
     margin: 0 0 1rem;
     padding: 0.5rem 0.75rem 0.6rem;
@@ -2477,10 +2416,6 @@
   .sp-phrase-select-err {
     margin: 0 0 0.75rem;
   }
-  /* T-14.4: phrase translations list + add form. The list re-uses
-     the popup's neutral type scale; the per-row attribution chip
-     surfaces source provenance the same way T-3.8 surfaces lemma-
-     translation provenance. */
   .sp-phrase-trans {
     margin-top: 0.6rem;
     padding-top: 0.55rem;
@@ -3494,7 +3429,7 @@
     cursor: progress;
   }
 
-  /* T-2.8: number-only token block. */
+  /* number-only token block. */
   .num-title {
     display: flex;
     align-items: baseline;

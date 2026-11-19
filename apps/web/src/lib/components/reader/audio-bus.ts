@@ -1,9 +1,9 @@
 /**
- * Audio playback event bus (T-9.2).
+ * Audio playback event bus.
  *
  * The audio player publishes (currentTimeMs, isPlaying) and the
  * reader components subscribe to it for karaoke highlighting
- * (T-9.3) and tap-to-seek (T-9.4). Using a tiny pub/sub instead
+ * and tap-to-seek. Using a tiny pub/sub instead
  * of Svelte stores keeps the dependency direction one-way: the
  * reader doesn't need to import the player.
  */
@@ -55,12 +55,7 @@ export function _resetAudioBus(): void {
   controller = null;
 }
 
-/**
- * The audio player exposes a small imperative handle to the rest
- * of the reader so T-9.4's tap-to-seek can ask the player to jump
- * to a specific time without coupling that code to the
- * <audio> element directly.
- */
+/** Lets the reader seek to a word without needing a reference to the audio element. */
 export type AudioController = {
   seekMs(ms: number): void;
   play(): void;
@@ -78,7 +73,7 @@ export function getAudioController(): AudioController | null {
 }
 
 // ---------------------------------------------------------------
-// Alignment cache (T-9.4)
+// Alignment cache
 // ---------------------------------------------------------------
 
 /**

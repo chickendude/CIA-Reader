@@ -1,8 +1,8 @@
 <script lang="ts">
   import Pagination from '$lib/components/input/Pagination.svelte';
-  import type { PageData } from './$types';
+  import type { PageProps } from './$types';
 
-  let { data }: { data: PageData } = $props();
+  let { data }: PageProps = $props();
 
   function minutes(n: number): string {
     return n.toLocaleString(undefined, { maximumFractionDigits: 1 });
@@ -65,10 +65,7 @@
     </div>
   </section>
 
-  <!-- T-14.6: phrase counters parallel to the lemma counters above.
-       The pane only renders when the user has at least encountered
-       a phrase in this language so an empty M14 corpus doesn't show
-       four "0" tiles for every learner. -->
+  <!-- Hide phrase statistics until the reader has encountered a phrase in this language. -->
   {#if data.stats.encounteredPhrasesCount > 0 || data.stats.knownPhrasesCount > 0 || data.stats.learningPhrasesCount > 0}
     <section class="ls-totals" data-testid="phrase-stats">
       <h2 class="ls-totals-h">Phrases</h2>
@@ -210,7 +207,7 @@
     gap: 0.75rem;
     margin-bottom: 1.75rem;
   }
-  /* T-14.6: phrase tile pane reuses the lemma totals layout but
+  /* Phrase tile pane reuses the lemma totals layout but
      adds a sub-heading so the two groups read as siblings rather
      than one merged row. Spans the full grid width. */
   .ls-totals-h {

@@ -7,16 +7,16 @@
     loadPdf,
     type LoadedPdf,
   } from '$lib/pdf/render-client';
-  import type { ActionData, PageData } from './$types';
+  import type { PageProps } from './$types';
 
   let {
     data,
     form,
-  }: { data: PageData; form: ActionData } = $props();
+  }: PageProps = $props();
 
   const pageTitle = $derived(`Upload ${data.selectedLanguageDisplay} Text`);
 
-  // The upload language is fixed to the current language (#436) — the site
+  // The upload language is fixed to the current language, the site
   // is split by language and the rail switcher picks it — so there's no
   // per-form language chooser; it's submitted as a hidden field below.
   let title = $state(untrack(() => form?.values?.title ?? ''));
@@ -300,7 +300,7 @@
     ondragover={onDragOver}
     ondrop={onDrop}
   >
-    <!-- Language is fixed to the current language (#436). Submitted as a
+    <!-- Language is fixed to the current language. Submitted as a
          hidden field; switch languages from the menu in the top-left. -->
     <input type="hidden" name="language" value={data.selectedLanguage} />
 

@@ -1,7 +1,4 @@
 // @vitest-environment node
-/**
- * Tests for the per-chapter token lazy loader (T-5.1a).
- */
 import { describe, expect, it, vi } from 'vitest';
 
 import { LazyTokenLoader, type ChapterTokensResponse } from './lazy-tokens.js';

@@ -1,7 +1,4 @@
 // @vitest-environment node
-/**
- * Route tests for PATCH /api/v1/admin/translations/:id (T-3.7).
- */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const updateTranslation = vi.fn();

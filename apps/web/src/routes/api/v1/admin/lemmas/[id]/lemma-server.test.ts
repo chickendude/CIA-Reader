@@ -1,7 +1,4 @@
 // @vitest-environment node
-/**
- * Route tests for GET + PATCH /api/v1/admin/lemmas/:id (T-3.7).
- */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const getLemmaEditorView = vi.fn();

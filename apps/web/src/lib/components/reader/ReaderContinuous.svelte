@@ -1,20 +1,4 @@
-<!--
-  Continuous reading mode (T-5.1, token-aware in T-5.2, lazy chapter
-  loading in T-5.1a).
-
-  Renders every chapter stacked vertically. Token rendering is
-  delegated to <ChapterBody/> so all three modes use the same
-  status/OOV/ambiguous logic.
-
-  T-5.1a: only the active chapter ships with server-rendered tokens
-  on first paint. Sibling chapters are fetched on demand via an
-  IntersectionObserver — when a section comes within ~600px of the
-  viewport we kick off a fetch and merge the result back into the
-  ChapterView so the next render colours the lemmas. While the fetch
-  is in flight (or before the observer fires) the chapter's body
-  still renders via the whitespace fallback, so the text is always
-  readable.
--->
+<!-- Render the current chapter first and load nearby chapters as they come into view. -->
 <script lang="ts">
   import { onMount, tick, untrack } from 'svelte';
 
@@ -59,13 +43,7 @@
     fetcher?: ChapterTokenFetcher;
   } = $props();
 
-  // Map of chapterIdx → fetched body + tokens + phrase spans. SSR
-  // only includes the active chapter's body, so siblings hydrate
-  // their text on demand. Seeded with the initial chapter so re-
-  // renders don't trigger an unnecessary network round-trip for
-  // the chapter we already have. T-14.3: phraseSpans rides on the
-  // same fetch so a sibling chapter scrolled into view repaints
-  // with phrase highlights on the next $derived pass.
+  // Fetch phrase matches with the chapter's words so both appear together.
   let lazyChapters = $state(
     new Map<
       number,

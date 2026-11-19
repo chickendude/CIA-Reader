@@ -1,5 +1,5 @@
 /**
- * POST /api/v1/admin/lemmas/:id/split (T-3.7).
+ * POST /api/v1/admin/lemmas/:id/split.
  *
  * Creates a new curator-sourced lemma off an existing one and moves the
  * selected translations + forms onto it. `:id` is the source lemma.

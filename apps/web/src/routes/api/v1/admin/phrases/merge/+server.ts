@@ -1,5 +1,5 @@
 /**
- * POST /api/v1/admin/phrases/merge (T-14.7).
+ * POST /api/v1/admin/phrases/merge.
  *
  * Curator-side phrase merge. Reassigns translations + spans +
  * status from `dropId` onto `keepId`, deletes the dropped row,

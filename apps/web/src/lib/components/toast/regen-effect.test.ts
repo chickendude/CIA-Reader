@@ -17,17 +17,12 @@
  * `let`, this test pins it to exactly one toast.
  */
 import { afterEach, describe, expect, it } from 'vitest';
-import { cleanup, render } from '@testing-library/svelte';
+import { cleanup, render, screen } from '@testing-library/svelte';
 import { tick } from 'svelte';
-import { get } from 'svelte/store';
 
-import { clearToasts, toasts } from './toast-store.js';
 import RegenEffectFixture from './__fixtures__/RegenEffectFixture.svelte';
 
-afterEach(() => {
-  cleanup();
-  clearToasts();
-});
+afterEach(cleanup);
 
 describe('regen-result → toast effect (reproduction)', () => {
   it('pushes exactly one toast for a stable input prop', async () => {
@@ -45,7 +40,7 @@ describe('regen-result → toast effect (reproduction)', () => {
     await tick();
     await tick();
     await tick();
-    expect(get(toasts)).toHaveLength(1);
+    expect(screen.queryAllByRole('status')).toHaveLength(1);
   });
 
   it('pushes a second toast only when the prop reference changes', async () => {
@@ -63,7 +58,7 @@ describe('regen-result → toast effect (reproduction)', () => {
     };
     const { rerender } = render(RegenEffectFixture, { input: inputA });
     await tick();
-    expect(get(toasts)).toHaveLength(1);
+    expect(screen.queryAllByRole('status')).toHaveLength(1);
 
     // Same content, different reference → should fire again. This
     // matches what SvelteKit's `form` prop does after a fresh
@@ -71,18 +66,18 @@ describe('regen-result → toast effect (reproduction)', () => {
     // new response arrives, even if the numbers happen to match.
     await rerender({ input: { ...inputA } });
     await tick();
-    expect(get(toasts)).toHaveLength(2);
+    expect(screen.queryAllByRole('status')).toHaveLength(2);
 
     // Different content, different reference → still one new toast.
     await rerender({ input: inputB });
     await tick();
-    expect(get(toasts)).toHaveLength(3);
+    expect(screen.queryAllByRole('status')).toHaveLength(3);
   });
 
   it('does not push when the prop is null', async () => {
     render(RegenEffectFixture, { input: null });
     await tick();
     await tick();
-    expect(get(toasts)).toHaveLength(0);
+    expect(screen.queryAllByRole('status')).toHaveLength(0);
   });
 });

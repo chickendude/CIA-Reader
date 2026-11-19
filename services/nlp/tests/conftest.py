@@ -92,8 +92,8 @@ def _fallback_split(text: str) -> list[str]:
 def _fake_real_factories():
     """Replace the real model-backed factories with lightweight fakes.
 
-    Applies to ``stanza-hi`` (T-2.2), ``stanza-mr`` (T-2.3),
-    ``custom-or`` (T-2.3a), and ``stanza-eu`` (Basque). Dedicated tests
+    Applies to ``stanza-hi``, ``stanza-mr``,
+    ``custom-or``, and ``stanza-eu`` (Basque). Dedicated tests
     for each pipeline still instantiate with their own fakes when they
     need specific UPOS / features / fallback behavior.
     """

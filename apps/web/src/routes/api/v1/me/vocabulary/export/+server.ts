@@ -1,5 +1,5 @@
 /**
- * GET /api/v1/me/vocabulary/export?language=hi (T-10.3).
+ * GET /api/v1/me/vocabulary/export?language=hi.
  *
  * Returns a per-language CSV attachment for the authenticated user's touched
  * vocabulary: headword, pos, gloss, status.

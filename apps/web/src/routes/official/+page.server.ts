@@ -1,5 +1,5 @@
 /**
- * Public official library page (T-7.6).
+ * Public official library page.
  *
  * Distinct from /library?tab=official: this URL is public,
  * SEO-crawlable, and renders without the authed shell. Anyone can

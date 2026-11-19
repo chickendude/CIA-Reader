@@ -1,5 +1,5 @@
 /**
- * GET /api/v1/admin/phrases (T-14.4a).
+ * GET /api/v1/admin/phrases.
  *
  * Curator dictionary editor list view. Returns paginated phrase
  * rows with translation + chapter counts so the curator can scan
@@ -21,9 +21,6 @@ import { SUPPORTED_LANGUAGE_CODES, type LanguageCode } from '@ciareader/shared-t
 import type { RequestHandler } from './$types';
 
 const LANGS = SUPPORTED_LANGUAGE_CODES as readonly [LanguageCode, ...LanguageCode[]];
-// T-14.4a: source filter values match the `translation_source`
-// enum on this branch. T-14.5a adds `'nlp'`; once it merges
-// (and the migration lands), this list extends in lockstep.
 const SOURCES = ['user', 'curator', 'official_dictionary'] as const;
 
 const query = z.object({

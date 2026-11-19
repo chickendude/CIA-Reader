@@ -1,15 +1,6 @@
 /**
- * Reading-progress service (T-5.6).
- *
- * The reader writes this debounced as the user scrolls / paginates,
- * so a tab refresh resumes at the right anchor and the library card
- * can show "Page 4 of 12 — 30% read" without a separate scan over
- * tokens.
- *
- * The pct_read field is computed by the caller (the reader knows
- * which chapter it's on and how many chapters there are); the server
- * just stores it. Future tickets that compute it from the actual
- * token offset can do so without changing this contract.
+ * Save reading progress per reader and text. The reader supplies the percentage because it knows
+ * how the chapter is displayed.
  */
 import { and, eq } from 'drizzle-orm';
 

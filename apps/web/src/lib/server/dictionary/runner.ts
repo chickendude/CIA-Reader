@@ -1,24 +1,6 @@
 /**
- * Dictionary import runner (T-3.1).
- *
- * Pure, storage-agnostic orchestration over a `DictionaryRepo`. For
- * each source entry:
- *
- * 1. Look up the existing lemma by (language, source, source_id).
- * 2. If it exists and `curator_locked` is set, bump the skipped
- *    counter and move on — the curator's edit is sacred, and the
- *    only way to override that is T-3.7's "unlock" control.
- * 3. If it exists and is NOT locked, update the upstream-sourced
- *    fields.
- * 4. Otherwise, insert.
- * 5. Upsert each translation under (lemma_id, source, source_id).
- * 6. Insert any surface/form payloads the importer produced — forms
- *    are append-only at MVP so we don't dedupe.
- *
- * The runner returns an aggregate `ImportResult` the caller can log,
- * test against, or ship to `dictionary_imports` via
- * `repo.recordImportRun`. The runner calls `recordImportRun` itself so
- * every successful import leaves an audit row regardless of caller.
+ * Match an imported entry by language, source and source ID. Update unlocked entries and preserve
+ * a curator's edits to locked entries. Record the result of each import.
  */
 import type { LanguageCode } from '@ciareader/shared-types';
 
@@ -27,7 +9,7 @@ import type { DictionaryImportSource, ImportEntry, ImportResult } from './types.
 
 export type RunImportOptions = {
   /**
-   * T-3.14: when the admin sources page kicks off an import, the
+   * when the admin sources page kicks off an import, the
    * triggering user is recorded on the `dictionary_imports` audit row.
    * CLI runs (`pnpm dictionary:import`) leave this undefined.
    */

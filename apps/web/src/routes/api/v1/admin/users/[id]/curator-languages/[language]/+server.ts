@@ -1,5 +1,5 @@
 /**
- * DELETE /api/v1/admin/users/:id/curator-languages/:language (T-3.4).
+ * DELETE /api/v1/admin/users/:id/curator-languages/:language.
  *
  * Admin-only. Revokes a per-language curator grant. Silent success
  * whether or not the grant existed — the caller only cares about the

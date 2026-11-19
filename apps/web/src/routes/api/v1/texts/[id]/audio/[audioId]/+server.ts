@@ -1,5 +1,5 @@
 /**
- * DELETE /api/v1/texts/:id/audio/:audioId (T-9.1).
+ * DELETE /api/v1/texts/:id/audio/:audioId.
  */
 import { error, json } from '@sveltejs/kit';
 

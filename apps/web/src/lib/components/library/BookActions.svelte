@@ -5,7 +5,9 @@
   import TextField from '$lib/components/input/TextField.svelte';
   import Modal from '$lib/components/overlay/Modal.svelte';
   import { portal } from '$lib/components/overlay/portal.js';
-  import { pushToast } from '$lib/components/toast/toast-store.js';
+  import { getToastStore } from '$lib/components/toast/toast-store.js';
+
+  const { pushToast } = getToastStore();
 
   let { id, title, collection = false, canRename = false, catalogAction, onDelete }: {
     id: string;

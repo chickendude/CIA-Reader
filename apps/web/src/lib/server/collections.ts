@@ -1,12 +1,12 @@
 /**
- * Collections service (T-8.1 / T-8.2 / T-8.3 / T-8.5).
+ * Collections service.
  *
  * Models a collection as an ordered group of texts that share a
  * language. Owner-or-admin manages membership; readers list their
  * own collections + the official catalog.
  *
  * Pure DB-side service — UI lives in routes/collections, /library,
- * and the reader's prev/next-text strip (T-8.3).
+ * and the reader's prev/next-text strip.
  */
 import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
 
@@ -270,7 +270,7 @@ export async function updateCollection(
     throw new CollectionError('only the owner can update', 403);
   }
   // Promotion to official is admin-only; mirrors text-visibility
-  // policy (T-7.1).
+  // policy.
   if (
     input.patch.visibility === 'official' &&
     input.actor.role !== 'admin'
@@ -712,7 +712,7 @@ export async function loadCollectionDetail(
 }
 
 // ---------------------------------------------------------------
-// Collection shares (T-8.4)
+// Collection shares
 // ---------------------------------------------------------------
 
 export type CollectionShareInput = {
@@ -804,7 +804,7 @@ export async function listCollectionShares(
 }
 
 /**
- * T-8.4 — share row decorated with the recipient's email + display
+ * share row decorated with the recipient's email + display
  * name. The bare `CollectionShare` only carries `sharedWithUserId`
  * which isn't human-readable; the manage-shares UI (and the GET
  * /shares JSON endpoint) call this so the owner sees who actually
@@ -846,7 +846,7 @@ export async function listCollectionSharesWithRecipients(
 }
 
 /**
- * T-8.4 — does this viewer have a share row for this collection?
+ * does this viewer have a share row for this collection?
  * Used by the collection detail page (`/collections/:id`) to grant
  * non-owners view access. Cheap lookup against the
  * `(collectionId, sharedWithUserId)` unique index.
@@ -900,12 +900,8 @@ export async function viewerHasCollectionShareForText(
 // ---------------------------------------------------------------
 
 /**
- * For T-8.3: when the reader is on a text that belongs to a
- * collection the viewer can see, surface the collection title +
- * prev / next text ids. Picks the FIRST collection the text
- * belongs to (deterministic order: collections.updatedAt DESC) so
- * a text that's a member of multiple collections still gives a
- * predictable nav strip.
+ * When several visible collections contain the same text, use the most recently updated one for
+ * the previous and next links.
  */
 /** One chapter (member text) of a collection, shaped for the reader's
  *  chapter-selector TOC + whole-book progress. Each member of a

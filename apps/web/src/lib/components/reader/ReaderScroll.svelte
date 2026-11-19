@@ -1,12 +1,4 @@
-<!--
-  Paged-scroll mode (T-5.1, token-aware in T-5.2).
-
-  Slices the active chapter into pages of ~wordsPerPage word tokens
-  along paragraph boundaries (no mid-paragraph cuts). When the chapter
-  has server tokens we slice ServerToken paragraphs; otherwise we
-  slice the client-tokenized fallback. The render is delegated to a
-  per-paragraph TokenSpan render so all three modes share styles.
--->
+<!-- Keep paragraphs together when dividing a chapter into pages. -->
 <script lang="ts">
   import { pageSwipe } from './touch-gestures.js';
   import { looksLikeNumberToken, withLemmaCorrection } from './types.js';
@@ -75,7 +67,7 @@
   // tokens beat the client fallback.
   type ParaServer = ServerToken[];
   type ParaFallback = RenderToken[];
-  // T-6.1: apply per-token lemma corrections + per-lemma status
+  // Apply per-token lemma corrections + per-lemma status
   // overrides before paragraph splitting so the new picks colour
   // the rendered tokens immediately.
   const dictionaryTokens = dictionaryChapterTokens(() => current, () => textId, (lemmaId) => {
@@ -276,7 +268,7 @@
     right: number;
   } | null>(null);
 
-  // T-5.29: hover wiring matches ChapterBody (used by ReaderPage) so
+  // hover wiring matches ChapterBody (used by ReaderPage) so
   // both modes show the WordTooltip on word hover.
   const preview = new WordPreview();
 
@@ -372,7 +364,7 @@
     statusOverrides = next;
   }
 
-  // T-6.1: scroll mode shares the per-token correction state pattern
+  // scroll mode shares the per-token correction state pattern
   // with ChapterBody so picking an alternate lemma in the popup
   // re-renders the corrected token on the current page immediately.
   let lemmaCorrections = $state(new Map<string, string>());
@@ -403,7 +395,7 @@
     personalGlossOverrides = next;
   }
 
-  // T-5.7: ←/→ flip pages within the chapter.
+  // ←/→ flip pages within the chapter.
   function isTypingInsideElement(target: EventTarget | null): boolean {
     if (!(target instanceof HTMLElement)) return false;
     const tag = target.tagName;
@@ -514,8 +506,8 @@
 {/if}
 
 <style>
-  /* T-5.24: scroll mode now uses the same floating round arrows as
-     page mode (T-5.9) so mouse + touch users always have a click
+  /* scroll mode now uses the same floating round arrows as
+     page mode so mouse + touch users always have a click
      target. The text column itself flows naturally — the user can
      still scroll within a page. */
   .reader-scroll {

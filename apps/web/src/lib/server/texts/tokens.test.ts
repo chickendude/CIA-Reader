@@ -125,7 +125,7 @@ describe('loadChapterTokens', () => {
     }
   });
 
-  it('maps stored number_forms onto the reader numberForms payload (T-2.8)', async () => {
+  it('maps stored number_forms onto the reader numberForms payload', async () => {
     stage([
       tokenRow({
         id: 'num-1',
@@ -158,7 +158,7 @@ describe('loadChapterTokens', () => {
 
   it('returns tokens with status=unknown when the viewer has no known-lemma rows', async () => {
     stage([tokenRow({ id: 't1', idx: 0 }), tokenRow({ id: 't2', idx: 1 })]);
-    stage([]); // token_corrections (T-6.4) — none
+    stage([]); // token_corrections, none
     stage([]); // user_known_lemmas → empty
     stage([]); // lemmas (gloss lookup) → empty
     stage([]); // personal translations → empty
@@ -173,7 +173,7 @@ describe('loadChapterTokens', () => {
       tokenRow({ id: 't2', idx: 1, lemmaId: 'lem-learning' }),
       tokenRow({ id: 't3', idx: 2, lemmaId: 'lem-other' }),
     ]);
-    stage([]); // token_corrections (T-6.4) — none
+    stage([]); // token_corrections, none
     stage([
       { userId: 'user-1', lemmaId: 'lem-known', status: 'known' },
       { userId: 'user-1', lemmaId: 'lem-learning', status: 'learning' },
@@ -188,22 +188,19 @@ describe('loadChapterTokens', () => {
     ]);
   });
 
-  it('attaches glossDefault from the lemmas table for the hover tooltip (T-5.18)', async () => {
+  it('attaches glossDefault from the lemmas table for the hover tooltip', async () => {
     stage([
       tokenRow({ id: 't1', idx: 0, lemmaId: 'lem-a' }),
       tokenRow({ id: 't2', idx: 1, lemmaId: 'lem-b' }),
       tokenRow({ id: 't3', idx: 2, lemmaId: null, isWord: false, surface: ' ' }),
     ]);
-    stage([]); // token_corrections (T-6.4)
+    stage([]); // token_corrections
     stage([]); // user_known_lemmas
     stage([
       { id: 'lem-a', language: 'hi', headword: 'सुबह', glossDefault: 'morning' },
       { id: 'lem-b', language: 'hi', headword: 'rare', glossDefault: null },
     ]);
     stage([]); // personal translations
-    // T-3.14 sibling fallback: lem-b had no gloss, so the loader runs
-    // a sibling lookup. No sibling exists for "rare", so an empty
-    // result keeps the null gloss as-is.
     stage([]); // sibling fallback — no rows
     const result = await loadChapterTokens('chap-1', 'user-1');
     expect(result![0]).toMatchObject({ id: 't1', glossDefault: 'morning' });
@@ -214,7 +211,7 @@ describe('loadChapterTokens', () => {
     expect(result![2]).toMatchObject({ id: 't3', glossDefault: null });
   });
 
-  it('sets hasDefinition from the effective gloss for the admin overlay (#435)', async () => {
+  it('sets hasDefinition from the effective gloss for the admin overlay', async () => {
     stage([
       tokenRow({ id: 't1', idx: 0, lemmaId: 'lem-a' }),
       tokenRow({ id: 't2', idx: 1, lemmaId: 'lem-b' }),
@@ -255,11 +252,11 @@ describe('loadChapterTokens', () => {
     });
   });
 
-  it('falls back to a sibling lemma\'s gloss when the linked lemma has none (T-3.14)', async () => {
+  it('falls back to a sibling lemma\'s gloss when the linked lemma has none', async () => {
     // Common case: NLP tagged "पार्क" as PROPN with no gloss; the
     // dictionary entry is under "पार्क/NOUN" with the actual gloss.
     stage([tokenRow({ id: 't1', idx: 0, lemmaId: 'lem-propn' })]);
-    stage([]); // token_corrections (T-6.4)
+    stage([]); // token_corrections
     stage([]); // user_known_lemmas
     stage([
       { id: 'lem-propn', language: 'mr', headword: 'पार्क', glossDefault: null },
@@ -272,9 +269,9 @@ describe('loadChapterTokens', () => {
     expect(result![0]).toMatchObject({ id: 't1', glossDefault: 'park' });
   });
 
-  it('skips the sibling fallback query entirely when every lemma has its own gloss (T-3.14)', async () => {
+  it('skips the sibling fallback query entirely when every lemma has its own gloss', async () => {
     stage([tokenRow({ id: 't1', idx: 0, lemmaId: 'lem-a' })]);
-    stage([]); // token_corrections (T-6.4)
+    stage([]); // token_corrections
     stage([]); // user_known_lemmas
     stage([{ id: 'lem-a', language: 'hi', headword: 'पानी', glossDefault: 'water' }]);
     stage([]); // personal translations
@@ -286,7 +283,7 @@ describe('loadChapterTokens', () => {
     expect(selectFn).toHaveBeenCalledTimes(5);
   });
 
-  it('populates token.candidates with metadata pulled from the lemmas table (T-6.1)', async () => {
+  it('populates token.candidates with metadata pulled from the lemmas table', async () => {
     stage([
       tokenRow({
         id: 't1',
@@ -301,7 +298,7 @@ describe('loadChapterTokens', () => {
         ],
       }),
     ]);
-    stage([]); // token_corrections (T-6.4)
+    stage([]); // token_corrections
     stage([]); // user_known_lemmas
     stage([
       {
@@ -344,7 +341,7 @@ describe('loadChapterTokens', () => {
     ]);
   });
 
-  it('applies a pick_candidate correction at read time, swapping the active lemma (T-6.4)', async () => {
+  it('applies a pick_candidate correction at read time, swapping the active lemma', async () => {
     stage([
       tokenRow({
         id: 't1',
@@ -396,7 +393,7 @@ describe('loadChapterTokens', () => {
     expect(cands).not.toContain('lem-corrected');
   });
 
-  it('mark_proper_noun clears the lemma + sets status=ignored (T-6.4)', async () => {
+  it('mark_proper_noun clears the lemma + sets status=ignored', async () => {
     stage([
       tokenRow({ id: 't1', idx: 0, lemmaId: 'lem-x', isOov: false }),
     ]);

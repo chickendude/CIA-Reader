@@ -5,8 +5,8 @@
   import BookStudyDeck from './BookStudyDeck.svelte';
   import BookComparison from './BookComparison.svelte';
   import { coverForId } from '$lib/components/library/cover.js';
-  import type { PageData, ActionData } from './$types';
-  let { data, form }: { data: PageData; form: ActionData } = $props();
+  import type { PageProps } from './$types';
+  let { data, form }: PageProps = $props();
   let importing = $state(false);
   const book = $derived(data.book);
 </script>

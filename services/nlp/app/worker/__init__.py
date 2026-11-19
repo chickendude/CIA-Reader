@@ -1,26 +1,4 @@
-"""Async job queue for offline NLP work (T-2.6).
-
-SvelteKit enqueues jobs — text upload, bulk re-processing (T-6.8),
-correction aggregation (T-6.7), and eventually Whisper alignment
-(M16) — into Redis. A Python ``arq`` worker in this module dequeues
-and runs them, writing the results back to Postgres.
-
-The worker is intentionally kept separate from the ``/process``
-HTTP endpoint: the latter is synchronous and serves the tap-to-translate
-pop-up (millisecond latency); the worker handles multi-second jobs
-(loading a 600MB Stanza model, tokenizing a full EPUB chapter,
-cross-referencing form_lemma_overrides). Keeping them in separate
-processes means one slow Stanza load can't wedge the request path,
-and we can scale the two independently on Hetzner.
-
-This module only owns the queue machinery and the job dispatch. The
-actual job implementations live in :mod:`app.worker.jobs`; the I/O
-boundary (text fetching, token persistence, status flipping) lives in
-:mod:`app.worker.store` as protocols the jobs depend on. That split
-means the job logic is unit-testable without a real Redis or Postgres,
-and M4 can wire real implementations without touching the job
-functions themselves.
-"""
+"""Run queued language-processing jobs using the stores supplied in the worker context."""
 
 from __future__ import annotations
 
@@ -50,14 +28,7 @@ def redis_settings_from_env() -> RedisSettings:
 
 
 async def on_startup(ctx: dict[str, Any]) -> None:
-    """Arq ``on_startup`` hook — runs once per worker process.
-
-    The production wiring (M4) attaches a Postgres connection pool and
-    a TextStore / TokenStore implementation to ``ctx`` here so the
-    job functions can reach them via their context argument.
-    """
-    # Populated by M4; kept as a no-op now so the worker boots in CI
-    # without a Postgres dependency.
+    """Allow the worker to start without a database store."""
     ctx.setdefault("store", None)
 
 
@@ -73,7 +44,7 @@ class WorkerSettings:
     """Arq worker entry point.
 
     Run via ``python -m arq app.worker.WorkerSettings``. The Docker
-    Compose service (M4 / M13) wraps that in a supervisor with
+    Compose service wraps that in a supervisor with
     restart-on-failure and appropriate log forwarding.
     """
 

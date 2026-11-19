@@ -1,12 +1,12 @@
 <!--
-  Curator phrase list (T-14.4a). Parallel to
+  Curator phrase list. Parallel to
   /moderation/dictionary for lemmas. Read-only here — the detail
   page handles editing.
 -->
 <script lang="ts">
-  import type { PageData } from './$types';
+  import type { PageProps } from './$types';
 
-  let { data }: { data: PageData } = $props();
+  let { data }: PageProps = $props();
 
   function hrefFor(filter: Partial<{ source: string | null; hidden: boolean | null; locked: boolean | null }>): string {
     if (!data.language) return '/moderation/phrases';
@@ -31,8 +31,7 @@
   <header class="ph-h">
     <h1 class="page-title">Phrases</h1>
     <p class="muted">
-      Curator-side editor for multi-word entries (M14). Pick a language to browse;
-      click a row to edit its gloss, lock state, or moderation flag.
+      Choose a language, then open a phrase to edit its definition or change its lock and moderation settings.
     </p>
   </header>
 

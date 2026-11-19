@@ -1,28 +1,5 @@
-"""Rule-based Odia morphological analyzer (T-2.3a).
-
-Odia morphology is overwhelmingly agglutinative and regular — inflection
-is a small set of suffixes concatenated onto a stem. That makes it
-tractable to handle with a rule table: each rule names a suffix, the UD
-POS it applies to, and the features it implies. To analyze a surface we
-try each rule longest-first; a rule matches if the surface ends with the
-suffix AND the stripped stem is in the lemma table AND the lemma's POS
-matches the rule's POS constraint.
-
-This deliberately undershoots — full Odia morphology has hundreds of
-paradigm-specific suffixes (derivational, honorific, sandhi changes at
-morpheme boundaries, conjunct-consonant edge cases). The MVP rule set
-here covers the most common productive suffixes: the target ~70-80%
-lemma-accuracy baseline comes from growing this table over time,
-seeded by failures in the T-2.3b golden file and the real-world
-correction rate from T-6.7.
-
-The analyzer returns zero-or-more analyses per surface. Zero means
-"no rule matched and the surface isn't in the lemma table" — the
-pipeline translates that into ``is_oov=True``. Multiple analyses mean
-morphology is genuinely ambiguous (e.g. a suffix form that could be
-either genitive or base), which sets ``is_ambiguous=True`` so the M6
-correction UX surfaces the chevron.
-"""
+"""Analyze Odia words by matching endings against known stems. Keep multiple analyses when the
+spelling supports more than one reading."""
 
 from __future__ import annotations
 
@@ -72,10 +49,6 @@ _NOUN_RULES: tuple[_Rule, ...] = (
 )
 
 
-# Verb paradigm. Tense / aspect / person / number / gender suffixes. This
-# is a deliberately small subset of a big paradigm — enough to cover the
-# frequent present / past / infinitive forms in the T-2.3b corpus; deep
-# coverage is an ongoing effort seeded by the correction UX.
 _VERB_RULES: tuple[_Rule, ...] = (
     _Rule("ନ୍ତି", "VERB", {"Tense": "Pres", "Person": "3", "Number": "Plur"}),
     _Rule("ଉଥିଲେ", "VERB", {"Tense": "Past", "Aspect": "Prog", "Person": "3"}),

@@ -1,9 +1,9 @@
 <script lang="ts">
   import { goto, invalidateAll } from '$app/navigation';
   import { LANGUAGES, SUPPORTED_LANGUAGE_CODES } from '@ciareader/shared-types';
-  import type { PageData } from './$types';
+  import type { PageProps } from './$types';
 
-  let { data }: { data: PageData } = $props();
+  let { data }: PageProps = $props();
 
   function setQuery(params: Record<string, string | null>) {
     const url = new URL(typeof window !== 'undefined' ? window.location.href : 'http://x');

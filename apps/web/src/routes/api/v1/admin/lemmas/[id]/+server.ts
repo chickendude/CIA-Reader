@@ -1,15 +1,3 @@
-/**
- * GET + PATCH /api/v1/admin/lemmas/:id (T-3.7).
- *
- * Backs the curator dictionary editor. GET returns the full editor
- * view (lemma + translations + forms + recent history). PATCH updates
- * editable fields on the lemma and implicitly marks it `curatorLocked`
- * so future imports won't clobber the edit.
- *
- * Permission: requireCanEditDictionary inside the service — admins
- * always pass, curators need a `curator_languages` grant for the
- * lemma's language. Anonymous callers get 401 via requireUser.
- */
 import { error, json } from '@sveltejs/kit';
 import { z } from 'zod';
 

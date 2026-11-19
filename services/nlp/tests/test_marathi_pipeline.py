@@ -1,4 +1,4 @@
-"""Unit tests for :class:`app.pipelines.marathi.MarathiPipeline` (T-2.3).
+"""Unit tests for :class:`app.pipelines.marathi.MarathiPipeline`.
 
 The tokenization / lemma / POS / feature shaping is shared with Hindi
 and already covered by ``test_hindi_pipeline.py``; this file focuses on

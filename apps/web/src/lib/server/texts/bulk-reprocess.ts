@@ -1,10 +1,10 @@
 /**
- * Bulk text reprocess service (T-6.8).
+ * Bulk text reprocess service.
  *
  * After a large dictionary import or a batch of override updates,
  * already-ingested texts may benefit from a fresh NLP pass. The
  * single-text endpoint at `POST /api/v1/admin/texts/:id/reprocess`
- * (T-4.4) handles individual recoveries; this service walks the
+ * handles individual recoveries; this service walks the
  * whole library (filterable by language and status) and triggers
  * re-processing on each.
  *

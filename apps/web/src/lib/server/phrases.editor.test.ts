@@ -1,7 +1,4 @@
 // @vitest-environment node
-/**
- * Unit tests for the curator phrase editor service (T-14.4a).
- */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 type Call =

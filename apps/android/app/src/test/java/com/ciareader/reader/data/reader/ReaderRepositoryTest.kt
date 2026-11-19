@@ -156,8 +156,6 @@ class ReaderRepositoryTest {
         assertEquals(SaveProgressRequest(1, 9, 33.0), api.lastSaved)
     }
 
-    // --- offline cache (Phase 5) ---
-
     @Test
     fun cachedTextMetaServesWhenOffline() = runTest {
         val api = FakeReaderApi(

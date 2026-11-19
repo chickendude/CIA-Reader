@@ -1,9 +1,3 @@
-/**
- * GET /api/v1/me/groups (T-7.3).
- *
- * Lists groups the acting user belongs to (owner OR member). Used
- * by T-7.4's share-with-group dropdown.
- */
 import { json } from '@sveltejs/kit';
 
 import { requireUser } from '$lib/server/auth/require-user.js';

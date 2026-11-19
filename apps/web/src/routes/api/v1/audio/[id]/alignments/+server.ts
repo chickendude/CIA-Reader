@@ -1,12 +1,4 @@
-/**
- * GET + PUT /api/v1/audio/:id/alignments (T-9.3 / T-9.5 / T-9.6).
- *
- * GET is read-only — the player fetches the timeline once on
- * mount, then runs binary search per timeupdate.
- *
- * PUT replaces the whole set; owner-or-admin only. T-9.5's editor
- * + T-9.6's importer both write through this surface.
- */
+/** The timing editor and file importer both replace the recording's full set of word timings. */
 import { error, json } from '@sveltejs/kit';
 import { z } from 'zod';
 

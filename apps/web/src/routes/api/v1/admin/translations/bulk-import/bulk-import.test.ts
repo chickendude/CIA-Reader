@@ -1,6 +1,6 @@
 // @vitest-environment node
 /**
- * Route tests for POST /api/v1/admin/translations/bulk-import (T-3.9).
+ * Route tests for POST /api/v1/admin/translations/bulk-import.
  *
  * The service is fully unit-tested in `bulk.test.ts`; this suite is just
  * the request → service handoff: zod validation, error mapping, JSON

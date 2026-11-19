@@ -11,7 +11,7 @@
   import ReaderScroll from '$lib/components/reader/ReaderScroll.svelte';
   import PageCloseLink from '$lib/components/shell/PageCloseLink.svelte';
   import { reprocessWithToast } from '$lib/text/reprocess.js';
-  import { pushToast } from '$lib/components/toast/toast-store.js';
+  import { getToastStore } from '$lib/components/toast/toast-store.js';
   import ReaderSettings from '$lib/components/reader/ReaderSettings.svelte';
   import { ProgressWriter, type ProgressAnchor } from '$lib/components/reader/progress-client.js';
   import { computePctRead } from '$lib/components/reader/reader-progress.js';
@@ -32,9 +32,11 @@
     type ReaderSettings as ReaderSettingsT,
   } from '$lib/components/reader/reader-settings.js';
   import { LANGUAGES, type LanguageCode } from '@ciareader/shared-types';
-  import type { PageData } from './$types';
+  import type { PageProps } from './$types';
 
-  let { data }: { data: PageData } = $props();
+  const toastStore = getToastStore();
+
+  let { data }: PageProps = $props();
 
   setContext('readerHindiDictionary', () => data.hindiDictionary);
 
@@ -42,19 +44,15 @@
   // regardless of the saved layout mode.
   const usesPageImages = $derived(data.text.sourceType === 'pdf' || !!data.chapters[data.anchor.chapterIdx]?.pageImageUrl);
 
-  // T-5.16: Immersive mode hides the AppShell rail / bottom-nav so
-  // the reader takes the full viewport. T-5.26 moved the actual
-  // toggle to the AppShell hamburger button — the reader page only
-  // owns the Esc-to-exit shortcut here. The cross-route cleanup also
-  // moved into AppShell, since the rail-toggle is now global.
+  // The shell controls immersive mode. Escape also exits it from the reader.
 
   // Live status mirrors data.text.status; flips when the polling loop
-  // hits a terminal state (T-4.4).
+  // hits a terminal state.
   let liveStatus = $state(untrack(() => data.text.status));
   let liveError = $state<string | null>(null);
 
   // Romanization is a pure render flag — the token rows already carry
-  // romanizations (T-2.5), the toggle just decides whether to render
+  // romanizations, the toggle just decides whether to render
   // <ruby> spans. Keeping it as local client state means the toggle
   // doesn't reload the page (no scroll-to-top, no chapter re-fetch).
   // Initial value still comes from the URL so a deep link with
@@ -73,7 +71,7 @@
     (LANGUAGES[data.text.language as LanguageCode]?.supportedRomanizations.length ?? 0) > 0,
   );
 
-  // T-5.1b: live reader settings. Seeded from the server-loaded
+  // live reader settings. Seeded from the server-loaded
   // user_languages row; the popover updates this state on every
   // interaction (live preview) and PATCHes the row in the background.
   let readerSettings = $state<ReaderSettingsT>(untrack(() => data.readerSettings));
@@ -95,12 +93,6 @@
     }
   }
 
-  // #435: admin-only overlay that tints words whose lemma has no
-  // definition yet. The flag is hydrated from localStorage on mount
-  // (admins only) and mirrored onto <html> by the effect below; the
-  // reader settings popover flips it. Persisting outside the
-  // per-language settings keeps it a personal diagnostic preference
-  // rather than a shared reading setting.
   let flagUndefined = $state(false);
   function setFlagUndefined(on: boolean) {
     flagUndefined = on;
@@ -117,7 +109,7 @@
     const { id } = data.text;
     processingId = id;
     try {
-      await reprocessWithToast(data.text);
+      await reprocessWithToast(data.text, toastStore);
       if (data.text.id === id) {
         await invalidateAll();
         if (data.text.id === id) {
@@ -127,7 +119,7 @@
         }
       }
     } catch {
-      pushToast({ kind: 'error', message: 'Could not refresh the reader.' });
+      toastStore.pushToast({ kind: 'error', message: 'Could not refresh the reader.' });
     } finally {
       processingId = null;
     }
@@ -150,9 +142,7 @@
       .join('; '),
   );
 
-  // #435: mirror the admin overlay flag onto <html> so tokens.css
-  // paints `.word.no-definition`. Only admins can turn it on; clearing
-  // on unmount keeps the attribute scoped to the reader route.
+  // Set the preference on the document so the same styles reach words in every reader layout.
   $effect(() => {
     if (typeof document === 'undefined') return;
     setFlagUndefinedAttribute(data.isAdmin && flagUndefined);
@@ -255,8 +245,7 @@
     window.history.replaceState(window.history.state, '', url.toString());
   }
 
-  // T-5.6 progress writer. Signed-in readers get one; anonymous
-  // viewers of an official text don't have a row to write against.
+  // Only signed-in readers have an account in which to save progress.
   const progressTextId = $derived(data.canPersistSettings ? data.text.id : null);
   const progressWriter = $derived(progressTextId ? new ProgressWriter(progressTextId) : null);
 
@@ -282,9 +271,6 @@
     liveStatus = data.text.status;
     hideMobileArrows = document.documentElement.hasAttribute('data-hide-mobile-page-arrows');
 
-    // #435: restore the admin's overlay preference. Read after mount
-    // (not during SSR) so the localStorage access is browser-only; the
-    // effect above syncs it onto <html> once the state lands.
     if (data.isAdmin) flagUndefined = readPersistedFlagUndefined();
 
     // Reading is immersive: hide the app-shell rail / bottom nav so the
@@ -293,7 +279,7 @@
     setImmersiveAttribute(true);
     writePersistedImmersive(true);
 
-    // T-5.26: AppShell hydrates the immersive flag now. The reader
+    // AppShell hydrates the immersive flag now. The reader
     // only owns the Esc-to-exit shortcut — quick way out of
     // full-screen reading without hunting for the hamburger button.
     // We skip Esc when the word side-panel is open since the popup
@@ -490,9 +476,6 @@
         </svg>
       </button>
 
-      <!-- T-5.26 moved the immersive / hide-chrome toggle to the
-           AppShell rail (a hamburger glyph) — it's globally available
-           now, not just from the reader top bar. -->
     </div>
   </header>
 
@@ -605,14 +588,14 @@
 </ReaderSettings>
 
 <style>
-  /* CIAR design reader chrome (T-5.9). Paper background + serif title.
+  /* CIAR design reader chrome. Paper background + serif title.
      Stacks on small viewports; romanization + settings sit on the
      right at >=640px. */
   .reader {
     background: var(--paper, var(--color-bg));
     color: var(--ink, var(--color-fg));
     /* Fill the AppShell's content track so page mode can occupy the
-       full vertical space (T-5.23). Children flex-stack vertically:
+       full vertical space. Children flex-stack vertically:
        sticky top bar, fluid body, and progress foot. */
     min-height: 100dvh;
     display: flex;
@@ -791,9 +774,6 @@
     opacity: 0.55;
     cursor: progress;
   }
-  /* T-5.26: the immersive-toggle button moved to AppShell as a
-     hamburger icon. The selector is gone but the Esc-to-exit
-     behavior stays in this component. */
   .err {
     color: var(--rose, #b03131);
     background: var(--rose-soft, color-mix(in srgb, #b03131 8%, transparent));

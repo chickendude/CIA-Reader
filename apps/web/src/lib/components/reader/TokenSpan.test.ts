@@ -27,7 +27,7 @@ function makeToken(overrides: Partial<ServerToken> = {}): ServerToken {
 
 afterEach(() => cleanup());
 
-describe('TokenSpan — no-definition class (#435)', () => {
+describe('TokenSpan no-definition class', () => {
   it('tags a word as .no-definition when hasDefinition is false', () => {
     const { container } = render(TokenSpan, {
       token: makeToken({ hasDefinition: false }),

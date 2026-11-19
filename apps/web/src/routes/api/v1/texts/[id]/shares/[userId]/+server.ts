@@ -1,5 +1,5 @@
 /**
- * DELETE /api/v1/texts/:id/shares/:userId (T-7.2).
+ * DELETE /api/v1/texts/:id/shares/:userId.
  *
  * Revokes a recipient's read access. Owner / admin only.
  */

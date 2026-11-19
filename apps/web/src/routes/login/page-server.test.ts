@@ -1,12 +1,4 @@
 // @vitest-environment node
-/**
- * Tests for /login page (T-1.1 UI side).
- *
- * The auth backend (sessions, password verify, magic-link) lives in
- * lib/server/auth and has its own coverage. This suite exercises the
- * page-action plumbing: validation, redirect-on-success,
- * fail-on-bad-credentials, magic-link non-leak.
- */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const dbSelect = vi.fn();
@@ -144,7 +136,7 @@ describe('/login loader', () => {
     expect(res.location).toBe('/library');
   });
 
-  it('surfaces ?auth_error=invalid_magic_link as a friendly inline message (T-11.7)', async () => {
+  it('surfaces ?auth_error=invalid_magic_link as a friendly inline message', async () => {
     const data = (await callLoad(
       'http://x/login?auth_error=invalid_magic_link',
     )) as { next: string; authError: string | null };

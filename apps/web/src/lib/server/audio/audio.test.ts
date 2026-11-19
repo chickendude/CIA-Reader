@@ -232,7 +232,7 @@ describe('uploadAudio', () => {
         createdAt: new Date(),
       },
     ]);
-    // T-9.7: admins skip the redistribution-rights gate, so we
+    // admins skip the redistribution-rights gate, so we
     // intentionally omit the flag here to exercise that branch.
     const out = await uploadAudio({
       textId: 'text-1',
@@ -244,7 +244,7 @@ describe('uploadAudio', () => {
     expect(out.id).toBe('audio-2');
   });
 
-  it('blocks a non-admin owner who skips the redistribution checkbox (T-9.7)', async () => {
+  it('blocks a non-admin owner who skips the redistribution checkbox', async () => {
     await expect(
       uploadAudio({
         textId: 'text-1',

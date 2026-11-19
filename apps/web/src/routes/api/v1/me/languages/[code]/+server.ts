@@ -14,9 +14,7 @@ const patchSchema = z
   .object({
     scriptPreference: z.enum(['native', 'native_with_romanization', 'romanization_only']),
     romanizationScheme: z.enum(['iso15919', 'iast', 'hunterian', 'itrans']),
-    // T-5.1b reader-popover fields. All optional; the popover sends
-    // a partial diff against the loader-provided baseline so we
-    // don't keep rewriting columns the user didn't touch.
+    // Update only the settings the reader changed.
     readerLayoutMode: z.enum(['page', 'paged_scroll', 'continuous']),
     wordsPerPage: z.number().int().min(50).max(1000),
     fontFamily: z.string().min(1).max(80).nullable(),

@@ -1,29 +1,6 @@
 /**
- * Inverted Kaikki English → Indic-language importer (T-3.10).
- *
- * Kaikki publishes the full English Wiktionary as JSONL, and each
- * entry's `translations[]` array carries `{lang_code, word, sense, ...}`
- * tuples covering hundreds of target languages — including HI / MR /
- * OR. Inverting that gives us L-language headwords with English
- * translations, complementing the per-language Kaikki dumps we already
- * import (which only see what Wiktionary's HI/MR/OR sub-corpus
- * documented locally).
- *
- * The English Wiktionary's Translations sections are typically much
- * richer than its small-language sub-corpora, so this is the highest-
- * leverage second pass on Wiktionary data — especially for Marathi
- * and Odia where the per-language coverage is thin.
- *
- * Stable upstream identity: one row per (target lang × target word ×
- * English word × sense). `source_id` =
- * `kaikki-en:<lang>:<word>:<pos>:<sha1(en_word|sense)[..12]>`
- * so Wiktionary edits to a sense reshape the source_id and create a
- * fresh row, while no-change re-imports update in place.
- *
- * The import path stays idempotent on `(language, source, source_id)`;
- * the dropped `(language, headword, pos)` unique constraint (T-3.10)
- * means multiple rows of the same Hindi headword are expected and a
- * curator merges duplicates via T-3.7's existing flow.
+ * Use the English headword as the gloss for each matching translation. The source ID keeps
+ * repeated imports attached to the same dictionary entry.
  */
 import { createHash } from 'node:crypto';
 import { createReadStream } from 'node:fs';

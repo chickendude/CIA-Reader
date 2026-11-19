@@ -1,10 +1,10 @@
 /**
- * GET /api/v1/phrases/:id (T-14.1).
+ * GET /api/v1/phrases/:id.
  *
  * Detail view: phrase + ordered phrase_tokens + visible (non-hidden)
  * translations targeting the phrase. Returns 404 if the phrase id
  * doesn't exist. Anonymous-readable like the dictionary browse
- * detail (T-3.6).
+ * detail.
  */
 import { error, json } from '@sveltejs/kit';
 

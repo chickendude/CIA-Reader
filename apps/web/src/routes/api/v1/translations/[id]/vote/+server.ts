@@ -1,5 +1,5 @@
 /**
- * PATCH /api/v1/translations/:id/vote (T-10.4).
+ * PATCH /api/v1/translations/:id/vote.
  *
  * Body: `{ vote: 'up' | 'down' | null }`. Null clears the caller's vote.
  */

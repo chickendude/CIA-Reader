@@ -1,7 +1,4 @@
 // @vitest-environment node
-/**
- * Route tests for POST /api/v1/admin/lemmas/:id/merge (T-3.7).
- */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mergeLemmas = vi.fn();

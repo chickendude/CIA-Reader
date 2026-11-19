@@ -1,21 +1,6 @@
 /**
- * Object-storage abstraction for PDF page images.
- *
- * PDFs are rasterized page-by-page in the browser (pdf.js) and the
- * rendered images are uploaded to the server; the source PDF itself
- * never leaves the client. The only persisted artifact is one image
- * per page, shown in the reader with clickable word overlays.
- *
- * Mirrors `audio/storage.ts` deliberately so the two share a mental
- * model and a future S3 backend (Hetzner Object Storage, T-13.x) drops
- * in the same way:
- *
- *   - 'local' (default in dev / CI): writes under a directory keyed by
- *     `PDF_LOCAL_ROOT`.
- *   - 's3' (prod): wired in the deployment ticket.
- *
- * The interface is intentionally small (`put`, `delete`, `urlFor`) so a
- * route handler doesn't reason about which backend is active.
+ * The browser sends one rendered image per PDF page. Store those images for the reader to display
+ * beneath the word overlays.
  */
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
@@ -66,8 +51,6 @@ let singleton: PdfStorage | null = null;
 
 export function getPdfStorage(): PdfStorage {
   if (!singleton) {
-    // S3 wiring lives in the deployment ticket (T-13.x). For dev +
-    // tests the local backend is the only branch.
     singleton = new LocalPdfStorage();
   }
   return singleton;

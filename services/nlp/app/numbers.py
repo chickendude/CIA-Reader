@@ -1,4 +1,4 @@
-"""Number-to-words for digit-only NUM tokens (T-2.8).
+"""Number-to-words for numerals in the reader.
 
 The reader pop-up calls :func:`number_forms` whenever it receives a
 token whose surface is purely digits (Latin ``0–9``, Devanagari
@@ -12,20 +12,15 @@ form carries the spelled-out reading directly with an empty
 
 Range
 =====
-Integer-part values from 0 through 10⁷ (one crore) inclusive — the
-sign-and-decimal extensions added in T-2.8a respect the same cap on
-the integer part but accept an arbitrarily long fractional part
-(each digit pronounced individually, English-style). Out-of-range
+The integer part can range from zero to one crore (10⁷). The same limit
+applies to signed numbers. After a decimal point, each digit is read separately. Out-of-range
 integer parts and unsupported shapes (mixed scripts, multiple decimal
 points, lonely sign or decimal point) fall through.
 
 Linguistic notes
 ================
 The 0–99 forms in all three languages are highly irregular and were
-hand-curated for this module. Curator review is part of T-2.8 sign-off
-— typos in the rare 50–99 range (especially Marathi ``सत्त्याहत्तर``-style
-sandhi clusters) are exactly the sort of thing easy to miss in code
-review and obvious to a native reader. The base-100 / base-1k / lakh /
+listed individually. The base-100 / base-1k / lakh /
 crore composition rules are language-specific:
 
 * **Hindi** uses ``<digit> सौ <remainder>``: ``एक सौ तेईस``.
@@ -782,7 +777,7 @@ def to_words_eu(n: int) -> str:
 
 
 # ----------------------------------------------------------------
-# T-2.8a — sign + decimal extensions
+# sign + decimal extensions
 # ----------------------------------------------------------------
 
 #: Sign component of a parsed numeric token. Always populated even
@@ -798,10 +793,7 @@ _NEG_SIGNS: tuple[str, ...] = ("-", "−")
 #: even when surrounded by Devanagari digits.
 _DECIMAL_POINT: str = "."
 
-# Per-language "minus" prefix for negatives. Curator-confirmed before
-# T-2.8a sign-off — these are loanwords from Sanskrit ``ṛṇa`` (debt /
-# negative) common in mathematical registers; ``-3`` in Hindi reads
-# as ``ऋण तीन``.
+# The mathematical term for minus comes from Sanskrit ṛṇa. For example, Hindi reads -3 as ऋण तीन.
 _HI_NEG: str = "ऋण"
 _MR_NEG: str = "उणे"
 _OR_NEG: str = "ଋଣ"
@@ -828,7 +820,7 @@ _POINT_WORDS: dict[str, str] = {
 
 
 def parse_number(surface: str) -> tuple[Sign, int, str | None] | None:
-    """Parse a possibly signed and/or decimal numeric surface (T-2.8a).
+    """Parse a possibly signed and/or decimal numeric surface.
 
     Returns ``(sign, integer, fractional)`` where:
 
@@ -958,7 +950,7 @@ def spell(
     language: str,
 ) -> str:
     """Spell out a (possibly signed, possibly decimal) number in the
-    target language (T-2.8a). Format:
+    target language. Format:
 
         [<minus-word>] <integer-words> [<point-word> <digit> ...]
 
@@ -1037,7 +1029,7 @@ def number_forms(surface: str) -> NumberForms | None:
       with thousands / lakh comma separators (``"1,000"``, ``"10,00,000"``).
       This path stays for backward compatibility with the chapter-
       processor's existing surfaces.
-    * :func:`parse_number` (T-2.8a) — signed and/or decimal forms
+    * :func:`parse_number`, signed and/or decimal forms
       without separators (``"-12"``, ``"3.14"``, ``"-2.5"``).
 
     The two paths are tried in order; their accepted surface sets are

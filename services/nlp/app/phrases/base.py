@@ -1,4 +1,4 @@
-"""Rule-based phrase detector (T-14.5).
+"""Rule-based phrase detector.
 
 Loads per-language YAML patterns and matches them against a
 :class:`app.pipelines.base.PipelineResult` token list. Each pattern
@@ -37,12 +37,9 @@ Step predicates:
 * ``feats``: ``{key: value | list[value]}`` — match selected
   morphology features (each key must match if specified).
 
-A step matches a token iff every specified predicate matches; an
-empty step (no predicates) matches any token. A pattern matches a
-token run iff every step matches consecutive tokens in order. The
-detector emits one match per starting position; longer overlapping
-matches at the same start are kept (longest-wins is a render-time
-decision in T-14.3).
+A word must meet every condition in a step. An empty step matches any word.
+The steps must match consecutive words in order. Keep all matches that start
+on the same word so the reader can choose which phrase to highlight.
 """
 
 from __future__ import annotations
@@ -280,13 +277,8 @@ class PhraseDetector:
         return self._patterns
 
     def detect(self, tokens: list[Token]) -> list[ProposedPhrase]:
-        """Walk ``tokens`` once per pattern and emit proposals.
-
-        Multiple patterns may emit at the same ``start_idx`` —
-        downstream (T-14.3 reader, T-14.5a worker) handles the
-        precedence. Patterns may overlap freely; the detector itself
-        applies no longest-wins logic.
-        """
+        """Return all matching patterns, including ones that start at the same word. The reader
+        chooses which one to highlight."""
         if not tokens or not self._patterns:
             return []
         out: list[ProposedPhrase] = []

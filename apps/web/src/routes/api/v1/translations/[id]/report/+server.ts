@@ -1,5 +1,5 @@
 /**
- * POST /api/v1/translations/:id/report (T-11.1).
+ * POST /api/v1/translations/:id/report.
  *
  * Files a moderation report against a community translation. The reader
  * pop-up's "Report" button is the only client. Auth is required so we have

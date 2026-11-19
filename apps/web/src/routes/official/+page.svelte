@@ -5,9 +5,9 @@
   import { goto } from '$app/navigation';
   import BookMetrics from '$lib/components/library/BookMetrics.svelte';
   import BookActions from '$lib/components/library/BookActions.svelte';
-  import type { PageData } from './$types';
+  import type { PageProps } from './$types';
 
-  let { data }: { data: PageData } = $props();
+  let { data }: PageProps = $props();
 
   function pageHref(offset: number) {
     const url = new URL(page.url);

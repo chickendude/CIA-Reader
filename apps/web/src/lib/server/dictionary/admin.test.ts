@@ -1,6 +1,6 @@
 // @vitest-environment node
 /**
- * Tests for the admin write helpers (T-3.4): role changes and curator-
+ * Tests for the admin write helpers: role changes and curator-
  * language grants. The db surface is mocked; each test stages the rows
  * each call should return in the order the service issues them.
  */

@@ -1,7 +1,4 @@
 // @vitest-environment node
-/**
- * Tests for the client-side transliteration helper (T-6.2a).
- */
 import { describe, expect, it } from 'vitest';
 
 import { latinToNative, looksLikeNativeScript, nfc } from './transliterate.js';

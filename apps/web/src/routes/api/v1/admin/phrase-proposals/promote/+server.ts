@@ -1,5 +1,5 @@
 /**
- * POST /api/v1/admin/phrase-proposals/promote (T-14.5a).
+ * POST /api/v1/admin/phrase-proposals/promote.
  *
  * Trigger the periodic promotion pass that walks the
  * `phrase_proposals` queue and turns ≥-N-chapter occurrences

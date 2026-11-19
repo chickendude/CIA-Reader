@@ -1,7 +1,4 @@
 // @vitest-environment node
-/**
- * Route tests for POST /api/v1/admin/users/:id/role (T-3.4).
- */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const setUserRole = vi.fn();

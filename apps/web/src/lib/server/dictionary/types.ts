@@ -1,17 +1,3 @@
-/**
- * Types for the dictionary import framework (T-3.1).
- *
- * An importer is a pure producer of `ImportEntry` values drawn from an
- * upstream source (Hindi WordNet, Marathi WordNet, Molesworth, Odia
- * WordNet, etc.). The runner applies those entries against the DB with
- * idempotent upsert semantics and curator-locked respect.
- *
- * Keeping the shape this narrow means a new source (say, a future
- * Gujarati dictionary) only has to materialize an iterable of entries —
- * it never touches Drizzle, never knows what `curator_locked` means,
- * and can be developed and tested in isolation against the reference
- * runner.
- */
 import type { LanguageCode } from '@ciareader/shared-types';
 
 export type TranslationPayload = {

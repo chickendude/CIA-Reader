@@ -26,6 +26,14 @@ export default [
     },
   },
   {
+    files: ['src/**/*.{ts,js,svelte}'],
+    rules: {
+      'no-restricted-imports': ['error', {
+        paths: [{ name: '$app/stores', message: 'Read reactive navigation state from $app/state.' }],
+      }],
+    },
+  },
+  {
     files: ['**/*.svelte'],
     languageOptions: {
       parserOptions: {
@@ -55,33 +63,21 @@ export default [
         KeyboardEvent: 'readonly',
         MouseEvent: 'readonly',
         FocusEvent: 'readonly',
-        // Drag-and-drop + file upload globals (T-4.1).
         DragEvent: 'readonly',
         File: 'readonly',
         FileList: 'readonly',
         TextEncoder: 'readonly',
         TextDecoder: 'readonly',
-        // Reader keyboard handlers (T-5.7).
         EventTarget: 'readonly',
-        // Shell hamburger toggle observes the immersive attribute
-        // (T-5.26).
         MutationObserver: 'readonly',
-        // Page-mode pagination measurement (T-5.23).
         ResizeObserver: 'readonly',
-        // Continuous-mode lazy chapter loading (T-5.1a).
         IntersectionObserver: 'readonly',
-        // Mobile reader gestures (T-5.1c).
         TouchEvent: 'readonly',
-        // Transcription workbench crop drawing (ScanCropPane).
         PointerEvent: 'readonly',
-        // ScriptAwareInput (T-6.2a) — IME composition + paste handlers.
         CompositionEvent: 'readonly',
         ClipboardEvent: 'readonly',
-        // Audio player (T-9.2).
         HTMLAudioElement: 'readonly',
-        // Alignment highlighter (T-9.3) — uses CSS.escape.
         CSS: 'readonly',
-        // Polling on the admin sources page (T-3.14).
         setInterval: 'readonly',
         clearInterval: 'readonly',
         setTimeout: 'readonly',

@@ -1,7 +1,4 @@
 // @vitest-environment node
-/**
- * Tests for /moderation/dictionary SSR loader (T-3.7).
- */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const listDictionaryLemmas = vi.fn();

@@ -9,7 +9,7 @@ import {
 } from './types.js';
 
 /**
- * Unit tests for `segmentParagraphPhrases` (T-14.3).
+ * Unit tests for `segmentParagraphPhrases`.
  *
  * The renderer in `ChapterBody.svelte` walks the segments and emits
  * either a bare `TokenSpan` or a `<phrase>` wrapper around a run of
@@ -135,7 +135,7 @@ describe('segmentParagraphPhrases', () => {
   });
 });
 
-describe('groupPendingSegments (T-14.3b)', () => {
+describe('groupPendingSegments', () => {
   it('returns every segment as plain when the range is null', () => {
     const segments: ParagraphSegment[] = [
       { kind: 'token', token: tok(0, 'a') },

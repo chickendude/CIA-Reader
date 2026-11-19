@@ -1,29 +1,5 @@
-"""Basque pipeline backed by Stanza's ``eu`` UD model (UD_Basque-BDT).
-
-Like Hindi (T-2.2) and Marathi (T-2.3), Basque runs Stanza's UD pipeline and
-produces the same :class:`Token` shape. All of the output-shaping logic
-(feature parsing, OOV heuristics, idx sequencing, inter-word whitespace gap
-tokens) lives in :class:`app.pipelines.stanza_ud.StanzaUDPipeline`, so this
-module is a thin wrapper that sets the canonical ``pipeline_id`` and provides a
-factory that constructs the real Stanza model at startup.
-
-Basque differs from the Indic languages in two ways that *simplify* this
-module:
-
-* **Latin script, no romanization.** The reader renders Basque as-is, so the
-  factory passes ``roman_scheme=None`` and no optional roman layer is produced.
-  ``script="Latn"`` is still forwarded so the base class's "drop foreign-script
-  fragments" heuristic in :func:`should_treat_as_word` can keep stray non-Latin
-  tokens out of the reader's word UX (see ``_SCRIPT_RANGES`` in ``stanza_ud``).
-* **No multi-word tokens.** UD_Basque-BDT has no MWT, so ``processors`` is the
-  same ``tokenize,pos,lemma`` triple the Indic models use — Stanza's word
-  stream maps 1:1 to surface tokens, no ``mwt`` processor required.
-
-Top-K / OOV / ambiguity contract is identical to Hindi (single best lemma,
-``is_ambiguous`` always ``False`` until dictionary candidates land in M3). The
-BDT model is well-resourced, so ``is_oov`` should fire less often than for
-Marathi; the correction UX (M6) carries the remainder.
-"""
+"""Analyze Basque text with Stanza. The shared adapter handles word boundaries, dictionary forms
+and grammatical features."""
 
 from __future__ import annotations
 

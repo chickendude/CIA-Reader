@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-// T-14.6: vocabulary export now joins both `userKnownLemmas` and
+// vocabulary export now joins both `userKnownLemmas` and
 // `userKnownPhrases`. Each test stages two separate query results
 // — first the lemma rows, then the phrase rows — and the mocked
 // drizzle chain returns them in order.
@@ -63,7 +63,7 @@ afterEach(() => {
 });
 
 describe('vocabulary export', () => {
-  it('maps touched lemmas + phrases to CSV-shaped rows (T-14.6)', async () => {
+  it('maps touched lemmas + phrases to CSV-shaped rows', async () => {
     // First query: lemma rows.
     queryRows.mockResolvedValueOnce([
       {
@@ -115,7 +115,7 @@ describe('vocabulary export', () => {
     ]);
   });
 
-  it('returns lemma-only output when the user has no known phrases (T-14.6)', async () => {
+  it('returns lemma-only output when the user has no known phrases', async () => {
     queryRows.mockResolvedValueOnce([
       {
         headword: 'बोलना',
@@ -143,7 +143,7 @@ describe('vocabulary export', () => {
     expect(csvEscape('line\nbreak')).toBe('"line\nbreak"');
   });
 
-  it('serializes the required header and status values (T-14.6 adds the kind column)', () => {
+  it('includes the item kind in the CSV header and preserves status values', () => {
     const csv = rowsToCsv([
       {
         kind: 'lemma',

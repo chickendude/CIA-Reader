@@ -14,13 +14,7 @@ import kotlinx.coroutines.flow.map
 import javax.inject.Inject
 import javax.inject.Singleton
 
-/**
- * User-scoped UI preferences (plaintext DataStore — no secrets here).
- *
- * Currently just the last-selected reading language, so the library reopens on
- * the language the user was reading instead of resetting. Phase 5 settings
- * (romanization scheme, page mode) extend this store.
- */
+/** Reopen the library in the last selected language and keep reading preferences per language. */
 interface SettingsStore {
     val currentLanguage: Flow<String?>
     suspend fun currentLanguage(): String?

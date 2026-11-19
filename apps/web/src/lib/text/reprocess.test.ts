@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { get } from 'svelte/store';
-import { clearToasts, toasts } from '$lib/components/toast/toast-store.js';
+import { createToastStore } from '$lib/components/toast/toast-store.js';
 import { reprocessWithProgress, reprocessWithToast } from './reprocess.js';
 
 function respondWith(chunks: string[]) {
@@ -16,7 +16,6 @@ function respondWith(chunks: string[]) {
 
 afterEach(() => {
   vi.unstubAllGlobals();
-  clearToasts();
 });
 
 describe('reprocessWithProgress', () => {
@@ -45,20 +44,21 @@ describe('reprocessWithToast', () => {
   const book = { id: 'book', title: 'Test book', sourceType: 'pdf' };
 
   it('updates one notification through progress and completion', async () => {
+    const store = createToastStore();
     respondWith(['{"type":"progress","completed":1,"total":3}\n{"type":"complete","tokensWritten":5,"wordsParsed":2}\n']);
     const changes: { id: string; message: string }[] = [];
-    const unsubscribe = toasts.subscribe((list) => {
+    const unsubscribe = store.toasts.subscribe((list) => {
       expect(list.length).toBeLessThanOrEqual(1);
       if (list[0]) changes.push(list[0]);
     });
     try {
-      expect(await reprocessWithToast(book)).toBe(true);
+      expect(await reprocessWithToast(book, store)).toBe(true);
       expect(new Set(changes.map((toast) => toast.id)).size).toBe(1);
       expect(changes[1]).toMatchObject({
         message: 'Parsing page 2 of 3…', duration: null,
         progress: { value: 1, max: 3, label: 'Pages parsed' },
       });
-      expect(get(toasts)[0]).toMatchObject({
+      expect(get(store.toasts)[0]).toMatchObject({
         message: 'Reprocessed Test book. Parsed 2 words.', kind: 'success', duration: 2000, progress: undefined,
       });
     } finally {
@@ -67,9 +67,10 @@ describe('reprocessWithToast', () => {
   });
 
   it('removes the progress bar when processing fails', async () => {
+    const store = createToastStore();
     respondWith(['{"type":"error","message":"Book reprocessing failed."}\n']);
-    expect(await reprocessWithToast(book)).toBe(false);
-    expect(get(toasts)).toHaveLength(1);
-    expect(get(toasts)[0]).toMatchObject({ kind: 'error', progress: undefined });
+    expect(await reprocessWithToast(book, store)).toBe(false);
+    expect(get(store.toasts)).toHaveLength(1);
+    expect(get(store.toasts)[0]).toMatchObject({ kind: 'error', progress: undefined });
   });
 });

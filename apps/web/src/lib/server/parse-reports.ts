@@ -1,21 +1,6 @@
 /**
- * parse_reports service (T-6.5).
- *
- * Two surface routines:
- *
- *  - `fileParseReport(...)` — used by the correction modal (T-6.2)
- *    when "Also report to moderators" is checked, by T-6.3's
- *    new-lemma proposal flow, and by T-6.7's aggregation worker.
- *    Implements the duplicate-merging contract: a new report whose
- *    `(language, surface_nfc, context_signature, corrected_lemma_id)`
- *    matches an existing open / triaged row increments that row's
- *    `duplicate_count` instead of creating a new row. Resolved /
- *    rejected rows do NOT collide — that lets the system re-open
- *    a conversation after a curator decision if the issue resurfaces.
- *
- *  - `listOpenParseReports(...)` — paged list for T-6.6's curator
- *    moderation UI. Filters by language + status + (optional)
- *    correction_type so the queue stays scannable.
+ * A report asks curators to review a parse for everyone. Readers can file one from a correction,
+ * and the worker can file one when several readers agree.
  */
 import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 
@@ -41,9 +26,10 @@ export type FileParseReportInput = {
   correctedLemmaId: string | null;
   correctionType: TokenCorrection['type'];
   note?: string | null;
-  /** Bypass the dedup-merge path and create a triaged-status row
-   *  directly. Used by T-6.7's aggregation worker so a system-filed
-   *  report doesn't masquerade as a duplicate of a manual one. */
+  /**
+   * Create a separate, already triaged report for the worker's decision so it stays distinct from
+   * a reader's report.
+   */
   initialStatus?: ParseReport['status'];
 };
 
@@ -268,7 +254,7 @@ export async function acceptParseReport(
 }
 
 /**
- * Paged list for the curator moderation UI (T-6.6). Sorted by
+ * Paged list for the curator moderation UI. Sorted by
  * `(duplicate_count DESC, updated_at DESC)` so the most-corroborated
  * reports float to the top.
  */

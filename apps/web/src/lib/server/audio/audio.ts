@@ -1,10 +1,6 @@
 /**
- * Audio service (T-9.1).
- *
- * Owner-or-admin uploads / deletes; everyone with read access on
- * the parent text can list audio files. Storage is delegated to
- * `getAudioStorage()` so the same code path works against the
- * local-volume dev backend and a future S3-backed prod backend.
+ * A text's owner or an admin manages its recordings. Anyone with permission to read the text can
+ * list them.
  */
 import { randomUUID } from 'node:crypto';
 import { and, eq } from 'drizzle-orm';
@@ -38,7 +34,7 @@ export type UploadAudioInput = {
   license?: string | null;
   durationMs?: number | null;
   uploader: Pick<User, 'id' | 'role'>;
-  /** T-9.7: redistribution-rights checkbox from the upload form.
+  /** redistribution-rights checkbox from the upload form.
    *  Required for non-admin uploads — admins skip the check on
    *  the assumption they're handling curator-vetted assets. */
   acknowledgedRedistribution?: boolean;
@@ -58,7 +54,7 @@ export async function uploadAudio(
   if (!isAllowedAudioMime(input.mime)) {
     throw new AudioError(`Unsupported audio type ${input.mime}`, 415);
   }
-  // T-9.7: redistribution-rights gate. Owner uploads must
+  // redistribution-rights gate. Owner uploads must
   // acknowledge the rights checkbox; admins bypass.
   if (
     input.uploader.role !== 'admin' &&
@@ -72,7 +68,7 @@ export async function uploadAudio(
 
   // Verify the parent text exists and the uploader is the owner /
   // admin. Curators don't get audio rights at this layer — the
-  // attribution + licensing checkbox (T-9.7) treats audio as a
+  // attribution + licensing checkbox treats audio as a
   // first-class authoring artifact distinct from the dictionary.
   const [text] = (await db
     .select()

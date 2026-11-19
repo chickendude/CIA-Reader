@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { provenanceDisplay } from './provenance-display.js';
 
-describe('provenanceDisplay (T-3.8)', () => {
+describe('provenanceDisplay', () => {
   it('renders "yours" for the personal kind', () => {
     expect(provenanceDisplay({ kind: 'personal', attribution: null })).toEqual({
       label: 'yours',

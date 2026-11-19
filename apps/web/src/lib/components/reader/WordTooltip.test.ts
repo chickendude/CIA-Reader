@@ -35,7 +35,7 @@ function makeToken(overrides: Partial<ServerToken> = {}): ServerToken {
 }
 
 beforeEach(() => {
-  // T-5.28: the tooltip portals to <body>, so any .tip leftover from
+  // The tooltip portals to <body>, so any .tip leftover from
   // a previous test (e.g. cleanup() didn't remove it because the
   // portal action's destroy fired late) would confuse queries.
   document.body.querySelectorAll('.tip').forEach((el) => el.remove());
@@ -47,9 +47,9 @@ afterEach(() => {
   document.body.querySelectorAll('.tip').forEach((el) => el.remove());
 });
 
-// T-5.28: WordTooltip portals its DOM to <body>, so we query the
+// WordTooltip portals its DOM to <body>, so we query the
 // document body rather than the testing-library `container`.
-describe('WordTooltip — gloss display (T-5.18)', () => {
+describe('WordTooltip gloss display', () => {
   it('shows the book count on the preview and clears it for a word without a count', async () => {
     const view = render(WordTooltip, {
       token: makeToken({ bookFrequency: 6 }),
@@ -93,7 +93,7 @@ describe('WordTooltip — gloss display (T-5.18)', () => {
     expect(def?.classList.contains('muted')).toBe(false);
   });
 
-  it("falls back to italic 'No translations' when glossDefault is null but the lemma is known (T-5.20)", () => {
+  it("falls back to italic 'No translations' when glossDefault is null but the lemma is known", () => {
     render(WordTooltip, {
       token: makeToken({ glossDefault: null }),
       anchorRect: ANCHOR,
@@ -103,7 +103,7 @@ describe('WordTooltip — gloss display (T-5.18)', () => {
     expect(def?.classList.contains('empty')).toBe(true);
   });
 
-  it("shows 'No dictionary match' for OOV tokens regardless of glossDefault (T-5.20)", () => {
+  it("shows 'No dictionary match' for OOV tokens regardless of glossDefault", () => {
     render(WordTooltip, {
       token: makeToken({ isOov: true, glossDefault: 'should not show' }),
       anchorRect: ANCHOR,
@@ -144,7 +144,7 @@ describe('WordTooltip — gloss display (T-5.18)', () => {
     expect(document.body.textContent).not.toContain('No dictionary match');
   });
 
-  it("treats no-lemma tokens like an empty-translation lemma — italic 'No translations' (T-5.20)", () => {
+  it("treats no-lemma tokens like an empty-translation lemma with italic 'No translations'", () => {
     render(WordTooltip, {
       token: makeToken({ lemmaId: null, glossDefault: null }),
       anchorRect: ANCHOR,
@@ -154,7 +154,7 @@ describe('WordTooltip — gloss display (T-5.18)', () => {
     );
   });
 
-  it('portals the tooltip to document.body (T-5.28)', () => {
+  it('portals the tooltip to document.body', () => {
     const { container } = render(WordTooltip, {
       token: makeToken({ glossDefault: 'morning' }),
       anchorRect: ANCHOR,
@@ -166,7 +166,7 @@ describe('WordTooltip — gloss display (T-5.18)', () => {
   });
 });
 
-describe('WordTooltip — number tokens (T-2.8)', () => {
+describe('WordTooltip number tokens', () => {
   function makeNumberToken(): ServerToken {
     return makeToken({
       surface: '123',
@@ -258,9 +258,7 @@ describe('WordTooltip — number tokens (T-2.8)', () => {
     render(WordTooltip, {
       token: makeToken({
         surface: '1,013,322',
-        // Pre-#340 chapter: dispatcher auto-created a lemma. Without
-        // the legacy detection the tooltip would fall through to "No
-        // translations" (lemmaId set + glossDefault null).
+        // A numeral in an older chapter can have a dictionary entry of its own.
         lemmaId: 'auto-created-lem',
         features: {},
         numberForms: null,

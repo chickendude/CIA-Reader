@@ -1,31 +1,6 @@
 /**
- * Translation report queue service (T-11.1).
- *
- * Connects three pieces that already existed independently:
- *   - readers can flag a community translation (`source='user'`) via the
- *     reader pop-up — the only entry point that calls `submitReport`;
- *   - curators / admins triage the resulting queue at `/moderation/translations`;
- *   - the existing `setTranslationHidden` writes the audit trail when a
- *     translation gets hidden, so we don't duplicate that bookkeeping here.
- *
- * Design notes:
- *   - The viewer is passed in explicitly (`{ id, role, grantedLanguages? }`)
- *     rather than re-fetched, mirroring `curator.ts`. That keeps the service
- *     unit-testable without a session and lets the route layer decide where
- *     `grantedLanguages` comes from (parent layout in our case).
- *   - Curators are scoped to their granted languages via a join on `lemmas`.
- *     Admins see everything (the layout's `listGrantedLanguages` already
- *     returns all MVP languages for them, but we also accept a
- *     `viewer.grantedLanguages === 'all'` shortcut to avoid round-tripping).
- *   - `bulkResolveByTranslation('resolved_hidden')` calls `setTranslationHidden`
- *     first (which writes the `lemma_edit_history` audit) and then flips all
- *     open reports for that translation. If the second step fails, the next
- *     retry's `setTranslationHidden` short-circuits (already hidden) and the
- *     report flip succeeds — the flow is idempotent enough that a transaction
- *     wrapper isn't worth the cross-module refactor.
- *   - Submitter rate limit mirrors `translations.ts` shape: count rows in a
- *     rolling window. 10 reports / 24h is intentionally generous; the real
- *     pile-on guard is the unique `(reporter_id, translation_id)` index.
+ * Readers can report community translations. Curators review reports in their assigned languages.
+ * Hiding a translation records the edit and resolves its open reports.
  */
 import { and, count, desc, eq, gt, inArray } from 'drizzle-orm';
 

@@ -1,10 +1,4 @@
-/**
- * GET /audio/<storage-key> (T-9.1, dev backend only).
- *
- * Serves audio blobs from the local volume in dev. The S3 backend
- * presigns URLs and bypasses this route entirely. Local requests
- * check the parent text so restricted books stay restricted.
- */
+/** Check access to the parent text before serving a local recording. */
 import { error } from '@sveltejs/kit';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';

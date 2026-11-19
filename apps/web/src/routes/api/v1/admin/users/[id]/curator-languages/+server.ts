@@ -1,5 +1,5 @@
 /**
- * GET/POST /api/v1/admin/users/:id/curator-languages (T-3.4).
+ * GET/POST /api/v1/admin/users/:id/curator-languages.
  *
  * Admin-only. Lists or grants per-language curator rights.
  * Individual revoke is at `./[language]`.

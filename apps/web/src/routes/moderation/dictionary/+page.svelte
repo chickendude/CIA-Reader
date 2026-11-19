@@ -1,7 +1,7 @@
 <script lang="ts">
   import Pagination from '$lib/components/input/Pagination.svelte';
-  import type { PageData } from './$types';
-  let { data }: { data: PageData } = $props();
+  import type { PageProps } from './$types';
+  let { data }: PageProps = $props();
 
 
   function hrefWith(offset: number): string {
@@ -73,13 +73,6 @@
     </form>
 
     {#if data.usedNuktaFallback}
-      <!--
-        #318: Curators see the same fallback hint readers do — extra
-        salient here because they're often hunting for a specific
-        canonical entry to merge or edit. The hint surfaces the
-        possibility that the entry under their cursor is a
-        different word that just shares the nukta-stripped key.
-      -->
       <p class="nukta-fallback" role="status">
         No exact matches for <strong>{data.query.q}</strong> — showing
         nukta-agnostic results.

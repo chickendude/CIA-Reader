@@ -3,14 +3,16 @@
   import AppShell from '$lib/components/shell/AppShell.svelte';
   import VerifyEmailBanner from '$lib/components/auth/VerifyEmailBanner.svelte';
   import ToastHost from '$lib/components/toast/ToastHost.svelte';
-  import type { LayoutData } from './$types';
+  import { createToastStore, setToastStore } from '$lib/components/toast/toast-store.js';
+  import type { LayoutProps } from './$types';
 
-  let { data, children }: { data: LayoutData; children: import('svelte').Snippet } = $props();
+  let { data, children }: LayoutProps = $props();
+  setToastStore(createToastStore());
 </script>
 
 <svelte:head><title>Parhiba</title></svelte:head>
 
-<!-- T-11.7: renders only when locals.user.emailVerifiedAt is null.
+<!-- renders only when locals.user.emailVerifiedAt is null.
      Sits above AppShell so it spans full width across desktop rail +
      mobile top strip layouts. -->
 <VerifyEmailBanner user={data.user} />
@@ -24,7 +26,4 @@
   {@render children()}
 </AppShell>
 
-<!-- App-wide toast host. Anything that calls `pushToast()` from
-     `$lib/components/toast/toast-store.js` lands here. Rendered
-     once at the root so toasts persist across route transitions. -->
 <ToastHost />

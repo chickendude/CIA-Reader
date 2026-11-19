@@ -1,5 +1,5 @@
 /**
- * Component tests for ReportTranslationModal (T-11.1).
+ * Component tests for ReportTranslationModal.
  *
  * Verifies the modal's submit flow against a stubbed fetch:
  *   - 201 → onReported({ kind: 'reported' }) + onClose

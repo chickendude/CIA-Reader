@@ -1,10 +1,10 @@
 /**
- * Sentence-grouped token loader for the alignment editor (T-9.5).
+ * Sentence-grouped token loader for the alignment editor.
  *
  * The editor walks the chapter one sentence at a time and lets the
  * owner press-and-hold to mark each sentence's start/end ms during
  * playback. The grouping comes off `text_tokens.sentence_idx`,
- * written by the NLP worker (T-2.6).
+ * written by the NLP worker.
  */
 import { asc, eq } from 'drizzle-orm';
 

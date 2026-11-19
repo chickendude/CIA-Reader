@@ -1,5 +1,5 @@
 /**
- * Moderation section guard (T-3.7).
+ * Moderation section guard.
  *
  * Blocks unauthenticated and non-curator visitors from every route under
  * /moderation. The curator/admin distinction (and per-language scope) is

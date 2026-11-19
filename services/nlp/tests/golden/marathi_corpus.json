@@ -1,5 +1,5 @@
 {
-  "__description__": "Marathi golden-file corpus (T-2.8). Scored against the real Stanza UD Marathi model in the `nlp-accuracy` CI job. Threshold is lower than Hindi (≥80% vs ≥90%) because the stanza-mr model is noisier in the wild — matches the quality-bar in the plan. Grows post-MVP.",
+  "__description__": "Marathi sentences and expected word analyses for accuracy tests using the Stanza Marathi model.",
   "sentences": [
     {
       "id": "mr-001",

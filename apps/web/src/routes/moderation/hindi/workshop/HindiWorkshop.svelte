@@ -1,6 +1,6 @@
 <script lang="ts">
   import Pagination from '$lib/components/input/Pagination.svelte';
-  import { pushToast } from '$lib/components/toast/toast-store.js';
+  import { getToastStore } from '$lib/components/toast/toast-store.js';
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
   import { onMount, untrack } from 'svelte';
@@ -17,6 +17,8 @@
   import type { loadHindiWorkshop } from '$lib/server/dictionary/workshop-page';
   import { reprocessWithToast } from '$lib/text/reprocess.js';
   import Button from '$lib/components/input/Button.svelte';
+
+  const toastStore = getToastStore();
   type PageData = Awaited<ReturnType<typeof loadHindiWorkshop>>;
   let { data, reviewOnly = false }: { data: PageData; reviewOnly?: boolean } = $props();
   let word = $state<Word>(untrack(() => data.initial ?? blankWorkshopWord(data.observed)));
@@ -101,7 +103,7 @@
     if (!reviewBook?.canReprocess || reprocessing) return;
     reprocessing = true;
     try {
-      if (await reprocessWithToast(reviewBook)) refresh++;
+      if (await reprocessWithToast(reviewBook, toastStore)) refresh++;
     } finally {
       reprocessing = false;
     }
@@ -215,7 +217,7 @@
         surface: active.word, hash: sample.hash, confirm });
       await openFollowing(active, true);
       refresh++;
-      if (confirm) pushToast({ kind: 'success', message: 'Stutter confirmed' });
+      if (confirm) toastStore.pushToast({ kind: 'success', message: 'Stutter confirmed' });
       else message = 'Kept as separate words';
     } catch (e) {
       message = (e as Error).message;

@@ -18,12 +18,8 @@ data class AuthTokens(
 )
 
 /**
- * Persistent store for the bearer access token + rotating refresh token.
- *
- * NOTE (security, Phase 6): DataStore is plaintext at rest. Before release,
- * wrap the refresh token in Android Keystore-backed encryption (the access
- * token is short-lived — 15 min — so it matters less). The interface is kept
- * storage-agnostic so that swap doesn't touch callers.
+ * Stores the access and refresh tokens together. DataStore writes them in plain text.
+ * Protect the long-lived refresh token with Android Keystore-backed encryption before release.
  */
 interface TokenStore {
     val tokens: Flow<AuthTokens?>

@@ -1,15 +1,4 @@
-/**
- * GET /api/v1/texts/:id/status (T-4.4).
- *
- * Lightweight polling endpoint the reader page hits while a text is
- * still being processed by the NLP worker. Returns the current
- * `status` enum value + any `statusError` and the most recent
- * `nlp_jobs` row's progress fields.
- *
- * Owner-scoped — non-owners get a flat 404 to avoid leaking text
- * existence. Sharing visibility lands in T-4.6 with the central
- * `assertCanRead` helper.
- */
+/** Readers poll this endpoint for progress and errors while a text is being processed. */
 import { error, json } from '@sveltejs/kit';
 
 import { requireUser } from '$lib/server/auth/require-user.js';

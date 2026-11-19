@@ -1,5 +1,5 @@
 /**
- * PATCH /api/v1/admin/translations/:id (T-3.7).
+ * PATCH /api/v1/admin/translations/:id.
  *
  * Curator-level edit on any translation tied to a lemma they can edit.
  * Supports editing body, target language, attribution, and the

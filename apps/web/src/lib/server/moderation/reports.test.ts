@@ -1,6 +1,6 @@
 // @vitest-environment node
 /**
- * Tests for the translation-report moderation service (T-11.1).
+ * Tests for the translation-report moderation service.
  *
  * Mocks the drizzle `db` surface with a single mutable chain whose return
  * values are staged per-call via `mockReturnValueOnce`. Mirrors the

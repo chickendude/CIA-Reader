@@ -1,5 +1,5 @@
 /**
- * Kaikki English → Hindi translations importer (T-3.10).
+ * Kaikki English → Hindi translations importer.
  *
  * Inverts the English Wiktionary's `translations[]` arrays to surface
  * Hindi headwords that appear as targets. Complements the per-language

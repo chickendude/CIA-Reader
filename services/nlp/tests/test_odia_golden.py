@@ -1,17 +1,4 @@
-"""Odia golden-file corpus tests (T-2.3b).
-
-The corpus at ``app/pipelines/odia/data/golden_corpus.json`` pairs Odia
-sentences with expected per-token analyses. This suite runs the custom
-Odia pipeline over the corpus and enforces a minimum joint
-lemma+POS accuracy.
-
-The threshold here is deliberately a sanity floor — T-2.8 raises it
-(≥70% for Odia per the plan) and wires it into CI. Right now the
-corpus is hand-written against the seed lemma table so we expect near-
-perfect scores; a drop means either the seed, the morph rules, or the
-tokenizer regressed. The eval harness is language-agnostic so Hindi /
-Marathi corpora can slot in later without a rewrite.
-"""
+"""Compare the Odia pipeline with hand-checked examples that use the bundled vocabulary."""
 
 from __future__ import annotations
 
@@ -58,9 +45,6 @@ def test_corpus_entries_have_unique_ids():
 
 
 def test_odia_pipeline_meets_joint_lemma_pos_floor():
-    # Hand-written corpus + hand-written rules → this should be basically
-    # perfect. T-2.8 will swap this for the ≥70% real-world accuracy
-    # threshold when the corpus grows to include harder sentences.
     result = evaluate(_pipeline(), _load())
     summary = result.summary()
     assert (

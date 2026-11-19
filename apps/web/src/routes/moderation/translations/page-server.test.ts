@@ -1,7 +1,4 @@
 // @vitest-environment node
-/**
- * Tests for /moderation/translations SSR loader + form actions (T-11.1).
- */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const listReports = vi.fn();

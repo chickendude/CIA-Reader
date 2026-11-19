@@ -2,12 +2,7 @@ import { json, error } from '@sveltejs/kit';
 import { nlpClient } from '$lib/server/nlp-client.js';
 import type { RequestHandler } from './$types';
 
-/**
- * End-to-end smoke endpoint (T-0.5).
- *
- * Proves: SvelteKit server → Docker network → FastAPI NLP service → typed
- * response round-trips. No auth; wired up in M1.
- */
+/** Checks whether the web server can reach the NLP service and read its response. */
 export const GET: RequestHandler = async () => {
   try {
     const health = await nlpClient.health();

@@ -1,5 +1,5 @@
 <!--
-  Translation provenance badge (T-3.8).
+  Translation provenance badge.
 
   Renders one short pill per translation in the reader pop-up + on the
   /moderation/dictionary editor + anywhere else translations are shown.

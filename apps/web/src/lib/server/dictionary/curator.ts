@@ -1,25 +1,6 @@
 /**
- * Curator dictionary editor service (T-3.7).
- *
- * Backs the `/moderation/dictionary` UI and the admin JSON endpoints.
- * Every mutating function here:
- *
- *  1. Resolves the affected lemma and checks
- *     `requireCanEditDictionary(editor, lemma.language)`. Curators only
- *     have write access on languages they've been granted; admins
- *     always pass.
- *  2. Captures a snapshot of the affected row(s) for the before/after
- *     diff that lands in `lemma_edit_history`.
- *  3. Writes the mutation, then records the audit row with a
- *     caller-supplied `reason` (required — empty reasons throw
- *     `MissingReasonError`).
- *
- * Scope note for merge/split: the plan (M6 + beyond) calls for rewiring
- * `text_tokens`, `user_known_lemmas`, and `form_lemma_overrides` across
- * the loser/winner split. Those tables don't exist yet — they land in
- * M5/M6. For now, merge rewires `translations` + `lemma_forms` only;
- * split moves selected `translations` + `lemma_forms`. The future
- * tickets that introduce those tables will extend these functions.
+ * Check the editor's language permissions before changing an entry, then record what changed and
+ * the editor's reason in the audit log.
  */
 import { and, asc, eq, inArray } from 'drizzle-orm';
 
@@ -92,7 +73,7 @@ function snapshotLemma(row: Lemma): Record<string, unknown> {
 function snapshotTranslation(row: Translation): Record<string, unknown> {
   return {
     id: row.id,
-    // T-14.7a: snapshot the polymorphic columns instead of the
+    // snapshot the polymorphic columns instead of the
     // legacy lemma_id. Audit-log payloads under
     // `lemma_edit_change_type='lemma_*'` will only ever carry
     // target_type='lemma' rows (the curator surface itself is
@@ -345,14 +326,10 @@ export async function updateTranslation(
 ): Promise<Translation> {
   validateTranslationPatch(patch);
   const existing = await loadTranslation(translationId);
-  // T-14.1: curator dictionary editor today only handles lemma-
-  // target translations. Phrase-target moderation lands in T-14.7
-  // (curator merge + moderation parity for M14).
-  // T-14.7a: gate reads via the polymorphic columns; legacy
-  // lemma_id is dropped.
+  // Phrase translations belong in the phrase editor.
   if (existing.targetType !== 'lemma') {
     throw new CuratorValidationError(
-      'Phrase-target translations are managed via the phrase editor (T-14.4 / T-14.7)',
+      'Use the phrase editor to change translations for a phrase.',
       409,
     );
   }
@@ -386,7 +363,7 @@ export async function updateTranslation(
   if (!updated) throw new Error('Failed to update translation');
 
   await recordLemmaEdit({
-    // T-14.7a: read via the polymorphic target. The earlier
+    // read via the polymorphic target. The earlier
     // type/target guard above ensures targetType==='lemma' so
     // targetId is the lemma id this audit row should reference.
     lemmaId: existing.targetId,
@@ -414,13 +391,9 @@ export async function setTranslationHidden(
   now: Date = new Date(),
 ): Promise<Translation> {
   const existing = await loadTranslation(translationId);
-  // T-14.1: same guard as `updateTranslation` above. Phrase-target
-  // moderation goes through T-14.7's curator surface.
-  // T-14.7a: gate via the polymorphic columns; legacy lemma_id
-  // is dropped.
   if (existing.targetType !== 'lemma') {
     throw new CuratorValidationError(
-      'Phrase-target translations are managed via the phrase editor (T-14.4 / T-14.7)',
+      'Use the phrase editor to change translations for a phrase.',
       409,
     );
   }
@@ -443,9 +416,6 @@ export async function setTranslationHidden(
   if (!updated) throw new Error('Failed to set hidden flag');
 
   await recordLemmaEdit({
-    // T-14.7a: same pattern as updateTranslation above —
-    // the lemma-target guard earlier in the function makes
-    // targetId the lemma id this audit references.
     lemmaId: existing.targetId,
     editorId: editor.id,
     changeType: hidden ? 'translation_hide' : 'translation_unhide',
@@ -460,7 +430,7 @@ export async function setTranslationHidden(
 }
 
 // -----------------------------------------------------------------------
-// reorderTranslations (T-3.13)
+// reorderTranslations
 // -----------------------------------------------------------------------
 
 /**
@@ -504,7 +474,7 @@ export async function reorderTranslations(
     .from(schema.translations)
     .where(
       and(
-        // T-14.7a: switched from `lemma_id` to the polymorphic
+        // Switched from `lemma_id` to the polymorphic
         // `(target_type, target_id)` so the legacy column can be
         // dropped. Phrase translations don't appear here anyway
         // (the curator translation reorder UI is lemma-only),
@@ -626,7 +596,7 @@ export async function mergeLemmas(
     .from(schema.translations)
     .where(
       and(
-        // T-14.7a: switched to the polymorphic target_id. Phrase-
+        // Switched to the polymorphic target_id. Phrase-
         // target rows wouldn't match a `lemmas.id` value, but the
         // explicit type predicate keeps the query plan honest.
         eq(schema.translations.targetType, 'lemma'),
@@ -641,7 +611,7 @@ export async function mergeLemmas(
 
   await db
     .update(schema.translations)
-    // T-14.7a: reassign the polymorphic target_id; the legacy
+    // reassign the polymorphic target_id; the legacy
     // lemma_id column is dropped in this PR's migration so we
     // no longer touch it.
     .set({ targetId: winner.id })
@@ -766,7 +736,7 @@ export async function splitLemma(
     const rows = await db
       .select({
         id: schema.translations.id,
-        // T-14.7a: read via the polymorphic columns. The split
+        // read via the polymorphic columns. The split
         // path only operates on lemma-target rows; phrase
         // translations don't belong to a "source lemma" by
         // definition.
@@ -834,8 +804,6 @@ export async function splitLemma(
   if (translationIds.length > 0) {
     await db
       .update(schema.translations)
-      // T-14.7a: assign only the polymorphic target_id —
-      // legacy lemma_id is dropped in this PR's migration.
       .set({ targetId: (created as Lemma).id })
       .where(
         and(
@@ -923,16 +891,12 @@ export async function getLemmaEditorView(
   // Editor view sorts by curator-set rank ascending (Postgres default
   // is NULLS LAST for ASC, so unranked rows fall to the end), then by
   // createdAt for stability within ties. Reorder UI relies on this
-  // canonical order matching what the reader will see (T-3.13).
+  // canonical order matching what the reader will see.
   const translations = (await db
     .select()
     .from(schema.translations)
     .where(
       and(
-        // T-14.7a: switched to (target_type, target_id) so the
-        // editor view never accidentally surfaces a phrase-target
-        // translation (curators edit phrase translations through
-        // the phrase editor in T-14.4a).
         eq(schema.translations.targetType, 'lemma'),
         eq(schema.translations.targetId, lemmaId),
       ),

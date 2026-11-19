@@ -1,5 +1,5 @@
 /**
- * Focus trap for modal / sheet overlays (T-5.15).
+ * Focus trap for modal / sheet overlays.
  *
  * `activateFocusTrap(container)` returns a deactivator. While active:
  *   - Tab / Shift+Tab cycles focus inside `container` (it never leaves

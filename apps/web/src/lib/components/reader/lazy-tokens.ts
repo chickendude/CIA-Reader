@@ -1,17 +1,6 @@
 /**
- * Per-chapter token lazy loader (T-5.1a).
- *
- * The reader's SSR loader only ships the active chapter's token rows
- * (a 50-chapter novel would otherwise blow up first-paint). This
- * helper fetches sibling chapters on demand from the
- * `/api/v1/texts/:id/chapters/:idx/tokens` endpoint, deduping
- * concurrent requests for the same chapter and surfacing a tiny
- * status state so a caller (continuous mode) can render a "loading"
- * affordance without juggling its own bookkeeping.
- *
- * Single-shot per chapter — once a fetch resolves we don't refetch,
- * which matches the reader's data flow (status overrides happen
- * client-side via WordPopup, not by re-pulling rows).
+ * Load chapters on demand. Readers opening a long book only need the current chapter at first,
+ * and simultaneous requests for the same chapter can share one response.
  */
 import type { ChapterPhraseSpan, ServerToken } from './types.js';
 
@@ -20,9 +9,7 @@ export type ChapterTokensResponse = {
   chapterIdx: number;
   body: string;
   tokens: ServerToken[] | null;
-  /** T-14.3: phrase spans, hydrated alongside tokens by the same
-   *  endpoint. Empty array when the chapter has tokens but no phrase
-   *  matches; null when tokens is also null (unprocessed chapter). */
+  /** Null until the words are processed. An empty list means no phrases matched. */
   phraseSpans: ChapterPhraseSpan[] | null;
 };
 
@@ -35,9 +22,6 @@ export type FetchState =
       chapterIdx: number;
       body: string;
       tokens: ServerToken[] | null;
-      /** T-14.3: cached alongside tokens so a sibling chapter
-       *  scrolled into view repaints with the right phrase
-       *  highlights on the next $derived pass. */
       phraseSpans: ChapterPhraseSpan[] | null;
     }
   | { kind: 'error'; message: string };
@@ -74,14 +58,7 @@ export class LazyTokenLoader {
     return this.states.get(chapterIdx) ?? { kind: 'idle' };
   }
 
-  /**
-   * Kick off (or join) a fetch for `chapterIdx`. Resolves to the
-   * fetched body plus tokens (and T-14.3 phrase spans), or null
-   * tokens / null spans if the worker hasn't run for that chapter
-   * yet. The SSR loader only includes the active chapter body;
-   * this on-demand shape lets continuous mode hydrate sibling
-   * chapters without bloating first paint.
-   */
+  /** A chapter that is still being processed may have text but no tokens or phrase matches yet. */
   async load(chapterIdx: number): Promise<ChapterTokensResponse> {
     const existing = this.states.get(chapterIdx);
     if (existing?.kind === 'loaded') {

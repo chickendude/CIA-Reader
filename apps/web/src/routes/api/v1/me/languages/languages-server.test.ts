@@ -1,9 +1,4 @@
 // @vitest-environment node
-/**
- * Route tests for /api/v1/me/languages: GET (the list + per-language
- * known-word counts read by the switcher) and POST (#436: add a
- * language to the user's list and switch to it in one request).
- */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const upsertUserLanguage = vi.fn();

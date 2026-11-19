@@ -1,13 +1,4 @@
 // @vitest-environment node
-/**
- * Tests for `mergePhrases`, `setPhraseHidden`, `setPhraseLocked`
- * (T-14.7 curator-merge + moderation parity).
- *
- * Mocks Drizzle via the same staged-result pattern as the rest of
- * the phrase tests (`phrases.test.ts`). Each test stages the
- * sequence of SELECTs / UPDATEs / DELETEs the service runs and
- * asserts that the recorded `calls` log matches.
- */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 type Call =

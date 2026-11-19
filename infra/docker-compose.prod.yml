@@ -300,7 +300,7 @@ services:
         max-size: "10m"
         max-file: "5"
 
-  # Uptime Kuma (T-13.5) — self-hosted monitor that pings the public
+  # Uptime Kuma, self-hosted monitor that pings the public
   # health endpoints and notifies via email / Discord / Slack / etc.
   # Lives only on the internal network; Caddy proxies the admin UI
   # at status.<APP_DOMAIN>. Persisted state in `kuma-data` so monitor

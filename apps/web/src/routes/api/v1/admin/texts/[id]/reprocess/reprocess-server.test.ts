@@ -128,10 +128,10 @@ describe('POST /api/v1/admin/texts/:id/reprocess', () => {
     expect(processTextNow).not.toHaveBeenCalled();
   });
 
-  // T-11.3: owners can retry their own failed text. Non-owners
+  // owners can retry their own failed text. Non-owners
   // (even authenticated readers) get a flat 404, matching the rest
   // of the texts API — we don't leak text existence.
-  it('lets the text owner trigger a reprocess (T-11.3)', async () => {
+  it('lets the text owner trigger a reprocess', async () => {
     stage([{ id: VALID_ID, ownerId: USER.id, sourceType: 'txt' }]);
     processTextNow.mockResolvedValueOnce(99);
     const res = (await callPost(VALID_ID, USER)) as Response;
@@ -140,7 +140,7 @@ describe('POST /api/v1/admin/texts/:id/reprocess', () => {
     expect(json.tokensWritten).toBe(99);
   });
 
-  it('returns 404 when a non-admin non-owner asks (T-11.3)', async () => {
+  it('returns 404 when a non-admin non-owner asks', async () => {
     stage([{ id: VALID_ID, ownerId: 'someone-else' }]);
     const res = (await callPost(VALID_ID, USER)) as { status: number };
     expect(res.status).toBe(404);

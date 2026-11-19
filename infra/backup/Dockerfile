@@ -1,4 +1,4 @@
-# Backup sidecar for the production stack (T-13.3).
+# Backup sidecar for the production stack.
 #
 # Runs crond in foreground; cron jobs `pg_dump` the live DB and tar
 # the audio-data volume, then upload via rclone to whatever remote

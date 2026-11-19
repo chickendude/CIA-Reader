@@ -1,5 +1,5 @@
 /**
- * PATCH /api/v1/admin/lemmas/:id/lock (T-3.7).
+ * PATCH /api/v1/admin/lemmas/:id/lock.
  *
  * Flip `curatorLocked`. Unlocking explicitly opts the row back in for
  * fresh upstream imports to overwrite; locking is the default any time

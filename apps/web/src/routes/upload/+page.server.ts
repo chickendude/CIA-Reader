@@ -1,18 +1,3 @@
-/**
- * Text upload form (T-4.1).
- *
- * Browser side renders a paste box + a file drop-zone shell. `.txt`
- * file content is read on the client and dropped into the textarea
- * (small, inline ingest); `.epub` and large `.txt` chunking land in
- * T-4.2 / T-4.3 — the dropzone surfaces a "coming soon" message for
- * those file types so we don't quietly drop user data.
- *
- * The server action calls the same `createPastedText` service the JSON
- * API uses, so validation + visibility defaults are identical between
- * web form and programmatic client. On success we 303 to
- * `/texts/[id]`, which is a placeholder reader for now (M5 builds the
- * real one).
- */
 import { fail, redirect } from '@sveltejs/kit';
 import { z } from 'zod';
 
@@ -63,7 +48,7 @@ export const load: PageServerLoad = async ({ locals, url, parent }) => {
   if (!locals.user) {
     throw redirect(303, `/login?next=${encodeURIComponent(url.pathname)}`);
   }
-  // The upload targets the current language (#436) — the site is split by
+  // The upload targets the current language, the site is split by
   // language, so a text is imported into whichever language the rail
   // switcher has active. Fall back to the first supported code in the
   // (signed-in-but-no-language) edge case the resolver guards against.

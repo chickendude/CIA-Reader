@@ -1,22 +1,6 @@
 /**
- * Reader loader (T-5.1).
- *
- * URL contract: `/reader/[textId]?chapter=N&token=M`. The loader
- * resolves the text via the central `getReadableText` helper (owner
- * OR official visibility), clamps the requested chapter to the valid
- * range, and returns the chapter list + the active anchor.
- *
- * The render side (the three layout modes — `page`, `paged-scroll`,
- * `continuous`) lives in the components under `lib/components/reader/`
- * and shares the same data shape regardless of mode. Token-level
- * rendering, the word pop-up, and known-words tracking are layered on
- * in T-5.2 / T-5.4 / T-5.5; T-5.1 just stands the skeleton up so
- * those tickets have a real route to plug into.
- *
- * Auth is open: anonymous viewers can read official texts without
- * signing in (T-7.6's marketing surface). `isOwner` distinguishes the
- * owner — only owners poll status (T-4.4) and only owners get
- * known-words affordances (T-5.5).
+ * Load the active chapter for the current viewer. Other chapters can be loaded when the reader
+ * opens them.
  */
 import { error } from '@sveltejs/kit';
 import { and, eq } from 'drizzle-orm';
@@ -75,9 +59,7 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
   const result = await getReadableText(viewer, params.textId);
   if (!result) throw error(404, 'Text not found');
 
-  // Resume from saved progress when the URL has no anchor of its
-  // own. T-5.6: a returning reader who clicks the library card
-  // should land where they left off, not at chapter 0.
+  // An explicit location in the URL takes priority over the saved reading position.
   let savedProgress: Awaited<ReturnType<typeof getTextProgress>> = null;
   if (locals.user) {
     savedProgress = await getTextProgress(locals.user.id, params.textId);
@@ -112,7 +94,7 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
     ),
   );
 
-  // T-5.1b: per-language reader settings are persisted in
+  // Per-language reader settings are persisted in
   // user_languages. Anonymous viewers don't have a row, so they get
   // the defaults. Owners + signed-in readers get their saved popover
   // values; the popover writes through PATCH /api/v1/me/languages/:code.
@@ -153,33 +135,26 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
     ? readBool(url, 'roman')
     : readerSettings.scriptPreference !== 'native';
 
-  // T-12.5: mobile payload audit. Only the active chapter ships its
-  // body and tokens on first paint; sibling chapter bodies were the
-  // remaining large field after T-5.1a made tokens lazy. Continuous
-  // mode fetches body+tokens on demand from the chapter endpoint, and
-  // page / scroll modes re-run this loader when the active chapter
-  // changes.
+  // Send only the current chapter's text and words on the first load so opening a large book
+  // stays fast.
   const viewerId = locals.user?.id ?? null;
   const activeChapter = result.chapters[chapterIdx];
   const activeTokens = activeChapter
     ? await loadChapterTokens(activeChapter.id, viewerId, params.textId)
     : null;
-  // T-14.3: phrase spans for the active chapter, joined with the
-  // viewer's known-phrase status. Empty array when the chapter
-  // has tokens but no phrase matches (the common case during
-  // M14 rollout); null for unprocessed chapters so the reader
-  // chrome can still render via the whitespace fallback.
+  // An empty list means the chapter has been processed and has no phrase matches. Null means
+  // processing has not finished.
   const activeChapterSpans = activeChapter && activeTokens
     ? await loadChapterPhraseSpans(activeChapter.id, viewerId)
     : null;
 
-  // T-8.3: if this text is a member of a collection, surface the
+  // if this text is a member of a collection, surface the
   // collection title + prev / next text ids in the reader chrome.
   // Picks one collection deterministically when the text is in
   // multiple (collections.updatedAt DESC).
   const collectionContext = await readerCollectionContext(params.textId);
 
-  // T-9.1: pull audio attached to the text. Prefer chapter-specific
+  // Pull audio attached to the text. Prefer chapter-specific
   // audio when present; fall back to whole-text audio otherwise.
   // The player only renders when a track exists.
   const allAudio = await listAudioForText(params.textId);
@@ -194,7 +169,7 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
   // page indicator + navigate. Tokens/body still ship active-only.
   const pdfStorage = getPdfStorage();
 
-  // T-8.6: course-kind collections gate "next" until the active
+  // course-kind collections gate "next" until the active
   // text is finished (pctRead >= 100). The reader UI grays out the
   // next link unless ?skipLock=1 is set on the URL — a deliberate
   // escape hatch for self-paced learners who want to skip ahead.
@@ -230,9 +205,6 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
       // Siblings carry `tokens: null`; the lazy endpoint returns both
       // body and tokens when a sibling needs to render.
       tokens: c.idx === chapterIdx ? activeTokens : null,
-      // T-14.3: phrase spans ride alongside tokens with the same
-      // active-only / lazy-fill posture. Sibling chapters get null
-      // until the lazy fetch lands.
       phraseSpans: c.idx === chapterIdx ? activeChapterSpans : null,
       // PDF page image (all pages — cheap URL). Null for non-PDF / pages
       // not yet processed.
@@ -256,7 +228,7 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
       ? { ai: Boolean(OPENAI_API_KEY) }
       : null,
     isOwner: Boolean(locals.user && locals.user.id === result.text.ownerId),
-    // T-2.8: surface admin status so the reader chrome can offer the
+    // Surface admin status so the reader chrome can offer the
     // reprocess affordance to admins on any text (owners get the
     // existing per-text controls; reprocess is admin-only because it
     // re-runs NLP and overwrites token rows). Curators don't get it
@@ -271,11 +243,9 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
           totalCount: collectionContext.totalCount,
           prevTextId: collectionContext.prevTextId,
           nextTextId: collectionContext.nextTextId,
-          // Full sibling list for the reader's chapter-selector TOC +
-          // whole-book progress (T-5.x reader chrome). One small row
-          // per chapter — cheap to ship inline.
+          // Keep the chapter list for navigation and whole-book progress.
           chapters: collectionContext.chapters,
-          // T-8.6: course-kind gate. UI flips the next link to a
+          // course-kind gate. UI flips the next link to a
           // disabled state with a tooltip; ?skipLock=1 overrides.
           nextLocked,
         }

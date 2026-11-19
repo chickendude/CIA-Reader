@@ -1,18 +1,3 @@
-"""Unit tests for :mod:`app.pipelines.odia.morph` (T-2.3a).
-
-These tests pin down the rule-based analyzer's contract:
-
-1. Exact-lemma match is the first reading returned.
-2. Suffix rules only fire when the stripped stem resolves to a lemma
-   AND the lemma's POS matches the rule's POS constraint.
-3. Rules are applied longest-suffix-first, so compound suffixes like
-   "ମାନଙ୍କୁ" (plural accusative) beat the shorter "କୁ".
-4. Duplicate analyses (same lemma + same features) are de-duplicated.
-5. ``rules()`` exposes the table sorted longest-first — so callers that
-   iterate it (the pipeline and any future golden-file debuggers) can
-   trust the ordering.
-"""
-
 from __future__ import annotations
 
 from app.pipelines.odia.lemmas import OdiaLemma, OdiaLemmaTable
@@ -83,10 +68,8 @@ def test_verb_future_third_person_suffix():
 
 
 def test_verb_infinitive_suffix():
-    # Consonant-final stem: "ିବା" strips cleanly to the stem. Vowel-final
-    # stems like "ଖା" need a sandhi-inserted "ଇ" glide that the MVP rule
-    # set deliberately doesn't model — those land in OOV until T-6.7
-    # corrections teach the system the surface form.
+    # Vowel-final stems such as ଖା can insert ଇ before an ending. The current rules do not
+    # recognize that spelling here.
     lemma = OdiaLemma(headword="ଦେଖ", pos="VERB")
     out = analyze("ଦେଖିବା", _table(ଦେଖ=lemma))
     assert any(a.features == {"VerbForm": "Inf"} for a in out)

@@ -1,5 +1,5 @@
 /**
- * Translation voting service (T-10.4).
+ * Translation voting service.
  *
  * Votes are intentionally scoped to community translations. Official and
  * curator translations keep their existing curated ordering; a user's own

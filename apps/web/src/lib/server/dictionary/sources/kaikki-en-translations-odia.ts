@@ -1,5 +1,5 @@
 /**
- * Kaikki English → Odia translations importer (T-3.10).
+ * Kaikki English → Odia translations importer.
  *
  * Same inversion path as the Hindi/Marathi siblings, but for the
  * Odia script (ISO 15924 `Orya`). The English-side Translations

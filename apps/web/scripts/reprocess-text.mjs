@@ -98,7 +98,7 @@ async function main() {
     byHeadword.get(c.lemma) ??
     null;
 
-  // T-2.7 form_lemma_overrides — wildcard rows pre-loaded.
+  // Load corrections that apply to a spelling in every context.
   const overrideRows = await fetchAll(
     "SELECT surface_nfc, chosen_lemma_id FROM form_lemma_overrides WHERE language = $1 AND context_signature = ''",
     text.language,
@@ -178,7 +178,7 @@ async function main() {
 
   async function pickLemmaId(t, language) {
     if (!t.is_word) return null;
-    // T-2.7 overrides win over Stanza.
+    // Prefer a saved correction to the parser's guess.
     const override = overridesBySurface.get(foldSurface(t.surface));
     if (override) return override;
     // lemma_forms surface tier — paradigm-generated / curator-recorded forms.

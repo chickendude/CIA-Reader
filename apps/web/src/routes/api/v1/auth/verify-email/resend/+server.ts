@@ -1,5 +1,5 @@
 /**
- * POST /api/v1/auth/verify-email/resend (T-11.7).
+ * POST /api/v1/auth/verify-email/resend.
  *
  * Sends a fresh magic-link email to the authenticated user so they
  * can verify their address. Used by the verification banner's

@@ -1,5 +1,5 @@
 /**
- * Kaikki Hindi importer (T-3.10).
+ * Kaikki Hindi importer.
  *
  * Thin instantiation of `makeKaikkiSource` — the parser, POS map,
  * gloss-hashing, and stream wrapper all live in `kaikki.ts` so adding

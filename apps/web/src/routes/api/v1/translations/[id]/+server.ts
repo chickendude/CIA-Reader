@@ -1,9 +1,9 @@
 /**
- * PATCH + DELETE /api/v1/translations/:id (T-3.5).
+ * PATCH + DELETE /api/v1/translations/:id.
  *
  * The author of a user-submitted translation can edit or delete it
  * here. Officials are untouchable via this route — those go through
- * the curator dictionary editor (T-3.7). Hiding a community translation
+ * the curator dictionary editor. Hiding a community translation
  * is a moderator action and lives separately.
  */
 import { error, json } from '@sveltejs/kit';

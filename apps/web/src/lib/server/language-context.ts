@@ -1,5 +1,5 @@
 /**
- * Current-language context (T-5.25).
+ * Current-language context.
  *
  * The "current language" is the script the user is actively reading
  * — what the home grid and library filter default to, and what the
@@ -74,7 +74,7 @@ export function languageOption(code: LanguageCode): LanguageOption {
 }
 
 /** Supported languages the user hasn't added yet — the "Add a language"
- *  options in the rail switcher (#436). Order follows the registry so the
+ *  options in the rail switcher. Order follows the registry so the
  *  list is stable across renders. */
 export function addableLanguageOptions(
   activeCodes: readonly LanguageCode[],

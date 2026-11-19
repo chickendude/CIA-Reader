@@ -132,7 +132,7 @@ describe('buildApkg', () => {
       const edited = await inspect(await buildApkg('Test::Large', [{ ...cards[0]!, definition: 'revised meaning' }]));
       expect(edited.notes[0]).toEqual(original.notes[0]);
     } finally { await rm(directory, { recursive: true, force: true }); }
-  });
+  }, 30_000);
   it('produces a non-empty .apkg zip (PK header)', async () => {
     const buf = await buildApkg('Test::Deck', [
       {

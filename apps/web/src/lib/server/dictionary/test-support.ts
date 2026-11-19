@@ -1,5 +1,5 @@
 /**
- * In-memory `DictionaryRepo` for runner tests (T-3.1).
+ * In-memory `DictionaryRepo` for runner tests.
  *
  * The real repo wraps Drizzle; this one wraps three Maps. Behaviorally
  * equivalent to the extent the runner cares:
@@ -46,7 +46,7 @@ export class InMemoryDictionaryRepo implements DictionaryRepo {
 
   seedCuratorLocked(
     // `headwordNuktaStripped` is computed by Postgres for real rows
-    // (#318); the in-memory fake mirrors that by deriving it from
+    //; the in-memory fake mirrors that by deriving it from
     // `headword` via the shared `stripNukta` helper, so callers
     // never need to provide it.
     key: Omit<
@@ -152,9 +152,6 @@ export class InMemoryDictionaryRepo implements DictionaryRepo {
     sourceId: string,
   ): Promise<Translation | null> {
     for (const row of this.translations.values()) {
-      // T-14.7a: legacy lemma_id field dropped — match against
-      // the polymorphic target instead. The in-memory repo only
-      // ever writes lemma-target rows.
       if (
         row.targetType === 'lemma' &&
         row.targetId === lemmaId &&
@@ -171,8 +168,6 @@ export class InMemoryDictionaryRepo implements DictionaryRepo {
     const id = nextId('translation');
     const row: Translation = {
       id,
-      // T-14.1 / T-14.7a: legacy lemma_id removed from Translation;
-      // the in-memory fixture writes only the polymorphic pair.
       targetType: 'lemma',
       targetId: payload.lemmaId,
       source: payload.source,

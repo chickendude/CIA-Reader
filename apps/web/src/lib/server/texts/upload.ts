@@ -1,30 +1,3 @@
-/**
- * Text upload service (T-4.1, extended T-4.2).
- *
- * Front door for everything that lands in `texts` + `text_chapters`.
- * The reader/loader and library views read from those tables; the NLP
- * worker (T-4.4) processes them async. Keeping the create paths here
- * means downstream code has a single seam to add behaviors like "kick
- * the queue after insert" without touching every callsite.
- *
- * Two creators today:
- *
- *  - `createPastedText` — the paste box. Tight 1MB byte cap because we
- *    don't want a 10MB paste blocking a request thread; the file
- *    drop-zone is the right tool for that.
- *  - `createTxtText` — `.txt` file ingest (T-4.2). Bigger 10MB cap
- *    because dropping a whole novel as a `.txt` file is the intended
- *    use. Both feed `splitIntoChapters` (T-4.2's chunker), so a long
- *    body — paste OR file — auto-splits into reader-sized chapters.
- *
- * EPUB ingest lands in T-4.3 with its own creator that consumes the
- * archive's per-chapter HTML directly; chapter boundaries from the
- * source aren't subject to the auto-splitter at all.
- *
- * Authorization: every text gets `owner_id = creator.id` and
- * `visibility = 'private'` by default. Sharing + official promotion go
- * through M7 endpoints, never this one.
- */
 import { eq } from 'drizzle-orm';
 
 import { db, schema } from '../db/index.js';
@@ -87,13 +60,13 @@ export class EpubLanguageMismatchError extends TextValidationError {
  * `.txt` drop-zone for that). */
 export const MAX_PASTE_BYTES = 1_000_000;
 
-/** Hard cap on a `.txt` upload (T-4.2). 10MB is enough for any
+/** Hard cap on a `.txt` upload. 10MB is enough for any
  * realistic novel + a generous margin — at ~3 bytes/codepoint for
  * Devanagari that's ~3M codepoints, well past anything a user would
  * realistically read in one go. */
 export const MAX_TXT_BYTES = 10_000_000;
 
-/** Hard cap on the raw EPUB archive size (T-4.3). 50MB covers anything
+/** Hard cap on the raw EPUB archive size. 50MB covers anything
  * with reasonable images; bigger files almost always indicate
  * embedded video / audio that we can't use anyway. */
 export const MAX_EPUB_BYTES = 50_000_000;
@@ -180,7 +153,7 @@ function validateInput(
  * Internal helper shared by every creator. Inserts the `texts` row +
  * one `text_chapters` row per draft and returns them all. Splitting
  * the body into chapter drafts is the caller's responsibility — paste
- * and `.txt` go through the same `splitIntoChapters`; EPUB (T-4.3)
+ * and `.txt` go through the same `splitIntoChapters`; EPUB
  * will pass already-structured chapters straight in.
  */
 async function insertTextWithChapters(
@@ -232,7 +205,7 @@ async function insertTextWithChapters(
   // order across drivers.
   chapterRows.sort((a, b) => a.idx - b.idx);
 
-  // Kick the NLP worker (T-4.4). The default dispatcher is a no-op so
+  // Kick the NLP worker. The default dispatcher is a no-op so
   // tests + dev environments without arq still succeed; production
   // wiring registers a Redis-backed dispatcher at boot.
   await enqueueNlpJob({
@@ -271,7 +244,7 @@ export async function createPastedText(
 }
 
 /**
- * Create a text from a `.txt` upload (T-4.2). The body is treated as
+ * Create a text from a `.txt` upload. The body is treated as
  * plain UTF-8 and run through the chunker — explicit `\f` / `---`
  * delimiters from the original file are honored, otherwise the
  * paragraph-boundary auto-splitter fires above the threshold.
@@ -708,7 +681,7 @@ export async function createChapterBookFromZip(
 
 /**
  * Read a text + its chapters, gated by the central `canReadText`
- * helper (T-4.6). Returns `null` if the text doesn't exist OR the
+ * helper. Returns `null` if the text doesn't exist OR the
  * viewer isn't allowed to read it (deny-by-default). Endpoints map
  * `null` to 404 so we don't leak existence to non-readers.
  *
@@ -736,13 +709,7 @@ export async function getReadableText(
   return { text: text as Text, chapters };
 }
 
-/**
- * Backwards-compatible alias for the old `getOwnedText` name. Prefer
- * `getReadableText` in new code; this exists so existing callers
- * (and their tests) don't all need to flip in one ticket.
- *
- * @deprecated Use `getReadableText` directly.
- */
+/** @deprecated Use getReadableText, which also checks access to shared texts. */
 export const getOwnedText = getReadableText;
 
 /**

@@ -1,11 +1,8 @@
-<!--
-  Fixed-position stack that renders every active toast from the
-  `toasts` store. Mount this once in the root layout — `pushToast()`
-  from anywhere in the app routes through here.
--->
 <script lang="ts">
-  import { toasts } from './toast-store.js';
+  import { getToastStore } from './toast-store.js';
   import Toast from './Toast.svelte';
+
+  const { toasts } = getToastStore();
 </script>
 
 <div class="toast-host" aria-label="Notifications">

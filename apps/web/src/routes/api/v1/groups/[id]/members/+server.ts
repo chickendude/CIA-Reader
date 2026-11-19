@@ -1,5 +1,5 @@
 /**
- * GET + POST /api/v1/groups/:id/members (T-7.3).
+ * GET + POST /api/v1/groups/:id/members.
  *
  * GET — list memberships. Owner / admin only.
  * POST { userId } — add a member. Owner / admin only.

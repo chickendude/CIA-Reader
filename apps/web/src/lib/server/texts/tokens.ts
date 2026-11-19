@@ -1,8 +1,8 @@
 /**
- * Reader token + known-status loader (T-5.2).
+ * Reader token + known-status loader.
  *
- * The NLP worker writes `text_tokens` rows during processing
- * (T-2.6). Once the worker has run, the reader pulls those rows + a
+ * The NLP worker writes `text_tokens` rows during processing.
+ * Once the worker has run, the reader pulls those rows + a
  * join through `user_known_lemmas` so each token can render with the
  * right `.status-*` class.
  *
@@ -23,7 +23,7 @@ import { type HindiStutter, joinReaderStutters } from './hindi-stutters.js';
 import { loadHindiContextChoices, canVerifyHindiContext, contextVersion } from './hindi-context.js';
 
 /**
- * One candidate in the disambiguation list (T-6.1). Set on
+ * One candidate in the disambiguation list. Set on
  * is_ambiguous=true tokens; the reader popup expands the list so
  * the user can pick the correct lemma.
  *
@@ -49,7 +49,7 @@ export type RenderedCandidate = {
   features: Record<string, string>;
 };
 
-/** T-2.8: per-language spelled-out + ISO 15919 romanization for a
+/** Per-language spelled-out + ISO 15919 romanization for a
  *  digit-only NUM token. Keyed on language for symmetry with the wire
  *  shape; `or` is the ISO 639-1 code for Odia. */
 export type RenderedNumberLanguageForm = {
@@ -58,9 +58,7 @@ export type RenderedNumberLanguageForm = {
 };
 
 export type RenderedNumberForms = {
-  /** Canonical Latin-digit string form. T-2.8a widened this from
-   *  number to string so signed + decimal numerals (`"-3.14"`,
-   *  `"0.001"`) round-trip without floating-point drift. */
+  /** Store the digits as text so decimal values keep their precision. */
   value: string;
   digitsLatin: string;
   digitsDeva: string;
@@ -97,7 +95,7 @@ export type RenderedToken = {
   pos?: string;
   romanization: string | null;
   /** Canonical short gloss for the lemma — surfaced in the hover
-   *  tooltip (T-5.18) so a reader can scan a paragraph without
+   *  tooltip so a reader can scan a paragraph without
    *  locking the side panel. Null when the lemma has no glossDefault
    *  on file, or when the token has no lemma id (whitespace, OOV). */
   glossDefault: string | null;
@@ -108,7 +106,7 @@ export type RenderedToken = {
    *  read in their own words on hover. Null for anonymous viewers
    *  and for lemmas the viewer hasn't translated. */
   personalGloss: string | null;
-  /** T-6.1: alternate lemma candidates the worker scored. Empty
+  /** alternate lemma candidates the worker scored. Empty
    *  array when the token has no candidates beyond the top pick
    *  (or when the worker hasn't run). The popup hides the
    *  alternate-meanings affordance when this is empty. */
@@ -121,7 +119,7 @@ export type RenderedToken = {
    *  features for this token (e.g. punctuation, OOV, the stub
    *  pipeline). */
   features: Record<string, string>;
-  /** T-2.8: digit-only NUM tokens carry a per-language spelled-out
+  /** digit-only NUM tokens carry a per-language spelled-out
    *  form + romanization. Null on every other token. */
   numberForms: RenderedNumberForms | null;
   status: 'known' | 'learning' | 'ignored' | 'unknown';
@@ -129,14 +127,10 @@ export type RenderedToken = {
    *  page image; drives the image reader's clickable word hotspots.
    *  Null for text tokens and whitespace/punctuation. */
   bbox: { x: number; y: number; w: number; h: number } | null;
-  /** #435: true when this word's lemma (or a same-headword sibling)
-   *  carries a canonical short gloss — i.e. the dictionary has a
-   *  definition for it. False for OOV words and for lemmas with no
-   *  gloss on file yet. Drives the admin-only "flag undefined words"
-   *  reader overlay so curators can spot dictionary gaps while
-   *  reading. Derived from the same `glossDefault` (incl. the T-3.14
-   *  sibling fallback) the hover tooltip uses, so the overlay agrees
-   *  with what a reader actually sees on hover. */
+  /**
+   * Whether the tooltip can show a definition, including one from another entry for the same
+   * headword.
+   */
   hasDefinition: boolean;
 };
 
@@ -159,7 +153,7 @@ export async function loadChapterTokens(
 
   if (tokens.length === 0) return null;
 
-  // T-6.4: pull the viewer's per-token corrections in one SELECT
+  // Pull the viewer's per-token corrections in one SELECT
   // so we can apply them in the same map below without a per-token
   // round trip. Anonymous viewers don't have corrections; signed-in
   // viewers usually have only a handful per chapter, so this is
@@ -232,10 +226,8 @@ export async function loadChapterTokens(
     }
   }
 
-  // Primary lemma for each token (the worker's top pick) AFTER any
-  // T-6.4 correction is applied — that way the gloss + known-status
-  // joins below pick up the corrected lemma in a single pass instead
-  // of fetching twice.
+  // Apply the reader's corrections before looking up definitions and learning status so both
+  // describe the selected entry.
   const primaryLemmaIds = tokens
     .map((t) => {
       const c = correctionsByTokenId.get(t.id);
@@ -243,7 +235,7 @@ export async function loadChapterTokens(
       return t.lemmaId;
     })
     .filter((id): id is string => !!id);
-  // T-6.1: also pre-fetch every lemma referenced as a CANDIDATE so
+  // Also pre-fetch every lemma referenced as a CANDIDATE so
   // the popup's alternate-meanings list can render headword + POS
   // + gloss without a per-token fetch when the user expands it. The
   // candidate list is small per token (typically 2-5 entries), so
@@ -281,18 +273,18 @@ export async function loadChapterTokens(
     }
   }
 
-  // T-5.18: pull each lemma's `glossDefault` so the hover tooltip can
+  // Pull each lemma's `glossDefault` so the hover tooltip can
   // surface a brief definition without a per-hover fetch. Cheap — a
   // single SELECT against an indexed primary key.
   //
-  // T-3.14: also pull `language` and `headword` so we can fall back
+  // Also pull `language` and `headword` so we can fall back
   // to a sibling lemma's gloss when the directly-linked one is empty.
   // Common case: a token tagged PROPN (because it's part of a
   // multi-word proper name) where the dictionary entry actually lives
   // under NOUN. Pre-fix the tooltip said "No translations"; post-fix
   // it shows the sibling NOUN's gloss. Mirrors the popup-side
   // fallback in `getLemmaTranslations` so both surfaces stay in sync.
-  // T-6.1: extend the lemma fetch to include `pos` so candidate
+  // extend the lemma fetch to include `pos` so candidate
   // entries can render headword + POS + gloss in the alternate-
   // meanings list. We re-use the same SELECT for the primary's
   // glossDefault path.
@@ -424,7 +416,7 @@ export async function loadChapterTokens(
     const choice = liveMatches.has(t.id) ? undefined : choices.get(sourceOffset);
     sourceOffset += [...t.surface].length;
     const selected = choice?.selectedLemmaIds.find((id: string) => t.lemmaCandidates.some((candidate) => candidate.lemmaId === id));
-    // T-6.4: apply the viewer's persistent correction here so the
+    // Apply the viewer's persistent correction here so the
     // chosen lemma drives every downstream concern (status colour,
     // gloss tooltip, candidate list).
     const correction = correctionsByTokenId.get(t.id) ?? null;
@@ -450,14 +442,8 @@ export async function loadChapterTokens(
         ? statusByLemma.get(effectiveLemmaId)!
         : 'unknown';
 
-    // T-6.1: build the candidate list, dropping (a) candidates with
-    // no lemmaId (the worker couldn't link them — those become
-    // "search the dictionary" picks under T-6.2), and (b) the
-    // currently-active lemma (post-correction) so the popup never
-    // offers the user their already-active pick. T-6.4: if the
-    // user picked a candidate, the worker's original primary
-    // re-enters the candidate list so they can flip back without
-    // re-hunting it.
+    // Offer only alternatives that link to a dictionary entry and differ from the selected
+    // meaning.
     const candidates: RenderedCandidate[] = [];
     const seen = new Set<string>();
     function pushCandidate(
@@ -501,9 +487,7 @@ export async function loadChapterTokens(
     }
     candidates.sort((a, b) => b.score - a.score);
 
-    // #435: resolve the effective gloss once so both the tooltip
-    // payload and the `hasDefinition` flag read the same value (incl.
-    // the sibling fallback applied to `glossByLemma` above).
+    // Use the same definition for the tooltip and the marker for words missing a definition.
     const effectiveGloss = effectiveLemmaId
       ? glossByLemma.get(effectiveLemmaId) ?? null
       : null;
@@ -586,7 +570,7 @@ export async function loadKnownStatusMap(
 }
 
 /** Rare but useful: every lemma the user has marked, regardless of
- * which chapter it appears in. Used by the stats page (T-10.1). */
+ * which chapter it appears in. Used by the stats page. */
 export async function listKnownLemmas(
   viewerId: string,
   status?: UserKnownLemma['status'],
@@ -616,12 +600,12 @@ export async function listKnownLemmas(
 export { inArray };
 
 // -----------------------------------------------------------------------
-// setKnownLemmaStatus (T-5.5)
+// setKnownLemmaStatus
 // -----------------------------------------------------------------------
 
 /**
  * Upsert the user's known-status for a lemma. The reader's pop-up
- * (T-5.4) wires its Learning / Known / Ignored buttons through this.
+ * wires its Learning / Known / Ignored buttons through this.
  * Recomputes the per-language known-count cache on
  * `user_languages.known_words_count_cache` so the stats card on the
  * profile page is correct without a full scan.

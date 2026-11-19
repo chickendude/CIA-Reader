@@ -1,14 +1,5 @@
-/**
- * Shared types for the reader components (T-5.1).
- *
- * The three layout modes (`page`, `paged_scroll`, `continuous`) all
- * accept the same `ChapterView` data so token rendering + the
- * pop-up + known-words affordances can be added once and used by
- * every mode (T-5.2 onward).
- */
-
 /** One alternate-meaning entry the popup expands when
- *  isAmbiguous=true (T-6.1). The reader pulls these from the
+ *  isAmbiguous=true. The reader pulls these from the
  *  worker's `lemma_candidates` jsonb column and joins them against
  *  `lemmas` so the row already carries headword + POS + gloss for
  *  the popup. */
@@ -25,30 +16,9 @@ export type ServerCandidate = {
   features: Record<string, string>;
 };
 
-/** T-2.8 / T-2.8a: cheap surface-level detector — does this token
- *  *look* like a numeric token? Accepts:
- *
- *   - unsigned positive integers, optionally with thousands / lakh
- *     comma separators (`"123"`, `"1,000"`, `"10,00,000"`);
- *   - T-2.8a signed integers (`"-12"`, `"−5"` with U+2212);
- *   - T-2.8a decimals (`"3.14"`, `"0.001"`, `"-2.5"`).
- *
- *  Latin (0–9), Devanagari (०–९), and Odia (୦–୯) digit ranges all
- *  qualify; each alternation pins a single script so mixed-script
- *  input (`"1,२३४"`, `"१.5"`) doesn't sneak through. Comma separators
- *  combined with a decimal point (e.g. `"1,000.5"`) are intentionally
- *  out of scope — neither the unsigned-integer nor the signed-decimal
- *  parser accepts that shape, and treating it as numeric here would
- *  desynchronize the UI from the Python parser.
- *
- *  Used both by the dispatcher (skip lemma auto-create for these
- *  surfaces so the lemmas table doesn't fill with "1,013,322"-style
- *  entries) and by the popup / tooltip (treat as a number even when
- *  the older `numberForms` column is null because the chapter was
- *  processed before the comma / sign / decimal support landed). The
- *  full Python parser in `services/nlp/app/numbers.py` is the source
- *  of truth for actually generating the spelled-out forms; this
- *  helper just gates UI branching on the client.
+/**
+ * Recognize a numeral from its spelling when an older chapter has no saved number forms. Keep
+ * signed values, decimals and grouped digits consistent with the number parser.
  */
 // Two alternatives per script:
 //   - integer with optional comma groups (no decimal point)
@@ -79,7 +49,7 @@ export function looksLikeNumberToken(surface: string): boolean {
   return _NUMBER_RE.test(surface);
 }
 
-/** T-2.8: per-language spelled-out + ISO 15919 romanization for a
+/** Spelled-out form and ISO 15919 romanization for a
  *  digit-only NUM token. Mirrors `RenderedNumberForms` in
  *  `$lib/server/texts/tokens.ts`. */
 export type ServerNumberLanguageForm = {
@@ -88,9 +58,7 @@ export type ServerNumberLanguageForm = {
 };
 
 export type ServerNumberForms = {
-  /** Canonical Latin-digit string form. T-2.8a widened this from
-   *  number to string so signed + decimal numerals (`"-3.14"`,
-   *  `"0.001"`) round-trip without floating-point drift. */
+  /** Store the digits as text to preserve decimals without rounding. */
   value: string;
   digitsLatin: string;
   digitsDeva: string;
@@ -105,7 +73,7 @@ export type ServerNumberForms = {
   eu: ServerNumberLanguageForm;
 };
 
-/** Per-token row from the NLP worker (T-5.2). When present, the
+/** Per-token row from the NLP worker. When present, the
  *  component renders these spans directly; when null, it falls back
  *  to client-side whitespace tokenization. */
 export type ServerToken = {
@@ -130,14 +98,14 @@ export type ServerToken = {
   pos?: string;
   romanization: string | null;
   /** Canonical short gloss for the lemma — surfaced in the hover
-   *  tooltip (T-5.18). Null when there's no lemma or no gloss yet. */
+   *  tooltip. Null when there's no lemma or no gloss yet. */
   glossDefault: string | null;
   /** The viewer's own translation for this lemma, if any. The hover
    *  tooltip prefers this over `glossDefault` so a reader sees their
    *  own words for lemmas they've translated. Null when anonymous
    *  or when the viewer hasn't added a personal translation. */
   personalGloss: string | null;
-  /** T-6.1: alternate-meaning candidates for is_ambiguous tokens.
+  /** alternate-meaning candidates for is_ambiguous tokens.
    *  Empty array when the worker scored only one viable candidate
    *  or hasn't run yet. */
   candidates: ServerCandidate[];
@@ -145,19 +113,13 @@ export type ServerToken = {
    *  popup's "past · 1sg" pill row. Empty object when the worker
    *  emitted nothing for this token. */
   features: Record<string, string>;
-  /** T-2.8: digit-only NUM tokens (e.g. "123" / "१२३" / "୧୨୩")
+  /** digit-only NUM tokens (e.g. "123" / "१२३" / "୧୨୩")
    *  carry a per-language spelled-out form + ISO-15919 romanization.
    *  Null on every other token. The popup uses this to replace the
    *  lemma/translation block with the three written-out renderings. */
   numberForms: ServerNumberForms | null;
   status: 'known' | 'learning' | 'ignored' | 'unknown';
-  /** #435: true when the lemma has a canonical gloss (the dictionary
-   *  defines it), false when it has none yet (OOV words, or lemmas
-   *  awaiting a definition). Optional because client-tokenized
-   *  fallback tokens and synthetic phrase tokens can't know it — the
-   *  admin "flag undefined words" overlay only marks a token when this
-   *  is explicitly `false`, so an absent value is treated as "unknown,
-   *  don't flag." */
+  /** Whether the reader has a definition to show for this word. */
   hasDefinition?: boolean;
   /** PDF source only: the word's bounding box on the page image,
    *  normalized to 0..1 of the page width/height. Drives the clickable
@@ -192,17 +154,8 @@ export function withLemmaCorrection(token: ServerToken, lemmaId: string | undefi
 }
 
 /**
- * One occurrence of a phrase inside a chapter (T-14.3, M14
- * phrase-level translations). The reader wraps the run of tokens
- * from `startTokenIdx` through `endTokenIdx` (inclusive) in a
- * `<phrase>` element so the per-phrase status and gloss can drive
- * highlighting + the popup header.
- *
- * Multiple spans may share `startTokenIdx` (one short, one long) —
- * the renderer picks the longest as the visible wrapper and keeps
- * shorter spans in `data-phrase-overlap` so the popup can offer
- * them as alternatives. Lifecycle parallel to T-14.2's server-side
- * `phrase_chapter_spans` table.
+ * Both ends of a phrase are included. When matches start on the same word, the reader shows the
+ * longest and keeps the shorter alternatives.
  */
 export type ChapterPhraseSpan = {
   phraseId: string;
@@ -219,9 +172,7 @@ export type ChapterView = {
   body: string | null;
   tokenCount: number;
   tokens: ServerToken[] | null;
-  /** T-14.3: phrase spans for this chapter — empty array when none,
-   *  null when the chapter hasn't been processed yet (sibling to
-   *  `tokens` null state). */
+  /** Null until the chapter is processed. An empty list means no phrases matched. */
   phraseSpans: ChapterPhraseSpan[] | null;
   /** Page image and optional natural dimensions for the image reader. */
   pageImageUrl?: string | null;
@@ -253,12 +204,7 @@ export function statusToCode(status: ServerToken['status']): StatusCode {
   return STATUS_TO_CODE[status];
 }
 
-/**
- * Cheap whitespace tokenizer for the placeholder render path. M5's
- * later tickets replace this with token rows from the NLP worker
- * (T-2.6) — at that point the reader pulls token spans straight from
- * Postgres and this helper goes away.
- */
+/** Split the raw chapter text for display while the processed words are unavailable. */
 export type RenderToken = {
   /** Position within the chapter, 0-based. */
   idx: number;
@@ -299,12 +245,7 @@ export function tokenize(body: string): RenderToken[] {
   return tokens;
 }
 
-/**
- * Group tokens by paragraph (the pre-tokenization step splits on
- * blank lines, the post-tokenization helper just walks tokens and
- * cuts on `\n\n+` whitespace tokens). M5 keeps paragraph integrity
- * because translating in-context matters.
- */
+/** Blank lines mark paragraph boundaries. Keep the words on each side in separate paragraphs. */
 export function paragraphsOfTokens(tokens: RenderToken[]): RenderToken[][] {
   const out: RenderToken[][] = [];
   let current: RenderToken[] = [];
@@ -340,13 +281,7 @@ export function paragraphsOfServerTokens(
   return out;
 }
 
-/**
- * One slot in a paragraph after T-14.3 phrase segmentation. Either
- * a bare token (no phrase covers this idx) or a run of tokens
- * wrapped by the longest phrase that starts at this idx. Shorter
- * overlapping spans are exposed via `overlaps` so the popup can
- * offer them as alternatives without changing the visible wrapper.
- */
+/** A paragraph contains ordinary tokens and runs of tokens that belong to a phrase. */
 export type ParagraphSegment =
   | { kind: 'token'; token: ServerToken }
   | {
@@ -359,15 +294,8 @@ export type ParagraphSegment =
     };
 
 /**
- * Segment a paragraph into bare-token / phrase-wrapped slots so the
- * renderer can wrap phrase spans in `<phrase>` elements without
- * conditional template logic per token. T-14.2's resolver only
- * emits spans within a single sentence, and paragraphs are
- * supersets of sentences, so a span never crosses a paragraph
- * boundary in practice. The defensive bail-out below handles the
- * theoretical case where a span's `endTokenIdx` lies outside the
- * provided paragraph (a re-process race) by treating those tokens
- * as bare.
+ * A phrase fits within one sentence. If a saved match extends past this paragraph, render the
+ * words normally so an outdated match cannot hide text.
  */
 export function segmentParagraphPhrases(
   paragraph: ServerToken[],
@@ -393,7 +321,7 @@ export function segmentParagraphPhrases(
     const candidates = spansByStart.get(t.idx);
     if (candidates && candidates.length > 0) {
       // Longest span wins for the visible wrapper; any shorter
-      // siblings sharing the start ride along as overlaps.
+      // Keep shorter matches that begin at the same word.
       const sorted = [...candidates].sort(
         (a, b) =>
           b.endTokenIdx - b.startTokenIdx - (a.endTokenIdx - a.startTokenIdx),
@@ -431,7 +359,7 @@ export function segmentParagraphPhrases(
 }
 
 /**
- * T-14.3b: a paragraph's segments after pending-selection grouping.
+ * a paragraph's segments after pending-selection grouping.
  * Either an untouched segment (`kind: 'plain'`) or a contiguous run
  * of segments that fall inside the user's in-progress shift-click
  * range (`kind: 'pending'`). The renderer wraps the latter in a

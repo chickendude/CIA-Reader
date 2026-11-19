@@ -1,7 +1,4 @@
 // @vitest-environment node
-/**
- * Route tests for POST /api/v1/texts/epub (T-4.3).
- */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const createChapterBookFromEpub = vi.fn();

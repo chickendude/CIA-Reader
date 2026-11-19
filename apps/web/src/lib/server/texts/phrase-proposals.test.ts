@@ -1,7 +1,4 @@
 // @vitest-environment node
-/**
- * Unit tests for the phrase proposals queue + promotion (T-14.5a).
- */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 type Call =

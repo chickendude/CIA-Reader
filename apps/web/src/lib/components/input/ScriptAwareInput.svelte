@@ -1,44 +1,6 @@
 <!--
-  ScriptAwareInput (T-6.2a).
-
-  A drop-in `<input>` replacement that lets the user type in either
-  the native script for the language (Devanagari for hi/mr, Odia for
-  or) or in Latin (ITRANS-flavored) and see live transliteration as
-  they type. Used by:
-
-    - T-6.2 correction modal (dictionary search)
-    - T-6.3 new-lemma submission form
-    - T-3.7 curator dictionary editor (when retrofitted)
-    - T-3.12 dictionary browse search (when retrofitted)
-
-  Props:
-
-    - language          — drives the script + transliteration map
-    - initialScript     — 'auto' | 'native' | 'romanization'
-    - value             — controlled text in native script (NFC)
-    - placeholder       — passthrough
-    - onNativeChange    — fired with the NFC native string
-
-  Behavior:
-
-    - 'native' mode: typed text passes through untouched + NFC-normalizes.
-    - 'romanization' mode: each keystroke runs `latinToNative()` and
-      we render the native preview as a non-editable shadow. The
-      latin draft remains in the input so the user can edit; on
-      blur (or paste of native), we commit the native form to the
-      input directly.
-    - 'auto' mode: starts as 'romanization' but flips to 'native'
-      the first time the user types a native-script character (or
-      pastes one).
-    - Paste handler: paste of native skips transliteration +
-      NFC-normalizes; paste of latin runs the full transliteration.
-    - The "show as" toggle button flips between 'native' and
-      'romanization' mode without losing the text.
-
-  IME composition: while `compositionstart`/`compositionend` is
-  active we suspend transliteration so multi-keystroke IME input
-  (e.g. macOS Devanagari keyboard) lands directly without our
-  latin-rules interfering.
+  Converts typed or pasted text to the selected script. Keep the original input available while
+  the user is composing a character.
 -->
 <script lang="ts">
   import Button from './Button.svelte';

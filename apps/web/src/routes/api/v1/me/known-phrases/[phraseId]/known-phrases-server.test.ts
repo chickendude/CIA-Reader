@@ -1,7 +1,7 @@
 // @vitest-environment node
 /**
- * Endpoint tests for PATCH /api/v1/me/known-phrases/:phraseId
- * (T-14.1). Mirrors the structure of `known-lemmas-server.test.ts`.
+ * Endpoint tests for PATCH /api/v1/me/known-phrases/:phraseId.
+ * Mirrors the structure of `known-lemmas-server.test.ts`.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 

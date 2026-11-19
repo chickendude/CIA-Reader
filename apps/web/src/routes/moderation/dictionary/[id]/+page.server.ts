@@ -1,20 +1,3 @@
-/**
- * Curator lemma editor (T-3.7).
- *
- * SSR loader renders the full editor view (lemma fields, translations,
- * forms, recent history). Form actions route every mutation through the
- * same service layer the JSON API uses, so the validation + audit rules
- * are identical between web form and programmatic client.
- *
- * Sub-forms (edit / hide / merge / split / promote / lock) each post to
- * a distinct action name and return a discriminated `section`-tagged
- * result so the template can render inline success / error messages
- * next to the right form without juggling union narrowing in the UI.
- *
- * Script-aware inputs (T-6.2a) aren't in the codebase yet; for now the
- * form uses plain text inputs and curators paste the native-script
- * headword directly. The service already NFC-normalises on write.
- */
 import { error, fail, redirect } from '@sveltejs/kit';
 import { z } from 'zod';
 
@@ -102,7 +85,7 @@ export const load: PageServerLoad = async ({ params, locals }) => {
       params.id,
     );
     // Attach the same provenance discriminator the public translation
-    // endpoint exposes (T-3.8) so the editor renders the same badge as
+    // endpoint exposes so the editor renders the same badge as
     // the reader pop-up will.
     const editorViewer = { id: locals.user.id };
     // Pull the forms list + paradigm catalog in parallel; both are

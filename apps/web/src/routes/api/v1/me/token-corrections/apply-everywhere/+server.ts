@@ -1,5 +1,5 @@
 /**
- * POST /api/v1/me/token-corrections/apply-everywhere (T-6.2b).
+ * POST /api/v1/me/token-corrections/apply-everywhere.
  *
  * Replicates the acting user's correction on `sourceTokenId`
  * across every matching token (same surface, optionally same

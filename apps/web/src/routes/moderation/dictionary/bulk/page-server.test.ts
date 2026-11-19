@@ -1,6 +1,6 @@
 // @vitest-environment node
 /**
- * Tests for /moderation/dictionary/bulk SSR loader + actions (T-3.9).
+ * Tests for /moderation/dictionary/bulk SSR loader + actions.
  *
  * The page is admin-only; this suite verifies the loader gate plus that
  * each action correctly delegates to the bulk service and shapes the

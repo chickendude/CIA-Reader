@@ -1,7 +1,4 @@
 // @vitest-environment node
-/**
- * Tests for the /dictionary/:language SSR page loader (T-3.6).
- */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const listDictionaryLemmas = vi.fn();
@@ -112,7 +109,7 @@ describe('GET /dictionary/:language load', () => {
     );
   });
 
-  it('surfaces T-3.12 transliteration metadata to the page', async () => {
+  it('includes transliteration details in the page data', async () => {
     listDictionaryLemmas.mockResolvedValueOnce({
       lemmas: [],
       totalCount: 0,

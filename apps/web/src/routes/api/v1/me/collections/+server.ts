@@ -1,5 +1,5 @@
 /**
- * GET /api/v1/me/collections (T-8.1).
+ * GET /api/v1/me/collections.
  */
 import { json } from '@sveltejs/kit';
 

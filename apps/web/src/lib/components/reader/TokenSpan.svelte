@@ -1,17 +1,6 @@
 <!--
-  Single token render (T-5.2, romanization in T-5.3, status modes in T-5.9).
-
-  One `<span>` per token, with a numeric `data-s` attribute when we
-  have a lemma resolution. The colored highlight rules live in
-  `tokens.css` and are switched between background-tint and underline
-  modes via `data-hl` on the reader. Whitespace tokens render as plain
-  text without any classes.
-
-  When `showRomanization` is on AND the token has a precomputed
-  `romanization` (worker-time, T-2.5), the surface form renders
-  inside an HTML `<ruby>` element with the romanized form on top so
-  learners who aren't yet fluent in the script can decode each word
-  inline.
+  Use ruby text to show a word's pronunciation above its original spelling when romanization is
+  enabled.
 -->
 <script lang="ts">
   import { looksLikeNumberToken, statusToCode, type ServerToken } from './types.js';
@@ -29,20 +18,12 @@
     isAnchor?: boolean;
   } = $props();
 
-  // OOV tokens get a distinct visual state (T-5.4a) — dashed
-  // underline rather than the known/unknown highlight, so the user
-  // sees them as "no dictionary match yet" not "you don't know this
-  // word."
+  // A dashed underline marks a missing dictionary entry. Learning status uses a separate style.
   const cssClass = $derived.by(() => {
     if (!token.isWord && !token.numberForms && !looksLikeNumberToken(token.surface)) return '';
     const classes: string[] = ['word'];
     if (token.isOov) classes.push('oov');
     if (isAnchor) classes.push('anchor');
-    // #435: tag words whose lemma has no definition yet. The class is
-    // inert until an admin flips `data-flag-undefined` on <html> from
-    // the reader settings popover, so non-admins never see it. We only
-    // mark when the loader said `false` outright — absent (client
-    // fallback / synthetic tokens) means "unknown", so we don't flag.
     if (token.hasDefinition === false) classes.push('no-definition');
     return classes.join(' ');
   });
@@ -100,7 +81,7 @@
   :global([data-hl='none']) .oov {
     border-bottom: 0;
   }
-  /* T-9.3: karaoke-style highlight on the word currently being
+  /* karaoke-style highlight on the word currently being
      spoken in the audio. Higher contrast than hover/anchor so the
      reader can track the playhead at a glance. */
   :global(.playing) {

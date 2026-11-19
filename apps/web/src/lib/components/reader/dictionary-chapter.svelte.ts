@@ -8,12 +8,17 @@ export function dictionaryChapterTokens(
   textId: () => string,
   onRefresh: (lemmaId: string) => void,
 ) {
-  let fresh = $state.raw<{ source: ChapterView; tokens: ServerToken[] }>();
-  const tokens = () => fresh && fresh.source === chapter() ? fresh.tokens : chapter()?.tokens;
+  const chapterId = $derived(chapter()?.id);
+  const chapterIdx = $derived(chapter()?.idx);
+  const original = $derived(chapter()?.tokens);
+  let fresh = $state.raw<{ source: ServerToken[]; tokens: ServerToken[] }>();
+  const tokens = () => fresh && fresh.source === original ? fresh.tokens : original;
   $effect(() => {
-    const source = chapter();
+    const source = original;
+    const idx = chapterIdx;
+    const expectedId = chapterId;
     const id = textId();
-    if (!source?.tokens) return;
+    if (!source || idx === undefined) return;
     let version = 0;
     const refresh = async (event: Event) => {
       const draft = (event as CustomEvent<Draft>).detail;
@@ -37,8 +42,8 @@ export function dictionaryChapterTokens(
       onRefresh(lemmaId);
       const request = ++version;
       try {
-        const result = await defaultFetcher(id, source.idx);
-        if (request !== version || !result.tokens || result.chapterId !== source.id) return;
+        const result = await defaultFetcher(id, idx);
+        if (request !== version || !result.tokens || result.chapterId !== expectedId) return;
         fresh = { source, tokens: result.tokens };
         onRefresh(lemmaId);
       } catch {

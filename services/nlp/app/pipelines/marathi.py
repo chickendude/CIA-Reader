@@ -1,24 +1,5 @@
-"""Marathi pipeline backed by Stanza's ``mr`` UD model.
-
-Output shape and OOV / ambiguity contract match the Hindi pipeline — the
-same :class:`StanzaUDPipeline` base handles tokenization / lemma / POS /
-morphology feature extraction.
-
-Marathi accuracy caveat (from the plan): Stanza's ``mr`` model runs at
-~75–85% real-world accuracy versus ~90% for Hindi, so we expect
-``is_oov`` to fire more often. The correction UX in M6 carries the
-weight of that. No pipeline-side workarounds here — the correct place
-to improve parse quality is crowdsourced overrides (T-2.7 / T-6.7) and
-the dictionary (M3), not by guessing in the tokenizer.
-
-**IndicNLP fallback**: Stanza's Marathi tokenizer has known issues on
-short, punctuation-heavy, or informal inputs where it can emit zero
-tokens for non-empty text. When that happens we fall back to
-IndicNLP's ``indic_tokenize.trivial_tokenize(..., lang='mr')`` (which
-is already script-aware and handles Devanagari clitics) to at least
-surface the words with ``is_oov=True``. The fallback is injected so
-tests don't need IndicNLP installed.
-"""
+"""Analyze Marathi text with Stanza. When its tokenizer returns no words for non-empty input, use
+IndicNLP to split the text so readers can still see the words."""
 
 from __future__ import annotations
 

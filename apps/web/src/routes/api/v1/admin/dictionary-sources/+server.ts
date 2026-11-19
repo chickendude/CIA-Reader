@@ -1,5 +1,5 @@
 /**
- * Polling endpoint for the admin dictionary-sources page (T-3.14).
+ * Polling endpoint for the admin dictionary-sources page.
  *
  * Returns the same row shape the page loader produces. The Svelte
  * page polls this every 2 s while any row has an in-flight job so

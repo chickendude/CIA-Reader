@@ -1,13 +1,4 @@
 // @vitest-environment node
-/**
- * DB-mocked unit tests for `getLemmaTranslations` — specifically the
- * sibling-fallback path added in T-3.14.
- *
- * The pure `bucketTranslations` sorter has its own tests in
- * `lookups.test.ts`; this file covers the wiring around DB calls plus
- * the sibling-fetch logic that kicks in when the directly-linked lemma
- * has no translations of its own.
- */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const staged: Array<unknown[] | { rows: unknown[] }> = [];
@@ -111,7 +102,7 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-describe('getLemmaTranslations (T-3.14 sibling fallback)', () => {
+describe('translations from other entries for the same word', () => {
   it('throws LemmaNotFoundError when the primary lemma is missing', async () => {
     stage([]); // SELECT lemma → none
     await expect(getLemmaTranslations('missing', null)).rejects.toBeInstanceOf(
@@ -166,19 +157,15 @@ describe('getLemmaTranslations (T-3.14 sibling fallback)', () => {
     stage([lemmaRow()]);
     stage([]); // primary empty
     stage([]); // exact-headword sibling join empty
-    stage([]); // #318: nukta-stripped sibling join empty
+    stage([]); // No matching entry after removing nukta marks.
     const out = await getLemmaTranslations('lemma-1', null);
     expect(out.translations.personal).toEqual([]);
     expect(out.translations.official).toEqual([]);
     expect(out.translations.community).toEqual([]);
   });
 
-  it('falls back to nukta-stripped siblings when exact-headword siblings are empty (#318)', async () => {
-    // Linked lemma is `फिल्म` (pre-#316, no nukta). Exact-headword
-    // sibling fetch finds nothing (no other `फिल्म` rows). The
-    // canonical entry sits under `फ़िल्म` (with nukta) and ships the
-    // gloss — caught by the nukta-stripped tier because both reduce
-    // to the same key.
+  it('falls back to nukta-stripped siblings when exact-headword siblings are empty', async () => {
+    // The linked entry spells the word without a nukta. The fallback can still find the spelling with a nukta.
     stage([lemmaRow({ id: 'lemma-1', headword: 'फिल्म', pos: 'NOUN' })]);
     stage([]); // primary translations empty
     stage([]); // exact-headword sibling fetch empty

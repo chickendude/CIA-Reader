@@ -1,5 +1,5 @@
 /**
- * Immersive reading mode (T-5.16).
+ * Immersive reading mode.
  *
  * When the reader hides its chrome — the app shell rail on desktop,
  * the bottom tab bar on mobile, and the mobile top-strip — the

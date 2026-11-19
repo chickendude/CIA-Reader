@@ -1,5 +1,5 @@
 /**
- * Reader settings — types + helpers (T-5.1b).
+ * Reader settings, types + helpers.
  *
  * The reader popover (`ReaderSettings.svelte`) and the reader page
  * loader both speak this shape. Defaults match the

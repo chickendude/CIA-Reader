@@ -69,7 +69,7 @@ function makeToken(overrides: Partial<ServerToken> = {}): ServerToken {
   };
 }
 
-describe('WordPopup — number-only token block (T-2.8)', () => {
+describe('WordPopup number-only token block', () => {
   it.each([
     ['hi', 'Hindi', '१२३', 'एक सौ तेईस', 'ek sau teīs'],
     ['mr', 'Marathi', '१२३', 'एकशे तेवीस', 'ēkaśē tēvīsa'],
@@ -141,7 +141,7 @@ describe('WordPopup — number-only token block (T-2.8)', () => {
     ).not.toBeNull();
   });
 
-  it('renders a negative + decimal value end-to-end (T-2.8a)', () => {
+  it('renders a negative + decimal value end-to-end', () => {
     // The Python parser emits the canonical sign + decimal in
     // digitsLatin / digitsDeva / digitsOrya, and the spelled-out
     // form already includes the language minus / point words. The
@@ -218,9 +218,8 @@ describe('WordPopup — number-only token block (T-2.8)', () => {
   });
 
   it('shows a reprocess hint for legacy number tokens whose numberForms column is null', () => {
-    // Pre-#340 chapter: the dispatcher auto-created a "1,013,322 / NUM"
-    // lemma row, so lemmaId is set. The popup must NOT render that
-    // bogus lemma block; it must show the reprocess hint instead.
+    // An older chapter can link a numeral to a dictionary entry even when the number forms are
+    // missing.
     render(WordPopup, {
       token: makeToken({
         surface: '1,013,322',
@@ -243,7 +242,7 @@ describe('WordPopup — number-only token block (T-2.8)', () => {
   });
 });
 
-describe('WordPopup — translation reporting (T-11.1)', () => {
+describe('WordPopup translation reporting', () => {
   function makePayload() {
     return {
       lemma: { id: 'lem-1', headword: 'पानी', pos: 'NOUN', glossDefault: null },

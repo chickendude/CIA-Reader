@@ -1,17 +1,6 @@
-"""Golden-file corpus loader + pipeline evaluator.
-
-The corpus format is the one documented in the JSON fixtures (see
-``app/pipelines/odia/data/golden_corpus.json``). Each entry asserts
-only what the contributor is confident about — missing keys are
-"don't-care" slots, so a sentence can pin the lemma without pinning
-every morphology feature.
-
-Accuracy is reported as a set of per-field rates (lemma, pos, feats,
-is_oov, is_ambiguous) plus an overall "lemma + pos" joint rate, which
-is the one T-2.8 thresholds in CI against. Per-sentence token counts
-need not match — a divergence is a failure with a descriptive reason
-so a human can spot what drifted.
-"""
+"""Compare each pipeline response with the expected words. A missing expectation leaves that field
+unscored. Report mismatched token counts separately so differences in word boundaries are
+visible."""
 
 from __future__ import annotations
 

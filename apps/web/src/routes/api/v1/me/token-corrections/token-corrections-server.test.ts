@@ -1,7 +1,4 @@
 // @vitest-environment node
-/**
- * Route tests for POST /api/v1/me/token-corrections (T-6.1).
- */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const writeTokenCorrection = vi.fn();

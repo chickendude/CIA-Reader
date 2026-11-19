@@ -1,29 +1,6 @@
 /**
- * POST /api/v1/texts/epub (T-4.3, extended for chapter-book upload).
- *
- * Multipart endpoint for EPUB uploads. The request body is form-data
- * with three fields:
- *
- *   - `language` — 'hi' | 'mr' | 'or' (string)
- *   - `title` — visible title (string; optional, defaults to filename)
- *   - `file` — the .epub File blob
- *
- * We keep this on its own URL because EPUB is binary and JSON-encoding
- * the bytes (base64 → JSON) would inflate by ~33% on the wire and
- * force the client to parse the file twice. Multipart is the right
- * primitive — every browser <input type="file"> form action posts it
- * natively.
- *
- * Response shape:
- *
- *   - Multi-chapter EPUB → 201 with `{ kind: 'collection',
- *     collection, textCount }`. Each spine chapter becomes its own
- *     `texts` row inside a `collections` row of kind `chapter_book`.
- *   - Single-chapter EPUB → 201 with `{ kind: 'text', text,
- *     chapterCount: 1 }` (1-item collections are awkward UX).
- *
- * Clients branch on `kind` to redirect to `/collections/<id>` or
- * `/reader/<id>`.
+ * Accept the EPUB as a file upload. A single chapter opens as a text. Multiple chapters form a
+ * chapter book. The response's kind field tells the client which page to open.
  */
 import { error, json } from '@sveltejs/kit';
 
@@ -46,7 +23,7 @@ import { SUPPORTED_LANGUAGE_CODES } from '@ciareader/shared-types';
 
 const SUPPORTED_LANGS = new Set<string>(SUPPORTED_LANGUAGE_CODES);
 
-// T-11.2: EPUB ingest is expensive (chunking + parsing + chapter
+// EPUB ingest is expensive (chunking + parsing + chapter
 // fan-out), so the daily quota is tighter than the paste / .txt
 // path. 10/day still covers a learner working through a course.
 const EPUB_UPLOADS_PER_DAY = 10;

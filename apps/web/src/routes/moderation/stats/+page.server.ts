@@ -1,5 +1,5 @@
 /**
- * Correction-quality stats dashboard (T-6.9).
+ * Correction-quality stats dashboard.
  *
  * Admin-scoped — curators see /moderation/parses for their language
  * grants; the cross-language stats view is admin-only because it

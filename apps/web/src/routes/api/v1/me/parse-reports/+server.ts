@@ -1,12 +1,3 @@
-/**
- * POST /api/v1/me/parse-reports (T-6.5 wiring; called by T-6.2's
- * correction modal and T-6.3's new-lemma form).
- *
- * Files (or merges into) a parse_report. The user's optional
- * "Also report to moderators" checkbox in the correction modal
- * decides whether this fires alongside the per-user
- * /api/v1/me/token-corrections write.
- */
 import { error, json } from '@sveltejs/kit';
 import { z } from 'zod';
 

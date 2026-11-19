@@ -26,7 +26,7 @@ See the [web architecture and design standards](docs/web-standards.md) for share
 Use the native scripts below to run a local copy of Parhiba. Docker is only
 used **on the web server** to export its existing database.
 
-Prerequisites: **Node 22.13+**, **pnpm 9**, **Python 3.11+**,
+Prerequisites: **Node 26.13.1**, **pnpm 9.12.0**, **Python 3.11+**,
 **PostgreSQL 16+** client/server tools, **Valkey or Redis**, and
 [Mailpit](https://mailpit.axllent.org/docs/install/) on your `PATH`. On Fedora,
 the database, Redis-compatible server, and Python packages can be installed with:
@@ -104,7 +104,7 @@ not sync back to Parhiba. Restore dumps only from a server you trust.
 Requirements:
 
 - **Docker Desktop** (or Docker Engine + Compose v2)
-- **Node.js** 22.13+ and **pnpm** 9.x (only needed if you want to run the web app outside Docker)
+- **Node.js** 26.13.1 and **pnpm** 9.12.0 (only needed if you want to run the web app outside Docker)
 - **Python** 3.11+ (only needed if you want to run NLP tests outside Docker)
 
 Start everything:
@@ -220,4 +220,4 @@ Logs: docker's json-file driver is rotated at 10 MB × 5 files per service in [`
 
 ## Status
 
-Early. See [GitHub Issues](https://github.com/chickendude/CIA-Reader/issues) — each milestone is an epic with child tickets.
+See [GitHub Issues](https://github.com/chickendude/CIA-Reader/issues) for current bugs and feature requests.

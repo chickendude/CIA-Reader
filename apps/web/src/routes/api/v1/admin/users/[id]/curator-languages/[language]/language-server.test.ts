@@ -1,7 +1,4 @@
 // @vitest-environment node
-/**
- * Route tests for DELETE /api/v1/admin/users/:id/curator-languages/:language (T-3.4).
- */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const listCuratorLanguages = vi.fn();

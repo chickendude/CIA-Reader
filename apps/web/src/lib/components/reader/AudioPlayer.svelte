@@ -1,13 +1,4 @@
-<!--
-  Audio player (T-9.2).
-
-  Anchors at the bottom of the reader as a sticky strip when audio
-  is available. Custom transport on top of an `<audio>` element:
-  play/pause, scrubber with current/total time, speed select
-  (0.5×–2×). Forwards state to the audio-bus so T-9.3 (alignment-
-  driven highlighting) and T-9.4 (tap-to-seek) consume it without
-  importing the element directly.
--->
+<!-- Share the playback position with the reader so tapping a word can seek to its recording. -->
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
 
@@ -43,7 +34,7 @@
   let pendingListeningMs = 0;
   let pendingListeningAudioId: string | null = null;
   let lastMediaSec: number | null = null;
-  // T-11.3: surface a load failure so a flaky network or a 404 on
+  // Surface a load failure so a flaky network or a 404 on
   // the storage backend doesn't leave the player silently stuck.
   // The retry button calls `audioEl.load()` again.
   let loadError = $state<string | null>(null);
@@ -181,7 +172,7 @@
     });
   }
 
-  // T-11.4: YouTube-style keyboard shortcuts (J/K/L) for the audio
+  // YouTube-style keyboard shortcuts (J/K/L) for the audio
   // player. Picked these letters specifically because they don't
   // conflict with browser defaults (Space scrolls the page; arrows
   // navigate the page) and they're already familiar to users from
@@ -251,7 +242,7 @@
 
 <aside class="ap" data-audio-id={audio.id} aria-label="Audio player">
   <!-- The reader IS the caption: per-token alignment lights up
-       words on the page in sync with playback (T-9.3). A separate
+       words on the page in sync with playback. A separate
        <track> would be redundant. -->
   <audio
     bind:this={audioEl}
@@ -265,7 +256,7 @@
   ></audio>
 
   {#if loadError}
-    <!-- T-11.3: load-failure banner with a retry button. Keyboard
+    <!-- load-failure banner with a retry button. Keyboard
          users can tab to the retry button; screen readers get the
          message via role="alert". -->
     <p class="ap-err" role="alert" data-testid="audio-load-error">

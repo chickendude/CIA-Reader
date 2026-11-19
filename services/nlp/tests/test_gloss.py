@@ -1,4 +1,4 @@
-"""Unit tests for the morphology gloss formatter (T-2.4).
+"""Unit tests for the morphology gloss formatter.
 
 These tests target the reader-facing contract from the plan:
 

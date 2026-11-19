@@ -1,5 +1,5 @@
 /**
- * Add a language (#436).
+ * Add a language.
  *
  * A dedicated page — reached from the rail switcher's "Add a language"
  * button — for adding a language you don't read yet. Lists the

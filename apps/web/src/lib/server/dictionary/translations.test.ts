@@ -1,6 +1,6 @@
 // @vitest-environment node
 /**
- * Unit tests for `submitUserTranslation` (T-3.2).
+ * Unit tests for `submitUserTranslation`.
  *
  * Mocks the drizzle `db` surface to a fluent fake whose return values we
  * stage per-call. The service calls the DB in a fixed order per happy /
@@ -163,8 +163,6 @@ describe('submitUserTranslation — happy path', () => {
 
     expect(result.id).toBe('tr-1');
     const insertCall = calls.find((c) => c.kind === 'insert');
-    // T-14.7a: legacy lemma_id column dropped — the insert
-    // payload now writes only the polymorphic target.
     expect(insertCall?.payload).toMatchObject({
       targetType: 'lemma',
       targetId: 'lemma-1',
@@ -178,7 +176,7 @@ describe('submitUserTranslation — happy path', () => {
 
   it('includes parent check when parentTranslationId is provided', async () => {
     stageSelect([{ id: 'lemma-1' }]);
-    // T-14.7a: parent existence check now reads via the
+    // parent existence check now reads via the
     // polymorphic columns; staged parent row mirrors that.
     stageSelect([{ id: 'parent-1', targetType: 'lemma', targetId: 'lemma-1' }]);
     stageInsert([
@@ -380,7 +378,7 @@ describe('submitUserTranslation — private notes', () => {
   });
 });
 
-describe('updateUserTranslation (T-3.5)', () => {
+describe('updateUserTranslation', () => {
   const ownRow = {
     id: 'tr-1',
     lemmaId: 'lemma-1',
@@ -463,7 +461,7 @@ describe('updateUserTranslation (T-3.5)', () => {
   });
 });
 
-describe('deleteUserTranslation (T-3.5)', () => {
+describe('deleteUserTranslation', () => {
   const ownRow = {
     id: 'tr-1',
     lemmaId: 'lemma-1',

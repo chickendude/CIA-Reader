@@ -1,5 +1,5 @@
 /**
- * Minimal server-side EPUB parser (T-4.3).
+ * Minimal server-side EPUB parser.
  *
  * EPUB is a ZIP archive of XHTML chapters with a small XML manifest
  * describing chapter order. Pulling in a full epub library was

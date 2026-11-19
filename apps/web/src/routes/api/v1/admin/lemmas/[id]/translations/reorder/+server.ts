@@ -1,5 +1,5 @@
 /**
- * PATCH /api/v1/admin/lemmas/:id/translations/reorder (T-3.13).
+ * PATCH /api/v1/admin/lemmas/:id/translations/reorder.
  *
  * Caller passes the canonical ordered list of translation ids for the
  * lemma. The service writes `display_rank` by index and audits a single

@@ -1,16 +1,5 @@
-"""Unit tests for :class:`app.pipelines.basque.BasquePipeline`.
-
-Like the Hindi/Marathi pipeline tests, these inject a minimal fake
-Stanza-like object so we exercise the pipeline's output-shaping logic
-without the ~600MB UD_Basque-BDT model. The focus here is the case
-lemma-repair pass (see ``_needs_lowercase_relemma`` / ``_relemmatize_lower``
-in ``app.pipelines.stanza_ud``): Stanza's character seq2seq fallback
-mangles non-lowercase words — dropping letters in all-caps headings
-("HITZAURREA" → "hitzaure") and inserting an h in dialogue-initial
-title-case words ("Ondo" → "hondo", #437) — so the pipeline re-lemmatizes
-a lowercased copy and adopts that lemma for genuine lexical words. It also
-covers the leading dialogue-dash split (#437).
-"""
+"""Use model responses that reproduce Basque capitalization and dialogue punctuation errors. This
+keeps the tests independent of model downloads."""
 
 from __future__ import annotations
 
@@ -128,10 +117,8 @@ def test_allcaps_lemma_is_repaired_from_lowercased_form():
 
 
 def test_title_case_lemma_is_repaired_from_lowercased_form():
-    # #437: a dialogue/sentence-initial title-case word misses Stanza's
-    # lowercase lemma cache and the seq2seq fallback inserts an h
-    # ("Ondo" → "hondo"). The lowercased form hits the cache and
-    # lemmatizes correctly, so the pipeline adopts it.
+    # The model can return hondo for sentence-initial Ondo. Looking up the lowercase spelling
+    # recovers ondo.
     pipe, fake = _pipe(
         {
             "Ondo": [("Ondo", "hondo", "ADV")],
@@ -145,9 +132,8 @@ def test_title_case_lemma_is_repaired_from_lowercased_form():
 
 
 def test_leading_dialogue_dash_is_split_and_word_relemmatized():
-    # #437: "–Ondo" arrives as one glued token whose seq2seq lemma is
-    # "hondo". The pipeline peels the en dash into its own non-word
-    # token and re-lemmatizes the title-case word part from lowercase.
+    # Split the opening dialogue dash so the word Ondo gets the same lookup as it would without
+    # punctuation.
     pipe, fake = _pipe(
         {
             "–Ondo": [("–Ondo", "hondo", "ADV")],

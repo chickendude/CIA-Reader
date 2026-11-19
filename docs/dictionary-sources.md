@@ -3,7 +3,7 @@
 CIA Reader's dictionary starts as an import of the best open-source lexical
 resources for each MVP language and becomes our own authoritative dataset
 over time through curator edits, community submissions, and promoted
-crowdsourced corrections (T-6.7). Every row is provenance-tagged
+crowdsourced corrections. Every row is provenance-tagged
 (`source`, `source_attribution`, `source_id`) so we can always answer
 "where did this come from and who last edited it."
 
@@ -19,9 +19,9 @@ and re-imports skip them by design.
 | [Hindi WordNet](http://www.cfilt.iitb.ac.in/wordnet/webhwn/) | CFILT, IIT Bombay | Research use, distributable with attribution | Planned for import — large (~40k synsets) |
 | [Dbnary Hindi-English](http://kaiko.getalp.org/about-dbnary/) | GETALP / Univ. Grenoble Alpes | CC-BY-SA 3.0 | Planned |
 | [Shabdanjali](http://ltrc.iiit.ac.in/onlineServices/Dictionaries/) | LTRC, IIIT Hyderabad | Non-commercial research use | Under review — license may restrict paid-tier use |
-| [Wiktionary Hindi (via Kaikki.org)](https://kaikki.org/dictionary/Hindi/) | Wiktionary contributors | CC-BY-SA 3.0 | **Imported (T-3.10, 2026-04-28)** — fetched via `scripts/fetch-dictionary-sources.sh kaikki-hindi`, runs idempotently against `(language, source, source_id)`; `source_id` is `kaikki:hi:<word>:<pos>:<sha1(joined glosses)>` so a Wiktionary edit creates a fresh row |
-| [Wiktionary English Translations sections (via Kaikki.org)](https://kaikki.org/dictionary/English/) | Wiktionary contributors | CC-BY-SA 3.0 | **Imported (T-3.10, 2026-04-28)** — inverted from English entries' `translations[]`; complements the per-language Hindi dump by surfacing every Hindi word that English Wiktionary lists as a translation target |
-| **CIA Reader Hindi Seed** | CIA Reader | CC0-1.0 | **Imported (T-3.1)** — ~10 public-domain core vocabulary entries, bundled for bootstrapping the import runner |
+| [Wiktionary Hindi (via Kaikki.org)](https://kaikki.org/dictionary/Hindi/) | Wiktionary contributors | CC-BY-SA 3.0 | **Imported (2026-04-28)**. Fetched via `scripts/fetch-dictionary-sources.sh kaikki-hindi`, runs idempotently against `(language, source, source_id)`; `source_id` is `kaikki:hi:<word>:<pos>:<sha1(joined glosses)>` so a Wiktionary edit creates a fresh row |
+| [Wiktionary English Translations sections (via Kaikki.org)](https://kaikki.org/dictionary/English/) | Wiktionary contributors | CC-BY-SA 3.0 | **Imported (2026-04-28)**. Inverted from English entries' `translations[]`; complements the per-language Hindi dump by surfacing every Hindi word that English Wiktionary lists as a translation target |
+| **CIA Reader Hindi Seed** | CIA Reader | CC0-1.0 | **Imported**. About 10 public-domain core vocabulary entries, bundled for bootstrapping the import runner |
 | [*Platts, A Dictionary of Urdū, Classical Hindī, and English* (1884)](https://dsal.uchicago.edu/dictionaries/platts/) | Public domain (via DSAL) | Public domain | **Registered** (`dsal-platts`) — imported as `hi` through the Devanagari orthography: the parse step keeps only entries carrying a `<d>` Devanagari headword (a Devanagari reader can't match Perso-Arabic-only vocabulary) and reports the skip percentage. Perso-Arabic spellings stay in the JSONL (`hwAlt`), never imported as forms. Vocabulary skews classical/literary — it complements Kaikki rather than replacing it. Acquisition per "DSAL scraping" below |
 | [*Dasa, Hindī śabdasāgara*](https://dsal.uchicago.edu/dictionaries/dasa-hindi/) | Nagari Pracarini Sabha (via DSAL) | All rights reserved | **Rejected** — DSAL digitized the *navīna saṁskaraṇa* (revised edition, 1965–75), which carries an explicit NPS notice barring reproduction without permission. Only the original 1916–28 edition is public domain, and that is not what DSAL hosts. The other DSAL Hindi dictionaries (Bahri 1989, Caturvedi 1970, McGregor 1993) are likewise still in copyright — Platts is the only usable DSAL source touching Hindi |
 
@@ -37,8 +37,8 @@ coverage; Dbnary fills in glosses and translations.
 | [*Molesworth's A Dictionary, Marathi and English* (1857)](https://dsal.uchicago.edu/dictionaries/molesworth/) | Public domain (via DSAL) | Public domain | **Registered** (`dsal-molesworth`) — ~60k entries, acquired via `pnpm dsal:scrape dsal-molesworth && pnpm dsal:parse dsal-molesworth` (see "DSAL scraping"). `source_id = dsal:molesworth:<raw hw>:<page>:<ord>` keys on the 1857 print artifact so DSAL-side OCR corrections update rows in place. Headwords keep the 1857 orthography (NFC only) — nukta-strip matching absorbs common variants; a curator-reviewed spelling-fixup table plugs into the importer's normalizer seam later. POS markers are gender-based (`m`/`f`/`n` = noun) |
 | [*Vaze's The Aryabhushan School Dictionary* (1911)](https://dsal.uchicago.edu/dictionaries/vaze/) | Public domain (via DSAL) | Public domain | **Registered** (`dsal-vaze`) — concise modern glosses complementing Molesworth's archaic long entries; same acquisition + source_id scheme (`dsal:vaze:…`) |
 | Dbnary Marathi-English | GETALP / Univ. Grenoble Alpes | CC-BY-SA 3.0 | Planned |
-| [Wiktionary Marathi (via Kaikki.org)](https://kaikki.org/dictionary/Marathi/) | Wiktionary contributors | CC-BY-SA 3.0 | **Imported (T-3.10, 2026-04-28)** — fetched via `scripts/fetch-dictionary-sources.sh kaikki-marathi`; thinner than Hindi (~5k entries) but a solid bootstrap before Marathi WordNet + Molesworth land |
-| [Wiktionary English Translations sections (via Kaikki.org)](https://kaikki.org/dictionary/English/) | Wiktionary contributors | CC-BY-SA 3.0 | **Imported (T-3.10, 2026-04-28)** — inverted from English entries' `translations[]`; the highest-leverage Marathi expansion since English Wiktionary's Translations sections substantially out-cover the Marathi sub-corpus |
+| [Wiktionary Marathi (via Kaikki.org)](https://kaikki.org/dictionary/Marathi/) | Wiktionary contributors | CC-BY-SA 3.0 | **Imported (2026-04-28)**. Fetched via `scripts/fetch-dictionary-sources.sh kaikki-marathi`; thinner than Hindi (~5k entries) but a solid bootstrap before Marathi WordNet + Molesworth land |
+| [Wiktionary English Translations sections (via Kaikki.org)](https://kaikki.org/dictionary/English/) | Wiktionary contributors | CC-BY-SA 3.0 | **Imported (2026-04-28)**. Inverted from English entries' `translations[]`; the highest-leverage Marathi expansion since English Wiktionary's Translations sections substantially out-cover the Marathi sub-corpus |
 
 Coverage: medium. Molesworth is comprehensive but archaic; modern Marathi
 WordNet is thinner than Hindi's. Expect more OOV tokens than Hindi at
@@ -48,22 +48,13 @@ launch.
 
 | Source | Publisher | License | Status |
 |---|---|---|---|
-| Odia WordNet | ISI Kolkata | Research use, distributable with attribution | Planned — the seed for T-2.3a's custom pipeline already draws from this |
+| Odia WordNet | ISI Kolkata | Research use, distributable with attribution | Planned import. The Odia pipeline already uses a small seed vocabulary. |
 | OdiaNLP resources | Community / various | Mixed (MIT / CC-BY) | Planned — curated subset only, per-entry license check required |
 | [*Praharaj, Purnnachandra Ordia Bhashakosha* (1931–40)](https://dsal.uchicago.edu/dictionaries/praharaj/) | Utkal Sahitya Press (via DSAL) | Public domain in India & EU (US: see below) | **Registered** (`dsal-praharaj`) — the ~9,500-page, 7-volume lexicon (~120k+ entries), by far the largest Odia source. Definitions are bilingual: each sense is tagged `en` or `or` by Latin-letter share (≥0.5 → `en`), so the popup's definition-language chips separate them; verse quotations ride along as `or`. POS token-searched from the `<gramGrp>` marker (ବି noun, ବିଣ adj, କ୍ରି verb, କ୍ରି+ବିଣ adverb, ସର୍ବ pron). Acquisition per "DSAL scraping" |
-| [Wiktionary Odia (via Kaikki.org)](https://kaikki.org/dictionary/Odia/) | Wiktionary contributors | CC-BY-SA 3.0 | **Imported (T-3.10, 2026-04-28)** — fetched via `scripts/fetch-dictionary-sources.sh kaikki-odia`; the smallest Kaikki dump of the three MVP languages (~2k entries) but the first real Odia lexical data — proves the script-aware path works end-to-end with `Orya` |
-| [Wiktionary English Translations sections (via Kaikki.org)](https://kaikki.org/dictionary/English/) | Wiktionary contributors | CC-BY-SA 3.0 | **Imported (T-3.10, 2026-04-28)** — inverted from English entries' `translations[]`; biggest Odia coverage uplift since Wiktionary's Odia sub-corpus is tiny but the English-side Translations sections include Odia targets generously |
+| [Wiktionary Odia (via Kaikki.org)](https://kaikki.org/dictionary/Odia/) | Wiktionary contributors | CC-BY-SA 3.0 | **Imported (2026-04-28)**. Fetched via `scripts/fetch-dictionary-sources.sh kaikki-odia`; the smallest Kaikki dump of the three MVP languages (~2k entries) but the first real Odia lexical data, proves the script-aware path works end-to-end with `Orya` |
+| [Wiktionary English Translations sections (via Kaikki.org)](https://kaikki.org/dictionary/English/) | Wiktionary contributors | CC-BY-SA 3.0 | **Imported (2026-04-28)**. Inverted from English entries' `translations[]`; biggest Odia coverage uplift since Wiktionary's Odia sub-corpus is tiny but the English-side Translations sections include Odia targets generously |
 
-**Coverage: sparse.** Open-source Odia lexical coverage is materially thinner
-than Hindi or Marathi. We expect correspondingly more OOV tokens at launch
-and lean harder on (a) the custom Odia morphological pipeline (T-2.3a) to
-strip inflections and (b) the curator-led dictionary editor (T-3.7) +
-community submissions (T-6.3) to fill gaps post-launch.
-
-The Odia dictionary browse page (T-3.6) will carry a visible
-**"coverage: sparse"** notice so users calibrate expectations.
-(The Praharaj import changes this materially — revisit the notice once
-the full import lands.)
+**Coverage is sparse.** The Odia analyzer uses word endings to find the dictionary form. Curators and community contributors can add definitions for missing entries.
 
 ### Praharaj copyright status
 
@@ -146,9 +137,7 @@ Because Stanza resolves inflections, the Basque importers run **root-forms-only*
 each entry's inflection table (`forms[]` → `lemma_forms`) and Wiktionary
 "form-of" entries (e.g. *etxean* = "inessive of etxe"), so the dictionary holds
 dictionary headwords, not declined/conjugated surfaces.
-Basque is agglutinative with a rich case system, so expect inflected surfaces to
-lemmatize back to a smaller set of citation forms — the curator editor (T-3.7)
-and community submissions (T-6.3) fill gloss gaps post-launch as for the others.
+Many Basque word forms share a dictionary entry. Curators and community contributors can add missing definitions.
 
 Basque ships definitions in three "definition languages" (`translations.targetLanguage`):
 **English** (`kaikki-basque`) and **Spanish** (`kaikki-basque-es`) from public CC-BY-SA
@@ -256,8 +245,8 @@ per page forever).
 Multiple sources may ship the same `(language, headword, pos)` triple —
 Hindi WordNet and Kaikki could each define "किताब / NOUN", with different
 glosses and provenance. The schema's `(language, headword, pos)` index
-is **non-unique on purpose** (T-3.10): each source creates its own
-`lemmas` row, and curators reconcile duplicates via the existing T-3.7
+is **non-unique on purpose**: each source creates its own
+`lemmas` row, and curators reconcile duplicates via the dictionary
 merge UI. Don't try to deduplicate at import time — the import path
 must remain idempotent on `(language, source, source_id)` only.
 
@@ -268,7 +257,7 @@ The importer is idempotent:
 1. Rows are matched on `(language, source, source_id)`.
 2. If a matched row has `curator_locked = true`, the importer skips it
    and increments the `lemmasSkippedCuratorLocked` counter in the run
-   summary. A curator can unlock a row in the dictionary editor (T-3.7)
+   summary. A curator can unlock a row in the dictionary editor
    if they want to accept a fresh upstream payload over their edit.
 3. Otherwise the row is updated in place.
 4. Every run appends an audit row to `dictionary_imports` with
@@ -279,7 +268,7 @@ that ships forms will add duplicate rows if the upstream source ships
 the same form twice. The dedup pass is deliberately deferred to
 post-MVP; today we'd rather over-include than lose a form.
 
-## Admin UI (T-3.14)
+## Admin UI
 
 `/moderation/dictionary/sources` is an admin-only page that surfaces
 the cache + import state of every registered importer. Each row shows:
@@ -311,8 +300,8 @@ Every imported lemma and translation stores a `source_attribution` string
 (e.g. `"Hindi WordNet, CFILT IIT-Bombay (research use; attribution required)"`).
 This string appears:
 
-- On the reader pop-up as a small badge per translation (T-3.8).
-- On the dictionary browse page's detail view (T-3.6).
+- On the reader pop-up as a small badge per translation.
+- On the dictionary browse page's detail view.
 - On a `/credits` page linked from the footer, aggregated by source.
 
 If you're adding a new importer, the attribution string is **required** —

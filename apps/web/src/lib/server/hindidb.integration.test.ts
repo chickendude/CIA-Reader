@@ -19,7 +19,7 @@ const url = process.env.HINDIDB_TEST_DATABASE_URL;
 describe.skipIf(!url)('HindiDB PostgreSQL integration (always rolls back)', () => {
   it('counts each occurrence once and follows valid context choices and study state', async () => {
     if (!url || !['localhost', '127.0.0.1', '[::1]'].includes(new URL(url).hostname)) {
-      throw new Error('Use a local database with the HindiDB migrations and import applied');
+      throw new Error('Use a local database with the HindiDB migrations applied');
     }
     const client = postgres(url, { max: 1 });
     const database = drizzle(client, { schema });
@@ -51,6 +51,7 @@ describe.skipIf(!url)('HindiDB PostgreSQL integration (always rolls back)', () =
             .insert(schema.collectionItems)
             .values({ collectionId: collection!.id, textId: text!.id, position: 0 });
           const headword = `परीक्षण${randomUUID()}`;
+          await tx.insert(schema.hindiDictionaryState).values({ id: 1 }).onConflictDoNothing();
           const entries = await tx
             .insert(schema.lemmas)
             .values(
@@ -267,7 +268,8 @@ describe.skipIf(!url)('HindiDB PostgreSQL integration (always rolls back)', () =
           const [secondBook] = await tx.insert(schema.texts).values({
             ownerId: user!.id, language: 'hi', title: 'Second review book', sourceType: 'paste',
           }).returning();
-          const missing = 'अपरिचित' + randomUUID();
+          const suffix = Array.from(randomUUID().slice(0, 8), (c) => 'कखगघचछजझटठडढतथदध'[parseInt(c, 16)]).join('');
+          const missing = 'अपरिचित' + suffix;
           const [secondChapter] = await tx.insert(schema.textChapters).values({
             textId: secondBook!.id, idx: 0, body: missing,
           }).returning();
@@ -294,7 +296,7 @@ describe.skipIf(!url)('HindiDB PostgreSQL integration (always rolls back)', () =
           const { saveDraft } = await import('./dictionary/hindi-workshop.js');
           const { emptyDraft } = await import('$lib/dictionary/hindi-workshop');
           const savedId = await saveDraft({
-            ...emptyDraft(headword + 'शब्द'), meaning: 'test word', other: [missing],
+            ...emptyDraft('परीक्षण' + suffix), meaning: 'test word', other: [missing],
           }, user!.id);
           const reopened = await loadChapterTokens(chapter!.id, user!.id);
           expect(reopened?.filter((t) => t.surface === missing).map((t) => t.lemmaId))

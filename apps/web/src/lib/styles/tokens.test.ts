@@ -26,9 +26,7 @@ function block(selector: string): string {
 const lightBlock = block(":root,\n[data-theme='light']");
 const sepiaBlock = block("[data-theme='sepia']");
 const darkBlock = block("[data-theme='dark']");
-const rootInvariant = block(
-  '/* Typography, spacing, radii, shadows, motion — theme-invariant.',
-);
+const rootInvariant = block(':root {');
 
 describe('CIAR design palette', () => {
   it.each([

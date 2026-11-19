@@ -1,7 +1,4 @@
 // @vitest-environment node
-/**
- * Route tests for GET /api/v1/dictionary/:language/lemmas (T-3.6).
- */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { jsonContract } from '$lib/test/json-contract.js';

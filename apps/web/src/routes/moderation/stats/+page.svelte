@@ -1,8 +1,8 @@
 <script lang="ts">
   import { LANGUAGES } from '@ciareader/shared-types';
-  import type { PageData } from './$types';
+  import type { PageProps } from './$types';
 
-  let { data }: { data: PageData } = $props();
+  let { data }: PageProps = $props();
 
   function formatPercent(n: number): string {
     return `${(n * 100).toFixed(1)}%`;

@@ -1,14 +1,3 @@
-/**
- * Curator parse-reports moderation page (T-6.6).
- *
- * URL contract:
- *   /moderation/parses?language=hi&status=open&id=<report-uuid>
- *
- * Left pane is the filtered list (sorted by duplicate_count DESC,
- * then updated_at DESC); right pane is the selected report. The
- * selected-id is a URL param so a curator can paste a link and
- * land directly on a specific report.
- */
 import { error } from '@sveltejs/kit';
 
 import { listParseReports } from '$lib/server/parse-reports.js';

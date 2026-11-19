@@ -8,8 +8,8 @@ dependencies = [
   "uvicorn[standard]>=0.30.6",
   "pydantic>=2.9.0",
   # Pure-Python, small dep — used both in tests and in production for
-  # precomputing reader romanizations (T-2.5) and converting user input
-  # from the script-aware editor (T-6.2a). Kept as a base dep rather
+  # precomputing reader romanizations and converting user input
+  # from the script-aware editor. Kept as a base dep rather
   # than under [models] so CI exercises it directly.
   "indic-transliteration>=2.3.68",
   # Aksharamukha is used only for Hindi schwa-deletion preprocessing
@@ -18,7 +18,7 @@ dependencies = [
   # other language. We don't depend on aksharamukha's romanization
   # output schemes — only on its `RemoveSchwaHindi` source-side rule.
   "aksharamukha>=2.3",
-  # Python-native Redis job queue for async NLP work (T-2.6). The
+  # Python-native Redis job queue for async NLP work. The
   # worker process imports RedisSettings at module load; keep it in
   # base deps so tests that import app.worker don't need [models].
   "arq>=0.26.0",
@@ -47,8 +47,7 @@ dev = [
 # fake stanza object instead of loading the real model.
 models = [
   "stanza>=1.8.0",
-  # IndicNLP is the Marathi tokenizer fallback (T-2.3) and will also
-  # underpin the Odia tokenizer (T-2.3a). Small, pure-Python dep.
+  # Odia uses IndicNLP to split text into words. Marathi uses it if Stanza returns no words.
   "indic-nlp-library>=0.92",
 ]
 # OCR for the PDF image reader. Vision is imported lazily in
@@ -87,10 +86,7 @@ extend-immutable-calls = ["fastapi.Form", "fastapi.File", "fastapi.Depends"]
 testpaths = ["tests"]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
-# `real_models` accuracy tests (T-2.8) need Stanza + the 600MB Hi/Mr
-# UD models downloaded. They run in the dedicated `nlp-accuracy` CI
-# job — the default `pytest` invocation opts out so local dev and the
-# main `nlp` CI job don't have to pay the install cost.
+# The nlp-accuracy CI job downloads language models and runs the real_models tests separately.
 addopts = "--cov=app --cov-report=term-missing --cov-fail-under=70 -m 'not real_models'"
 markers = [
   "real_models: tests that load real Stanza / IndicNLP models; skipped by default, run via `pytest -m real_models` with `[models]` installed.",

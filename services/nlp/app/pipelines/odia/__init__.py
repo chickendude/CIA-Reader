@@ -1,28 +1,5 @@
-"""Custom Odia pipeline (T-2.3a).
-
-Stanza's ``or`` support is thin — lemma accuracy on real-world Odia text
-runs below usable thresholds and the model is maintenance-light, so we
-build our own pipeline with three pieces:
-
-1. **Tokenization** — IndicNLP's ``indic_tokenize.trivial_tokenize``,
-   which is already Odia-aware (handles Odia punctuation and clitics).
-2. **Morphological analyzer** — :mod:`app.pipelines.odia.morph`, a
-   rule-based stripper that tries a small set of suffix rules and
-   checks whether the stripped stem is in the lemma table.
-3. **Lemma lookup** — :mod:`app.pipelines.odia.lemmas`, a seed table
-   hand-curated for MVP and (in T-3.1) replaced by a large-scale import
-   from Odia WordNet / OdiaNLP resources.
-
-Output contract is identical to :class:`app.pipelines.stanza_ud.StanzaUDPipeline`'s
-— ``Token`` list with top-K ``LemmaCandidate``, ``is_word``, ``is_oov``,
-``is_ambiguous`` — so the reader, dictionary editor, and correction
-flow don't branch on language.
-
-**Accuracy expectation**: the plan targets ~70–80% lemma accuracy at
-launch, improving as crowdsourced corrections (T-6.7) accumulate and
-the dictionary grows (M3). That's explicitly below Hindi (~90%) and
-Marathi (~80%). The correction UX in M6 is the pressure valve.
-"""
+"""Analyze Odia words using spelling rules and a small dictionary. A spelling can have more than
+one analysis, so keep the alternatives for the reader."""
 
 from __future__ import annotations
 
@@ -62,15 +39,8 @@ def _candidate_from_analysis(analysis: MorphAnalysis, score: float) -> LemmaCand
 
 
 def _candidates_for_analyses(analyses: list[MorphAnalysis]) -> list[LemmaCandidate]:
-    """Convert an analyzer result to a ranked candidate list.
-
-    Rule-based morphology has no probabilistic model, so we distribute
-    scores uniformly across the N analyses (1/N each). When a single
-    candidate source lands on top of this (M3 dictionary attachment or
-    T-6.7 overrides), the score distribution will narrow to reflect
-    real confidence — until then ``is_ambiguous`` is what the reader
-    surfaces to the user.
-    """
+    """Give each possible analysis an equal score. The rules do not estimate how likely one reading
+    is compared with another."""
     if not analyses:
         return []
     score = 1.0 / len(analyses)
@@ -171,7 +141,7 @@ class OdiaPipeline(Pipeline):
             is_word=is_word,
             candidates=candidates,
             # Multiple morphological analyses means the reader should
-            # surface the "N possible meanings" chevron (M6).
+            # Surface the "N possible meanings" chevron.
             is_ambiguous=len(analyses) >= 2,
             is_oov=is_word and is_oov,
             romanization=None,

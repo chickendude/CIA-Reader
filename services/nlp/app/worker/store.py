@@ -1,26 +1,5 @@
-"""Store protocols for worker jobs (T-2.6).
-
-Jobs operate on three I/O abstractions:
-
-* :class:`TextStore` — fetches the raw text of a chapter by id, and
-  flips the parent ``texts.status`` column through pending →
-  processing → ready / failed.
-* :class:`TokenStore` — persists the tokenized output (one row per
-  token) and records the per-job ``nlp_jobs`` bookkeeping.
-* :class:`JobEvents` — optional callback hook so the web UI's
-  processing-status UX (M4) can receive progress events via SSE.
-
-Keeping these as ``Protocol`` classes (instead of concrete Postgres
-implementations) means:
-
-1. Unit tests wire in-memory fakes without spinning up a DB — so
-   ``test_worker_jobs`` can run in CI against the same logic that
-   production exercises.
-2. M4 can slot in real Drizzle-backed implementations without
-   touching any job code.
-3. Future storage swaps (e.g. a read-through cache for bulk reprocess
-   in T-6.8) don't require re-writing the jobs.
-"""
+"""Workers use these interfaces to read chapters, save analyses and report progress. Tests supply
+in-memory stores."""
 
 from __future__ import annotations
 

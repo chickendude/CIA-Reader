@@ -1,11 +1,3 @@
-/**
- * PATCH /api/v1/admin/phrases/:id/lock (T-14.7).
- *
- * Toggle the curator-locked flag on a phrase. Locked phrases are
- * skipped by the import / NLP-promotion paths so a human-curated
- * gloss / frequency / source survives subsequent re-imports.
- * Mirror of the lemma-side lock from T-3.7.
- */
 import { error, json } from '@sveltejs/kit';
 import { eq } from 'drizzle-orm';
 import { z } from 'zod';

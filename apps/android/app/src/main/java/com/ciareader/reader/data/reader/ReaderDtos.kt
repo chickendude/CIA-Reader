@@ -64,11 +64,10 @@ data class TokenDto(
     /** PDF source only: the word's normalized (0..1) bounding box on the page
      *  image, for the image-reader overlay. Null for text-source tokens. */
     val bbox: BboxDto? = null,
-    /** Alternate lemmas the parser scored for this surface form (T-6.1 on the
-     *  web). The server already excludes the chosen lemma, so this is the list of
-     *  *other* parsings the word sheet's parse switcher offers. Empty when the
-     *  parse is unambiguous. The wire entries also carry `score`/`features`,
-     *  which we drop (ignoreUnknownKeys). */
+    /**
+     * Other possible dictionary entries for this word. The server leaves out the selected entry,
+     * so the list is empty when there are no alternatives.
+     */
     val candidates: List<CandidateDto> = emptyList(),
 )
 

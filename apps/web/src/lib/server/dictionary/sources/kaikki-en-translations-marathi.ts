@@ -1,5 +1,5 @@
 /**
- * Kaikki English → Marathi translations importer (T-3.10).
+ * Kaikki English → Marathi translations importer.
  *
  * Same inversion path as the Hindi sibling. Marathi coverage on
  * Wiktionary's English-side Translations sections is materially

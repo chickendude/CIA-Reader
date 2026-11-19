@@ -1,52 +1,8 @@
 /**
- * Script-specific search-key folding (#318, extended for Yiddish).
- *
- * Devanagari: the nukta (U+093C COMBINING DEVANAGARI SIGN NUKTA) marks
- * a small set of consonants borrowed from Persian/Arabic vocabulary —
- * `ज़` (z) vs `ज` (j), `फ़` (f) vs `फ` (ph), `ड़` / `ढ़` for the retroflex
- * flap consonants in native verbs (`पढ़ना` "to read", `बढ़ना` "to grow"),
- * and a handful of less-common Persianate consonants `क़` / `ख़` / `ग़` /
- * `य़` / `ऩ`. In published text the nukta is usually written; in casual
- * typing — and across many user-generated dictionary sources — it gets
- * dropped with no fixed convention. `पढ़ना` and `पढना` are observed in
- * the wild for the same word.
- *
- * Hebrew script (Yiddish): the digraphs tsvey vovn / vov-yud / tsvey
- * yudn each have two circulating encodings — individual letter pairs
- * (וו / וי / יי, what keyboards produce) and the single ligature
- * codepoints U+05F0 װ / U+05F1 ױ / U+05F2 ײ (common in Wiktionary
- * and older corpora). Unicode normalization deliberately keeps them
- * distinct, so the fold maps ligatures to their letter pairs. Pasekh
- * tsvey yudn additionally floats between pasekh-on-second-yud
- * (canonical) and pasekh-on-first-yud; both fold to the former.
- *
- * `stripNukta` removes those distinctions so a search/lookup can fall
- * back to a fold-agnostic match when an exact match misses. **The
- * Devanagari side is a lossy normalization**: `ज़रा` "a little" and
- * `जरा` "old age" are genuinely different words that strip to the same
- * key. Callers MUST try the exact form first and only consult the
- * stripped form when the exact tier returns no hits — and ideally
- * surface a "showing nukta-agnostic results" hint to the user so the
- * lossy step is visible. (The Hebrew ligature fold is NOT lossy — the
- * ligatures are pure presentation variants — so `hasNukta` stays
- * Devanagari-only and no hint is needed for Yiddish.)
- *
- * Behavior:
- *  - NFC-normalize first so the two equivalent encodings of every
- *    nukta consonant (atomic precomposed codepoint vs. base + U+093C)
- *    funnel through the same path.
- *  - Map every atomic precomposed nukta consonant (`U+0958` क़ ..
- *    `U+095F` य़, plus `U+0929` ऩ) to its non-nukta base.
- *  - Remove every standalone U+093C left over after that step
- *    (covers the decomposed encoding and any unusual NFC behavior).
- *  - Map the Hebrew ligatures U+05F0/U+05F1/U+05F2 to their letter
- *    pairs, then normalize pasekh-on-first-yud to pasekh-on-second.
- *
- * The result contains none of the folded codepoints, which is the
- * property the `headword_nukta_stripped` Postgres generated column
- * relies on for a direct equality check between the JS-side
- * `stripNukta(query)` and the DB-side stored value. Keep this function
- * and that column's SQL expression in lockstep.
+ * Try exact spellings first. Removing a Devanagari nukta can make different words look alike,
+ * such as ज़रा (a little) and जरा (old age). For Yiddish, equivalent ways to type a ligature
+ * should share a search key. Keep these rules in sync with the database column
+ * headword_nukta_stripped.
  */
 
 const NUKTA = '़';

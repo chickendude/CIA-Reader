@@ -1,19 +1,4 @@
-/**
- * POST /api/v1/texts (T-4.1, extended T-4.2).
- *
- * Create a text from either a paste or a `.txt` upload. The web UI
- * hits this via the form action; mobile / API clients call it
- * directly with a bearer token. Both paths land on the same service
- * functions (`createPastedText` / `createTxtText`), so validation,
- * chunking, and visibility defaults are identical between web and
- * programmatic clients.
- *
- * EPUB ingest lands in T-4.3 with its own discriminator value.
- *
- * Response: 201 with the freshly created `text` metadata only — chapter
- * content is NOT echoed back to keep the create response small. Use the
- * read endpoint (or `/texts/:id`) to fetch chapters.
- */
+/** Return the new text's metadata. Clients can request individual chapters when the reader opens. */
 import { error, json } from '@sveltejs/kit';
 import { z } from 'zod';
 
@@ -40,7 +25,7 @@ import type { RequestHandler } from './$types';
 import { parseJson } from '../auth/_helpers.js';
 import { SUPPORTED_LANGUAGE_CODES, type LanguageCode } from '@ciareader/shared-types';
 
-// T-11.2: per-day cap on text uploads. 50/day is generous for an
+// per-day cap on text uploads. 50/day is generous for an
 // engaged learner uploading a chapter at a time and trips long
 // before a runaway script floods the chunker. Window is exactly
 // 24h so a user who uploads at 11pm doesn't get throttled at 1am

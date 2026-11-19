@@ -1,29 +1,5 @@
-"""Crowdsourced override lookup for the NLP worker (T-2.7).
-
-When enough users independently correct the same ``(language, surface,
-context)`` tuple (T-6.7 aggregation), the winner is promoted into the
-``form_lemma_overrides`` table. From that point on, every freshly
-processed chapter that hits the same surface in the same context
-should get the curated lemma — not whatever Stanza's latest top-1
-happens to be. That's the loop that lets the system self-heal
-without anyone re-training a model.
-
-This module owns two pieces:
-
-* :func:`context_signature` — the deterministic, short, indexable hash
-  of a token's positional context. Stored both on the override row
-  (T-6.7 writes it) and computed here at lookup time (T-2.7 reads it).
-  If the two sides ever disagree, overrides silently stop applying —
-  so the formula is kept trivially simple and the test suite pins it.
-* :class:`OverrideStore` + :func:`apply_overrides` — the protocol the
-  worker consults per chapter, and the pure function that swaps in
-  any hits. Kept as a Protocol for the same reason the rest of the
-  worker stores are: unit tests wire an in-memory fake, M4 wires the
-  real Postgres-backed implementation.
-
-Deliberately out of scope for this ticket: writing overrides. That's
-T-6.7's aggregation worker. Here we only read.
-"""
+"""Look for a correction for this spelling and its surrounding parts of speech. A correction
+without a context signature can apply to any occurrence of the spelling."""
 
 from __future__ import annotations
 
@@ -95,23 +71,8 @@ async def apply_overrides(
     language: str,
     store: OverrideStore | None,
 ) -> list[Token]:
-    """Rewrite any tokens whose ``(surface, context)`` has a promoted override.
-
-    The override wins over whatever Stanza (or the Odia rule-based
-    pipeline) produced: it becomes the new top candidate, ``is_oov``
-    flips to false (we have a curated lemma now), and ``is_ambiguous``
-    flips to false (the crowd has already picked a side). The original
-    candidates are preserved below the override so the "alternate
-    meanings" UI (T-6.1) can still surface them.
-
-    Non-word tokens (punctuation, whitespace) are skipped — the
-    override system is for lexical items only.
-
-    Passing ``store=None`` is a no-op and returns the input unchanged.
-    That's the default state in the MVP before the aggregation worker
-    (T-6.7) has promoted anything, and it's also what unit tests that
-    don't care about overrides use.
-    """
+    """Put the matching correction first and keep the parser's other suggestions available to the
+    reader. With no matching correction, keep the original choices."""
     if store is None or not tokens:
         return tokens
 

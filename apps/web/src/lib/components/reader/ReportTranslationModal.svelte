@@ -1,5 +1,5 @@
 <!--
-  Report-translation modal (T-11.1).
+  Report-translation modal.
 
   Mounts on top of the reader pop-up's `Sheet` (and any other modal that
   may be open) when the user clicks "Report" on a community translation.

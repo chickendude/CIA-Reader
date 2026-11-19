@@ -1,19 +1,6 @@
 /**
- * lemma_proposals service (T-6.3).
- *
- * Submits a new-lemma proposal from the correction modal. Writes
- * three rows in one transaction-shaped call:
- *
- *   1. lemma_proposals (status='pending') — the canonical record.
- *   2. token_corrections (type='new_lemma') — the per-user marker
- *      that drives the reader's render for this token.
- *   3. parse_reports — auto-filed so the curator dashboard
- *      surfaces it. Dedup-merging applies here too: a second user
- *      proposing the same headword + surface increments the
- *      existing report's duplicate_count.
- *
- * Curator acceptance in T-6.6 copies the proposal into `lemmas`
- * and back-fills `token_corrections.chosen_lemma_id`.
+ * Save the reader's proposed word and link its correction to the dictionary entry if a curator
+ * accepts it.
  */
 import { eq } from 'drizzle-orm';
 

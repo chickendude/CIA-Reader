@@ -1,5 +1,5 @@
 /**
- * Vocabulary export (T-10.3, T-14.6).
+ * Vocabulary export.
  *
  * Pulls every lemma AND phrase the user has touched in one language
  * and projects them to Anki-friendly CSV rows: kind ("lemma" /
@@ -18,7 +18,7 @@ export type VocabularyStatus = 'unknown' | 'learning' | 'known' | 'ignored';
 export type VocabularyKind = 'lemma' | 'phrase';
 
 export type VocabularyRow = {
-  /** T-14.6: discriminator between single-word lemma rows and
+  /** discriminator between single-word lemma rows and
    *  multi-word phrase rows. */
   kind: VocabularyKind;
   /** Lemma headword for `kind='lemma'`; phrase
@@ -47,7 +47,6 @@ export async function getVocabularyForExport(
   userId: string,
   language: LanguageCode,
 ): Promise<VocabularyRow[]> {
-  // Lemma rows — unchanged from T-10.3.
   const lemmaRows = await db
     .select({
       headword: schema.lemmas.headword,
@@ -68,7 +67,7 @@ export async function getVocabularyForExport(
     )
     .orderBy(asc(schema.lemmas.headword), asc(schema.lemmas.pos));
 
-  // T-14.6: phrase rows. Same shape as lemma rows; the `kind`
+  // Phrase rows. Same shape as lemma rows; the `kind`
   // discriminator + the phrase's `surface_normalised` (already
   // NFC-joined by createPhrase) lets the export look like a
   // multi-word entry to whatever flashcard tool the user pipes
@@ -120,10 +119,7 @@ export function csvEscape(value: string): string {
 }
 
 export function rowsToCsv(rows: VocabularyRow[]): string {
-  // T-14.6: leading `kind` column lets the export reader split
-  // the file into per-kind decks. Existing T-10.3 consumers that
-  // ignore unknown columns will still see headword/pos/gloss/
-  // status in the same order.
+  // The kind column distinguishes phrases from single words in the export.
   const lines = ['kind,headword,pos,gloss,status'];
   for (const row of rows) {
     lines.push(

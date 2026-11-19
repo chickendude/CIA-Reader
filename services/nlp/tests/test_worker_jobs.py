@@ -1,12 +1,5 @@
-"""Tests for :mod:`app.worker.jobs` (T-2.6).
-
-These tests run the real job logic against in-memory fakes — no Redis,
-no Postgres. That's deliberate: the wiring to Redis lives in
-:mod:`arq.worker.Worker` itself (we have no reason to re-test it), and
-the Postgres wiring lands in M4. What changes per-job, and what we
-have to cover here, is the sequence of store calls the job makes on
-the golden and failure paths.
-"""
+"""Run the job functions against in-memory stores so these tests can check processing without Redis
+or Postgres."""
 
 from __future__ import annotations
 

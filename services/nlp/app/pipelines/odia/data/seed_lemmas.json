@@ -1,5 +1,5 @@
 {
-  "__description__": "Seed Odia lemma table — T-2.3a scaffolding. Each entry: 'headword': {'pos': '...', 'gloss': '...'}. Large-scale import from Odia WordNet + OdiaNLP resources lands in T-3.1; this hand-curated set is only enough to exercise the morphology rules and end-to-end pipeline in CI. Headwords are NFC-normalized Odia script (ISO 15924 'Orya').",
+  "__description__": "Small Odia dictionary used by the morphology rules and their tests. Each NFC-normalized headword has a part of speech and a gloss.",
   "entries": {
     "ଜାଣ": { "pos": "VERB", "gloss": "to know" },
     "ପଢ଼": { "pos": "VERB", "gloss": "to read" },

@@ -1,5 +1,5 @@
 /**
- * POST /api/v1/admin/texts/:id/mark-ready (T-4.4).
+ * POST /api/v1/admin/texts/:id/mark-ready.
  *
  * Admin-only callback the NLP worker invokes when tokenization
  * succeeds. Also handy for dev/testing — without it, exercising the

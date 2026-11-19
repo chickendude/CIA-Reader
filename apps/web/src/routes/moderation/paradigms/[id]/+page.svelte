@@ -1,12 +1,14 @@
 <script lang="ts">
   import { enhance } from '$app/forms';
-  import { dismissToast, pushToast } from '$lib/components/toast/toast-store.js';
-  import type { ActionData, PageData } from './$types';
+  import { getToastStore } from '$lib/components/toast/toast-store.js';
+  import type { PageProps } from './$types';
+
+  const { dismissToast, pushToast } = getToastStore();
 
   let {
     data,
     form,
-  }: { data: PageData; form: ActionData } = $props();
+  }: PageProps = $props();
 
   const saveResult = $derived(form?.section === 'saveAll' ? form : null);
   const slotResult = $derived(form?.section === 'slot' ? form : null);

@@ -1,7 +1,4 @@
 // @vitest-environment node
-/**
- * Route tests for POST /api/v1/texts (T-4.1).
- */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { jsonContract } from '$lib/test/json-contract.js';
@@ -229,7 +226,7 @@ describe('POST /api/v1/texts', () => {
     expect(createPastedText).not.toHaveBeenCalled();
   });
 
-  it('returns 429 when the daily upload rate limit is exceeded (T-11.2)', async () => {
+  it('returns 429 when the daily upload rate limit is exceeded', async () => {
     const { RequestRateLimitError } = await import(
       '$lib/server/auth/rate-limits.js'
     );

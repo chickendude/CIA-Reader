@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Fetch upstream dictionary dumps for the registered importers (T-3.10).
+# Fetch upstream dictionary dumps for the registered importers.
 #
 # The raw artifacts are .gitignored — re-running the appropriate
 # `pnpm dictionary:import <source>` after a fetch picks up the new file.

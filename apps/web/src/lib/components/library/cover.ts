@@ -1,12 +1,4 @@
-/**
- * Library card cover-color picker (T-5.13).
- *
- * The CIAR design ships seven cover treatments — saffron, olive, rose,
- * indigo, sepia, paper, plain — and each text gets a stable one based
- * on its id so a user's library doesn't reshuffle colours across page
- * loads. A simple FNV-1a-ish hash over the id codepoints is enough;
- * we don't need cryptographic strength, just deterministic spread.
- */
+/** Use the text ID to pick a cover colour so the same book keeps its colour between visits. */
 
 export const COVERS = [
   'saffron',

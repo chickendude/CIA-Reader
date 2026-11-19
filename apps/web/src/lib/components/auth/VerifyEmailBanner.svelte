@@ -1,5 +1,5 @@
 <!--
-  Verification-status banner (T-11.7).
+  Verification-status banner.
 
   Renders at the very top of every page when the signed-in user has
   `email_verified_at IS NULL`. Hidden for verified users and for

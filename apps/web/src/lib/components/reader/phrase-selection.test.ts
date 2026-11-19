@@ -6,14 +6,6 @@ import {
 } from './phrase-selection.js';
 import type { ServerToken } from './types.js';
 
-/**
- * Unit tests for the phrase-create selection validator (T-14.3a).
- *
- * The validator gates the shift-click gesture in
- * `ChapterBody.svelte` — these cases pin its boundary behaviour
- * so future drag-select / touch-press flows can re-use the same
- * helper without re-deriving the rules.
- */
 
 function tok(
   idx: number,

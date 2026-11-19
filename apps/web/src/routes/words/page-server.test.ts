@@ -70,7 +70,6 @@ describe('words +page.server.ts load', () => {
     const { load } = await import('./+page.server.js');
     const url = input.url ?? new URL('http://x/words');
     const locals = input.locals ?? { user: { id: 'u1' } };
-    // #436: the words list scopes to the layout's resolved current language.
     const currentLanguage =
       'currentLanguage' in input ? input.currentLanguage : 'hi';
     return load({

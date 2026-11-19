@@ -1,5 +1,5 @@
 /**
- * DELETE /api/v1/texts/:id/group-shares/:groupId (T-7.4).
+ * DELETE /api/v1/texts/:id/group-shares/:groupId.
  */
 import { error, json } from '@sveltejs/kit';
 

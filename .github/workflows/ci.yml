@@ -6,6 +6,8 @@ on:
       - "apps/web/**"
       - "services/nlp/**"
       - "packages/**"
+      - ".nvmrc"
+      - "package.json"
       - "pnpm-lock.yaml"
       - "pnpm-workspace.yaml"
       - ".github/workflows/ci.yml"
@@ -15,6 +17,8 @@ on:
       - "apps/web/**"
       - "services/nlp/**"
       - "packages/**"
+      - ".nvmrc"
+      - "package.json"
       - "pnpm-lock.yaml"
       - "pnpm-workspace.yaml"
       - ".github/workflows/ci.yml"
@@ -22,7 +26,24 @@ on:
 jobs:
   web:
     name: web (lint + typecheck + test + coverage)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: ciareader
+          POSTGRES_PASSWORD: ciareader
+          POSTGRES_DB: ciareader
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ciareader -d ciareader"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgres://ciareader:ciareader@localhost:5432/ciareader
+      HINDIDB_TEST_DATABASE_URL: postgres://ciareader:ciareader@localhost:5432/ciareader
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -30,12 +51,13 @@ jobs:
           version: 9.12.0
       - uses: actions/setup-node@v4
         with:
-          node-version: 20.18.0
+          node-version-file: .nvmrc
           cache: pnpm
       - run: pnpm install --frozen-lockfile=false
       - run: pnpm --filter @ciareader/web exec svelte-kit sync
       - run: pnpm lint
       - run: pnpm typecheck
+      - run: pnpm --filter @ciareader/web db:migrate
       - run: pnpm --filter @ciareader/web run test:coverage
       - name: Upload web coverage artifact
         if: always()
@@ -46,12 +68,8 @@ jobs:
           if-no-files-found: ignore
 
   web-e2e:
-    # Reader end-to-end tests (Playwright). Lives in its own job so
-    # the heavyweight browser + Postgres setup doesn't slow the
-    # main `web` lane and so a flake here doesn't block lint /
-    # typecheck / unit signal from landing.
     name: web (playwright e2e)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     services:
       postgres:
         image: postgres:16-alpine
@@ -77,7 +95,7 @@ jobs:
           version: 9.12.0
       - uses: actions/setup-node@v4
         with:
-          node-version: 20.18.0
+          node-version-file: .nvmrc
           cache: pnpm
       - run: pnpm install --frozen-lockfile=false
       - run: pnpm --filter @ciareader/web exec svelte-kit sync
@@ -130,13 +148,10 @@ jobs:
           if-no-files-found: ignore
 
   nlp-accuracy:
-    # Real-pipeline lemma-accuracy gate (T-2.8). Installs [models],
-    # downloads the Marathi and Basque Stanza models, caches them, and
-    # enforces >=90% Hi / >=80% Mr / >=70% Or. Lives in its own job so
-    # the main `nlp` lane stays fast; this one trades latency for the
-    # only real end-to-end quality signal we have before release.
     name: nlp (real-pipeline accuracy thresholds)
     runs-on: ubuntu-latest
+    env:
+      STANZA_RESOURCES_DIR: ${{ github.workspace }}/.cache/stanza
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -147,7 +162,7 @@ jobs:
       - name: Cache Stanza UD models
         uses: actions/cache@v4
         with:
-          path: ~/stanza_resources
+          path: ${{ env.STANZA_RESOURCES_DIR }}
           key: stanza-models-mr-eu-v1-${{ hashFiles('services/nlp/pyproject.toml') }}
           # A stale cache is still ~all of the model bytes; stanza validates
           # md5s and only re-downloads what changed. Keeps the flaky network

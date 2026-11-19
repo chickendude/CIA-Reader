@@ -21,7 +21,7 @@ Usage: scripts/dev-local.sh COMMAND [ARGUMENT]
   import-hindidb-books PATH USER_ID  Import current Harry Potter books and saved choices
   reprocess-hindi        Rebuild Hindi book analyses without starting the app
 
-Prerequisites: Node 22.13+, pnpm 9, Python 3.11+, PostgreSQL 16+ tools,
+Prerequisites: Node 26.13.1, pnpm 9.12.0, Python 3.11+, PostgreSQL 16+ tools,
 Redis or Valkey, and Mailpit. No sudo or Docker is used by this script.
 Install reuses services/nlp/.venv, or creates it with python3 from your PATH.
 Set PYTHON=/path/to/python to choose an interpreter for a new venv.

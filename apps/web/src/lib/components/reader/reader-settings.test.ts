@@ -1,7 +1,4 @@
 // @vitest-environment node
-/**
- * Tests for the reader-settings helpers (T-5.1b).
- */
 import { describe, expect, it } from 'vitest';
 
 import {

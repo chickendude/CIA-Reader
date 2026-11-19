@@ -1,8 +1,8 @@
 /**
- * PATCH /api/v1/me/known-lemmas/:lemmaId (T-5.5).
+ * PATCH /api/v1/me/known-lemmas/:lemmaId.
  *
  * Upsert the caller's known-status for a lemma. The reader pop-up's
- * Learning / Known / Ignored buttons (T-5.4) call this with the
+ * Learning / Known / Ignored buttons call this with the
  * status value the user picked.
  *
  * Body: `{ status: 'unknown' | 'learning' | 'known' | 'ignored' }`.

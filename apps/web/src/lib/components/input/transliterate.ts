@@ -1,6 +1,6 @@
 /**
  * Client-side Latin → native-script transliteration for the
- * `<ScriptAwareInput>` component (T-6.2a).
+ * `<ScriptAwareInput>` component.
  *
  * Implements a small ITRANS-flavored mapping for Devanagari (Hindi +
  * Marathi) and Odia. It's intentionally limited — the goal is good

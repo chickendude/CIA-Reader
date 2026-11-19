@@ -1,5 +1,5 @@
 /**
- * DELETE /api/v1/collections/:id/items/:textId (T-8.1).
+ * DELETE /api/v1/collections/:id/items/:textId.
  */
 import { error, json } from '@sveltejs/kit';
 

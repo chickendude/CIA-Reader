@@ -1,5 +1,5 @@
 /**
- * GET + POST /api/v1/texts/:id/shares (T-7.2).
+ * GET + POST /api/v1/texts/:id/shares.
  *
  * GET — list direct shares on the text. Owner / admin only.
  * POST — grant a recipient by user id. Owner / admin only.

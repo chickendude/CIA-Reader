@@ -1,19 +1,6 @@
 <!--
-  Apply-everywhere follow-up toast (T-6.2b).
-
-  Pops up after a correction commits, offering three branches:
-
-    - Apply everywhere (same context): same surface AND same
-      worker-chosen primary lemma. The default — least likely to
-      over-apply because it inherits the worker's guess at a
-      similar grammatical context.
-    - Apply everywhere (all contexts): same surface only. The
-      sledgehammer.
-    - Just this one: dismiss.
-
-  The toast auto-dismisses after 8s. While in flight (an Apply
-  click is fetching), the toast doesn't auto-hide; failure
-  surfaces inline.
+  Applying a correction in the same context requires both the spelling and the original dictionary
+  entry to match. Applying it in all contexts only requires the spelling to match.
 -->
 <script lang="ts">
   interface Props {

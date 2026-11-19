@@ -1,7 +1,4 @@
 // @vitest-environment node
-/**
- * Tests for keyboard-inset math (T-5.1c).
- */
 import { describe, expect, it } from 'vitest';
 
 import { computeKeyboardInset } from './keyboard-inset.js';

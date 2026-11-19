@@ -79,17 +79,12 @@
   --indigo: oklch(0.5 0.1 270);
   --indigo-soft: oklch(0.5 0.1 270 / 0.14);
 
-  /* Word-status tints (background-highlight mode). Underline mode in T-5.9
-   * uses the accent hue at varying weights via the data-hl="underline" rules. */
   --w-unknown-bg: transparent;
   --w-l1-bg: oklch(0.92 0.07 80); /* very pale saffron */
   --w-l2-bg: oklch(0.86 0.1 75);
   --w-l3-bg: oklch(0.8 0.12 70);
   --w-known-bg: transparent;
-  /* #435: admin "no definition yet" overlay. A magenta hue (≈330)
-   * deliberately apart from the saffron status palette so flagged
-   * words never read as a learning state. Ink is dark enough on the
-   * pale tint to clear WCAG AA at body size. */
+  /* Highlight words without definitions for dictionary editors. */
   --w-undefined-bg: oklch(0.9 0.06 330);
   --w-undefined-ink: oklch(0.36 0.14 330);
 
@@ -145,7 +140,6 @@
   --w-l1-bg: oklch(0.84 0.08 75);
   --w-l2-bg: oklch(0.76 0.12 70);
   --w-l3-bg: oklch(0.68 0.13 65);
-  /* #435: tuned for the warmer sepia paper. */
   --w-undefined-bg: oklch(0.82 0.07 330);
   --w-undefined-ink: oklch(0.32 0.14 330);
 }
@@ -206,8 +200,6 @@
   --w-l1-bg: oklch(0.3 0.05 70);
   --w-l2-bg: oklch(0.38 0.08 68);
   --w-l3-bg: oklch(0.46 0.11 65);
-  /* #435: dark tint with a near-white violet ink so flagged words
-   * stay legible on the dark paper. */
   --w-undefined-bg: oklch(0.4 0.1 330);
   --w-undefined-ink: oklch(0.95 0.05 330);
 
@@ -217,19 +209,13 @@
     0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 12px 32px rgba(0, 0, 0, 0.55);
 }
 
-/* Typography, spacing, radii, shadows, motion — theme-invariant.
- * Reader font family is intentionally not here: it's per-language, chosen
- * from the language registry in T-0.6 and stored in user_languages. */
+/* The reader chooses its font for each language. */
 :root {
   --font-ui:
     system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   --font-mono:
     'SF Mono', ui-monospace, 'Cascadia Code', Menlo, Consolas, 'Liberation Mono', monospace;
 
-  /* CIAR design typography (Apr 2026 handoff). Loaded via Google Fonts in
-   * app.html. The reader chooses --serif-dev for Devanagari body text and
-   * falls back through Noto for Bengali / Gujarati / Gurmukhi / Oriya in
-   * T-5.9. UI chrome uses --sans + --serif. */
   --font-sans: 'Inter', ui-sans-serif, system-ui, -apple-system, sans-serif;
   --font-serif: 'Source Serif 4', 'Iowan Old Style', 'Georgia', serif;
   --font-serif-dev:
@@ -399,7 +385,7 @@ code {
 [data-hl='colored_text'] .word[data-s='5'] {
   color: var(--w-known-ink);
 }
-/* —— Admin overlay: flag words with no definition yet (#435) ————————
+/* Admin overlay: flag words with no definition yet
  * Admins toggle `data-flag-undefined` on <html> from the reader
  * settings popover. While it's set, every word whose lemma carries no
  * canonical gloss (TokenSpan tags it `.no-definition`) gets a distinct

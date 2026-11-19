@@ -14,10 +14,6 @@ export type ProfileUserPatch = {
 export type UserLanguagePatch = {
   scriptPreference?: UserLanguage['scriptPreference'];
   romanizationScheme?: UserLanguage['romanizationScheme'];
-  // T-5.1b reader settings — every reader-popover field writes back
-  // here. None are required; absent keys leave the existing column
-  // untouched so partial updates from the popover work without
-  // re-stating untouched values.
   readerLayoutMode?: UserLanguage['readerLayoutMode'];
   wordsPerPage?: UserLanguage['wordsPerPage'];
   fontFamily?: UserLanguage['fontFamily'];
@@ -93,7 +89,7 @@ export async function upsertUserLanguage(
       scriptPreference: patch.scriptPreference ?? 'native',
       romanizationScheme: patch.romanizationScheme ?? 'iso15919',
     };
-    // Reader settings (T-5.1b) — only set when the patch explicitly
+    // Reader settings, only set when the patch explicitly
     // provided one; otherwise let the column default kick in.
     if (patch.readerLayoutMode !== undefined) insertValues.readerLayoutMode = patch.readerLayoutMode;
     if (patch.wordsPerPage !== undefined) insertValues.wordsPerPage = patch.wordsPerPage;

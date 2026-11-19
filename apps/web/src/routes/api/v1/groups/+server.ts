@@ -1,5 +1,5 @@
 /**
- * POST /api/v1/groups (T-7.3) — create a new group; the actor
+ * POST /api/v1/groups, create a new group; the actor
  * becomes the owner + first member.
  */
 import { error, json } from '@sveltejs/kit';

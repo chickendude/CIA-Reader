@@ -1,5 +1,5 @@
 /**
- * Group / classroom dashboard stats (T-7.8).
+ * Group / classroom dashboard stats.
  *
  * Aggregates reading progress for every member of a group across
  * the texts the owner has shared with the group. Lets a teacher /

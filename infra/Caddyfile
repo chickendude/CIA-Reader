@@ -61,7 +61,7 @@ www.{$APP_DOMAIN} {
 	redir https://{$APP_DOMAIN}{uri} permanent
 }
 
-# Uptime Kuma admin UI (T-13.5). DNS A/AAAA for status.<APP_DOMAIN>
+# Uptime Kuma admin UI. DNS A/AAAA for status.<APP_DOMAIN>
 # must point at this box (or CNAME status → APP_DOMAIN). Caddy issues
 # a separate cert for it. Kuma manages its own login on first visit;
 # the proxy here just terminates TLS + forwards. If you don't run the
@@ -72,11 +72,8 @@ status.{$APP_DOMAIN} {
 	header Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
 }
 
-# When the API moves to its own subdomain (CORS scoping + separate
-# caching, per the original T-13.2 spec), set API_DOMAIN in infra/.env
-# and uncomment this block. Frontend fetch() URLs need to be updated
-# to point at it too — that's deferred to keep this PR focused on
-# TLS for the main domain.
+# To serve the API on a separate domain, set API_DOMAIN, enable the block
+# below and point the frontend API requests at that domain.
 #
 # {$API_DOMAIN} {
 #   encode zstd gzip

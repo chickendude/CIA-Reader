@@ -19,7 +19,7 @@ afterEach(() => {
   __resetScrollLockForTests();
 });
 
-describe('Sheet — dimmed prop (T-5.17)', () => {
+describe('Sheet dimmed prop', () => {
   it('paints a dimmed scrim by default', () => {
     render(Sheet, { open: true, onClose: () => {} });
     const back = document.body.querySelector('.sheet-back');
@@ -60,7 +60,7 @@ describe('Sheet — dimmed prop (T-5.17)', () => {
   });
 });
 
-describe('Sheet — portal (T-5.28)', () => {
+describe('Sheet portal', () => {
   // The reader's page-mode content uses `transform` for the page-flip
   // slide, which creates a containing block for fixed-positioned
   // descendants. Without portaling, the sheet's backdrop would inherit

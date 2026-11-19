@@ -1,5 +1,5 @@
 /**
- * PATCH /api/v1/admin/translations/:id/hidden (T-3.7).
+ * PATCH /api/v1/admin/translations/:id/hidden.
  *
  * Hide or unhide a community (source=user) translation. Officials are
  * not hidden — they're edited in place through the main translation

@@ -1,5 +1,5 @@
 /**
- * Text-share service (T-7.2 / T-7.4).
+ * Text-share service.
  *
  * Manages per-recipient `text_shares` rows. Granting a share also
  * promotes the text's visibility from 'private' to 'shared' so
@@ -144,7 +144,7 @@ export type GroupShareInput = {
 };
 
 /**
- * T-7.4: grant a group access to a text. Owner-or-admin only on
+ * grant a group access to a text. Owner-or-admin only on
  * the text. We don't require the actor to be a member of the
  * target group — sharing TO a group is a one-way grant; they
  * don't need to be inside the group to share with it.
@@ -229,7 +229,7 @@ export async function listTextGroupShares(
 
 /**
  * Has the viewer been granted a direct share on `textId`? Used by
- * `canReadText` (T-4.6) to extend the readability gate.
+ * `canReadText` to extend the readability gate.
  */
 export async function viewerHasDirectShare(
   viewerId: string,

@@ -1,6 +1,6 @@
 // @vitest-environment node
 /**
- * Unit tests for the text upload service (T-4.1).
+ * Unit tests for the text upload service.
  *
  * Same staged-mock pattern as `dictionary/curator.test.ts`: each DB call
  * returns a thenable chain that resolves the next staged result. We
@@ -70,7 +70,7 @@ const selectFn = vi.fn(() => {
 const insertFn = vi.fn(() => makeInsertChain());
 const updateFn = vi.fn(() => makeUpdateChain());
 
-// T-8.4: canReadText consults collections.js for collection-share
+// canReadText consults collections.js for collection-share
 // access. The chapter-book EPUB/ZIP path also delegates to
 // `createChapterBookCollection` here — mocked to a stub that records
 // args and returns a synthetic collection so the upload-side tests
@@ -132,13 +132,11 @@ vi.mock('../db/index.js', () => ({
   },
 }));
 
-// T-7.2: canReadText consults the sharing module via dynamic import.
-// Default to "no share" so the existing visibility / owner cases
-// keep their pre-T-7.2 outcomes; tests that care can override.
+// Assume there is no share unless the test grants one.
 vi.mock('./sharing.js', () => ({
   viewerHasDirectShare: async () => false,
 }));
-// T-7.4: same treatment for the groups module.
+// same treatment for the groups module.
 vi.mock('../groups.js', () => ({
   viewerHasGroupShare: async () => false,
 }));
@@ -353,7 +351,7 @@ describe('createPastedText', () => {
     const insertCalls = calls.filter(
       (c): c is Extract<Call, { kind: 'insert' }> => c.kind === 'insert',
     );
-    // T-4.4: text + chapters + nlp_jobs.
+    // text + chapters + nlp_jobs.
     expect(insertCalls).toHaveLength(3);
     expect(insertCalls[0]!.values).toMatchObject({
       ownerId: OWNER.id,
@@ -363,7 +361,6 @@ describe('createPastedText', () => {
       status: 'pending',
       visibility: 'private',
     });
-    // Chapter values are passed as an array (T-4.2 batches them).
     const chapterValues = insertCalls[1]!.values as Array<Record<string, unknown>>;
     expect(chapterValues).toHaveLength(1);
     expect(chapterValues[0]).toMatchObject({
@@ -371,7 +368,7 @@ describe('createPastedText', () => {
       idx: 0,
       title: null,
     });
-    // nlp_jobs insert (T-4.4).
+    // nlp_jobs insert.
     expect(insertCalls[2]!.values).toMatchObject({
       textId: 'text-1',
       status: 'pending',
@@ -521,7 +518,7 @@ describe('createPdfText', () => {
 });
 
 // -----------------------------------------------------------------------
-// createTxtText (T-4.2)
+// createTxtText
 // -----------------------------------------------------------------------
 
 describe('createTxtText', () => {
@@ -1021,7 +1018,7 @@ describe('estimateTokenCount', () => {
 });
 
 // -----------------------------------------------------------------------
-// getReadableText (T-4.6)
+// getReadableText
 // -----------------------------------------------------------------------
 
 describe('getReadableText', () => {

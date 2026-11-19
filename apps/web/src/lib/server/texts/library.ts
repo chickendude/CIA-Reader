@@ -1,21 +1,3 @@
-/**
- * Library queries (T-4.5).
- *
- * Three tabs feed off this module:
- *
- *   - "Your texts" — `texts.owner_id = me`. Most recent first.
- *   - "Shared with you" — texts the viewer has access to via M7's
- *     `text_shares` / `text_group_shares` tables. Those tables don't
- *     exist yet, so the function returns an empty page; the M7
- *     ticket plugs the real query in.
- *   - "Official library" — `texts.visibility = 'official'`. Public,
- *     unauthenticated; M11 (T-7.6) wires this into a public-facing
- *     SEO route. T-4.5 ships the data fetch.
- *
- * Pagination is offset-based with sensible caps. Cursor pagination is
- * a future concern when individual users have thousands of imports —
- * for the first year of MVP a learner has a few dozen at most.
- */
 import { officialCatalog, catalogEntries, NOT_A_CHAPTER_BOOK_MEMBER } from './official-catalog.js';
 import { cachedBookScores, ensureReaderCoverage } from './reader-coverage.js';
 import { scoreBookEntries, unparsedWordCount, type BookWordStats } from './book-stats.js';
@@ -195,16 +177,6 @@ export async function listOwnedTexts(
   };
 }
 
-/**
- * Texts shared with the viewer (T-7.5). Combines direct shares
- * (text_shares) with group shares (text_group_shares ↔
- * group_memberships). Excludes texts the viewer owns themselves —
- * those land in "Your texts."
- *
- * Implementation: a UNION inside a subquery that surfaces every
- * text id the viewer can read via either path; the outer SELECT
- * pulls the canonical text rows and counts.
- */
 export async function listSharedTexts(
   viewer: Pick<User, 'id'>,
   opts: { limit?: number; offset?: number; language?: LanguageCode } = {},

@@ -3,6 +3,11 @@ import { afterEach, expect, it, vi } from 'vitest';
 
 import BookActions from './BookActions.svelte';
 
+vi.mock('$lib/components/toast/toast-store.js', async (importOriginal) => {
+  const { createToastStore } = await importOriginal<typeof import('../toast/toast-store.js')>();
+  return { getToastStore: createToastStore };
+});
+
 vi.mock('$app/navigation', () => ({ invalidateAll: vi.fn() }));
 
 afterEach(() => {

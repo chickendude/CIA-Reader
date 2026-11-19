@@ -1,5 +1,5 @@
 /**
- * Bulk curator tools page (T-3.9).
+ * Bulk curator tools page.
  *
  * Three forms in one page, each routed to a distinct action so we can
  * narrow the result by `section` exactly the way the lemma editor does.

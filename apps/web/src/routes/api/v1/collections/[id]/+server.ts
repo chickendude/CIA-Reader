@@ -1,5 +1,5 @@
 /**
- * PATCH + DELETE /api/v1/collections/:id (T-8.1).
+ * PATCH + DELETE /api/v1/collections/:id.
  */
 import { error, json } from '@sveltejs/kit';
 import { z } from 'zod';

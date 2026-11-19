@@ -1,5 +1,5 @@
 {
-  "__description__": "Odia golden-file corpus (T-2.3b). Each entry pairs an Odia sentence with its expected per-token analysis. Serves as (a) an eval set for T-2.3a pipeline iteration, (b) a regression guard for future rule-table / lemma-seed edits, and (c) the fixture T-2.8 CI accuracy thresholds run against. Format per entry: 'text' is the whole sentence (NFC-normalized Odia script). 'tokens' is an ordered list — one entry per whitespace-separated surface — with optional expectations: 'lemma', 'pos', 'features' (subset check — only keys present are checked), 'is_oov', 'is_ambiguous'. A missing key means 'do not enforce'. This lets contributors add a sentence and assert only what they're sure of. The seed is deliberately small + paradigm-focused: it only uses lemmas from seed_lemmas.json so the eval is reproducible without the Odia WordNet import (T-3.1). Expanded corpora land post-T-3.1, ideally reviewed by a native Odia speaker. Known gaps documented in docs/dictionary-sources.md.",
+  "__description__": "Odia sentences with expected analyses in reading order. Include only fields you can verify. Omitted fields are skipped, and a features object checks only the listed features. The corpus uses the bundled seed vocabulary so it runs offline.",
   "sentences": [
     {
       "id": "greeting-01",

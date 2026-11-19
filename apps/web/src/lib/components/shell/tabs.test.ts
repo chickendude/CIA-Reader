@@ -125,7 +125,7 @@ describe('groupTabsBySection', () => {
     expect(read!.tabs.map((t) => t.id)).toEqual(['library', 'upload', 'dictionary']);
   });
 
-  it("groups Words under 'Stats' (T-10.6)", () => {
+  it("groups Words under 'Stats'", () => {
     const groups = groupTabsBySection(visibleTabs(TABS, USER));
     const stats = groups.find((g) => g.section === 'Stats');
     expect(stats).toBeDefined();

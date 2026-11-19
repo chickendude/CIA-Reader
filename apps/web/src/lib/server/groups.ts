@@ -1,11 +1,3 @@
-/**
- * Groups service (T-7.3).
- *
- * A group is a small bag of users (classroom roster, study club).
- * The creator owns it; only the owner can rename / delete or add /
- * remove members. T-7.4 builds on the membership lookup here for
- * the share-with-group flow.
- */
 import { and, eq } from 'drizzle-orm';
 
 import { db, schema } from './db/index.js';
@@ -179,7 +171,7 @@ export async function listGroupsForUser(userId: string): Promise<Group[]> {
   return rows;
 }
 
-/** Used by canReadText (T-7.4) — does this user share a group with
+/** Used by canReadText, does this user share a group with
  *  any group that has been granted access to `textId`? */
 export async function viewerHasGroupShare(
   viewerId: string,

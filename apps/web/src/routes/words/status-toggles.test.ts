@@ -27,7 +27,7 @@ function pageData(statuses: WordStatus[]): PageData {
 }
 
 it('toggles individual statuses and switches All between every status and none', async () => {
-  const view = render(Words, { data: pageData(['learning', 'known']) });
+  const view = render(Words, { params: {}, form: null, data: pageData(['learning', 'known']) });
   const button = (name: RegExp) => screen.getByRole<HTMLButtonElement>('button', { name });
 
   expect(button(/^learning 35$/i).getAttribute('aria-pressed')).toBe('true');
@@ -50,7 +50,7 @@ it('toggles individual statuses and switches All between every status and none',
 
 it('searches while typing, waits for IME composition, and clears immediately', async () => {
   vi.useFakeTimers();
-  render(Words, { data: pageData(['known']) });
+  render(Words, { params: {}, form: null, data: pageData(['known']) });
   const field = screen.getByRole('searchbox');
   await fireEvent.compositionStart(field);
   await fireEvent.input(field, { target: { value: 'मे' } });

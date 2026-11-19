@@ -1,7 +1,7 @@
 // @vitest-environment node
 /**
- * Unit tests for the shared-types `stripNukta` / `hasNukta` helpers
- * (#318). The helpers live in `@ciareader/shared-types` (pure
+ * Unit tests for the shared-types `stripNukta` / `hasNukta` helpers.
+ * The helpers live in `@ciareader/shared-types` (pure
  * data-only package, no test infra of its own); we colocate the
  * tests under apps/web so they run inside the existing Vitest setup.
  *

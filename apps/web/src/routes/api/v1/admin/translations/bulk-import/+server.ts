@@ -1,5 +1,5 @@
 /**
- * POST /api/v1/admin/translations/bulk-import (T-3.9).
+ * POST /api/v1/admin/translations/bulk-import.
  *
  * Admin-only. Accepts an array of curator-written gloss rows, each
  * resolving an existing lemma by `(language, headword, pos)`. Rows that

@@ -1,17 +1,6 @@
 /**
- * Admin "Dictionary sources" page (T-3.14).
- *
- * Lists every registered importer and exposes per-row actions for the
- * three operations the curator-on-call needs to do without dropping
- * into a shell: re-fetch the upstream raw cache, re-import from that
- * cache, and delete the cache.
- *
- * Lives under /moderation/* (not /admin/*) because the existing
- * `/moderation/+layout.server.ts` already gates curator+admin access;
- * this loader narrows further to admin-only, mirroring the bulk-tools
- * page. The original ticket pitched a separate `/admin/` route group,
- * but reusing the existing surface keeps the nav consistent and avoids
- * a one-off layout file.
+ * Managing source files and running imports requires admin access, even though the surrounding
+ * moderation area also admits curators.
  */
 import { error, fail, redirect } from '@sveltejs/kit';
 

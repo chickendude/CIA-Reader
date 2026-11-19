@@ -1,15 +1,6 @@
 /**
- * Token-correction service (T-6.1, extended in T-6.2 / T-6.3).
- *
- * The reader's WordPopup writes through here when the user picks an
- * alternate lemma, marks the token as a proper noun, etc. Each
- * correction lands as one row keyed on (user, token); re-correcting
- * upserts.
- *
- * Visibility: the writer is always the acting user. We don't gate
- * who can write a correction on which text — corrections are
- * attached to a token, and the reader only surfaces tokens the user
- * already has read access to (via `getReadableText`).
+ * Corrections belong to the reader who made them. Saving a different choice for one occurrence
+ * leaves the shared chapter text intact.
  */
 import { and, eq, inArray } from 'drizzle-orm';
 
@@ -119,7 +110,7 @@ export async function writeTokenCorrection(
     .returning();
   if (!row) throw new Error('upsert returned no row');
 
-  // T-6.4: corrections are lemma-scoped. When the user picks a
+  // corrections are lemma-scoped. When the user picks a
   // lemma we ensure they have a user_known_lemmas row so the next
   // page renders the corrected token with a real status code (and
   // so the user can mark it in the popup). We seed `learning` —
@@ -148,7 +139,7 @@ export async function writeTokenCorrection(
 
 /**
  * Bulk fetch the acting user's corrections for a given set of
- * token ids — used by the reader loader (T-6.4) to apply per-user
+ * token ids, used by the reader loader to apply per-user
  * picks at read time. Returns a map keyed by tokenId for O(1)
  * lookup in the token-render path.
  */
@@ -186,7 +177,7 @@ export type ApplyEverywhereResult = {
 };
 
 /**
- * T-6.2b: replicate the source token's correction across every
+ * replicate the source token's correction across every
  * matching token the acting user has visible. Match scope:
  *
  *  - 'same-context' — same surface_nfc AND same worker-chosen

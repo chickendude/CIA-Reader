@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Mock the user_languages query — the layout loader pulls active
-// languages for the rail picker (T-5.25).
+// languages for the rail picker.
 const userLanguageRows = vi.fn<
   () => Promise<Array<{ language: string }>>
 >();
@@ -81,12 +81,12 @@ describe('root +layout.server.ts load', () => {
       email: 'a@b.c',
       displayName: 'Alex',
       role: 'user',
-      // T-11.7: layout exposes a boolean flag, not the raw timestamp.
+      // layout exposes a boolean flag, not the raw timestamp.
       emailVerified: true,
     });
   });
 
-  it("includes the user's active languages in availableLanguages (T-5.25)", async () => {
+  it("includes the user's active languages in availableLanguages", async () => {
     userLanguageRows.mockResolvedValue([{ language: 'hi' }, { language: 'mr' }]);
     const data = await load(
       makeEvent({
@@ -99,7 +99,7 @@ describe('root +layout.server.ts load', () => {
     expect(data.currentLanguage).toBe('mr');
   });
 
-  it('lists not-yet-added supported languages in addableLanguages (#436)', async () => {
+  it('lists not-yet-added supported languages in addableLanguages', async () => {
     userLanguageRows.mockResolvedValue([{ language: 'hi' }, { language: 'mr' }]);
     const data = await load(
       makeEvent({
@@ -115,7 +115,7 @@ describe('root +layout.server.ts load', () => {
     expect(codes).toEqual(expect.arrayContaining(['or']));
   });
 
-  it('offers no addableLanguages to anonymous visitors (#436)', async () => {
+  it('offers no addableLanguages to anonymous visitors', async () => {
     const data = await load(makeEvent({ locals: {} }));
     if (!data) throw new Error('load returned void');
     expect(data.addableLanguages).toEqual([]);

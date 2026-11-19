@@ -38,10 +38,10 @@ export interface NumberLanguageForm {
 }
 
 /** Per-token number-form payload populated by the NLP service for
- *  digit-only NUM tokens (T-2.8 / T-2.8a). Null on every other token.
+ *  digit-only NUM tokens. Null on every other token.
  *
  *  `value` is the canonical Latin-digit string form so signed +
- *  decimal numerals (T-2.8a) round-trip losslessly: `"-3.14"`,
+ *  decimal numerals round-trip losslessly: `"-3.14"`,
  *  `"0.001"`, `"123"` are all valid. The integer part is bounded by
  *  10⁷; the fractional part may be arbitrarily long. */
 export interface NumberForms {
@@ -72,10 +72,10 @@ export interface NlpToken {
   number_forms: NumberForms | null;
 }
 
-/** T-14.5: rule-based phrase proposal. The NLP service runs a
+/** rule-based phrase proposal. The NLP service runs a
  *  per-language `PhraseDetector` (see `services/nlp/app/phrases/`)
  *  over the token stream and emits one of these per pattern match.
- *  The web worker (T-14.5a) writes proposals to `phrase_proposals`
+ *  The web worker writes proposals to `phrase_proposals`
  *  and a periodic promotion pass moves ≥3-chapter occurrences into
  *  `phrases` (`source='nlp'`). Surfaces are NFC-normalised on the
  *  Python side. */
@@ -91,9 +91,7 @@ export interface ProcessResponse {
   language: string;
   pipeline_id: string;
   tokens: NlpToken[];
-  /** T-14.5. Empty array when no patterns matched; older NLP
-   *  service builds may omit the field, so consumers must default
-   *  to an empty list. */
+  /** Older parser responses can omit this field. Treat a missing list as no proposed phrases. */
   proposed_phrases?: ProposedPhrase[];
 }
 

@@ -1,5 +1,5 @@
 /**
- * POST /api/v1/me/listening (T-10.5).
+ * POST /api/v1/me/listening.
  *
  * Records one small playback delta from the audio player. The service rolls
  * deltas into aggregate listening stats; callers should send at most once

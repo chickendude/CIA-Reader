@@ -10,7 +10,7 @@ declare global {
     interface PageData {
       user:
         | (Pick<User, 'id' | 'email' | 'displayName' | 'role'> & {
-            /** T-11.7: drives the verification banner.
+            /** drives the verification banner.
              *  True iff `users.email_verified_at IS NOT NULL`. */
             emailVerified: boolean;
           })

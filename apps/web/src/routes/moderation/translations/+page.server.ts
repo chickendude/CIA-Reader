@@ -1,5 +1,5 @@
 /**
- * Curator translation-report queue (T-11.1).
+ * Curator translation-report queue.
  *
  * URL contract:
  *   /moderation/translations?status=open&language=hi

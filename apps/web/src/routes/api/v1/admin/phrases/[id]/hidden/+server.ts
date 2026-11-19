@@ -1,14 +1,4 @@
-/**
- * PATCH /api/v1/admin/phrases/:id/hidden (T-14.7).
- *
- * Curator moderation flag for phrases. Hidden phrases stay
- * visible to curators / admins (so they can review and unhide)
- * but disappear from anonymous and user views.
- *
- * Body: `{ hidden: boolean, reason: string }`. The `reason` is
- * recorded on the audit row (T-3.4 convention — every curator
- * edit needs a soft "why").
- */
+/** Record the reason for hiding or restoring a phrase in its edit history. */
 import { error, json } from '@sveltejs/kit';
 import { eq } from 'drizzle-orm';
 import { z } from 'zod';

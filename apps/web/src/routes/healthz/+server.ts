@@ -5,7 +5,7 @@ import { db } from '$lib/server/db';
 import type { RequestHandler } from './$types';
 
 /**
- * Production health probe (T-13.5).
+ * Production health probe.
  *
  * Lighter than /api/v1/smoke — no NLP round-trip, just a 1ms DB ping
  * to confirm the web process can reach Postgres. Used by:

@@ -99,7 +99,7 @@ export const actions: Actions = {
     const session = await createSession(created.id);
     setSessionCookie(cookies, session.token, session.expiresAt, isSecureRequest(url));
 
-    // Send a verification magic-link (T-11.7). The same magic-link
+    // Send a verification magic-link. The same magic-link
     // consumer in $lib/server/auth/magic-link.ts sets
     // email_verified_at on click, so this email doubles as both
     // "welcome" and "click to verify your email." Failures are

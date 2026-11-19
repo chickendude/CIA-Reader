@@ -1,13 +1,13 @@
 /**
- * PATCH /api/v1/me/known-phrases/:phraseId (T-14.1).
+ * PATCH /api/v1/me/known-phrases/:phraseId.
  *
- * Direct parallel to PATCH /api/v1/me/known-lemmas/:lemmaId (T-5.5)
- * but for phrase-level status. Reader pop-up phrase mode (T-14.3)
+ * Direct parallel to PATCH /api/v1/me/known-lemmas/:lemmaId
+ * but for phrase-level status. Reader pop-up phrase mode
  * wires its Learning / Known / Ignored buttons through this. Body:
  * `{ status: 'unknown' | 'learning' | 'known' | 'ignored' }`.
  * Response: 200 with the updated row; the per-language phrases
  * counter cache is recomputed in the same transaction so the
- * stats card on the profile page (T-14.6) stays current without
+ * stats card on the profile page stays current without
  * a separate fetch.
  */
 import { error, json } from '@sveltejs/kit';

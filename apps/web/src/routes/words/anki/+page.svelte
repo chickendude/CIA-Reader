@@ -3,9 +3,9 @@
   import TextField from '$lib/components/input/TextField.svelte';
   import { ankiConnect, rememberAnkiConnection } from '$lib/anki-connect';
   import { untrack } from 'svelte';
-  import type { PageData } from './$types';
+  import type { PageProps } from './$types';
 
-  let { data }: { data: PageData } = $props();
+  let { data }: PageProps = $props();
 
   type Card = {
     word: string;

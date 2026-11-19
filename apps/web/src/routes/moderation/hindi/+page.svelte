@@ -3,8 +3,8 @@
   import { invalidateAll } from '$app/navigation';
   import ContextChoiceButton from '$lib/components/reader/ContextChoiceButton.svelte';
   import type { ServerToken } from '$lib/components/reader/types.js';
-  import type { PageData } from './$types';
-  let { data }: { data: PageData } = $props();
+  import type { PageProps } from './$types';
+  let { data }: PageProps = $props();
   let updates = $state(new Map<string, ServerToken>()),
     busy = $state(false),
     message = $state('');

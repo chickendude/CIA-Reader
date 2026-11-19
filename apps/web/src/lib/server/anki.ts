@@ -10,7 +10,7 @@
  * Two delivery paths share this builder: a downloadable `.apkg`
  * (`buildApkg`) and AnkiConnect (the page posts `getAnkiCards` JSON to the
  * user's local Anki). `.apkg` generation uses the existing Anki schema with
- * native SQLite (Node 22.13+) so full-book decks have no fixed WASM heap limit.
+ * Node's built-in SQLite so full-book decks can exceed 16 MB.
  */
 import { createRequire } from 'node:module';
 import { createHash } from 'node:crypto';

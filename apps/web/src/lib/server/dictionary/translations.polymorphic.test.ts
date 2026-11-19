@@ -1,6 +1,6 @@
 // @vitest-environment node
 /**
- * Polymorphic translation tests (T-14.1).
+ * Polymorphic translation tests.
  *
  * Verifies that the new phrase-target path
  * (`submitUserPhraseTranslation`) writes the polymorphic columns
@@ -92,7 +92,7 @@ afterEach(() => {
 // ---------------------------------------------------------------
 
 describe('submitUserTranslation — polymorphic write shape', () => {
-  it('writes only the polymorphic (target_type, target_id) pair (T-14.7a dropped lemma_id)', async () => {
+  it('writes the target type and ID without a separate lemma ID', async () => {
     stage([{ id: 'lemma-1' }]); // existence check
     stage([
       {
@@ -117,7 +117,7 @@ describe('submitUserTranslation — polymorphic write shape', () => {
       targetId: 'lemma-1',
       source: 'user',
     });
-    // T-14.7a: lemma_id is no longer written.
+    // lemma_id is no longer written.
     expect(
       (insertCall?.payload as Record<string, unknown> | undefined)?.lemmaId,
     ).toBeUndefined();
@@ -152,8 +152,6 @@ describe('submitUserPhraseTranslation — happy path', () => {
     expect(result.targetId).toBe('phr-1');
 
     const insertCall = calls.find((c) => c.kind === 'insert');
-    // T-14.7a: legacy lemma_id field is gone — the insert
-    // payload only carries the polymorphic pair.
     expect(insertCall?.payload).toMatchObject({
       targetType: 'phrase',
       targetId: 'phr-1',

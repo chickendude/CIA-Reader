@@ -1,5 +1,5 @@
 /**
- * DELETE /api/v1/collections/:id/shares/:userId (T-8.4).
+ * DELETE /api/v1/collections/:id/shares/:userId.
  */
 import { error, json } from '@sveltejs/kit';
 

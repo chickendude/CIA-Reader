@@ -1,5 +1,5 @@
 /**
- * Registry of available dictionary import sources (T-3.10).
+ * Registry of available dictionary import sources.
  *
  * Each entry here is what `pnpm dictionary:import [name]` can run. Adding
  * a new importer is a one-line append plus the source module — the

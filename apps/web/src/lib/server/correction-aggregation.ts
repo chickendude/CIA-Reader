@@ -1,5 +1,5 @@
 /**
- * Crowdsourced correction aggregation worker (T-6.7).
+ * Crowdsourced correction aggregation worker.
  *
  * Scans recent `token_corrections` rows grouped by
  * `(language, surface_nfc, context_signature, chosen_lemma_id)`
@@ -156,7 +156,7 @@ export async function runCorrectionAggregation(
         voteCount: r.distinctUsers,
         promotedAt: now,
         promotedBy: null,
-        note: 'auto-promoted by T-6.7 aggregation worker',
+        note: 'Automatically promoted from reader corrections',
       })
       .onConflictDoUpdate({
         target: [

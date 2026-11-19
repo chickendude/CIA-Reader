@@ -1,5 +1,5 @@
 /**
- * DELETE /api/v1/groups/:id (T-7.3). Owner-or-admin only.
+ * DELETE /api/v1/groups/:id. Owner-or-admin only.
  */
 import { error, json } from '@sveltejs/kit';
 

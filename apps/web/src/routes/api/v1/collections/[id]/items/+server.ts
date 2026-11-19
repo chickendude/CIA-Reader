@@ -1,5 +1,5 @@
 /**
- * POST /api/v1/collections/:id/items { textId, position? } (T-8.1).
+ * POST /api/v1/collections/:id/items { textId, position? }.
  */
 import { error, json } from '@sveltejs/kit';
 import { z } from 'zod';

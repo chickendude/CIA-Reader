@@ -1,5 +1,5 @@
 /**
- * Manual alignment editor (T-9.5) loader.
+ * Manual alignment editor loader.
  *
  * Owner-or-admin only. Loads the audio file's URL + the chapter's
  * tokens grouped by sentence so the page can walk one sentence at

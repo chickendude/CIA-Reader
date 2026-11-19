@@ -1,6 +1,6 @@
 // @vitest-environment node
 /**
- * Tests for /moderation/dictionary/:id SSR loader and form actions (T-3.7).
+ * Tests for /moderation/dictionary/:id SSR loader and form actions.
  *
  * The loader + every action delegates to the curator service; these tests
  * mock that layer and assert the web-form plumbing (shape of the loader
@@ -265,7 +265,7 @@ describe('moderation lemma editor actions', () => {
     );
   });
 
-  it('reorderTranslations parses the comma-separated id list and forwards in order (T-3.13)', async () => {
+  it('reorderTranslations parses the comma-separated id list and forwards in order', async () => {
     reorderTranslations.mockResolvedValueOnce([]);
     const a = 'cccccccc-cccc-cccc-cccc-cccccccccccc';
     const b = 'dddddddd-dddd-dddd-dddd-dddddddddddd';
@@ -282,7 +282,7 @@ describe('moderation lemma editor actions', () => {
     );
   });
 
-  it('reorderTranslations rejects when no valid UUIDs survive parsing (T-3.13)', async () => {
+  it('reorderTranslations rejects when no valid UUIDs survive parsing', async () => {
     const res = await callAction('reorderTranslations', {
       orderedTranslationIds: 'not-a-uuid, also-bad',
       reason: 'malformed payload',

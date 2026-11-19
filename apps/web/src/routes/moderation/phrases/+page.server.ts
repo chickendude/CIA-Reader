@@ -1,5 +1,5 @@
 /**
- * Curator phrase dictionary list (T-14.4a).
+ * Curator phrase dictionary list.
  *
  * Parallel to /moderation/dictionary (lemmas). Pulls phrases for
  * the active curator language with translation + chapter counts

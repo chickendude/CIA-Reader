@@ -1,5 +1,5 @@
 /**
- * CLI runner for the correction aggregation worker (T-6.7).
+ * CLI runner for the correction aggregation worker.
  *
  * Run via:
  *

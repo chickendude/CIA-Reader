@@ -1,10 +1,3 @@
-"""Unit tests for the language-agnostic :mod:`app.eval` harness (T-2.3b).
-
-The Odia-specific corpus tests live in :mod:`test_odia_golden`; this
-suite exercises the harness itself so a future Hindi / Marathi corpus
-doesn't have to re-prove its plumbing.
-"""
-
 from __future__ import annotations
 
 import json

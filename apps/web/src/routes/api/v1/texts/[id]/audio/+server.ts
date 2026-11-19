@@ -1,5 +1,5 @@
 /**
- * GET + POST /api/v1/texts/:id/audio (T-9.1).
+ * GET + POST /api/v1/texts/:id/audio.
  *
  * GET — list audio files attached to the text. canReadText gate.
  * POST — multipart upload of a single audio blob.
@@ -23,7 +23,7 @@ import type { RequestHandler } from './$types';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-// T-11.2: per-day cap on audio uploads (the per-file size cap lives
+// per-day cap on audio uploads (the per-file size cap lives
 // in `MAX_AUDIO_BYTES`, enforced inside `uploadAudio`). 20/day is
 // generous for chapter-by-chapter narration uploads while keeping
 // storage growth and worker queue depth bounded.
@@ -61,7 +61,7 @@ export const POST: RequestHandler = async (event) => {
     typeof durationRaw === 'string' && durationRaw
       ? Number.parseInt(durationRaw, 10)
       : null;
-  // T-9.7: redistribution-rights checkbox. Form fields can come
+  // redistribution-rights checkbox. Form fields can come
   // through as 'on' (checked checkbox), 'true', or '1'.
   const ackRaw = form.get('acknowledgedRedistribution');
   const acknowledgedRedistribution =

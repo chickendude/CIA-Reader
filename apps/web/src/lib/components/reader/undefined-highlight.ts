@@ -1,5 +1,5 @@
 /**
- * Admin "flag undefined words" reader overlay (#435).
+ * Admin "flag undefined words" reader overlay.
  *
  * Admins can toggle a reader overlay that tints every word whose
  * lemma has no canonical definition yet, so dictionary gaps are easy

@@ -1,6 +1,6 @@
 // @vitest-environment node
 /**
- * Unit tests for the curator dictionary editor service (T-3.7).
+ * Unit tests for the curator dictionary editor service.
  *
  * The service issues a consistent pattern of DB calls per mutator:
  *   1. SELECT the target lemma (loadLemma) — always first.
@@ -156,10 +156,6 @@ function lemmaRow(overrides: Record<string, unknown> = {}) {
 function translationRow(overrides: Record<string, unknown> = {}) {
   return {
     id: 'tr-1',
-    // T-14.7a: legacy lemma_id field dropped — fixtures now
-    // carry only the polymorphic (target_type, target_id)
-    // pair. Phrase-target curator flows go through the phrase
-    // editor (T-14.4a).
     targetType: 'lemma',
     targetId: 'lemma-1',
     source: 'user',
@@ -436,7 +432,7 @@ describe('mergeLemmas', () => {
   it('rewires translations + forms, deletes the loser, and audits both sides', async () => {
     stage([lemmaRow({ id: 'lemma-1' })]); // winner
     stage([lemmaRow({ id: 'lemma-2', headword: 'बोल' })]); // loser
-    // T-14.7a: loser translations carry the polymorphic target.
+    // loser translations carry the polymorphic target.
     stage([
       translationRow({ id: 'tr-1', targetType: 'lemma', targetId: 'lemma-2' }),
     ]); // loser translations
@@ -493,7 +489,7 @@ describe('splitLemma', () => {
 
   it('rejects translation ids that do not belong to the source lemma', async () => {
     stage([lemmaRow({ id: 'lemma-1' })]); // loadLemma
-    // T-14.7a: belongs-elsewhere check reads via the polymorphic
+    // belongs-elsewhere check reads via the polymorphic
     // target.
     stage([
       { id: 'tr-1', targetType: 'lemma', targetId: 'lemma-999' },
@@ -513,7 +509,7 @@ describe('splitLemma', () => {
 
   it('creates a new curator lemma and moves selected children, auditing both sides', async () => {
     stage([lemmaRow({ id: 'lemma-1', headword: 'सोना' })]); // source
-    // T-14.7a: translation validation now reads via the
+    // translation validation now reads via the
     // polymorphic columns; staged row mirrors that.
     stage([{ id: 'tr-1', targetType: 'lemma', targetId: 'lemma-1' }]);
     stage([{ id: 'form-1', lemmaId: 'lemma-1' }]); // form validation (lemma_forms.lemma_id is unaffected)
@@ -600,7 +596,7 @@ describe('getLemmaEditorView', () => {
 });
 
 // -----------------------------------------------------------------------
-// reorderTranslations (T-3.13)
+// reorderTranslations
 // -----------------------------------------------------------------------
 
 describe('reorderTranslations', () => {

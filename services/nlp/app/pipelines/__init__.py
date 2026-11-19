@@ -1,19 +1,5 @@
-"""Per-language NLP pipeline dispatch.
-
-Each supported MVP language (hi, mr, or) is produced by its own pipeline
-in a dedicated module: `hindi.py`, `marathi.py`, `odia.py`. The registry
-below maps a `pipeline_id` (as declared by the shared language registry
-in ``packages/shared-types/python/languages.py``) to its implementation.
-
-The pipelines all share the same output shape — a list of ``Token`` rows
-with top-K lemma candidates, ambiguity / OOV flags, and an optional
-romanization — so the web service (and future mobile clients) never
-branch on language when rendering or persisting.
-
-Right now every pipeline_id is wired to the canned :class:`StubPipeline`;
-T-2.2 / T-2.3 / T-2.3a will swap each mapping for the real implementation
-without touching the dispatch layer.
-"""
+"""Look up the language's registered pipeline and reuse the same instance on later requests. Set
+NLP_USE_STUB to run without loading language models."""
 
 from __future__ import annotations
 
@@ -76,7 +62,7 @@ def get_pipeline(language_code: str) -> Pipeline:
         if _use_stub_pipelines():
             # Per-language stub instance so the pipeline knows what
             # script + romanization scheme to use when generating
-            # the optional roman layer (T-2.5).
+            # The optional roman layer.
             descriptor = LANGUAGES[language_code]
             _PIPELINE_CACHE[pipeline_id] = StubPipeline(
                 script=descriptor.script,

@@ -46,24 +46,15 @@ class LemmaCandidate(BaseModel):
 class NumberLanguageForm(BaseModel):
     """Per-language number rendering: native-script spelled-out form
     plus its ISO 15919 romanization. Surfaced by :mod:`app.numbers` for
-    digit-only NUM tokens (T-2.8)."""
+    digit-only NUM tokens."""
 
     spelled: str
     romanized: str
 
 
 class NumberForms(BaseModel):
-    """Per-token number-form payload for digit-only NUM surfaces. The
-    reader pop-up uses this to show the spelled-out form in all three
-    MVP languages so a learner can sound out a numeral without leaving
-    the page (T-2.8). ``None`` on the parent :class:`Token` for any
-    token that isn't a single-script digit run in ``[0, 10_000_000]``.
-
-    ``value`` carries the canonical Latin-digit string form so signed
-    + decimal numerals round-trip losslessly (T-2.8a). ``"-3.14"``,
-    ``"0.001"``, ``"123"`` are all valid; the integer part is bounded
-    by ``10_000_000`` and the fractional part may be arbitrarily long.
-    """
+    """Preserve the number as a string of digits so signs and decimals survive conversion. The
+    reader also receives the spellings and readings it can display."""
 
     value: str
     digits_latin: str
@@ -96,12 +87,12 @@ class Token(BaseModel):
 
 
 class ProposedPhrase(BaseModel):
-    """One rule-based phrase proposal (T-14.5).
+    """One rule-based phrase proposal.
 
     Emitted by the per-language ``PhraseDetector`` after Stanza
     finishes its pass — a contiguous run of token indices that
     matches a YAML pattern (e.g. ``NOUN + करना`` for Hindi conjunct
-    verbs). The web worker (T-14.5a) writes proposals to a queue
+    verbs). The web worker writes proposals to a queue
     and promotes them to ``phrases`` (``source='nlp'``) once they
     cross the per-chapter occurrence threshold.
 
@@ -128,7 +119,7 @@ class ProcessResponse(BaseModel):
     hindi_analysis: dict | None = None
     proposed_phrases: list[ProposedPhrase] = Field(
         default_factory=list,
-        description="T-14.5: rule-based phrase proposals over the token list.",
+        description="Phrases that matched the language's patterns in this token list.",
     )
 
 

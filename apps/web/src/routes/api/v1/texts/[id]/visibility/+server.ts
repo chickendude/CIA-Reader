@@ -1,5 +1,5 @@
 /**
- * PATCH /api/v1/texts/:id/visibility (T-7.1).
+ * PATCH /api/v1/texts/:id/visibility.
  *
  * Updates a text's visibility. Owner-only for private↔shared;
  * admin-only for promoting to / demoting from 'official'.

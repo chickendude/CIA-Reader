@@ -1,5 +1,5 @@
 /**
- * User-submitted translation service (T-3.2).
+ * User-submitted translation service.
  *
  * Wraps the minimum surface needed by the public `POST /api/v1/translations`
  * endpoint: input validation against the schema, existence checks for the
@@ -100,8 +100,6 @@ async function resolveForkTargetLemma(
 ): Promise<string> {
   const [parent] = await db
     .select({
-      // T-14.7a: parent-target check via the polymorphic columns so the
-      // legacy lemma_id column can be dropped.
       targetType: schema.translations.targetType,
       targetId: schema.translations.targetId,
     })
@@ -151,19 +149,8 @@ async function resolveForkTargetLemma(
 }
 
 /**
- * Insert a new user-submitted translation.
- *
- * The endpoint layer (and this service) guarantee `source='user'` and
- * `submittedBy=userId`, so a caller cannot impersonate an official
- * import by hand. `parentTranslationId` is how T-3.5 will implement
- * "customize an official translation"; the parent is kept for display
- * provenance only — the fork is a real, independently-editable row.
- *
- * T-14.1: writes are polymorphic-aware. For lemma-target rows the
- * row carries both `lemma_id` (legacy column, still NOT NULL via
- * default behaviour for callers but column-level NULLability flipped
- * for phrase rows) and `target_type='lemma'` / `target_id=lemma_id`.
- * Phrase-target submissions go through `submitUserPhraseTranslation`.
+ * A personal translation belongs to the submitting reader. If it copies an official translation,
+ * keep the parent ID so its source is visible and the copy can be edited independently.
  */
 export async function submitUserTranslation(
   userId: string,
@@ -181,10 +168,6 @@ export async function submitUserTranslation(
   const [row] = await db
     .insert(schema.translations)
     .values({
-      // T-14.7a: legacy lemma_id column dropped — inserts now
-      // write only the polymorphic (target_type, target_id)
-      // pair. The reader / popup / export / merge surfaces all
-      // moved to that pair in this PR's read-site sweep.
       targetType: 'lemma',
       targetId: targetLemmaId,
       source: 'user',
@@ -204,7 +187,7 @@ export async function submitUserTranslation(
 }
 
 // -----------------------------------------------------------------------
-// Phrase-target translations (T-14.1).
+// Phrase-target translations.
 // -----------------------------------------------------------------------
 
 export type SubmitPhraseTranslationInput = {
@@ -277,9 +260,6 @@ export async function submitUserPhraseTranslation(
   const [row] = await db
     .insert(schema.translations)
     .values({
-      // T-14.7a: legacy lemma_id column dropped — phrase-target
-      // inserts have always set lemma_id=null; that field is
-      // gone now and we only write the polymorphic pair.
       targetType: 'phrase',
       targetId: input.phraseId,
       source: 'user',
@@ -297,8 +277,8 @@ export async function submitUserPhraseTranslation(
 }
 
 /**
- * Edit the body of one of the caller's own user-submitted translations
- * (T-3.5). Guards:
+ * Edit the body of one of the caller's own user-submitted translations.
+ * Guards:
  *   - Row must exist.
  *   - Row must have `source='user'` (we never mutate officials in-place —
  *     those go through the curator dictionary editor instead).
@@ -361,8 +341,8 @@ export async function updateUserTranslation(
 }
 
 /**
- * Hard-delete one of the caller's own user-submitted translations
- * (T-3.5). Curator/admin moderation uses `hidden=true` instead so the
+ * Hard-delete one of the caller's own user-submitted translations.
+ * Curator/admin moderation uses `hidden=true` instead so the
  * audit trail survives; the author themselves can just remove the row.
  */
 export async function deleteUserTranslation(
@@ -395,10 +375,6 @@ export async function deleteUserTranslation(
 export function publicTranslation(row: Translation) {
   return {
     id: row.id,
-    // T-14.7a: dropped the legacy `lemmaId` field; clients have
-    // had T-14.1's `targetType` / `targetId` to read from for
-    // months. Phrase-target rows distinguish themselves via
-    // `targetType === 'phrase'`.
     targetType: row.targetType,
     targetId: row.targetId,
     source: row.source,

@@ -1,20 +1,4 @@
-/**
- * Text visibility transitions (T-7.1).
- *
- * The texts.visibility column has three values: 'private', 'shared',
- * 'official'. Transitions:
- *
- *   - 'private' ↔ 'shared': owner-only. Sharing surfaces (T-7.2 /
- *     T-7.4) flip a text to 'shared' as a side effect of granting
- *     a recipient — but the owner can also flip it directly through
- *     this service to bulk-grant later.
- *   - any → 'official': admin-only. Promoting to the public official
- *     library is a curatorial decision; we don't allow ordinary
- *     users to publish their own texts as "official" content.
- *
- * Service layer enforces the policy so the endpoint stays a thin
- * shell. Throws TextVisibilityError on a forbidden transition.
- */
+/** Sharing a text with a reader or group can also change its visibility. */
 import { eq } from 'drizzle-orm';
 
 import { db, schema } from '../db/index.js';

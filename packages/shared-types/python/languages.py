@@ -1,9 +1,4 @@
-"""
-Language registry — Python mirror of packages/shared-types/src/languages.ts.
-
-Kept byte-for-byte in lockstep with the TS source. When adding a language,
-update both files in the same PR. A CI check in M0 diffs the two.
-"""
+"""Keep this Python language registry in sync with the TypeScript registry used by the web app."""
 
 from __future__ import annotations
 

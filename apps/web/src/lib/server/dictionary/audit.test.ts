@@ -1,6 +1,6 @@
 // @vitest-environment node
 /**
- * Tests for the lemma-edit audit log helpers (T-3.4).
+ * Tests for the lemma-edit audit log helpers.
  *
  * Same fluent-chain fake pattern as `translations.test.ts` — we stage the
  * rows each DB call should return, then assert the inputs the service

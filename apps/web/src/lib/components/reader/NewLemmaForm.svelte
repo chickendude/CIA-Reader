@@ -1,5 +1,5 @@
 <!--
-  New-lemma submission form (T-6.3).
+  New-lemma submission form.
 
   Invoked from the CorrectionModal's "Add new word" link when the
   dictionary search comes up empty. Renders inside its own Modal so

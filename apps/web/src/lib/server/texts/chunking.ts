@@ -1,7 +1,7 @@
 /**
- * Chapter chunking for uploaded text (T-4.2).
+ * Chapter chunking for uploaded text.
  *
- * The reader (M5) loads one chapter at a time. A 500k-token novel
+ * The reader loads one chapter at a time. A 500k-token novel
  * pasted as one chapter would force every read to fetch the whole
  * thing — so this module splits long bodies into multiple
  * `text_chapters` rows at write time.
@@ -27,12 +27,7 @@
  * flattened by the caller — this module is text-shape-agnostic.
  */
 
-/**
- * Body sizes below this token estimate stay as a single chapter even
- * when no delimiters are present — chunking adds complexity that's
- * pointless for a short story or essay. Rough rule from M5's reader
- * design: ~50k tokens is the upper bound for a "single chapter" load.
- */
+/** Keep unusually long texts in manageable chapters so the reader can load one at a time. */
 export const CHUNK_THRESHOLD_TOKENS = 50_000;
 
 /**
