@@ -3,8 +3,7 @@
   no-scroll pagination in T-5.23, horizontal column flow now).
 
   The chapter renders into a fixed-size viewport that hides overflow
-  and uses CSS multi-column with `column-width = viewport-width` so
-  content snake-flows into one tall column per page, side-by-side.
+  and uses one CSS column per page, with a gutter between pages.
   translateX slides between pages — like flipping a book's spread —
   instead of slicing the chapter vertically. Off-screen content stays
   in the DOM (screen readers + Cmd-F still find it).
@@ -141,12 +140,9 @@
 
   // Pagination state. Recomputed on resize / chapter change /
   // showRomanization toggle (which changes line-height).
-  // pageW is one column's width (= the viewport's content-box width);
-  // contentW is the multicolumn container's total scrollWidth across
-  // every column laid out side-by-side.
-  let viewportEl: HTMLDivElement | null = $state(null);
+  // A page turn spans one column and the gap before the next column.
   let contentEl: HTMLDivElement | null = $state(null);
-  let pageW = $state(0);
+  let pageStride = $state(0);
   let contentW = $state(0);
   let pageInChapter = $state(0);
   let initialTokenApplied = $state(false);
@@ -156,8 +152,8 @@
     initialTokenIdx > 0 && (!initialTokenApplied || !restorePaintReady),
   );
 
-  const pageCount = $derived(pageCountFor(contentW, pageW));
-  const offset = $derived(pageOffset(pageInChapter, pageW));
+  const pageCount = $derived(pageCountFor(contentW, pageStride));
+  const offset = $derived(pageOffset(pageInChapter, pageStride));
 
   // Reset to the first page whenever the chapter changes — the user
   // shouldn't see "stuck" mid-page state when they navigate.
@@ -310,33 +306,19 @@
 
   const swipe = pageSwipe(prevPage, nextPage);
 
-  // Measure on mount + on resize / content change. ResizeObserver on
-  // both the viewport (window resize, font-size change) and the
-  // content (chapter toggle, romanization toggle changing line
-  // height) keeps pageCount honest.
-  //
-  // Horizontal pagination wants column-width to equal one visible
-  // column's width — i.e. the content element's own clientWidth.
-  // Set it inline first so the browser knows to lay the chapter out
-  // as side-by-side columns, then read scrollWidth (which forces a
-  // layout flush) to get the resulting total span.
   function measure() {
-    if (!viewportEl || !contentEl) return;
-    const w = contentEl.clientWidth;
-    if (w <= 0) return;
-    contentEl.style.columnWidth = `${w}px`;
-    // Reading scrollWidth flushes pending layout, so by the next
-    // statement the column flow is committed.
-    const total = contentEl.scrollWidth;
-    pageW = w;
-    contentW = total;
+    if (!contentEl) return;
+    const width = contentEl.getBoundingClientRect().width;
+    if (width <= 0) return;
+    const gap = Number.parseFloat(window.getComputedStyle(contentEl).columnGap);
+    pageStride = width + gap;
+    contentW = contentEl.scrollWidth;
     columnIndexCache = null;
   }
 
   onMount(() => {
     if (typeof ResizeObserver === 'undefined') return;
     const ro = new ResizeObserver(() => measure());
-    if (viewportEl) ro.observe(viewportEl);
     if (contentEl) ro.observe(contentEl);
     // Seed initial measurements before the observer fires.
     measure();
@@ -368,7 +350,7 @@
   });
 
   function applyInitialTokenPage() {
-    if (initialTokenApplied || !contentEl || pageW <= 0 || pageCount <= 0) return;
+    if (initialTokenApplied || !contentEl || pageStride <= 0 || pageCount <= 0) return;
     if (initialTokenIdx <= 0) {
       restorePaintReady = true;
       initialTokenApplied = true;
@@ -376,10 +358,10 @@
     }
     const tokenEl = findTokenElementAtOrAfter(contentEl, initialTokenIdx);
     if (tokenEl) {
-      pageInChapter = clampPage(columnIndexForElement(tokenEl, contentEl, pageW), pageCount);
+      pageInChapter = clampPage(columnIndexForElement(tokenEl, contentEl, pageStride), pageCount);
     } else if (contentEl.querySelector(WORD_SELECTOR) == null) {
       // The chapter body hasn't laid down word spans yet — stay
-      // masked and let the effect re-run when contentW/pageW settle
+      // masked and let the effect re-run when contentW/pageStride settle
       // again. Marking applied now would strand the user on page 0.
       return;
     }
@@ -395,14 +377,14 @@
     if (!contentEl) return null;
     if (
       !columnIndexCache ||
-      columnIndexCache.pageWidth !== pageW ||
+      columnIndexCache.pageWidth !== pageStride ||
       columnIndexCache.contentWidth !== contentW ||
       columnIndexCache.fallbackChapterIdx !== chapterIdx
     ) {
       columnIndexCache = buildPageWordIndex({
         root: contentEl,
         contentEl,
-        pageWidth: pageW,
+        pageWidth: pageStride,
         contentWidth: contentW,
         fallbackChapterIdx: chapterIdx,
       });
@@ -519,7 +501,7 @@
   $effect(() => {
     void initialTokenIdx;
     void pageCount;
-    void pageW;
+    void pageStride;
     void contentW;
     applyInitialTokenPage();
   });
@@ -529,7 +511,7 @@
     void pageInChapter;
     void pageCount;
     void contentW;
-    void pageW;
+    void pageStride;
     void showRomanization;
     void fontSize;
     void lineSpacing;
@@ -593,7 +575,6 @@
   <div class="reader-page-viewport">
     <div
       class="reader-page-window"
-      bind:this={viewportEl}
       data-restoring={isRestoringInitialToken ? '1' : undefined}
     >
       <div
@@ -736,14 +717,7 @@
     transition: none;
   }
 
-  /* Horizontal pagination via CSS multi-column. The content element
-     fills its parent window and `column-width` is set inline to that
-     same width by `measure()`, so exactly one column is visible at a
-     time and the browser auto-flows the chapter into however many
-     columns the height allows. `column-fill: auto` keeps content
-     packing into the current column to its full height before starting
-     the next — without it the browser tries to balance columns, which
-     short-circuits the pagination. */
+  /* The gap keeps ink from adjacent pages outside the clipping window. */
   .reader-page-content {
     font-family: var(--reader-font-family, var(--font-serif-dev, var(--font-serif)));
     font-size: var(--reader-font-size, 1.1rem);
@@ -751,7 +725,8 @@
     color: var(--ink, var(--color-fg));
     width: 100%;
     height: 100%;
-    column-gap: 0;
+    column-count: 1;
+    column-gap: 1rem;
     column-fill: auto;
     word-spacing: 0.03em;
     text-wrap: pretty;
