@@ -21,16 +21,21 @@ function makeSelectChain() {
   return chain;
 }
 
+const hindiAnalysis = vi.fn<() => { stale: boolean }[]>(() => []);
+const liveForms = vi.fn();
 const selectFn = vi.fn(() => makeSelectChain());
 vi.mock('./hindi-context.js', () => ({ loadHindiContextChoices: async () => new Map(), canVerifyHindiContext: async () => false, contextVersion: () => 'version' }));
 
 vi.mock('../db/index.js', () => ({
   db: {
+    execute: liveForms,
     select: (fields?: Record<string, unknown>) => fields && 'stutters' in fields
-      ? { from: () => ({ where: async () => [] }) }
+      ? { from: () => ({ innerJoin: () => ({ leftJoin: () => ({ where: hindiAnalysis }) }) }) }
       : selectFn(),
   },
   schema: {
+    texts: { id: 'texts.id', language: 'texts.language' },
+    textChapters: { id: 'text_chapters.id', textId: 'text_chapters.text_id' },
     hindiChapterAnalyses: {
       chapterId: 'hindi_chapter_analyses.chapter_id',
       stats: 'hindi_chapter_analyses.stats',
@@ -101,6 +106,23 @@ describe('loadChapterTokens', () => {
     stage([]);
     const result = await loadChapterTokens('chap-1', 'user-1');
     expect(result).toBeNull();
+  });
+
+  it('resolves a saved Hindi form for previously unmatched occurrences', async () => {
+    const unseen = { surface: 'खोजियों', lemmaId: null, isOov: true };
+    stage([tokenRow({ ...unseen, id: 'first' }), tokenRow({ ...unseen, id: 'second', idx: 2 })]);
+    hindiAnalysis.mockReturnValueOnce([{ stale: true }]);
+    liveForms.mockResolvedValueOnce([{ surface: unseen.surface, id: 'new-lemma' }]);
+    stage([]);
+    stage([{ lemmaId: 'new-lemma', status: 'known' }]);
+    stage([{ id: 'new-lemma', language: 'hi', headword: 'खोजी', pos: 'NOUN', glossDefault: 'seeker' }]);
+    stage([]);
+    const tokens = await loadChapterTokens('chap-1', 'user-1');
+    expect(tokens?.map((t) => t.id)).toEqual(['first', 'second']);
+    for (const t of tokens!) {
+      expect(t).toMatchObject({ lemmaId: 'new-lemma', headword: 'खोजी', glossDefault: 'seeker',
+        isOov: false, hasDefinition: true, status: 'known', canVerifyContext: false });
+    }
   });
 
   it('maps stored number_forms onto the reader numberForms payload (T-2.8)', async () => {

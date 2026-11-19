@@ -185,9 +185,8 @@
     const { id, lemma, meaning, pos } = word.draft;
     if (!id) return;
     editor = null;
-    dictionaryNotice = token?.isOov
-      ? 'Entry saved. Book matches update after reprocessing.'
-      : 'Dictionary entry saved.';
+    dictionaryNotice = 'Dictionary entry saved.';
+    window.dispatchEvent(new CustomEvent('reader-dictionary-saved', { detail: word.draft }));
     window.dispatchEvent(new CustomEvent('dictionary-definition-changed', {
       detail: { lemmaId: id, body: meaning },
     }));

@@ -291,6 +291,17 @@ describe.skipIf(!url)('HindiDB PostgreSQL integration (always rolls back)', () =
           expect((await workshopQueue(user!.id, null, 'unresolved', missing, 1)).rows[0]?.count).toBe(2);
           expect((await workshopQueue(user!.id, secondBook!.id, 'ignored', missing, 1)).rows[0]?.count).toBe(1);
           expect((await workshopQueue(randomUUID(), secondBook!.id, '', missing, 10)).rows).toEqual([]);
+          const { saveDraft } = await import('./dictionary/hindi-workshop.js');
+          const { emptyDraft } = await import('$lib/dictionary/hindi-workshop');
+          const savedId = await saveDraft({
+            ...emptyDraft(headword + 'शब्द'), meaning: 'test word', other: [missing],
+          }, user!.id);
+          const reopened = await loadChapterTokens(chapter!.id, user!.id);
+          expect(reopened?.filter((t) => t.surface === missing).map((t) => t.lemmaId))
+            .toEqual([savedId, savedId]);
+          const legacy = await loadChapterTokens(secondChapter!.id, null);
+          expect(legacy?.[0]).toMatchObject({ lemmaId: savedId, isOov: false, glossDefault: 'test word' });
+          expect(legacy?.[1]).toMatchObject({ lemmaId: null, isOov: true });
           throw rollback;
         }),
       ).rejects.toBe(rollback);

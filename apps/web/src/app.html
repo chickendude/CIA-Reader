@@ -15,6 +15,12 @@
     <script>
       (function () {
         try {
+          document.documentElement.toggleAttribute(
+            'data-hide-mobile-page-arrows',
+            localStorage.getItem('reader.hideMobilePageArrows') === '1'
+          );
+        } catch (_) {}
+        try {
           var root = document.documentElement;
           var scheme = window.matchMedia('(prefers-color-scheme: dark)');
           function applyTheme() {

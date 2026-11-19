@@ -33,6 +33,7 @@
  * duplicates into the canonical with-nukta row and the tier becomes
  * a no-op.
  */
+import type { ReprocessProgress } from '$lib/text/reprocess.js';
 import { and, eq, isNull } from 'drizzle-orm';
 
 import { LANGUAGES, stripNukta, type LanguageCode } from '@ciareader/shared-types';
@@ -510,7 +511,7 @@ async function processChapter(
  *
  * Exported for tests + the admin re-process endpoint (T-6.8).
  */
-export async function processTextNow(textId: string): Promise<number> {
+export async function processTextNow(textId: string, onProgress?: ReprocessProgress): Promise<number> {
   const [text] = (await db
     .select()
     .from(schema.texts)
@@ -525,11 +526,14 @@ export async function processTextNow(textId: string): Promise<number> {
 
   await markTextProcessing(text.id);
   try {
+    onProgress?.(0, chapters.length);
     const index = await loadLemmaIndex(text.language);
     let total = 0;
-    for (const chapter of chapters) {
-      if (chapter.pageImageKey && !chapter.body.trim()) continue;
-      total += await processChapter(chapter, text.language, index);
+    for (const [idx, chapter] of chapters.entries()) {
+      if (!chapter.pageImageKey || chapter.body.trim()) {
+        total += await processChapter(chapter, text.language, index);
+      }
+      onProgress?.(idx + 1, chapters.length);
     }
     await markTextReady(text.id);
     return total;

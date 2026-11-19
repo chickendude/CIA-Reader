@@ -3,7 +3,7 @@
   import { pushToast } from '$lib/components/toast/toast-store.js';
   import { goto } from '$app/navigation';
   import { page } from '$app/state';
-  import { untrack } from 'svelte';
+  import { onMount, untrack } from 'svelte';
   import {
     blankWorkshopWord,
     type WorkshopWord as Word,
@@ -15,6 +15,7 @@
   import WorkshopReports from './WorkshopReports.svelte';
   import WorkshopEditor from '$lib/components/dictionary/WorkshopEditor.svelte';
   import type { loadHindiWorkshop } from '$lib/server/dictionary/workshop-page';
+  import { reprocessWithToast } from '$lib/text/reprocess.js';
   import Button from '$lib/components/input/Button.svelte';
   type PageData = Awaited<ReturnType<typeof loadHindiWorkshop>>;
   let { data, reviewOnly = false }: { data: PageData; reviewOnly?: boolean } = $props();
@@ -93,20 +94,14 @@
       `${before}【${match}】${after}`.trim();
   }
   const reviewBook = $derived(data.books.find((b) => b.id === (sample?.book ?? book)));
+  let mounted = $state(false);
+  onMount(() => { mounted = true; });
   let reprocessing = $state(false);
   async function reprocessBook() {
-    if (!reviewBook || reprocessing) return;
+    if (!reviewBook?.canReprocess || reprocessing) return;
     reprocessing = true;
     try {
-      const response = await fetch(`/api/v1/admin/texts/${reviewBook.id}/reprocess`, {
-        method: 'POST',
-      });
-      if (!response.ok)
-        throw new Error((await response.json()).message || 'Could not reprocess book');
-      refresh++;
-      message = 'Book reprocessed';
-    } catch (e) {
-      message = (e as Error).message;
+      if (await reprocessWithToast(reviewBook)) refresh++;
     } finally {
       reprocessing = false;
     }
@@ -173,8 +168,18 @@
     return !active && word.draft.id === result.id;
   }
   async function selectFirstIfNeeded(results: (Match | ReviewItem)[], signal: AbortSignal) {
-    if (openingManually || selectionSource === 'editor') return;
-    if (results.slice(0, limit).some(isSelected)) return;
+    if (openingManually) return;
+    const selected = results.slice(0, limit).find(isSelected);
+    if (selected) {
+      if ('samples' in selected) {
+        active = selected;
+        if (!selected.samples.some((item) => item.book === sampleBook)) {
+          sampleBook = selected.samples[0]?.book ?? '';
+        }
+      }
+      return;
+    }
+    if (selectionSource === 'editor') return;
     if (results[0]) await openResult(results[0], signal);
     else if (selectionSource === 'list') {
       remember();
@@ -348,9 +353,9 @@
           disabled={working}
           onclick={() => open(null, { lemma: query.match(/\p{Script=Devanagari}/u) ? query : '' })}
         >New entry</Button>
-        <Button onclick={() => refresh++}>Refresh</Button>
+        <Button disabled={pending} onclick={() => refresh++}>{pending ? 'Refreshing…' : 'Refresh'}</Button>
         {#if tab === 'review' && reviewBook?.canReprocess}
-          <Button disabled={reprocessing} title={reviewBook.title} onclick={reprocessBook}>
+          <Button disabled={!mounted || reprocessing} title={reviewBook.title} onclick={reprocessBook}>
             {reprocessing ? 'Reprocessing…' : 'Reprocess book'}
           </Button>
         {/if}

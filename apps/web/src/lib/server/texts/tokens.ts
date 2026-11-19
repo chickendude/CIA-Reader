@@ -15,6 +15,7 @@ import { and, eq, inArray, isNotNull, sql } from 'drizzle-orm';
 
 import type { LanguageCode } from '@ciareader/shared-types';
 
+import { normalizeHindiForm } from '$lib/dictionary/hindi-workshop';
 import { db, schema } from '../db/index.js';
 import type { TextToken, TokenCorrection, UserKnownLemma } from '../db/schema.js';
 import { lemmaBookFrequencies } from './book-frequency.js';
@@ -178,6 +179,57 @@ export async function loadChapterTokens(
         ),
       )) as TokenCorrection[];
     for (const r of corrRows) correctionsByTokenId.set(r.tokenId, r);
+  }
+
+  const [analysis] = await db.select({
+    stale: sql<boolean>`${schema.hindiChapterAnalyses.revision} IS DISTINCT FROM
+      (SELECT revision FROM hindi_dictionary_state WHERE id=1)`,
+    stutters: sql<HindiStutter[] | null>`${schema.hindiChapterAnalyses.stats}->'stutters'`,
+  })
+    .from(schema.textChapters)
+    .innerJoin(schema.texts, eq(schema.texts.id, schema.textChapters.textId))
+    .leftJoin(schema.hindiChapterAnalyses, eq(schema.hindiChapterAnalyses.chapterId, schema.textChapters.id))
+    .where(and(eq(schema.textChapters.id, chapterId), eq(schema.texts.language, 'hi')));
+
+  // A dictionary save can supply a headword or an attested form for words the
+  // stored analysis missed. Resolve them before the normal viewer-specific joins.
+  const liveMatches = new Set<string>();
+  if (analysis?.stale) {
+    const missing = tokens.filter((t) =>
+      t.isWord && t.isOov && !t.lemmaId && !correctionsByTokenId.has(t.id),
+    );
+    const surfaces = [...new Set(missing.map((t) => normalizeHindiForm(t.surface)))];
+    if (surfaces.length) {
+      const rows = await db.execute<{ surface: string; id: string }>(sql`
+        WITH wanted AS (SELECT jsonb_array_elements_text(${JSON.stringify(surfaces)}::text::jsonb) AS surface),
+        matches AS (
+          SELECT w.surface, l.id FROM wanted w JOIN lemmas l ON l.headword=w.surface WHERE l.language='hi'
+          UNION
+          SELECT w.surface, f.lemma_id FROM wanted w JOIN lemma_forms f ON f.surface=w.surface
+          WHERE f.quarantined_at IS NULL
+          UNION
+          SELECT alt.surface, h.lemma_id FROM hindi_entries h
+          CROSS JOIN LATERAL jsonb_array_elements_text(h.entry->'alternative_headwords') AS alt(surface)
+          JOIN wanted w ON w.surface=alt.surface
+        )
+        SELECT m.surface, m.id FROM matches m JOIN hindi_entries h ON h.lemma_id=m.id
+        WHERE NOT (coalesce(h.entry->'excluded_forms','[]'::jsonb) ? m.surface)
+        ORDER BY m.surface, m.id`);
+      const idsBySurface = new Map<string, string[]>();
+      for (const { surface, id } of rows) {
+        const ids = idsBySurface.get(surface) ?? [];
+        ids.push(id);
+        idsBySurface.set(surface, ids);
+      }
+      for (const t of missing) {
+        const ids = idsBySurface.get(normalizeHindiForm(t.surface));
+        if (!ids?.length) continue;
+        t.lemmaId = ids[0]!;
+        t.lemmaCandidates = ids.map((lemmaId) => ({ lemmaId, score: 1, features: {} }));
+        t.isOov = false;
+        liveMatches.add(t.id);
+      }
+    }
   }
 
   // Primary lemma for each token (the worker's top pick) AFTER any
@@ -369,7 +421,7 @@ export async function loadChapterTokens(
   const bookFrequencies = textId ? await lemmaBookFrequencies(textId, lemmaIds) : undefined;
   let sourceOffset = 0;
   const rendered = tokens.map<RenderedToken>((t) => {
-    const choice = choices.get(sourceOffset);
+    const choice = liveMatches.has(t.id) ? undefined : choices.get(sourceOffset);
     sourceOffset += [...t.surface].length;
     const selected = choice?.selectedLemmaIds.find((id: string) => t.lemmaCandidates.some((candidate) => candidate.lemmaId === id));
     // T-6.4: apply the viewer's persistent correction here so the
@@ -475,7 +527,7 @@ export async function loadChapterTokens(
 
     return {
       ...(correction?.chosenLemmaId && { correctedByViewer: true }),
-      canVerifyContext,
+      canVerifyContext: canVerifyContext && !liveMatches.has(t.id),
       contextVersion: contextVersion(t.lemmaCandidates.flatMap(c=>c.lemmaId?[c.lemmaId]:[]),choice),
       selectedBy: effectiveLemmaId ? choice?.selectedOrigins[effectiveLemmaId] : undefined,
       selectionStatus: choice?.status,
@@ -506,10 +558,6 @@ export async function loadChapterTokens(
       hasDefinition: effectiveGloss != null,
     };
   });
-  const [analysis] = await db.select({
-    stutters: sql<HindiStutter[] | null>`${schema.hindiChapterAnalyses.stats}->'stutters'`,
-  })
-    .from(schema.hindiChapterAnalyses).where(eq(schema.hindiChapterAnalyses.chapterId, chapterId));
   return joinReaderStutters(rendered, analysis?.stutters ?? []);
 }
 

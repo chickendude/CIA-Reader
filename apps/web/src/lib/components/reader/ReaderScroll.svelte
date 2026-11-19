@@ -32,6 +32,7 @@
 
   import WordPopup from './WordPopup.svelte';
   import WordTooltip from './WordTooltip.svelte';
+  import { dictionaryChapterTokens } from './dictionary-chapter.svelte.js';
   import { WordPreview } from './word-preview.svelte.js';
 
   let {
@@ -77,16 +78,23 @@
   // T-6.1: apply per-token lemma corrections + per-lemma status
   // overrides before paragraph splitting so the new picks colour
   // the rendered tokens immediately.
+  const dictionaryTokens = dictionaryChapterTokens(() => current, () => textId, (lemmaId) => {
+    const selected = activeToken && tokensById.get(activeToken.id);
+    if (selected && (selected.lemmaId === lemmaId || activeToken?.lemmaId === lemmaId)) activeToken = selected;
+    const hovered = preview.token && tokensById.get(preview.token.id);
+    if (hovered && (hovered.lemmaId === lemmaId || preview.token?.lemmaId === lemmaId)) preview.token = hovered;
+  });
   const correctedTokens = $derived.by(() => {
-    if (!current?.tokens) return null;
+    const tokens = dictionaryTokens();
+    if (!tokens) return null;
     if (
       statusOverrides.size === 0 && definitionOverrides.size === 0 && contextOverrides.size === 0 &&
       lemmaCorrections.size === 0 &&
       personalGlossOverrides.size === 0
     ) {
-      return current.tokens;
+      return tokens;
     }
-    return current.tokens.map((t) => {
+    return tokens.map((t) => {
       t = contextOverrides.get(t.id) ?? t;
       let next = withLemmaCorrection(t, lemmaCorrections.get(t.id));
       if (next.lemmaId && statusOverrides.has(next.lemmaId)) {

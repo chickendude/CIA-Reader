@@ -13,6 +13,7 @@ function stage(rows: unknown[]) {
 
 function makeSelectChain() {
   const chain: Record<string, unknown> = {};
+  chain.innerJoin = vi.fn(() => chain);
   chain.from = vi.fn(() => chain);
   chain.where = vi.fn(() => chain);
   chain.limit = vi.fn(() => chain);
@@ -28,6 +29,8 @@ vi.mock('$lib/server/db/index.js', () => ({
   db: { select: () => makeSelectChain() },
   schema: {
     texts: { id: 'texts.id', ownerId: 'texts.ownerId' },
+    textChapters: { id: 'chapter.id', textId: 'chapter.textId' },
+    textTokens: { chapterId: 'tokens.chapterId', isWord: 'tokens.isWord' },
   },
 }));
 
@@ -55,7 +58,7 @@ const VALID_ID = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
 const ADMIN = { id: 'admin-1', role: 'admin' as const };
 const USER = { id: 'user-1', role: 'user' as const };
 
-async function callPost(id = VALID_ID, user: typeof ADMIN | typeof USER | null = ADMIN) {
+async function callPost(id = VALID_ID, user: typeof ADMIN | typeof USER | null = ADMIN, accept = 'application/json') {
   if (user) requireUser.mockResolvedValueOnce(user);
   else requireUser.mockImplementationOnce(() => { throw { status: 401 }; });
   const { POST } = await import('./+server.js');
@@ -63,6 +66,7 @@ async function callPost(id = VALID_ID, user: typeof ADMIN | typeof USER | null =
     params: { id },
     request: new Request(`http://x/api/v1/admin/texts/${id}/reprocess`, {
       method: 'POST',
+      headers: { accept },
     }),
   } as unknown as Parameters<PostFn>[0];
   try {
@@ -93,6 +97,24 @@ describe('POST /api/v1/admin/texts/:id/reprocess', () => {
     expect(json.tokensWritten).toBe(1234);
     expect(processTextNow).toHaveBeenCalledWith(VALID_ID);
     expect(reprocessPdfText).not.toHaveBeenCalled();
+  });
+
+  it('delivers progress while the job is running and confirms the word count at the end', async () => {
+    stage([{ id: VALID_ID, ownerId: ADMIN.id, sourceType: 'txt' }]);
+    let finish!: (count: number) => void;
+    processTextNow.mockImplementationOnce((_id, report) => {
+      report(1, 2);
+      return new Promise<number>((resolve) => { finish = resolve; });
+    });
+    const response = await callPost(VALID_ID, ADMIN, 'application/x-ndjson') as Response;
+    const reader = response.body!.pipeThrough(new TextDecoderStream()).getReader();
+    const first = await reader.read();
+    expect(JSON.parse(first.value!)).toEqual({ type: 'progress', completed: 1, total: 2 });
+    stage([{ words: 19 }]);
+    finish(42);
+    const last = await reader.read();
+    expect(JSON.parse(last.value!)).toEqual({ type: 'complete', tokensWritten: 42, wordsParsed: 19 });
+    expect((await reader.read()).done).toBe(true);
   });
 
   it('re-tokenizes a PDF from its stored layout (no Vision)', async () => {

@@ -7,6 +7,7 @@ import { previewHindiEntry } from './hindi-runtime.js';
 import { hindiPatterns } from '$lib/dictionary/hindi-patterns';
 import {
   partsOfSpeech,
+  normalizeHindiForm,
   type Draft,
   type Inventory,
   type Match,
@@ -18,7 +19,7 @@ const word = z
   .trim()
   .min(1)
   .max(400)
-  .transform((s) => s.normalize('NFC').replace(/[\u200c-\u200d\ufeff]/gu, ''));
+  .transform(normalizeHindiForm);
 const words = z.array(word).max(12000);
 const slot = z
   .object({

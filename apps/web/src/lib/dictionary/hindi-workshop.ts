@@ -1,3 +1,7 @@
+export function normalizeHindiForm(word: string) {
+  return word.replace(/\u200c|\u200d|\ufeff/gu, '').normalize('NFC');
+}
+
 export const partsOfSpeech = {
   NOUN: 'noun',
   PROPN: 'proper noun',

@@ -212,7 +212,9 @@ describe('processTextNow', () => {
       ],
     });
 
-    const total = await processTextNow('text-1');
+    const progress = vi.fn();
+    const total = await processTextNow('text-1', progress);
+    expect(progress.mock.calls).toEqual([[0, 2], [1, 2], [2, 2]]);
     expect(total).toBe(2);
 
     const inserts = calls.filter((c) => c.kind === 'insert');

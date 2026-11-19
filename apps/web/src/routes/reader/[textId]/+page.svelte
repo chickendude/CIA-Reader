@@ -10,6 +10,8 @@
   import ReaderPage from '$lib/components/reader/ReaderPage.svelte';
   import ReaderScroll from '$lib/components/reader/ReaderScroll.svelte';
   import PageCloseLink from '$lib/components/shell/PageCloseLink.svelte';
+  import { reprocessWithToast } from '$lib/text/reprocess.js';
+  import { pushToast } from '$lib/components/toast/toast-store.js';
   import ReaderSettings from '$lib/components/reader/ReaderSettings.svelte';
   import { ProgressWriter, type ProgressAnchor } from '$lib/components/reader/progress-client.js';
   import { computePctRead } from '$lib/components/reader/reader-progress.js';
@@ -84,6 +86,7 @@
 
   function setMobileArrowsHidden(hidden: boolean) {
     hideMobileArrows = hidden;
+    document.documentElement.toggleAttribute('data-hide-mobile-page-arrows', hidden);
     try {
       if (hidden) localStorage.setItem(mobileArrowsKey, '1');
       else localStorage.removeItem(mobileArrowsKey);
@@ -104,46 +107,29 @@
     writePersistedFlagUndefined(on);
   }
 
-  // T-2.8: admin-only "Reprocess this text" affordance. Re-runs the
-  // NLP pipeline (POSTs `/api/v1/admin/texts/:id/reprocess`) and
-  // refreshes the reader once the worker has rewritten `text_tokens`.
-  // Useful after a parser / dispatcher upgrade so a previously-
-  // uploaded text picks up new fields (e.g. number_forms after the
-  // T-2.8 fix) without the owner having to re-upload.
-  let reprocessing = $state(false);
-  let reprocessFeedback = $state<{
-    kind: 'ok' | 'err';
-    text: string;
-  } | null>(null);
+  let mounted = $state(false);
+  let processingId = $state<string | null>(null);
+  const reprocessing = $derived(processingId === data.text.id);
+  let continuousRevision = $state(0);
 
   async function reprocessText() {
-    if (reprocessing) return;
-    reprocessing = true;
-    reprocessFeedback = null;
+    if (processingId) return;
+    const { id } = data.text;
+    processingId = id;
     try {
-      const res = await fetch(
-        `/api/v1/admin/texts/${data.text.id}/reprocess`,
-        { method: 'POST' },
-      );
-      if (!res.ok) {
-        const text = await res.text().catch(() => '');
-        throw new Error(text || `HTTP ${res.status}`);
+      await reprocessWithToast(data.text);
+      if (data.text.id === id) {
+        await invalidateAll();
+        if (data.text.id === id) {
+          liveStatus = data.text.status;
+          liveError = data.text.statusError;
+          continuousRevision++;
+        }
       }
-      const body = (await res.json()) as { tokensWritten: number };
-      reprocessFeedback = {
-        kind: 'ok',
-        text: `Reprocessed ${body.tokensWritten.toLocaleString()} tokens.`,
-      };
-      // Refresh the page-data so the new tokens render in place
-      // without a full reload.
-      await invalidateAll();
-    } catch (e) {
-      reprocessFeedback = {
-        kind: 'err',
-        text: `Reprocess failed: ${(e as Error).message}`,
-      };
+    } catch {
+      pushToast({ kind: 'error', message: 'Could not refresh the reader.' });
     } finally {
-      reprocessing = false;
+      processingId = null;
     }
   }
 
@@ -292,12 +278,9 @@
   });
 
   onMount(() => {
+    mounted = true;
     liveStatus = data.text.status;
-    try {
-      hideMobileArrows = localStorage.getItem(mobileArrowsKey) === '1';
-    } catch {
-      // Use the default when storage is unavailable.
-    }
+    hideMobileArrows = document.documentElement.hasAttribute('data-hide-mobile-page-arrows');
 
     // #435: restore the admin's overlay preference. Read after mount
     // (not during SSR) so the localStorage access is browser-only; the
@@ -399,7 +382,7 @@
           type="button"
           class="reprocess-toggle"
           onclick={reprocessText}
-          disabled={reprocessing}
+          disabled={!mounted || !!processingId}
           title={data.isAdmin
             ? 'Re-run the NLP pipeline on this text (admin)'
             : 'Retry processing this text'}
@@ -424,7 +407,6 @@
 
 <div
   class="reader"
-  class:hide-mobile-arrows={hideMobileArrows}
   data-mode={usesPageImages ? 'pdf' : data.mode}
   data-hl={readerSettings.highlightStyle}
   data-highlight-learning={readerSettings.highlightLearning ? 'on' : 'off'}
@@ -518,17 +500,6 @@
     <p class="err" role="alert">Processing error: {liveError}</p>
   {/if}
 
-  {#if reprocessFeedback && !settingsOpen}
-    <p
-      class="reprocess-feedback"
-      class:err={reprocessFeedback.kind === 'err'}
-      data-testid="reprocess-feedback"
-      role={reprocessFeedback.kind === 'err' ? 'alert' : 'status'}
-    >
-      {reprocessFeedback.text}
-    </p>
-  {/if}
-
   {#if usesPageImages}
     <ReaderImage
       chapters={data.chapters}
@@ -578,17 +549,19 @@
       onProgress={onReaderProgress}
     />
   {:else}
-    <ReaderContinuous
-      chapters={data.chapters}
-      initialChapterIdx={data.anchor.chapterIdx}
-      initialTokenIdx={data.anchor.tokenIdx}
-      textId={data.text.id}
-      language={data.text.language as LanguageCode}
-      {showRomanization}
-      isOwner={data.isOwner}
-      isAdmin={data.isAdmin}
-      onProgress={onReaderProgress}
-    />
+    {#key continuousRevision}
+      <ReaderContinuous
+        chapters={data.chapters}
+        initialChapterIdx={data.anchor.chapterIdx}
+        initialTokenIdx={data.anchor.tokenIdx}
+        textId={data.text.id}
+        language={data.text.language as LanguageCode}
+        {showRomanization}
+        isOwner={data.isOwner}
+        isAdmin={data.isAdmin}
+        onProgress={onReaderProgress}
+      />
+    {/key}
   {/if}
 
   {#if (usesPageImages || data.mode !== 'page') && toc.entries.length > 1}
@@ -626,7 +599,6 @@
         <h3>Text processing</h3>
         <p>Run the parser on every chapter to refresh word forms and dictionary matches.</p>
         {@render processButton()}
-        {#if reprocessFeedback}<p role="status">{reprocessFeedback.text}</p>{/if}
       </section>
     {/if}
   {/snippet}
@@ -662,12 +634,14 @@
     min-height: 0;
     overflow: clip;
   }
-  :global(html:has(.reader[data-mode='page'])),
+  :global(html:has(.reader[data-mode='page'])) {
+    overflow-y: auto;
+    overscroll-behavior-x: none;
+  }
   :global(body:has(.reader[data-mode='page'])) {
     height: 100svh;
     min-height: 0;
     overflow: clip;
-    overscroll-behavior: none;
   }
   /* The top bar lives inside the reader's right column (sticky inside
      the AppShell content track, not over the rail). The right side
@@ -817,14 +791,6 @@
     opacity: 0.55;
     cursor: progress;
   }
-  .reprocess-feedback {
-    margin: 0.5rem 1.25rem 0;
-    padding: 0.55rem 0.85rem;
-    font-size: 0.82rem;
-    border-radius: 8px;
-    background: color-mix(in oklch, var(--ink, var(--color-fg)) 5%, transparent);
-    color: var(--ink-2, var(--color-fg));
-  }
   /* T-5.26: the immersive-toggle button moved to AppShell as a
      hamburger icon. The selector is gone but the Esc-to-exit
      behavior stays in this component. */
@@ -839,10 +805,10 @@
   .mobile-picker, .mobile-chapter-footer, .mobile-processing { display: none; }
   @media (max-width: 639px) {
     .reader :global(.reader-scroll-inner) { touch-action: pan-y pinch-zoom; }
-    .hide-mobile-arrows :global(.page-arrow) { display: none; }
-    .hide-mobile-arrows :global(.reader-page-viewport),
-    .hide-mobile-arrows :global(.reader-scroll-inner),
-    .hide-mobile-arrows :global(.reader-image .page-body) {
+    :global(html[data-hide-mobile-page-arrows]) .reader :global(.page-arrow) { display: none; }
+    :global(html[data-hide-mobile-page-arrows]) .reader :global(.reader-page-viewport),
+    :global(html[data-hide-mobile-page-arrows]) .reader :global(.reader-scroll-inner),
+    :global(html[data-hide-mobile-page-arrows]) .reader :global(.reader-image .page-body) {
       padding-left: max(0.75rem, env(safe-area-inset-left));
       padding-right: max(0.75rem, env(safe-area-inset-right));
     }

@@ -21,6 +21,7 @@ export type Toast = {
   id: string;
   kind: ToastKind;
   message: string;
+  progress?: { value?: number; max: number; label: string };
   /** ms before auto-dismiss; `null` means sticky. */
   duration: number | null;
 };
@@ -39,6 +40,7 @@ let counter = 0;
 export type PushToastInput = {
   kind?: ToastKind;
   message: string;
+  progress?: Toast['progress'];
   /** Pass `null` to keep the toast visible until dismissed. */
   duration?: number | null;
 };
@@ -49,21 +51,27 @@ export type PushToastInput = {
  * when a long-running operation wants to clear a "loading…" toast
  * once it succeeds).
  */
-export function pushToast({
-  kind = 'info',
-  message,
-  duration = kind === 'success' ? 2000 : 5000,
-}: PushToastInput): string {
+export function pushToast(input: PushToastInput): string {
   counter += 1;
   const id = `toast-${counter}-${Date.now()}`;
-  const toast: Toast = {
-    id,
-    kind,
-    message,
-    duration,
-  };
-  inner.update((list) => [...list, toast]);
+  inner.update((list) => [...list, makeToast(id, input)]);
   return id;
+}
+
+export function updateToast(id: string, input: PushToastInput): boolean {
+  let found = false;
+  inner.update((list) => list.map((toast) => {
+    if (toast.id !== id) return toast;
+    found = true;
+    return makeToast(id, input);
+  }));
+  return found;
+}
+
+function makeToast(id: string, {
+  kind = 'info', message, progress, duration = kind === 'success' ? 2000 : 5000,
+}: PushToastInput): Toast {
+  return { id, kind, message, duration, progress };
 }
 
 export function dismissToast(id: string): void {

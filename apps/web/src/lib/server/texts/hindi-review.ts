@@ -14,6 +14,7 @@ export async function reviewBooks(actor: Actor) {
     .select({
       id: schema.texts.id,
       title: schema.texts.title,
+      sourceType: schema.texts.sourceType,
       visibility: schema.texts.visibility,
       canReprocess: sql<boolean>`${actor.role === 'admin'}::boolean OR ${schema.texts.ownerId} = ${actor.id}`,
     })

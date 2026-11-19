@@ -32,7 +32,12 @@
   role={toast.kind === 'error' ? 'alert' : 'status'}
   aria-live={toast.kind === 'error' ? 'assertive' : 'polite'}
 >
-  <span class="msg">{toast.message}</span>
+  <div class="msg">
+    {toast.message}
+    {#if toast.progress}
+      <progress aria-label={toast.progress.label} value={toast.progress.value} max={toast.progress.max}></progress>
+    {/if}
+  </div>
   <button
     type="button"
     class="close"
@@ -83,6 +88,15 @@
   }
   .msg {
     flex: 1;
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  progress {
+    display: block;
+    width: 100%;
+    height: 0.5rem;
+    margin-top: 0.25rem;
+    accent-color: var(--accent);
   }
   .close {
     flex: 0 0 auto;

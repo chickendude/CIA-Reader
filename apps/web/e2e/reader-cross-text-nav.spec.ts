@@ -192,6 +192,27 @@ test.describe('Reader cross-text prev navigation', () => {
 test.describe('Page mode on a touch screen', () => {
   test.use({ viewport: { width: 390, height: 740 }, hasTouch: true, isMobile: true });
 
+  test('applies the saved mobile arrows setting before hydration', async ({ page }) => {
+    const { prevChapter } = await findChapterPair();
+    await page.goto(`/reader/${prevChapter.id}?mode=page`);
+    await expect.poll(async () => (await readPageState(page)).total).toBeGreaterThan(1);
+    const next = page.locator('.page-arrow-r');
+    await expect(next).toBeVisible();
+    await page.getByRole('button', { name: 'Reader settings' }).click();
+    await page.getByRole('radiogroup', { name: 'Page arrows' }).getByLabel('Hide').check();
+    await expect(next).toBeHidden();
+
+    // Inspect the server-rendered page while the app's hydration scripts are unavailable.
+    await page.route('**/*', (route) => route.request().resourceType() === 'script'
+      ? route.abort()
+      : route.continue());
+    await page.reload();
+    await expect(next).toBeAttached();
+    await expect(next).toBeHidden();
+    await page.setViewportSize({ width: 1024, height: 740 });
+    await expect(next).toBeVisible();
+  });
+
   test('remembers the same word after reflow, repeated reloads and reopening the book', async ({
     page,
   }) => {
@@ -266,6 +287,8 @@ test.describe('Page mode on a touch screen', () => {
 
     await drag(-110, 4);
     await expect(pager).toHaveText(/^Page 2 of /);
+    await expect(page.locator('.reader-page-wrap')).toHaveCSS('touch-action', 'pan-y pinch-zoom');
+    await expect(page.locator('html')).toHaveCSS('overscroll-behavior-y', 'auto');
     await drag(0, -150);
     await drag(0, 150);
     await expect(pager).toHaveText(/^Page 2 of /);

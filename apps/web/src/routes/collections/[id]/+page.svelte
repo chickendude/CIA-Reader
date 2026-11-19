@@ -163,7 +163,7 @@
     openConfirm({
       title: 'Reprocess chapters',
       body: all
-        ? `Re-run NLP processing on all ${target} ${target === 1 ? 'chapter' : 'chapters'} in this collection? Existing tokens will be replaced.`
+        ? `Parse the words again in all ${target} ${target === 1 ? 'chapter' : 'chapters'} in this collection?`
         : `Reprocess ${target} stuck ${target === 1 ? 'chapter' : 'chapters'}? Already-ready chapters won't be touched.`,
       confirmLabel: 'Reprocess',
       onConfirm: async () => {

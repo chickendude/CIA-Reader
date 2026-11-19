@@ -21,7 +21,7 @@
  *     reader's "processing" → "ready" UX. Owner-scoped; null for
  *     anyone else (we don't leak text existence).
  */
-import { desc, eq } from 'drizzle-orm';
+import { and, count, desc, eq } from 'drizzle-orm';
 
 import { db, schema } from '../db/index.js';
 import type { NlpJob, Text, User } from '../db/schema.js';
@@ -169,6 +169,15 @@ export async function markTextFailed(
     .update(schema.nlpJobs)
     .set({ status: 'failed', error: trimmed, finishedAt: now })
     .where(eq(schema.nlpJobs.textId, textId));
+}
+
+export async function countParsedWords(textId: string): Promise<number> {
+  const [result] = await db
+    .select({ words: count() })
+    .from(schema.textChapters)
+    .innerJoin(schema.textTokens, eq(schema.textTokens.chapterId, schema.textChapters.id))
+    .where(and(eq(schema.textChapters.textId, textId), eq(schema.textTokens.isWord, true)));
+  return result?.words ?? 0;
 }
 
 export type StatusView = {

@@ -567,7 +567,7 @@
      min-height:0 the viewport grows to fit the content (defeating
      the clip), without flex:1 it collapses to nothing. */
   .reader-page-wrap {
-    touch-action: pinch-zoom;
+    touch-action: pan-y pinch-zoom;
     position: relative;
     flex: 1;
     min-height: 0;

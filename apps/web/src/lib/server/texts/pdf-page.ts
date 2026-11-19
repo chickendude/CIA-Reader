@@ -20,6 +20,7 @@
  * loads its own lemma index. For the lemma table sizes we have that's an
  * acceptable per-page cost; a process-wide cache is a later optimization.
  */
+import type { ReprocessProgress } from '$lib/text/reprocess.js';
 import { and, count, eq, isNotNull } from 'drizzle-orm';
 
 import type { LanguageCode } from '@ciareader/shared-types';
@@ -180,7 +181,7 @@ export async function processPdfPage(
  * OCR and needs no re-upload. Use after a model/dictionary change (e.g.
  * switching the Basque pipeline on) instead of re-importing.
  */
-export async function reprocessPdfText(textId: string): Promise<number> {
+export async function reprocessPdfText(textId: string, onProgress?: ReprocessProgress): Promise<number> {
   const [text] = (await db
     .select()
     .from(schema.texts)
@@ -208,9 +209,10 @@ export async function reprocessPdfText(textId: string): Promise<number> {
       pageHeight: number | null;
     }>;
 
+    onProgress?.(0, chapters.length);
     const index = await loadLemmaIndex(language);
     let total = 0;
-    for (const ch of chapters) {
+    for (const [idx, ch] of chapters.entries()) {
       const toks = (await db
         .select({
           surface: schema.textTokens.surface,
@@ -223,7 +225,10 @@ export async function reprocessPdfText(textId: string): Promise<number> {
         bbox: { x: number; y: number; w: number; h: number } | null;
       }>;
       // No stored tokens → page was never OCR'd; nothing to replay.
-      if (toks.length === 0) continue;
+      if (toks.length === 0) {
+        onProgress?.(idx + 1, chapters.length);
+        continue;
+      }
 
       // Rebuild the page text + one box per character from the tokens.
       let pageText = '';
@@ -248,8 +253,9 @@ export async function reprocessPdfText(textId: string): Promise<number> {
         index,
         tokens: ocr.tokens,
         proposedPhrases: ocr.proposed_phrases,
-      hindiAnalysis: ocr.hindi_analysis,
+        hindiAnalysis: ocr.hindi_analysis,
       });
+      onProgress?.(idx + 1, chapters.length);
     }
     await markTextReady(textId);
     return total;
