@@ -1,0 +1,27 @@
+# Each image installs its own dependencies and builds its own output.
+**/node_modules
+**/.pnpm-store
+**/.svelte-kit
+**/build
+**/dist
+**/.venv
+**/__pycache__
+**/.pytest_cache
+**/.ruff_cache
+**/coverage
+**/test-results
+**/playwright-report
+**/e2e/.auth
+
+# Local settings, credentials, and database snapshots stay on the host.
+.git
+.local
+.aws
+.codex
+.agents
+.idea
+**/.env
+**/.env.local
+**/.env.*.local
+infra/secrets
+apps/android
