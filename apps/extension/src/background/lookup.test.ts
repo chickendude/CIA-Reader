@@ -62,17 +62,13 @@ describe('lookupWord', () => {
     expect(result.entries[0]!.headword).toBe('baratze');
   });
 
-  it('adds dictionary-validated Basque stems as alternate lemmas', async () => {
+  it('only offers roots recorded for the spelling', async () => {
     const result = await lookupWord('eu', 'baratzera', {
-      resolveLemmas: async () => ['baratu'],
-      dictLookup: async (_l, w) => {
-        if (w === 'baratze') return [lemma('n', { headword: 'baratze', pos: 'NOUN' })];
-        if (w === 'baratu') return [lemma('v', { headword: 'baratu', pos: 'VERB' })];
-        return []; // other stripped stems aren't real headwords
-      },
+      resolveLemmas: async () => [],
+      dictLookup: async (_l, word) => word === 'baratze' ? [lemma('n')] : [],
     });
-    expect(result.lemmas).toContain('baratu'); // Stanza's pick
-    expect(result.lemmas).toContain('baratze'); // recovered alternate
+    expect(result.entries).toEqual([]);
+    expect(result.lemmas).toEqual([]);
   });
 
   it('does not add morphological alternates for non-Basque languages', async () => {

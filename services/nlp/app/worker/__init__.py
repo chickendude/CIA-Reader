@@ -52,9 +52,6 @@ class WorkerSettings:
     on_startup = on_startup
     on_shutdown = on_shutdown
     redis_settings = redis_settings_from_env()
-    # Keep ``max_jobs`` low for the MVP node — a single Stanza model
-    # pins ~600MB RAM, and the box has 4 GB usable. Future scaling
-    # tunable via WORKER_MAX_JOBS.
     max_jobs = int(os.environ.get("WORKER_MAX_JOBS", "2"))
     # Long per-job timeout because tokenizing a 200-page EPUB chapter
     # can legitimately run 30-60s end-to-end. Reports > 10 min mean

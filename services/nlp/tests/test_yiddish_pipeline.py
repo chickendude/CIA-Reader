@@ -1,15 +1,9 @@
-"""Yiddish pipeline tests.
-
-The Yiddish pipeline has no external model or tokenizer dependency, so
-unlike Hindi/Marathi these tests run the production configuration
-(`build_yiddish_pipeline`) directly.
-"""
+"""Tests for the original Yiddish word rules."""
 
 from __future__ import annotations
 
 import pytest
 
-from app.pipelines import get_pipeline, reset_pipeline_cache
 from app.pipelines.yiddish import (
     YiddishPipeline,
     build_yiddish_pipeline,
@@ -181,10 +175,3 @@ def test_uniform_candidate_scores():
 
 
 # ---- dispatch ----
-
-
-def test_registry_dispatches_custom_yi():
-    reset_pipeline_cache()
-    pipeline = get_pipeline("yi")
-    assert pipeline.pipeline_id == "custom-yi"
-    assert isinstance(pipeline, YiddishPipeline)

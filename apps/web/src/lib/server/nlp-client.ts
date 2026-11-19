@@ -2,21 +2,7 @@ import { Agent, type Dispatcher } from 'undici';
 
 import { NLP_SERVICE_URL } from './env.js';
 
-/**
- * Undici's default `headersTimeout` and `bodyTimeout` are 5 minutes
- * each — fine for a typical web fetch, way too short for Stanza's
- * Hindi pipeline running on CPU. Long chapters can take 10+ minutes
- * for the parser to emit response headers, surfacing as
- * `UND_ERR_HEADERS_TIMEOUT` in `processTextNow` and a "fetch failed"
- * `status_error` row in the texts table.
- *
- * 30 minutes is enough headroom for the largest book chapters we've
- * seen in practice; chunking the request on the dispatcher side is
- * the proper long-term fix, but bumping the patience here unblocks
- * the in-process worker without an app-level rewrite. `keepAlive`
- * stays on so the dispatcher reuses sockets across the per-chapter
- * `/process` calls a single `processTextNow` makes.
- */
+// Allow time to process a full chapter or extract text from a scanned page.
 const NLP_REQUEST_TIMEOUT_MS = 30 * 60 * 1000;
 const nlpDispatcher: Dispatcher = new Agent({
   headersTimeout: NLP_REQUEST_TIMEOUT_MS,

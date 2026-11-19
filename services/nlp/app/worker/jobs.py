@@ -64,11 +64,6 @@ async def process_text(
     with a truncated error message, and arq's own retry / DLQ machinery
     logs the traceback for on-call investigation.
 
-    The per-chapter loop does **not** parallelize — Stanza models are
-    not thread-safe and a single model instance is pinned per
-    pipeline_id in the process-wide cache. Running chapters
-    sequentially against the same cached model is both correct and
-    memory-cheap.
     """
     text_store: TextStore = _store(ctx, "text_store")
     token_store: TokenStore = _store(ctx, "token_store")
@@ -95,8 +90,7 @@ async def process_text(
         await text_store.mark_ready(text_id)
         await token_store.record_job_finished(job_id=job_id)
     except Exception as exc:
-        # Truncate the message so a Stanza stacktrace doesn't blow out
-        # the DB column — the full traceback is in the worker log.
+        # Store a short failure message. The worker log has the traceback.
         message = str(exc)[:500] or type(exc).__name__
         await text_store.mark_failed(text_id, message)
         await token_store.record_job_failed(job_id=job_id, error=message)

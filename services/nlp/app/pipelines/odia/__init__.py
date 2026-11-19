@@ -9,8 +9,8 @@ from app.numbers import number_forms as _compute_number_forms
 from app.schemas import LemmaCandidate, Token
 
 from ..base import Pipeline, PipelineResult
-from ..stanza_ud import should_treat_as_word
-from .lemmas import OdiaLemmaTable, default_lemma_table
+from ..word_types import should_treat_as_word
+from .lemmas import OdiaLemmaTable
 from .morph import MorphAnalysis, analyze
 
 OdiaTokenizer = Callable[[str], list[str]]
@@ -61,12 +61,7 @@ class OdiaPipeline(Pipeline):
         self._lemmas = lemmas
 
     def process(self, text: str) -> PipelineResult:
-        # Walk the original text alongside the tokenizer's output so the
-        # whitespace between tokens is preserved as `is_word=False` gap
-        # tokens. Without this the reader has no break opportunities and
-        # CSS multi-column flow can't fragment a long paragraph, which
-        # makes it overflow past the column edge. Mirrors the offset-walk
-        # in :class:`StanzaUDPipeline._tokens_from_doc`.
+        # Keep the spaces between words so the reader can lay out the original passage.
         tokens: list[Token] = []
         idx = 0
         cursor = 0
@@ -147,26 +142,3 @@ class OdiaPipeline(Pipeline):
             romanization=None,
             number_forms=_compute_number_forms(surface),
         )
-
-
-def _indicnlp_odia_tokenize(text: str) -> list[str]:  # pragma: no cover
-    """Production tokenizer: IndicNLP's Odia-aware trivial tokenizer."""
-    from indicnlp.tokenize import indic_tokenize
-
-    return list(indic_tokenize.trivial_tokenize(text, lang="or"))
-
-
-def build_odia_pipeline() -> OdiaPipeline:  # pragma: no cover
-    """Construct an :class:`OdiaPipeline` with the production tokenizer + seed.
-
-    Registered in :mod:`app.pipelines.__init__` as the ``custom-or``
-    factory. Lazy-imports IndicNLP so CI doesn't need it installed —
-    tests inject a split-based tokenizer fake instead.
-    """
-    return OdiaPipeline(
-        tokenizer=_indicnlp_odia_tokenize,
-        lemmas=default_lemma_table(),
-    )
-
-
-__all__ = ["OdiaPipeline", "OdiaTokenizer", "build_odia_pipeline"]

@@ -1,8 +1,9 @@
 # HindiDB in Parhiba
 
-Hindi uses the vendored HindiDB 0.4.2 parser (`hindidb-hi`), with PostgreSQL as
-its dictionary store. Parhiba is the editor; the old HindiDB directory is not
-read at runtime. Other languages keep their existing pipelines and dictionaries.
+HindiDB is Parhiba’s dictionary format. Each entry has a root word, its accepted forms,
+and any saved spelling rules or exceptions. The reader matches passages against the
+editable PostgreSQL dictionary. Marathi, Basque, Odia, and Yiddish use their saved root
+entries and word forms in the same database.
 
 ## Local migration, 2026-11-17
 

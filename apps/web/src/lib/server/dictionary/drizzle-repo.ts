@@ -11,6 +11,7 @@ import type { PgDatabase } from 'drizzle-orm/pg-core';
 import { dictionaryImports, lemmaForms, lemmas, translations } from '../db/schema.js';
 import type { Lemma, Translation } from '../db/schema.js';
 
+import { missingImportForms } from './repo.js';
 import type {
   DictionaryRepo,
   FormUpsertPayload,
@@ -144,12 +145,17 @@ export class DrizzleDictionaryRepo implements DictionaryRepo {
     return row as Translation;
   }
 
-  async insertForm(payload: FormUpsertPayload): Promise<void> {
-    await this.db.insert(lemmaForms).values({
-      lemmaId: payload.lemmaId,
-      surface: payload.surface,
-      features: payload.features,
-      romanization: payload.romanization,
+  async insertMissingForms(lemmaId: string, forms: FormUpsertPayload[]): Promise<number> {
+    return this.db.transaction(async (tx) => {
+      // Two imports of the same entry can run at the same time.
+      await tx.select({ id: lemmas.id }).from(lemmas).where(eq(lemmas.id, lemmaId)).for('update');
+      const saved = await tx.select({ surface: lemmaForms.surface, features: lemmaForms.features })
+        .from(lemmaForms).where(eq(lemmaForms.lemmaId, lemmaId));
+      const missing = missingImportForms(saved, forms);
+      for (let start = 0; start < missing.length; start += 1000) {
+        await tx.insert(lemmaForms).values(missing.slice(start, start + 1000));
+      }
+      return missing.length;
     });
   }
 

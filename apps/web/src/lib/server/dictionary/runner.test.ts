@@ -102,8 +102,8 @@ describe('runDictionaryImport — idempotency', () => {
     expect(second.lemmasUpdated).toBe(10);
     expect(second.translationsCreated).toBe(0);
     expect(second.translationsUpdated).toBe(11);
-    // Forms are append-only at MVP — re-running adds them again.
-    expect(second.formsCreated).toBe(2);
+    expect(second.formsCreated).toBe(0);
+    expect(repo.forms).toHaveLength(2);
     expect(repo.lemmas.size).toBe(lemmaCountAfterFirst);
     expect(repo.translations.size).toBe(translationCountAfterFirst);
     expect(repo.audit).toHaveLength(2);

@@ -114,14 +114,9 @@ async function importEntry(
     }
   }
 
-  for (const form of entry.forms ?? []) {
-    await repo.insertForm({
-      lemmaId,
-      surface: form.surface,
-      features: form.features ?? {},
-      romanization: form.romanization,
-    });
-    result.formsCreated += 1;
+  if (entry.forms?.length) {
+    const forms = entry.forms.map((form) => ({ ...form, lemmaId, features: form.features ?? {} }));
+    result.formsCreated += await repo.insertMissingForms(lemmaId, forms);
   }
 }
 

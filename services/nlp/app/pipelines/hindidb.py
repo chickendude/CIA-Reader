@@ -1,4 +1,4 @@
-"""HindiDB's all-candidate parser, backed by Parhiba's editable dictionary."""
+"""Match Hindi words and phrases against entries in Parhiba's editable dictionary."""
 
 from __future__ import annotations
 

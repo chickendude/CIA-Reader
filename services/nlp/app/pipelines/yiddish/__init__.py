@@ -1,40 +1,4 @@
-"""Custom Yiddish pipeline.
-
-No Stanza model exists for Yiddish (UD has no released Yiddish
-treebank), so this is the second custom pipeline after Odia, with the
-same three pieces:
-
-1. **Tokenization** — a small regex tokenizer. Yiddish is whitespace-
-   and-punctuation segmented, so unlike Odia there's no IndicNLP
-   dependency; a word is a run of Hebrew-block letters (with their
-   combining points and the װ/ױ/ײ ligatures).
-2. **Morphological analyzer** — :mod:`app.pipelines.yiddish.morph`,
-   suffix + גע־ circumfix rules over a lemma table with stem and
-   irregular-form indexes.
-3. **Lemma lookup** — :mod:`app.pipelines.yiddish.lemmas`, a seed
-   table hand-curated for bootstrap; the Kaikki Yiddish import
-   populates the real Postgres ``lemmas`` table.
-
-Output contract is identical to the other pipelines — ``Token`` list
-with top-K ``LemmaCandidate``, ``is_word`` / ``is_oov`` /
-``is_ambiguous`` — so the reader and correction flow don't branch on
-language. Word tokens additionally carry a YIVO romanization from
-:func:`app.romanize.to_roman`, the same way the Stanza pipelines
-attach ISO 15919.
-
-``number_forms`` is deliberately left ``None``: the NumberForms
-payload spells numerals out in Hindi / Marathi / Odia, which is
-meaningless in a Yiddish reader. Yiddish spelled-out numerals are a
-follow-up to :mod:`app.numbers`.
-
-**Accuracy expectation**: same tier as Odia (~70–80% lemma accuracy at
-launch against the golden corpus), improving with dictionary growth
-and crowdsourced corrections. The unpointed loshn-koydesh vocabulary
-is the known weak spot for the affix rules — it's spelled
-etymologically, so they undershoot there. Its *romanization* is handled
-out of band: :mod:`.loshn_koydesh` carries curated readings for the
-loans the rule-based mapping can't sound out.
-"""
+"""Original Yiddish rules used by the reference corpus tests."""
 
 from __future__ import annotations
 
@@ -46,7 +10,7 @@ from app.romanize import UnsupportedScriptError, to_roman
 from app.schemas import LemmaCandidate, Token
 
 from ..base import Pipeline, PipelineResult
-from ..stanza_ud import should_treat_as_word
+from ..word_types import should_treat_as_word
 from .lemmas import YiddishLemmaTable, load_lemma_entries, seed_lemma_path
 from .loshn_koydesh import load_loshn_koydesh_entries
 from .morph import MorphAnalysis, analyze
@@ -241,13 +205,7 @@ def _merged_lemma_table() -> YiddishLemmaTable:
 
 
 def build_yiddish_pipeline() -> YiddishPipeline:
-    """Construct a :class:`YiddishPipeline` with the production tokenizer + the
-    merged seed + loshn-koydesh lemma table.
-
-    Registered in :mod:`app.pipelines.__init__` as the ``custom-yi``
-    factory. Unlike Odia there's nothing to lazy-import — the tokenizer
-    is a regex — so CI exercises the production configuration directly.
-    """
+    """Load the original Yiddish rules and their reference word lists."""
     return YiddishPipeline(
         tokenizer=yiddish_tokenize,
         lemmas=_merged_lemma_table(),

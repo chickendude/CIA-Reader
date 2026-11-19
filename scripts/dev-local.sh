@@ -12,7 +12,7 @@ usage() {
   cat <<'HELP'
 Usage: scripts/dev-local.sh COMMAND [ARGUMENT]
 
-  install               Install JS/Python dependencies and mr/eu NLP models
+  install               Install JS/Python dependencies
   db-up                 Initialize/start the project's PostgreSQL on 127.0.0.1:55432
   restore FILE.dump     Restore into a NEW local database; refuses an existing DB
   start                 Start DB, Redis/Valkey, Mailpit, NLP, and web; Ctrl-C stops apps
@@ -27,7 +27,7 @@ Install reuses services/nlp/.venv, or creates it with python3 from your PATH.
 Set PYTHON=/path/to/python to choose an interpreter for a new venv.
 Optional shell config: .local/env (created on first use). Keep the DB port
 unchanged after initializing the cluster. Services bind only to loopback.
-Logs, database, models, and uploads live under the gitignored .local directory.
+Logs, database, and uploads live under the gitignored .local directory.
 HELP
 }
 case "${1:---help}" in --help|-h) usage; exit 0 ;; esac
@@ -57,10 +57,7 @@ export APP_BASE_URL="http://localhost:$WEB_PORT"
 export SMTP_HOST=127.0.0.1 SMTP_PORT="$LOCAL_SMTP_PORT" SMTP_USER='' SMTP_PASS=''
 export SMTP_FROM=no-reply@ciareader.local
 export AUDIO_LOCAL_ROOT="$LOCAL/audio" PDF_LOCAL_ROOT="$LOCAL/pdf"
-export STANZA_RESOURCES_DIR="$LOCAL/stanza_resources"
 export PYTHONPATH="$ROOT/packages/shared-types/python:$ROOT/services/nlp"
-export OMP_NUM_THREADS="${OMP_NUM_THREADS:-3}" MKL_NUM_THREADS="${MKL_NUM_THREADS:-3}"
-export OPENBLAS_NUM_THREADS="${OPENBLAS_NUM_THREADS:-3}"
 VENV="$ROOT/services/nlp/.venv"
 
 need() {
@@ -107,10 +104,7 @@ case "${1:-}" in
     fi
     pnpm install --frozen-lockfile --store-dir "$ROOT/.pnpm-store"
     "$VENV/bin/python" -m pip install --upgrade pip
-    # CPU wheels avoid pulling gigabytes of CUDA libraries on Linux.
-    "$VENV/bin/python" -m pip install torch --index-url https://download.pytorch.org/whl/cpu
-    "$VENV/bin/python" -m pip install -e "$ROOT/services/nlp[dev,models,ocr]"
-    "$VENV/bin/python" -c "import stanza; [stanza.download(lang, processors='tokenize,pos,lemma', verbose=False) for lang in ('mr', 'eu')]"
+    "$VENV/bin/python" -m pip install -e "$ROOT/services/nlp[dev,ocr]"
     ;;
   import-hindidb)
     [[ $# == 2 ]] || { echo 'Usage: scripts/dev-local.sh import-hindidb PATH' >&2; exit 2; }

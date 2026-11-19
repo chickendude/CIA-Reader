@@ -8,7 +8,7 @@ from app.romanize import UnsupportedScriptError, to_roman
 from app.schemas import LemmaCandidate, Token
 
 from .base import Pipeline, PipelineResult
-from .stanza_ud import should_treat_as_word
+from .word_types import should_treat_as_word
 
 
 def _is_word_char(ch: str) -> bool:
@@ -45,9 +45,6 @@ class StubPipeline(Pipeline):
     ) -> None:
         self._script = script
         self._roman_scheme = roman_scheme
-        # See :class:`StanzaUDPipeline` — language hint forwards to
-        # ``to_roman`` so the stub also produces schwa-deleted Hindi
-        # output when the dev/CI fallback path is in use.
         self._language = language
 
     def process(self, text: str) -> PipelineResult:

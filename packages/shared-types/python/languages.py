@@ -59,7 +59,7 @@ LANGUAGES: dict[LanguageCode, LanguageDescriptor] = {
             "Tiro Devanagari Marathi",
             "Mukta",
         ),
-        pipeline_id="stanza-mr",
+        pipeline_id="dictionary-mr",
     ),
     "or": LanguageDescriptor(
         code="or",
@@ -70,12 +70,7 @@ LANGUAGES: dict[LanguageCode, LanguageDescriptor] = {
         supported_romanizations=("iso15919", "iast", "itrans"),
         default_romanization="iso15919",
         recommended_fonts=("Noto Sans Oriya", "Noto Serif Oriya", "Lohit Odia"),
-        pipeline_id="custom-or",
-        notes=(
-            "Stanza's Odia support is weak. We ship a custom pipeline "
-            "(IndicNLP tokenizer + rule-based morphological analyzer seeded "
-            "from Odia WordNet)."
-        ),
+        pipeline_id="dictionary-or",
     ),
     "yi": LanguageDescriptor(
         code="yi",
@@ -91,13 +86,7 @@ LANGUAGES: dict[LanguageCode, LanguageDescriptor] = {
             "David Libre",
             "Frank Ruhl Libre",
         ),
-        pipeline_id="custom-yi",
-        notes=(
-            "No Stanza model exists for Yiddish. We ship a custom pipeline "
-            "(Hebrew-script tokenizer + rule-based morphological analyzer "
-            "over a seed lemma table), mirroring the Odia approach. First "
-            "RTL language — UI direction comes from text_direction."
-        ),
+        pipeline_id="dictionary-yi",
     ),
     "eu": LanguageDescriptor(
         code="eu",
@@ -110,13 +99,7 @@ LANGUAGES: dict[LanguageCode, LanguageDescriptor] = {
         # romanization UI; default_romanization is left as None.
         supported_romanizations=(),
         recommended_fonts=("Noto Serif", "Noto Sans", "Source Serif 4", "Georgia"),
-        pipeline_id="stanza-eu",
-        notes=(
-            "Stanza ships a strong Basque model (UD_Basque-BDT: "
-            "tokenize/pos/lemma, no MWT), so Basque reuses the generic "
-            "Stanza UD pipeline like Hindi/Marathi. First Latin-script "
-            "language — no transliteration, no romanization, no RTL."
-        ),
+        pipeline_id="dictionary-eu",
     ),
 }
 

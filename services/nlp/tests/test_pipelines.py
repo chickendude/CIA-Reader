@@ -11,9 +11,8 @@ import pytest
 
 from app import pipelines
 from app.pipelines import Pipeline, PipelineResult, StubPipeline, get_pipeline
+from app.pipelines.dictionary import DictionaryPipeline
 from app.pipelines.hindidb import HindiDBPipeline
-from app.pipelines.marathi import MarathiPipeline
-from app.pipelines.odia import OdiaPipeline
 from app.schemas import LemmaCandidate, Token
 
 
@@ -26,8 +25,8 @@ def _clear_cache():
 
 def test_get_pipeline_returns_real_pipelines_for_mvp_languages():
     assert isinstance(get_pipeline("hi"), HindiDBPipeline)
-    assert isinstance(get_pipeline("mr"), MarathiPipeline)
-    assert isinstance(get_pipeline("or"), OdiaPipeline)
+    assert isinstance(get_pipeline("mr"), DictionaryPipeline)
+    assert isinstance(get_pipeline("or"), DictionaryPipeline)
     for code in ("hi", "mr", "or"):
         pipe = get_pipeline(code)
         assert isinstance(pipe, Pipeline)

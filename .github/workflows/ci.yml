@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - "apps/web/**"
+      - "apps/extension/**"
       - "services/nlp/**"
       - "packages/**"
       - ".nvmrc"
@@ -15,6 +16,7 @@ on:
     branches: [main]
     paths:
       - "apps/web/**"
+      - "apps/extension/**"
       - "services/nlp/**"
       - "packages/**"
       - ".nvmrc"
@@ -57,7 +59,20 @@ jobs:
       - run: pnpm --filter @ciareader/web exec svelte-kit sync
       - run: pnpm lint
       - run: pnpm typecheck
+      - run: pnpm --filter @ciareader/extension test
       - run: pnpm --filter @ciareader/web db:migrate
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: services/nlp/pyproject.toml
+      - name: Check dictionary lookups against the migrated database
+        working-directory: services/nlp
+        env:
+          DICTIONARY_TEST_DATABASE_URL: ${{ env.DATABASE_URL }}
+        run: |
+          pip install -e '.[dev]'
+          pytest --no-cov tests/test_dictionary_pipeline.py
       - run: pnpm --filter @ciareader/web run test:coverage
       - name: Upload web coverage artifact
         if: always()
@@ -146,64 +161,6 @@ jobs:
           name: nlp-coverage
           path: services/nlp/.coverage
           if-no-files-found: ignore
-
-  nlp-accuracy:
-    name: nlp (real-pipeline accuracy thresholds)
-    runs-on: ubuntu-latest
-    env:
-      STANZA_RESOURCES_DIR: ${{ github.workspace }}/.cache/stanza
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-          cache: pip
-      - run: pip install -U pip && pip install -e 'services/nlp[dev,models]'
-      - name: Cache Stanza UD models
-        uses: actions/cache@v4
-        with:
-          path: ${{ env.STANZA_RESOURCES_DIR }}
-          key: stanza-models-mr-eu-v1-${{ hashFiles('services/nlp/pyproject.toml') }}
-          # A stale cache is still ~all of the model bytes; stanza validates
-          # md5s and only re-downloads what changed. Keeps the flaky network
-          # path (below) off the critical path in most runs.
-          restore-keys: |
-            stanza-models-mr-eu-v1-
-      - name: Download Marathi and Basque Stanza models
-        env:
-          # HF's Xet storage backend 401s unauthenticated CI clients
-          # (cas-server/cas-bridge.xethub.hf.co); disabling it and retrying
-          # rides out transient refusals. Set an HF_TOKEN repo secret to make
-          # downloads authenticated (and this flakiness moot); the env line
-          # below is a no-op while the secret is unset.
-          HF_HUB_DISABLE_XET: "1"
-          HF_TOKEN: ${{ secrets.HF_TOKEN }}
-        run: |
-          python - <<'PY'
-          import time
-
-          import stanza
-
-          for lang in ("mr", "eu"):
-              for attempt in range(5):
-                  try:
-                      stanza.download(lang, processors="tokenize,pos,lemma", verbose=False)
-                      break
-                  except Exception as exc:  # noqa: BLE001 - HF hub raises assorted types
-                      if attempt == 4:
-                          raise
-                      wait = 2**attempt * 15
-                      print(f"{lang}: download failed ({exc}); retrying in {wait}s")
-                      time.sleep(wait)
-          PY
-      - name: Run real-pipeline accuracy thresholds
-        working-directory: services/nlp
-        env:
-          PYTHONPATH: ${{ github.workspace }}/packages/shared-types/python
-        # Override the pyproject default (`-m 'not real_models'`) so
-        # only the threshold suite runs in this job. Coverage is
-        # irrelevant here — the default job enforces the floor already.
-        run: pytest -m real_models --no-cov -o addopts=""
 
   registry-parity:
     name: language registry parity (TS vs Python)

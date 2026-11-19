@@ -1,6 +1,12 @@
+import { once } from 'node:events';
+import { createServer } from 'node:http';
+import type { AddressInfo } from 'node:net';
+
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { nlpClient } from './nlp-client.js';
+
+const nativeFetch = globalThis.fetch;
 
 describe('nlpClient', () => {
   const fetchMock = vi.fn<typeof fetch>();
@@ -30,6 +36,23 @@ describe('nlpClient', () => {
     const [url, init] = firstCall;
     expect(String(url)).toMatch(/\/health$/);
     expect(init?.headers).toMatchObject({ 'content-type': 'application/json' });
+  });
+
+  it('can send a dictionary request with the Node HTTP client', async () => {
+    const server = createServer((_req, res) => {
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify({ language: 'eu', pipeline_id: 'dictionary-eu', tokens: [] }));
+    });
+    server.listen(0, '127.0.0.1');
+    try {
+      await once(server, 'listening');
+      const { port } = server.address() as AddressInfo;
+      fetchMock.mockImplementationOnce((_url, init) => nativeFetch(`http://127.0.0.1:${port}/process`, init));
+      expect((await nlpClient.process('eu', 'etxe')).pipeline_id).toBe('dictionary-eu');
+    } finally {
+      server.closeAllConnections();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
   });
 
   it('process() posts JSON to /process', async () => {

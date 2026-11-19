@@ -1,13 +1,5 @@
-// Loader: seed Basque declension paradigms (derived from Wiktionary by
-// scrape-basque-paradigms.mjs → derive-basque-suffixes.mjs →
-// clean-basque-paradigms.mjs) into the existing paradigms/paradigm_slots
-// tables, assign a starter set of lemmas their (paradigm, stem), and
-// regenerate lemma_forms. The dispatcher's lemma_forms → lemma tier then
-// resolves every inflected surface (badian, badietara, mendebalerantz…)
-// to its lemma — on top of Stanza, which still handles everything else.
-//
-// Idempotent: paradigms/slots upsert on their natural keys; each lemma's
-// non-curator forms are wiped and regenerated (mirrors regenerateForms).
+// Save Basque declension patterns and attach the resulting word forms to each root.
+// Re-running updates the patterns and keeps forms edited by a curator.
 //
 // Usage:  node apps/web/scripts/load-basque-paradigms.mjs
 

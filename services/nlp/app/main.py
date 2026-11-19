@@ -20,7 +20,6 @@ from app.ocr.align import OcrPage, assign_token_boxes
 from app.ocr.borndigital import build_born_digital_page
 from app.ocr.raw import raw_tokenize
 from app.ocr.vision import run_vision_ocr
-from app.phrases import get_detector
 from app.pipelines import get_pipeline
 from app.romanize import UnsupportedScriptError, to_roman
 from app.schemas import (
@@ -77,36 +76,19 @@ async def process(req: ProcessRequest) -> ProcessResponse:
             detail=f"Unsupported language '{req.language}'. Supported: {supported}",
         )
 
-    # NFC is the canonical form for every Indic script we support; many
-    # Devanagari / Odia inputs arrive in other normalizations from the
-    # wild web. Doing it once here means pipelines can assume NFC.
-    text = req.text if req.language == "hi" else unicodedata.normalize("NFC", req.text)
-    pipeline = get_pipeline(req.language)
-    result = pipeline.process(text)
+    result = get_pipeline(req.language).process(req.text)
 
-    # A language without phrase patterns can still return its ordinary word analysis.
-    detector = get_detector(req.language)
-    proposed_phrases = [] if result.hindi_analysis is not None else detector.detect(result.tokens)
-
-    # The client always sees the language's canonical pipeline_id (from
-    # the shared registry), not the pipeline instance's internal id — so
-    # swapping in a stub during local dev still looks like the real
-    # pipeline to the caller.
     canonical_pipeline_id = LANGUAGES[req.language].pipeline_id
     return ProcessResponse(
         language=req.language,
         pipeline_id=canonical_pipeline_id,
         tokens=result.tokens,
         hindi_analysis=result.hindi_analysis,
-        proposed_phrases=proposed_phrases,
     )
 
 
 def _page_from_layout(payload: dict) -> OcrPage:
-    """Rebuild an OcrPage from a stored layout (page text + one box per
-    character). Lets the web side re-tokenize a previously-OCR'd page with
-    the current model WITHOUT paying for Vision again — the box geometry is
-    replayed from what the first OCR already captured."""
+    """Reuse saved page text and character positions when refreshing dictionary matches."""
     text = payload.get("text", "")
     raw = payload.get("char_boxes") or []
     boxes: list[BBox | None] = []
@@ -200,9 +182,6 @@ async def ocr(
 
     pipeline = get_pipeline(language)
     result = pipeline.process(page.text)
-    detector = get_detector(language)
-    proposed_phrases = [] if result.hindi_analysis is not None else detector.detect(result.tokens)
-
     boxes = assign_token_boxes(result.tokens, page)
     tokens = [
         OcrToken(**t.model_dump(), bbox=b)
@@ -217,7 +196,6 @@ async def ocr(
         body=page.text,
         tokens=tokens,
         hindi_analysis=result.hindi_analysis,
-        proposed_phrases=proposed_phrases,
     )
 
 

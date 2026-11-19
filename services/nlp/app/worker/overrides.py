@@ -16,7 +16,7 @@ _SENTINEL_UNK = "X"
 
 @dataclass(frozen=True, slots=True)
 class OverrideHit:
-    """A promoted override the worker must honor over Stanza's guess."""
+    """A saved correction for a word."""
 
     lemma: str
     pos: str

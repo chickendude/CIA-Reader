@@ -137,15 +137,6 @@ export type KaikkiSourceOptions = {
    * to let the runner default to `'en'`.
    */
   glossLanguage?: string;
-  /**
-   * Import only root / citation forms — skip the per-entry inflection table
-   * (`forms[]` → `lemma_forms`) AND any Wiktionary "form-of" entry (one whose
-   * every sense is an inflection of another lemma, e.g. "inessive of etxe").
-   * Right for languages whose morphology is handled by the NLP pipeline
-   * (Stanza for Basque) rather than by dictionary form-matching, so the
-   * dictionary stays a list of dictionary headwords, not declined surfaces.
-   */
-  rootFormsOnly?: boolean;
   /** Env var that overrides the default file path (used by tests). */
   envVar: string;
   /**
@@ -156,18 +147,6 @@ export type KaikkiSourceOptions = {
   defaultPath: string;
 };
 
-/**
- * Convert one Kaikki entry into the importer's canonical shape. Returns
- * null when the row is unimportable — unknown POS, no usable glosses,
- * empty headword.
- */
-/**
- * True when the entry is an inflected form of another lemma rather than a
- * citation/root headword — i.e. every gloss-bearing sense is a "form-of"
- * sense (carries `form_of`, or a `form-of` tag). Wiktionary lists such
- * entries with glosses like "inessive singular of etxe"; with
- * `rootFormsOnly` we drop them so the dictionary holds only root forms.
- */
 function isInflectedFormEntry(senses: KaikkiSense[]): boolean {
   const glossed = senses.filter((s) => glossesOf(s).some((g) => g.trim()));
   if (glossed.length === 0) return false;
@@ -180,7 +159,7 @@ function isInflectedFormEntry(senses: KaikkiSense[]): boolean {
 
 export function kaikkiToImportEntry(
   raw: KaikkiEntry,
-  opts: Pick<KaikkiSourceOptions, 'script' | 'sourceIdPrefix' | 'glossLanguage' | 'rootFormsOnly'>,
+  opts: Pick<KaikkiSourceOptions, 'script' | 'sourceIdPrefix' | 'glossLanguage'>,
 ): ImportEntry | null {
   const pos = mapKaikkiPos(raw.pos);
   if (!pos) return null;
@@ -188,8 +167,7 @@ export function kaikkiToImportEntry(
   if (!headword) return null;
   const senses = raw.senses ?? [];
   if (senses.length === 0) return null;
-  // Root-forms-only: drop entries that merely inflect another lemma.
-  if (opts.rootFormsOnly && isInflectedFormEntry(senses)) return null;
+  if (isInflectedFormEntry(senses)) return null;
 
   const glossHash = hashGlosses(senses);
   const sourceId = `${opts.sourceIdPrefix}:${headword}:${pos}:${glossHash}`;
@@ -210,22 +188,11 @@ export function kaikkiToImportEntry(
 
   const glossDefault = translations[0]!.body;
 
-  // Kaikki's per-form `tags` are freeform strings ("plural", "direct",
-  // "honorific") that don't map onto UD-style FEATS without a manual
-  // conversion table. For MVP we keep the surface form so it's
-  // discoverable in fallback lookups but leave `features` empty.
-  // With `rootFormsOnly` we skip the inflection table entirely — those are
-  // the conjugated/declined surfaces we don't want in the dictionary.
-  // Otherwise we keep the surface forms (minus romanization pseudo-forms) so
-  // they're discoverable in fallback lookups, with `features` left empty.
-  const forms = opts.rootFormsOnly
-    ? []
-    : (raw.forms ?? [])
-        .filter((f) => typeof f.form === 'string' && f.form.length > 0)
-        .filter((f) => !isRomanizationForm(f))
-        .map((f) => f.form.normalize('NFC'))
-        .filter((surface) => surface !== headword)
-        .map((surface) => ({ surface, features: {} as Record<string, string> }));
+  const forms = (raw.forms ?? [])
+    .filter((f) => typeof f.form === 'string' && !isRomanizationForm(f))
+    .filter((f) => !f.tags?.some((tag) => ['table-tags', 'class', 'inflection-template'].includes(tag)))
+    .map((f) => f.form.normalize('NFC').trim())
+    .filter((surface) => surface && surface !== headword && /\p{L}/u.test(surface));
 
   const entry: ImportEntry = {
     sourceId,
@@ -235,21 +202,55 @@ export function kaikkiToImportEntry(
     glossDefault,
     translations,
   };
-  if (forms.length > 0) entry.forms = forms;
+  if (forms.length > 0) entry.forms = [...new Set(forms)].map((surface) => ({ surface, features: {} }));
   return entry;
+}
+
+async function* readKaikkiFile(filePath: string): AsyncIterable<KaikkiEntry> {
+  const stream = createReadStream(filePath, { encoding: 'utf-8' });
+  try {
+    for await (const line of createInterface({ input: stream, crlfDelay: Infinity })) {
+      const raw = parseKaikkiLine(line);
+      if (raw) yield raw;
+    }
+  } finally {
+    stream.destroy();
+  }
 }
 
 async function* streamKaikkiSource(
   filePath: string,
-  opts: Pick<KaikkiSourceOptions, 'script' | 'sourceIdPrefix' | 'glossLanguage' | 'rootFormsOnly'>,
+  opts: Pick<KaikkiSourceOptions, 'script' | 'sourceIdPrefix' | 'glossLanguage'>,
 ): AsyncIterable<ImportEntry> {
-  const stream = createReadStream(filePath, { encoding: 'utf-8' });
-  const rl = createInterface({ input: stream, crlfDelay: Infinity });
-  for await (const line of rl) {
-    const raw = parseKaikkiLine(line);
-    if (!raw) continue;
+  // A form can appear anywhere in the file, including after its root entry.
+  const linkedForms = new Map<string, Set<string>>();
+  for await (const raw of readKaikkiFile(filePath)) {
+    const pos = mapKaikkiPos(raw.pos);
+    if (!pos) continue;
+    const surface = raw.word.normalize('NFC').trim();
+    if (!surface) continue;
+    for (const sense of raw.senses ?? []) {
+      for (const link of sense.form_of ?? []) {
+        const root = link.word?.normalize('NFC').trim();
+        if (!root || root === surface) continue;
+        const key = `${pos}:${root}`;
+        const forms = linkedForms.get(key) ?? new Set<string>();
+        forms.add(surface);
+        linkedForms.set(key, forms);
+      }
+    }
+  }
+
+  for await (const raw of readKaikkiFile(filePath)) {
     const entry = kaikkiToImportEntry(raw, opts);
-    if (entry) yield entry;
+    if (!entry) continue;
+    const linked = linkedForms.get(`${entry.pos}:${entry.headword}`);
+    if (linked) {
+      const forms = new Set(entry.forms?.map((f) => f.surface));
+      for (const form of linked) forms.add(form);
+      entry.forms = [...forms].map((surface) => ({ surface, features: {} }));
+    }
+    yield entry;
   }
 }
 

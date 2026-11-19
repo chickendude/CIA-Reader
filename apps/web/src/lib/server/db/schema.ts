@@ -323,6 +323,7 @@ export const lemmas = pgTable(
       t.headword,
       t.pos,
     ),
+    spellingIdx: index('lemmas_language_spelling_idx').on(t.language, sql`lower(normalize(${t.headword}))`),
     languageIdx: index('lemmas_language_idx').on(t.language),
     frequencyIdx: index('lemmas_language_frequency_idx').on(t.language, t.frequencyRank),
     // Lookup by (language, source, source_id) is the idempotent-upsert key
@@ -375,6 +376,8 @@ export const lemmaForms = pgTable(
   },
   (t) => ({
     lemmaIdx: index('lemma_forms_lemma_idx').on(t.lemmaId),
+    spellingIdx: index('lemma_forms_spelling_idx')
+      .on(sql`lower(normalize(${t.surface}))`).where(sql`quarantined_at IS NULL`),
     surfaceIdx: index('lemma_forms_surface_idx').on(t.surface),
     // Hot-path index for the dispatcher's surface→lemma resolution.
     // Filtered (`WHERE quarantined_at IS NULL`) so the index is small
@@ -1319,32 +1322,7 @@ export const phraseChapterSpans = pgTable(
   }),
 );
 
-/**
- * Queue of NLP-detected phrase proposals.
- *
- * The web worker writes one row here per `(chapter,
- * surface_normalised, pattern_id)` triple emitted by
- * `services/nlp/app/phrases` after Stanza finishes a chapter.
- * A periodic promotion pass (`promotePhraseProposals`) walks
- * the queue, counts distinct chapters per
- * `(language, surface_normalised)`, and creates a `phrases` row
- * (`source='nlp'`, `phrase_tokens` from the stored ordered
- * `tokens`) once the count crosses
- * `PHRASE_PROMOTION_MIN_CHAPTERS` (default 3).
- *
- * Why a queue + threshold instead of inserting `phrases`
- * directly: rule-based detectors throw off false positives at
- * a steady rate; promoting only patterns that recur across
- * multiple chapters is the simplest filter for noise without a
- * per-pattern precision audit. Unique on
- * `(chapter_id, surface_normalised, pattern_id)` so re-running
- * the worker on the same chapter is idempotent.
- *
- * `tokens` carries the ordered surfaces the matcher saw — the
- * promotion pass writes `phrase_tokens` from this array
- * verbatim so the eventual phrase row matches the chapter
- * occurrences exactly.
- */
+/** Phrase suggestions saved by earlier imports for later review. */
 export const phraseProposals = pgTable(
   'phrase_proposals',
   {
@@ -1479,6 +1457,8 @@ export const formLemmaOverrides = pgTable(
     ),
     // Hot lookup: the worker / dispatcher hits this for every word
     // in every chapter of every text being processed.
+    spellingIdx: index('form_lemma_overrides_spelling_idx')
+      .on(t.language, sql`lower(normalize(${t.surfaceNfc}))`).where(sql`context_signature = ''`),
     lookupIdx: index('form_lemma_overrides_lookup_idx').on(
       t.language,
       t.surfaceNfc,

@@ -55,16 +55,25 @@ describe('ParseCache', () => {
     ],
   };
 
-  it('parses on a miss and serves the cache on a hit', async () => {
+  it('uses the most recent saved roots offline', async () => {
     const store = memoryKvStore();
     const postJson = vi.fn().mockResolvedValue(parseResponse);
     const cache = new ParseCache(store, { postJson });
 
     expect(await cache.resolveLemmas('eu', 'Jaten')).toEqual(['jan']);
-    // case-insensitive cache key → second call is a hit, no extra parse
+    postJson.mockRejectedValueOnce(new Error('offline'));
     expect(await cache.resolveLemmas('eu', 'jaten')).toEqual(['jan']);
-    expect(postJson).toHaveBeenCalledTimes(1);
+    expect(postJson).toHaveBeenCalledTimes(2);
     expect(postJson).toHaveBeenCalledWith('/api/v1/parse', { language: 'eu', text: 'Jaten' });
+  });
+
+  it('recognizes a newly saved form after an earlier miss', async () => {
+    const postJson = vi.fn()
+      .mockResolvedValueOnce({ language: 'eu', tokens: [] })
+      .mockResolvedValueOnce(parseResponse);
+    const cache = new ParseCache(memoryKvStore(), { postJson });
+    expect(await cache.resolveLemmas('eu', 'jaten')).toEqual([]);
+    expect(await cache.resolveLemmas('eu', 'jaten')).toEqual(['jan']);
   });
 
   it('returns an empty list for blank input without calling the backend', async () => {
@@ -80,6 +89,6 @@ describe('ParseCache', () => {
     const cache = new ParseCache(store, { postJson });
     expect(await cache.resolveLemmas('eu', 'jaten')).toEqual([]);
     // not cached, so a later (working) call still hits the backend
-    expect(await store.get('parse:eu:jaten')).toBeNull();
+    expect(await store.get('dictionary-forms:eu:jaten')).toBeNull();
   });
 });

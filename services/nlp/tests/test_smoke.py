@@ -41,7 +41,7 @@ def test_process_odia_canned():
     assert resp.status_code == 200
     body = resp.json()
     assert body["language"] == "or"
-    assert body["pipeline_id"] == "custom-or"
+    assert body["pipeline_id"] == "dictionary-or"
     # Two words plus a whitespace gap token between them — the gap is
     # required so the reader can break lines (otherwise the chapter
     # renders as one unbreakable run).
@@ -50,32 +50,25 @@ def test_process_odia_canned():
 
 
 def test_process_yiddish_canned():
-    # The Yiddish factory is dependency-free (regex tokenizer + seed
-    # lemma table), so unlike Hi/Mr/Or the conftest doesn't fake it —
-    # this exercises the real production pipeline end to end.
     resp = client.post("/process", json={"language": "yi", "text": "איך שרייַב אַ בוך"})
     assert resp.status_code == 200
     body = resp.json()
     assert body["language"] == "yi"
-    assert body["pipeline_id"] == "custom-yi"
+    assert body["pipeline_id"] == "dictionary-yi"
     word_tokens = [t for t in body["tokens"] if t["is_word"]]
     assert len(word_tokens) == 4
-    # שרייַב is the bare stem of שרייַבן — the morph analyzer attaches it
-    # to the citation form, and the romanization layer is YIVO.
     shrayb = word_tokens[1]
-    assert shrayb["candidates"][0]["lemma"] == "שרייַבן"
+    assert shrayb["candidates"] == []
     assert shrayb["romanization"] == "shrayb"
 
 
 def test_process_basque_canned():
-    # Basque is Stanza-backed (stanza-eu); conftest fakes the model with a
-    # whitespace tokenizer, so we assert tokenization shape — three words
     # plus the whitespace gap tokens between them — rather than exact lemmas.
     resp = client.post("/process", json={"language": "eu", "text": "Egun on mundua"})
     assert resp.status_code == 200
     body = resp.json()
     assert body["language"] == "eu"
-    assert body["pipeline_id"] == "stanza-eu"
+    assert body["pipeline_id"] == "dictionary-eu"
     word_tokens = [t for t in body["tokens"] if t["is_word"]]
     assert len(word_tokens) == 3
     # Latin script — no romanization layer is produced.

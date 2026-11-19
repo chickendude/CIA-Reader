@@ -11,7 +11,7 @@ script-agnostic design end to end.
 
 ```
 apps/web/             SvelteKit + TypeScript (web UI + BFF + /api/v1/*)
-services/nlp/         FastAPI + Stanza + IndicNLP (stateless NLP service)
+services/nlp/         Dictionary matching, romanization, and PDF text extraction
 packages/shared-types Cross-language shared code (language registry, etc.)
 infra/                docker-compose.yml, Caddyfile, Dockerfiles
 scripts/              One-off tooling (issue bootstrap, etc.)
@@ -44,7 +44,7 @@ that directory to its `PATH` automatically.
 From the repository root:
 
 ```bash
-# One-time dependencies and CPU-only NLP models (a substantial download).
+# Install the web and Python dependencies.
 ./scripts/dev-local.sh install
 
 # SSH to the web server and download a fresh database snapshot.
@@ -91,7 +91,7 @@ gitignored under `.local/`. The dump contains the entire database, including
 accounts and private content; keep it private. **Audio files and PDF page images
 are stored outside PostgreSQL and are not included**; existing text/dictionary
 data works, but those media files must be transferred separately into
-`.local/audio` and `.local/pdf`. NLP models are downloaded by `install`.
+`.local/audio` and `.local/pdf`.
 
 Restore always creates a new database and refuses to overwrite an existing one.
 For another snapshot, stop the local apps, choose a new `LOCAL_DB_NAME` in

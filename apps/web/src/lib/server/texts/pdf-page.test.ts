@@ -72,7 +72,6 @@ vi.mock('../pdf/storage.js', async (orig) => {
 
 const persistTokensMock = vi.fn<(...args: unknown[]) => Promise<number>>();
 vi.mock('./in-process-dispatcher.js', () => ({
-  loadLemmaIndex: vi.fn(async () => ({})),
   persistTokens: (...args: unknown[]) => persistTokensMock(...args),
 }));
 

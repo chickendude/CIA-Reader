@@ -44,10 +44,10 @@ describe('language registry (shared-types)', () => {
     expect(LANGUAGES.or.script).toBe('Orya');
   });
 
-  it('Basque (eu) is Latin-script, ltr, Stanza-backed, with no romanization', () => {
+  it('Basque (eu) is Latin-script, ltr, dictionary-backed, with no romanization', () => {
     expect(LANGUAGES.eu.script).toBe('Latn');
     expect(LANGUAGES.eu.textDirection).toBe('ltr');
-    expect(LANGUAGES.eu.pipelineId).toBe('stanza-eu');
+    expect(LANGUAGES.eu.pipelineId).toBe('dictionary-eu');
     expect(LANGUAGES.eu.supportedRomanizations).toEqual([]);
     expect(LANGUAGES.eu.defaultRomanization).toBeUndefined();
   });

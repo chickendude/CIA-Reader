@@ -50,7 +50,7 @@ def test_ocr_born_digital_assigns_boxes():
     assert resp.status_code == 200, resp.text
     body = resp.json()
     assert body["language"] == "eu"
-    assert body["pipeline_id"] == "stanza-eu"
+    assert body["pipeline_id"] == "dictionary-eu"
     assert body["width"] == 1000
     assert body["height"] == 1400
     # Runs joined with a space (line 1) and a newline (after the eol run).

@@ -25,13 +25,13 @@ def test_mvp_languages_have_expected_scripts():
     # Yiddish is the first non-Brahmic, right-to-left language.
     assert LANGUAGES["yi"].script == "Hebr"
     assert LANGUAGES["yi"].text_direction == "rtl"
-    assert LANGUAGES["yi"].pipeline_id == "custom-yi"
+    assert LANGUAGES["yi"].pipeline_id == "dictionary-yi"
     assert LANGUAGES["yi"].default_romanization == "yivo"
-    # Basque is the first Latin-script language: Stanza-backed, ltr, and
+    # Basque is the first Latin-script language: dictionary-backed, ltr, and
     # with no romanization layer (the text is already Latin).
     assert LANGUAGES["eu"].script == "Latn"
     assert LANGUAGES["eu"].text_direction == "ltr"
-    assert LANGUAGES["eu"].pipeline_id == "stanza-eu"
+    assert LANGUAGES["eu"].pipeline_id == "dictionary-eu"
     assert LANGUAGES["eu"].supported_romanizations == ()
     assert LANGUAGES["eu"].default_romanization is None
 

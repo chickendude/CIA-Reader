@@ -223,10 +223,9 @@ describe('kaikkiToImportEntry', () => {
   const EU_ROOT_OPTS = {
     script: 'Latn' as const,
     sourceIdPrefix: 'kaikki:eu',
-    rootFormsOnly: true,
   };
 
-  it('rootFormsOnly: keeps the root entry but drops its inflection table', () => {
+  it('keeps the inflection table on the root entry', () => {
     const r = kaikkiToImportEntry(
       {
         word: 'etxe',
@@ -241,10 +240,10 @@ describe('kaikkiToImportEntry', () => {
     );
     expect(r).not.toBeNull();
     expect(r!.headword).toBe('etxe');
-    expect(r!.forms).toBeUndefined();
+    expect(r!.forms?.map((f) => f.surface)).toEqual(['etxea', 'etxean']);
   });
 
-  it('rootFormsOnly: skips a "form-of" entry (an inflection of another lemma)', () => {
+  it('skips a "form-of" entry (an inflection of another lemma)', () => {
     const r = kaikkiToImportEntry(
       {
         word: 'etxean',
@@ -262,7 +261,7 @@ describe('kaikkiToImportEntry', () => {
     expect(r).toBeNull();
   });
 
-  it('rootFormsOnly: keeps an entry that has a real sense beside a form-of sense', () => {
+  it('keeps an entry that has a real sense beside a form-of sense', () => {
     const r = kaikkiToImportEntry(
       {
         word: 'maite',
@@ -278,7 +277,7 @@ describe('kaikkiToImportEntry', () => {
     expect(r!.headword).toBe('maite');
   });
 
-  it('without rootFormsOnly, the inflection table is still imported', () => {
+  it('imports the inflection table', () => {
     const r = kaikkiToImportEntry(
       {
         word: 'etxe',
@@ -551,15 +550,13 @@ describe('kaikkiBasqueSource (streaming over fixture)', () => {
     expect(out.find((e) => e.headword === '-tik')).toBeUndefined();
   });
 
-  it('imports root forms only — drops each entry inflection table', async () => {
+  it('attaches forms from the table and from separate entries to their root', async () => {
     const out: ImportEntry[] = [];
     for await (const entry of await kaikkiBasqueSource.entries()) {
       out.push(entry);
     }
-    // Basque morphology is handled by the Stanza pipeline, so the importer
-    // keeps only citation forms and skips the conjugated/declined surfaces.
-    expect(out.find((e) => e.headword === 'etxe')!.forms).toBeUndefined();
-    for (const e of out) expect(e.forms ?? []).toHaveLength(0);
+    expect(out.find((e) => e.headword === 'etxe')?.forms?.map((f) => f.surface)).toEqual(['etxeak', 'etxean']);
+    expect(out.some((e) => e.headword === 'etxean')).toBe(false);
   });
 
   it('stamps English as the definition language (targetLanguage "en")', async () => {

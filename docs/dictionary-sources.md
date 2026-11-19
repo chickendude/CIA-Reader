@@ -128,15 +128,10 @@ whatever convention the upstream source uses.
 | [Euskaltzaindiaren Hiztegia (Basque Academy dictionary)](https://www.euskaltzaindia.eus/) | Euskaltzaindia (Royal Academy of the Basque Language) | All rights reserved | **Not stored.** Surfaced **admin-only**, on-demand, as a monolingual reference/verification aid (`GET /api/v1/admin/basque-dictionary`); fetched + parsed server-side, short-cached, never written to `translations` or shown to readers. |
 | Elhuyar Hiztegiak (eu-es / eu-en) | Elhuyar Fundazioa | Proprietary | **Not stored.** Same admin-only reference path as Euskaltzaindia above. |
 
-Coverage: medium for core vocabulary. Basque is **Latin-script**, so there is
-no romanization layer (the reader renders headwords as written). Morphology is
-handled by the Stanza UD_Basque-BDT model rather than a custom analyzer or seed
-lemma table; the Kaikki import supplies the dictionary glosses on top of that.
-Because Stanza resolves inflections, the Basque importers run **root-forms-only**
-(`rootFormsOnly: true`): they import only citation/root headwords and skip both
-each entry's inflection table (`forms[]` → `lemma_forms`) and Wiktionary
-"form-of" entries (e.g. *etxean* = "inessive of etxe"), so the dictionary holds
-dictionary headwords, not declined/conjugated surfaces.
+The reader displays Basque words in Latin script. Both Kaikki importers attach the
+source’s listed forms to their root entries. For example, a dictionary entry for
+*etxe* can match the saved spellings *etxeak* and *etxean*.
+
 Many Basque word forms share a dictionary entry. Curators and community contributors can add missing definitions.
 
 Basque ships definitions in three "definition languages" (`translations.targetLanguage`):

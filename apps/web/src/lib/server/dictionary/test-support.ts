@@ -17,6 +17,7 @@ import { stripNukta, type LanguageCode } from '@ciareader/shared-types';
 
 import type { Lemma, Translation } from '../db/schema.js';
 
+import { missingImportForms } from './repo.js';
 import type {
   DictionaryRepo,
   FormUpsertPayload,
@@ -205,12 +206,12 @@ export class InMemoryDictionaryRepo implements DictionaryRepo {
     return next;
   }
 
-  async insertForm(payload: FormUpsertPayload): Promise<void> {
-    this.forms.push({
-      ...payload,
-      id: nextId('form'),
-      createdAt: nowUtc(),
-    });
+  async insertMissingForms(lemmaId: string, forms: FormUpsertPayload[]): Promise<number> {
+    const missing = missingImportForms(this.forms.filter((f) => f.lemmaId === lemmaId), forms);
+    for (const form of missing) {
+      this.forms.push({ ...form, id: nextId('form'), createdAt: nowUtc() });
+    }
+    return missing.length;
   }
 
   async recordImportRun(audit: ImportRunAudit): Promise<void> {

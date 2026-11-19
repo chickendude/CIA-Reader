@@ -4,3 +4,4 @@
 {"word":"on","pos":"adj","lang_code":"eu","senses":[{"glosses":["good"]}]}
 {"word":"euskara","pos":"name","lang_code":"eu","senses":[{"glosses":["Basque (language)"]}]}
 {"word":"-tik","pos":"suffix","lang_code":"eu","senses":[{"glosses":["ablative case marker"]}]}
+{"word":"etxean","pos":"noun","senses":[{"glosses":["in the house"],"form_of":[{"word":"etxe"}]}]}

@@ -1,24 +1,5 @@
-/**
- * PDF per-page processing.
- *
- * A PDF text is one `texts` row (sourceType 'pdf') with one
- * `text_chapters` row per page, created empty by `createPdfText`. The
- * browser rasterizes each page client-side and uploads the image; the
- * per-page ingest endpoint (`/api/v1/texts/[id]/pages/[idx]`) calls
- * `processPdfPage`, which:
- *
- *   1. stores the page image (the only persisted artifact),
- *   2. OCRs it via the NLP `/ocr` endpoint (Vision, or the client's
- *      born-digital text layer) → tokens + per-token bbox,
- *   3. fills the page chapter's body + image metadata,
- *   4. resolves + persists tokens through the shared `persistTokens`
- *      (same lemma resolution the text pipeline uses), and
- *   5. flips the text to `ready` once every page has been processed.
- *
- * Pages arrive as independent HTTP requests, so unlike the text
- * dispatcher there's no single "process the whole text" pass — each page
- * loads its own lemma index. For the lemma table sizes we have that's an
- * acceptable per-page cost; a process-wide cache is a later optimization.
+/** Each uploaded PDF page has its own image, text, and word positions.
+ * Look up its words in the dictionary and mark the book ready when all pages are saved.
  */
 import type { ReprocessProgress } from '$lib/text/reprocess.js';
 import { and, count, eq, isNotNull } from 'drizzle-orm';
@@ -29,7 +10,7 @@ import { db, schema } from '../db/index.js';
 import type { Text } from '../db/schema.js';
 import { nlpClient, type BornDigitalPayload } from '../nlp-client.js';
 import { estimateTokenCount } from './chunking.js';
-import { loadLemmaIndex, persistTokens } from './in-process-dispatcher.js';
+import { persistTokens } from './in-process-dispatcher.js';
 import { markTextFailed, markTextProcessing, markTextReady } from './jobs.js';
 import { getPdfStorage, pageImageStorageKey } from '../pdf/storage.js';
 
@@ -130,13 +111,10 @@ export async function processPdfPage(
       })
       .where(eq(schema.textChapters.id, chapter.id));
 
-    const index = await loadLemmaIndex(language);
     const tokenCount = await persistTokens({
       chapterId: chapter.id,
       language,
-      index,
       tokens: ocr.tokens,
-      proposedPhrases: ocr.proposed_phrases,
       hindiAnalysis: ocr.hindi_analysis,
     });
 
@@ -170,17 +148,7 @@ export async function processPdfPage(
   }
 }
 
-/**
- * Re-run NLP over an already-imported PDF **without calling Vision**.
- *
- * The expensive OCR result is already persisted: each page's text lives in
- * the stored tokens (their surfaces concatenate to the page text) and each
- * word token carries its bounding box. We replay that geometry as an OCR
- * "layout" so the NLP service re-tokenizes + re-resolves lemmas with the
- * current model/dictionary and recomputes boxes — but pays nothing for
- * OCR and needs no re-upload. Use after a model/dictionary change (e.g.
- * switching the Basque pipeline on) instead of re-importing.
- */
+/** Refresh dictionary matches using the saved page text and word positions. */
 export async function reprocessPdfText(textId: string, onProgress?: ReprocessProgress): Promise<number> {
   const [text] = (await db
     .select()
@@ -210,7 +178,6 @@ export async function reprocessPdfText(textId: string, onProgress?: ReprocessPro
     }>;
 
     onProgress?.(0, chapters.length);
-    const index = await loadLemmaIndex(language);
     let total = 0;
     for (const [idx, ch] of chapters.entries()) {
       const toks = (await db
@@ -250,9 +217,7 @@ export async function reprocessPdfText(textId: string, onProgress?: ReprocessPro
       total += await persistTokens({
         chapterId: ch.id,
         language,
-        index,
         tokens: ocr.tokens,
-        proposedPhrases: ocr.proposed_phrases,
         hindiAnalysis: ocr.hindi_analysis,
       });
       onProgress?.(idx + 1, chapters.length);

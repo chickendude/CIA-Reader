@@ -91,7 +91,7 @@ COPY --from=builder /srv/build/apps/web/scripts apps/web/scripts
 # doesn't reference src/; this copy is purely for tsx to resolve
 # script-side imports.
 COPY --from=builder /srv/build/apps/web/src apps/web/src
-COPY --from=builder /srv/build/apps/web/svelte.config.js apps/web/svelte.config.js
+COPY --from=builder /srv/build/apps/web/svelte.config.js /srv/build/apps/web/vite.config.ts apps/web/
 # shared-types' source — adapter-node bundles direct imports, but
 # anything that re-exports types via $env or runtime requires the
 # package present on the resolution path.

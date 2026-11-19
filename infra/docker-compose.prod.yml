@@ -74,16 +74,6 @@ services:
       context: ..
       dockerfile: services/nlp/Dockerfile
     restart: always
-    # Single uvicorn worker with all of the container's CPU budget.
-    # We previously ran two workers on 1.5 cpus, but that meant two
-    # full Stanza model loads in RAM and two PyTorch BLAS pools
-    # contending for the cgroup CPU quota — Hindi chapters took
-    # 10–30+ minutes wall-clock, hit the undici headers timeout, and
-    # surfaced as `UND_ERR_HEADERS_TIMEOUT` failures in the texts
-    # table. One worker × N threads is faster end-to-end and uses
-    # roughly half the RAM. Stanza loads each language's pipeline
-    # lazily on first request, so a single process per container
-    # still serves all three.
     command:
       - uvicorn
       - app.main:app
@@ -98,15 +88,6 @@ services:
     environment:
       PYTHONPATH: /opt/shared-types:/srv/nlp
       DATABASE_URL: postgres://${POSTGRES_USER:-ciareader}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-ciareader}
-      # Pin PyTorch / NumPy / Stanza's BLAS thread count to the
-      # cgroup CPU quota. Without these, the libraries try to use
-      # every host core they can see, then Docker throttles them —
-      # which on Hindi depparse can mean 5–10× slower than just
-      # matching the quota up front. Keep these in lockstep with
-      # `deploy.resources.limits.cpus` below if you retune.
-      OMP_NUM_THREADS: "3"
-      MKL_NUM_THREADS: "3"
-      OPENBLAS_NUM_THREADS: "3"
       # PDF OCR (scanned pages) via Google Vision. Empty unless set in
       # infra/.env — born-digital PDFs need no creds, so leaving these
       # unset just disables scanned-page OCR (it errors at request time).

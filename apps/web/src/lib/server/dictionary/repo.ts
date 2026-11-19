@@ -37,6 +37,21 @@ export type FormUpsertPayload = {
   romanization?: string;
 };
 
+type SavedForm = Pick<FormUpsertPayload, 'surface' | 'features'>;
+
+export function missingImportForms(saved: SavedForm[], incoming: FormUpsertPayload[]): FormUpsertPayload[] {
+  const key = (f: SavedForm) => JSON.stringify([f.surface, Object.entries(f.features).sort()]);
+  const seen = new Set(saved.map(key));
+  const spellings = new Set(saved.map((f) => f.surface));
+  return incoming.filter((form) => {
+    const id = key(form);
+    if (seen.has(id) || (!Object.keys(form.features).length && spellings.has(form.surface))) return false;
+    seen.add(id);
+    spellings.add(form.surface);
+    return true;
+  });
+}
+
 export type ImportRunAudit = {
   sourceName: string;
   language: LanguageCode;
@@ -86,7 +101,7 @@ export interface DictionaryRepo {
   insertTranslation(payload: TranslationUpsertPayload): Promise<Translation>;
   updateTranslation(id: string, payload: TranslationUpsertPayload): Promise<Translation>;
 
-  insertForm(payload: FormUpsertPayload): Promise<void>;
+  insertMissingForms(lemmaId: string, forms: FormUpsertPayload[]): Promise<number>;
 
   recordImportRun(audit: ImportRunAudit): Promise<void>;
 }
