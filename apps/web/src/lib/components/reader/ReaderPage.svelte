@@ -138,6 +138,13 @@
   // Keep the requested word through successive reflows until the reader turns a page.
   let positionToken = 0;
   let alignToEnd = false;
+  let findViewport: {
+    height: number;
+    width: number;
+    outerHeight: number;
+    scale: number;
+  } | null = null;
+  let findInset = $state(0);
   const isRestoringInitialToken = $derived(
     (initialTokenIdx > 0 || startAtEndOfChapter) && !restorePaintReady,
   );
@@ -229,6 +236,14 @@
   }
 
   function onKeydown(e: KeyboardEvent) {
+    if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'f' && !findInset) {
+      findViewport = {
+        height: window.innerHeight,
+        width: window.innerWidth,
+        outerHeight: window.outerHeight,
+        scale: window.devicePixelRatio,
+      };
+    }
     if (e.metaKey || e.ctrlKey || e.altKey) return;
     if (isTypingInsideElement(e.target) || document.querySelector('.sheet-back.dimmed')) return;
     if (e.key === 'ArrowLeft' && hasPrev) {
@@ -237,6 +252,22 @@
     } else if (e.key === 'ArrowRight' && hasNext) {
       e.preventDefault();
       nextPage();
+    }
+  }
+
+  function onViewportResize() {
+    if (!findViewport) return;
+    // Firefox takes space for Find inside the same browser window.
+    if (
+      window.innerWidth === findViewport.width &&
+      window.outerHeight === findViewport.outerHeight &&
+      window.devicePixelRatio === findViewport.scale &&
+      window.innerHeight < findViewport.height
+    ) {
+      findInset = findViewport.height - window.innerHeight;
+    } else {
+      findInset = 0;
+      findViewport = null;
     }
   }
 
@@ -411,7 +442,7 @@
   $effect(reportProgress);
 </script>
 
-<svelte:window onkeydown={onKeydown} />
+<svelte:window onkeydown={onKeydown} onresize={onViewportResize} />
 
 <!-- swipe gestures supplement the visible arrows + keyboard
      ←/→; role="region" appeases the static-element-interactions a11y
@@ -462,7 +493,11 @@
     </span>
   </button>
 
-  <div class="reader-page-viewport">
+  <div
+    class="reader-page-viewport"
+    class:find-open={findInset > 0}
+    style:--find-inset="{findInset}px"
+  >
     <div
       class="reader-page-window"
       data-restoring={isRestoringInitialToken ? '1' : undefined}
@@ -562,16 +597,18 @@
   }
 
   .reader-page-viewport {
+    --page-padding-y: 1.25rem;
     flex: 1;
     min-height: 0;
     overflow: clip;
-    padding: 1.25rem 3rem;
+    padding: var(--page-padding-y) 3rem;
     display: flex;
     justify-content: center;
   }
   @media (min-width: 1024px) {
     .reader-page-viewport {
-      padding: 2rem 5rem;
+      --page-padding-y: 2rem;
+      padding-inline: 5rem;
     }
   }
 
@@ -592,6 +629,18 @@
   }
   .reader-page-window[data-restoring='1'] {
     opacity: 0;
+  }
+  /* Use the space around the text for Find. If both margins are exhausted,
+     the last line is still reachable by scrolling. */
+  .reader-page-viewport.find-open {
+    --remaining-space: calc(2 * var(--page-padding-y) - var(--find-inset));
+    padding-block: 0;
+    overflow-y: auto;
+    scrollbar-width: none;
+  }
+  .find-open .reader-page-window {
+    margin-top: clamp(0px, var(--remaining-space), var(--page-padding-y));
+    height: calc(100% - var(--remaining-space));
   }
 
   /* The track is the transform target. We can't translateX a CSS
