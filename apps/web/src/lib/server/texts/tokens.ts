@@ -15,7 +15,7 @@ import { and, eq, inArray, isNotNull, sql } from 'drizzle-orm';
 
 import type { LanguageCode } from '@ciareader/shared-types';
 
-import { normalizeHindiForm } from '$lib/dictionary/hindi-workshop';
+import { dictionaryProfile } from '$lib/dictionary/profiles';
 import { db, schema } from '../db/index.js';
 import type { TextToken, TokenCorrection, UserKnownLemma } from '../db/schema.js';
 import { lemmaBookFrequencies } from './book-frequency.js';
@@ -144,11 +144,14 @@ export async function loadChapterTokens(
   chapterId: string,
   viewerId: string | null,
   textId?: string,
+  joinStutters = true,
+  sourceStartsById?: ReadonlyMap<string, number>,
 ): Promise<RenderedToken[] | null> {
   const tokens = (await db
     .select()
     .from(schema.textTokens)
-    .where(eq(schema.textTokens.chapterId, chapterId))
+    .where(and(eq(schema.textTokens.chapterId, chapterId),
+      sourceStartsById && inArray(schema.textTokens.id, [...sourceStartsById.keys()])))
     .orderBy(schema.textTokens.idx)) as TextToken[];
 
   if (tokens.length === 0) return null;
@@ -166,7 +169,7 @@ export async function loadChapterTokens(
       .where(
         and(
           eq(schema.tokenCorrections.userId, viewerId),
-          inArray(schema.tokenCorrections.tokenId, sql`(
+          inArray(schema.tokenCorrections.tokenId, sourceStartsById ? [...sourceStartsById.keys()] : sql`(
             SELECT ${schema.textTokens.id} FROM ${schema.textTokens}
             WHERE ${schema.textTokens.chapterId} = ${chapterId}
           )`),
@@ -176,6 +179,7 @@ export async function loadChapterTokens(
   }
 
   const [analysis] = await db.select({
+    language: schema.texts.language,
     stale: sql<boolean>`${schema.hindiChapterAnalyses.revision} IS DISTINCT FROM
       (SELECT revision FROM hindi_dictionary_state WHERE id=1)`,
     stutters: sql<HindiStutter[] | null>`${schema.hindiChapterAnalyses.stats}->'stutters'`,
@@ -183,31 +187,41 @@ export async function loadChapterTokens(
     .from(schema.textChapters)
     .innerJoin(schema.texts, eq(schema.texts.id, schema.textChapters.textId))
     .leftJoin(schema.hindiChapterAnalyses, eq(schema.hindiChapterAnalyses.chapterId, schema.textChapters.id))
-    .where(and(eq(schema.textChapters.id, chapterId), eq(schema.texts.language, 'hi')));
+    .where(eq(schema.textChapters.id, chapterId));
 
   // A dictionary save can supply a headword or an attested form for words the
   // stored analysis missed. Resolve them before the normal viewer-specific joins.
   const liveMatches = new Set<string>();
-  if (analysis?.stale) {
+  if (analysis && (analysis.stale || analysis.language !== 'hi')) {
+    const language = analysis.language;
+    const profile = dictionaryProfile(language);
+    const key = (word: string) => profile.caseSensitive ? profile.normalize(word) : profile.normalize(word).toLowerCase();
     const missing = tokens.filter((t) =>
       t.isWord && t.isOov && !t.lemmaId && !correctionsByTokenId.has(t.id),
     );
-    const surfaces = [...new Set(missing.map((t) => normalizeHindiForm(t.surface)))];
+    const surfaces = [...new Set(missing.map((t) => key(t.surface)))];
     if (surfaces.length) {
+      const spelling = (column: ReturnType<typeof sql>) => profile.caseSensitive ? column : sql`lower(normalize(${column}))`;
       const rows = await db.execute<{ surface: string; id: string }>(sql`
         WITH wanted AS (SELECT jsonb_array_elements_text(${JSON.stringify(surfaces)}::text::jsonb) AS surface),
         matches AS (
-          SELECT w.surface, l.id FROM wanted w JOIN lemmas l ON l.headword=w.surface WHERE l.language='hi'
+          SELECT w.surface, l.id FROM wanted w JOIN lemmas l ON ${spelling(sql`l.headword`)}=w.surface WHERE l.language=${language}
           UNION
-          SELECT w.surface, f.lemma_id FROM wanted w JOIN lemma_forms f ON f.surface=w.surface
+          SELECT w.surface, f.lemma_id FROM wanted w JOIN lemma_forms f ON ${spelling(sql`f.surface`)}=w.surface
           WHERE f.quarantined_at IS NULL
           UNION
-          SELECT alt.surface, h.lemma_id FROM hindi_entries h
-          CROSS JOIN LATERAL jsonb_array_elements_text(h.entry->'alternative_headwords') AS alt(surface)
-          JOIN wanted w ON w.surface=alt.surface
+          SELECT w.surface, f.lemma_id FROM wanted w JOIN dictionary_pattern_forms f
+            ON w.surface=${spelling(sql`f.surface`)}
+          UNION
+          SELECT w.surface, h.lemma_id FROM dictionary_entries h
+            JOIN lemmas l ON l.id=h.lemma_id AND l.language=${language}
+            CROSS JOIN LATERAL jsonb_array_elements_text(h.entry->'alternative_headwords') AS alt(surface)
+            JOIN wanted w ON w.surface=${spelling(sql`alt.surface`)}
         )
-        SELECT m.surface, m.id FROM matches m JOIN hindi_entries h ON h.lemma_id=m.id
-        WHERE NOT (coalesce(h.entry->'excluded_forms','[]'::jsonb) ? m.surface)
+        SELECT m.surface, m.id FROM matches m JOIN dictionary_entries h ON h.lemma_id=m.id
+        JOIN lemmas l ON l.id=m.id AND l.language=${language}
+        WHERE NOT EXISTS (SELECT 1 FROM jsonb_array_elements_text(h.entry->'excluded_forms') AS x(form)
+          WHERE ${spelling(sql`x.form`)}=m.surface)
         ORDER BY m.surface, m.id`);
       const idsBySurface = new Map<string, string[]>();
       for (const { surface, id } of rows) {
@@ -216,7 +230,7 @@ export async function loadChapterTokens(
         idsBySurface.set(surface, ids);
       }
       for (const t of missing) {
-        const ids = idsBySurface.get(normalizeHindiForm(t.surface));
+        const ids = idsBySurface.get(key(t.surface));
         if (!ids?.length) continue;
         t.lemmaId = ids[0]!;
         t.lemmaCandidates = ids.map((lemmaId) => ({ lemmaId, score: 1, features: {} }));
@@ -407,13 +421,13 @@ export async function loadChapterTokens(
   }
 
   const choices = [...lemmaMetaById.values()].some((entry) => entry.language === 'hi')
-    ? await loadHindiContextChoices(chapterId) : new Map();
+    ? await loadHindiContextChoices(chapterId, sourceStartsById && [...sourceStartsById.values()]) : new Map();
   const canVerifyContext = [...lemmaMetaById.values()].some((entry) => entry.language === 'hi')
     ? await canVerifyHindiContext(chapterId, viewerId) : false;
   const bookFrequencies = textId ? await lemmaBookFrequencies(textId, lemmaIds) : undefined;
   let sourceOffset = 0;
   const rendered = tokens.map<RenderedToken>((t) => {
-    const choice = liveMatches.has(t.id) ? undefined : choices.get(sourceOffset);
+    const choice = liveMatches.has(t.id) ? undefined : choices.get(sourceStartsById?.get(t.id) ?? sourceOffset);
     sourceOffset += [...t.surface].length;
     const selected = choice?.selectedLemmaIds.find((id: string) => t.lemmaCandidates.some((candidate) => candidate.lemmaId === id));
     // Apply the viewer's persistent correction here so the
@@ -542,7 +556,7 @@ export async function loadChapterTokens(
       hasDefinition: effectiveGloss != null,
     };
   });
-  return joinReaderStutters(rendered, analysis?.stutters ?? []);
+  return joinStutters ? joinReaderStutters(rendered, analysis?.stutters ?? []) : rendered;
 }
 
 /**

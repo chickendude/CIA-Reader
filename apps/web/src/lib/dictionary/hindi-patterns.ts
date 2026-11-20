@@ -1,3 +1,7 @@
+export function normalizeHindiForm(word: string) {
+  return word.replace(/\u200c|\u200d|\ufeff/gu, '').normalize('NFC');
+}
+
 // The choices follow HindiDB's editor. The NLP service generates the actual forms.
 const nouns = ['NOUN', 'PROPN'];
 const adjectives = ['ADJ', 'DET', 'PRON', 'ADP'];

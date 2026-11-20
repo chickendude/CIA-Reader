@@ -8,6 +8,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends python3 python3
 
 WORKDIR /srv/app
 COPY services/nlp/hindidb services/nlp/hindidb
+COPY services/nlp/parhiba_dictionary services/nlp/parhiba_dictionary
 COPY services/nlp/parhiba_hindi services/nlp/parhiba_hindi
 
 # Workspace metadata for a cached `pnpm install`.

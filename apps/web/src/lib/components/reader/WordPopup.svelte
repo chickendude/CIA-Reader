@@ -2,7 +2,7 @@
   import { getContext, untrack } from 'svelte';
   import Button from '$lib/components/input/Button.svelte';
   import ReaderDictionaryEditor from './ReaderDictionaryEditor.svelte';
-  import type { WorkshopWord } from '$lib/dictionary/hindi-workshop';
+  import type { WorkshopWord } from '$lib/dictionary/workshop';
   import Sheet from '../overlay/Sheet.svelte';
   import CorrectionModal from './CorrectionModal.svelte';
   import FeaturePill from './FeaturePill.svelte';
@@ -143,8 +143,8 @@
     ) => void;
   } = $props();
 
-  const readerDictionary = getContext<(() => { ai: boolean } | null) | undefined>('readerHindiDictionary');
-  const hindiDictionary = $derived(language === 'hi' ? readerDictionary?.() : null);
+  const readerDictionary = getContext<(() => boolean) | undefined>('readerDictionary');
+  const dictionaryEditor = $derived(readerDictionary?.());
   let editor = $state<{ tokenId: string; lemmaId: string | null; headword: string } | null>(null);
   let savedTokenId = $state<string>();
 
@@ -1829,7 +1829,7 @@
       {/if}
     </header>
 
-    {#if hindiDictionary && token.isWord && !isNumberToken && !pendingSelection}
+    {#if dictionaryEditor && token.isWord && !isNumberToken && !pendingSelection}
       <Button aria-haspopup="dialog" disabled={loadingLookup} onclick={() => {
         if (token) editor = {
           tokenId: token.id,
@@ -2352,9 +2352,9 @@
   {/if}
 </Sheet>
 
-{#if hindiDictionary && editor && token && token.id === editor.tokenId}
-  <ReaderDictionaryEditor {token} {chapterTokens} lemmaId={editor.lemmaId} headword={editor.headword}
-    ai={hindiDictionary.ai} onSaved={dictionarySaved} onClose={() => (editor = null)} />
+{#if dictionaryEditor && editor && token && token.id === editor.tokenId}
+  <ReaderDictionaryEditor {language} {token} {chapterTokens} lemmaId={editor.lemmaId} headword={editor.headword}
+    onSaved={dictionarySaved} onClose={() => (editor = null)} />
 {/if}
 
 {#if token}

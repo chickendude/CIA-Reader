@@ -1110,6 +1110,7 @@ export const textChapters = pgTable(
     idx: integer('idx').notNull(),
     title: text('title'),
     body: text('body').notNull(),
+    hindiReviewRevision: uuid('hindi_review_revision'),
     // Cheap precompute on insert. The reader's library cards and
     // progress bars need it; computing it on read is wasteful.
     tokenCount: integer('token_count').notNull().default(0),
@@ -2039,12 +2040,17 @@ export type ScanPage = InferSelectModel<typeof scanPages>;
 export type LemmaScanRef = InferSelectModel<typeof lemmaScanRefs>;
 export type TranscriptionIssue = InferSelectModel<typeof transcriptionIssues>;
 
-/** Lossless HindiDB entry metadata. Current identity/forms live in lemmas/lemma_forms. */
-export const hindiEntries = pgTable('hindi_entries', {
+/** Current identity and explicit forms live in lemmas and lemma_forms. */
+export const dictionaryEntries = pgTable('dictionary_entries', {
   lemmaId: uuid('lemma_id').primaryKey().references(() => lemmas.id, { onDelete: 'cascade' }),
   externalId: text('external_id').notNull().unique(),
   entry: jsonb('entry').$type<Record<string, unknown>>().notNull(),
 });
+
+export const dictionaryPatternForms = pgTable('dictionary_pattern_forms', {
+  lemmaId: uuid('lemma_id').notNull().references(() => lemmas.id, { onDelete: 'cascade' }),
+  surface: text('surface').notNull(),
+}, t => ({ pk: primaryKey({ columns: [t.lemmaId, t.surface] }) }));
 
 export const hindiDictionaryState = pgTable('hindi_dictionary_state', {
   id: integer('id').primaryKey().default(1),
@@ -2163,6 +2169,7 @@ export const readerCoverageCache = pgTable('reader_coverage_cache', {
   knownWords: integer('known_words').array().notNull(),
   learningWords: integer('learning_words').array().notNull(),
   knownEntries: integer('known_entries').array().notNull(),
+  learningEntries: integer('learning_entries').array(),
 }, t => ({
   byLayout: index('reader_coverage_layout_idx').on(t.catalogRevision),
 }));

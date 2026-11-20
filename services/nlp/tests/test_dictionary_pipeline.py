@@ -98,3 +98,30 @@ def test_saved_forms_in_postgres(monkeypatch):
             (first, second),
         )
         assert pipeline.process(spelling).tokens[0].is_oov
+
+        conn.execute(
+            """INSERT INTO dictionary_entries(lemma_id, external_id, entry)
+               VALUES (%s, 'test:basque', '{"excluded_forms":["dictprobedropped"]}')""",
+            (first,),
+        )
+        conn.execute(
+            """INSERT INTO lemma_forms(lemma_id, surface)
+               VALUES (%s, 'dictprobedropped'), (%s, 'dictprobealias')""",
+            (first, second),
+        )
+        conn.execute(
+            """INSERT INTO dictionary_pattern_forms(lemma_id, surface)
+               VALUES (%s, 'dictprobealias'), (%s, 'dictprobealias zaharra')""",
+            (first, first),
+        )
+        passage = "DICTPROBEALIAS  zaharra! dictprobedropped"
+        result = pipeline.process(passage)
+        assert "".join(token.surface for token in result.tokens) == passage
+        assert {c.dictionary_id for c in result.tokens[0].candidates} == {str(first), str(second)}
+        assert any(c.features.get("Compound") for c in result.tokens[0].candidates)
+        assert not result.tokens[2].is_oov
+        assert result.tokens[-1].is_oov
+        assert not any(
+            c.features.get("Compound")
+            for c in pipeline.process("dictprobealias\nzaharra").tokens[0].candidates
+        )

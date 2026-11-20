@@ -13,6 +13,7 @@ RUN pip install -e '.[dev,ocr]'
 COPY services/nlp/parhiba_hindi /srv/nlp/parhiba_hindi
 COPY services/nlp/app /srv/nlp/app
 COPY services/nlp/hindidb /srv/nlp/hindidb
+COPY services/nlp/parhiba_dictionary /srv/nlp/parhiba_dictionary
 COPY services/nlp/tests /srv/nlp/tests
 COPY packages/shared-types/python /opt/shared-types
 

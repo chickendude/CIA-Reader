@@ -84,6 +84,7 @@ services:
         condition: service_healthy
     volumes:
       - ../services/nlp/hindidb:/srv/app/services/nlp/hindidb:ro
+      - ../services/nlp/parhiba_dictionary:/srv/app/services/nlp/parhiba_dictionary:ro
       - ../services/nlp/parhiba_hindi:/srv/app/services/nlp/parhiba_hindi:ro
       - ../apps/web/src:/srv/app/apps/web/src
       - ../apps/web/static:/srv/app/apps/web/static

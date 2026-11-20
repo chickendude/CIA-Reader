@@ -11,6 +11,7 @@ def preview(
     inventory=False,
     validate_inventory=False,
     phrase="",
+    phrase_candidates=False,
     negative_variants=False,
 ):
     lexicon = Lexicon(documents=[{"entries": [entry_data]}])
@@ -31,6 +32,13 @@ def preview(
             validate_saved(entry_data)
         if inventory:
             result["inventory"] = build(entry, source=entry_data)
+    if phrase_candidates:
+        from hindidb.phrase_forms import verb_forms
+
+        supported = verb_forms(entry)
+        result["forms"] = {
+            word: rules for word, rules in result["forms"].items() if word in supported
+        }
     if phrase:
         from hindidb.phrase_forms import build as phrase_forms
 

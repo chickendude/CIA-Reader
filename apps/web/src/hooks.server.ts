@@ -48,6 +48,26 @@ export function resolveServerTheme(event: Parameters<Handle>[0]['event']): Resol
   return resolveTheme(themePreference(event), systemPrefersDark);
 }
 
+function compressChapterData(response: Response, acceptEncoding: string) {
+  // Direct connections to the reader also need compression when a chapter has thousands of tokens.
+  if (
+    response.status !== 200 || !response.body || response.headers.has('content-encoding') ||
+    Number(response.headers.get('content-length')) < 1024
+  ) return response;
+
+  response.headers.append('vary', 'Accept-Encoding');
+  const supportsGzip = acceptEncoding.split(',').some((item) => {
+    const [encoding, quality = 'q=1'] = item.trim().toLowerCase().split(/\s*;\s*/);
+    return encoding === 'gzip' && Number(quality.replace(/^q=/, '')) > 0;
+  });
+  if (!supportsGzip) return response;
+
+  const headers = new Headers(response.headers);
+  headers.set('content-encoding', 'gzip');
+  headers.delete('content-length');
+  return new Response(response.body.pipeThrough(new CompressionStream('gzip')), { headers });
+}
+
 export const handle: Handle = async ({ event, resolve }) => {
   // Dev-only CORS for the Primeran browser extension. Its background worker
   // makes authenticated requests (Bearer header → CORS preflight), and SvelteKit
@@ -81,5 +101,11 @@ export const handle: Handle = async ({ event, resolve }) => {
     transformPageChunk: ({ html }) => html.replace('%cia.theme%', theme).replace('%cia.themePreference%', themePreference(event)),
   });
   if (corsForExtension) response.headers.set('access-control-allow-origin', reqOrigin!);
+  if (
+    (event.isDataRequest && event.route.id === '/reader/[textId]') ||
+    event.route.id === '/api/v1/texts/[id]/chapters/[idx]/tokens'
+  ) {
+    return compressChapterData(response, event.request.headers.get('accept-encoding') ?? '');
+  }
   return response;
 };

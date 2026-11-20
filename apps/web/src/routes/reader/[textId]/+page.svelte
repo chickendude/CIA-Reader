@@ -1,4 +1,7 @@
 <script lang="ts">
+  import { hindiReviewHref } from '$lib/dictionary/hindi-review-link';
+  import { page } from '$app/state';
+  import Button from '$lib/components/input/Button.svelte';
   import { goto, invalidateAll } from '$app/navigation';
   import { onMount, setContext, untrack } from 'svelte';
 
@@ -38,7 +41,7 @@
 
   let { data }: PageProps = $props();
 
-  setContext('readerHindiDictionary', () => data.hindiDictionary);
+  setContext('readerDictionary', () => data.dictionaryEditor);
 
   // PDF texts render as a page-image reader (clickable word overlays)
   // regardless of the saved layout mode.
@@ -158,6 +161,13 @@
   }
 
   let currentProgressAnchor = $derived(anchorFromData());
+
+  const reviewReaderUrl = $derived(new URL(buildReaderAnchorUrl(page.url.href, {
+    mode: data.mode,
+    chapterIdx: currentProgressAnchor.chapterIdx,
+    tokenIdx: currentProgressAnchor.tokenIdx,
+    showRomanization,
+  })));
 
   // Chapter table-of-contents model — drives the shared chapter
   // selector dropdown + the page footer's whole-book progress. Handles
@@ -577,6 +587,9 @@
   onFlagUndefinedChange={setFlagUndefined}
 >
   {#snippet processingTools()}
+    {#if data.canReviewHindi}
+      <Button href={hindiReviewHref(reviewReaderUrl, data.text.id)}>Review dictionary matches</Button>
+    {/if}
     {#if data.isAdmin || (data.isOwner && liveStatus === 'failed')}
       <section class="mobile-processing">
         <h3>Text processing</h3>

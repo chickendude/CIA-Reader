@@ -1,6 +1,10 @@
+from itertools import groupby
+
 import hashlib
 import json
 from pathlib import Path
+
+from parhiba_dictionary.matching import matching_prefixes
 
 from .morphology import forms, excluded_forms
 from .text import normalize, tokenize
@@ -141,44 +145,37 @@ class Lexicon:
         return result
 
     def matches(self, text, tokens, start):
-        states = [(self.trie, (), False)]
-        for end in range(start, len(tokens)):
-            token = tokens[end]
-            if (token.kind != "word" and token.surface not in {"-", "–"}) or token.sentence != tokens[start].sentence:
-                break
-            if end > start:
-                previous = tokens[end - 1]
-                gap = text[previous.end:token.start]
-                if gap and not gap.isspace():
+        def spellings():
+            for end in range(start, len(tokens)):
+                token = tokens[end]
+                if (token.kind != "word" and token.surface not in {"-", "–"}) or token.sentence != tokens[start].sentence:
                     break
-                if not gap and previous.kind == token.kind == "word":
-                    break
-            spellings = [(token.normalized, False)] + [
-                (word, True) for word in sorted(self.spelling_tokens.get(nukta_key(token.normalized), ()))
-                if omitted_nukta_match(token.normalized, word)]
-            following = []
-            exact, alternatives = {}, {}
-            for node, path, omitted in states:
-                for spelling, changed in spellings:
-                    child = node.get(spelling)
-                    if child is None:
-                        continue
-                    matched_path = path + (spelling,)
-                    inferred = omitted or changed
-                    following.append((child, matched_path, inferred))
-                    for entry_id, rules in child.get(None, {}).items():
-                        evidence = set(rules)
-                        if inferred:
-                            evidence.update({OMITTED_NUKTA, 'spelling:matched-form:' + ' '.join(matched_path)})
-                        (alternatives if inferred else exact).setdefault(entry_id, set()).update(evidence)
-            states = following
-            if not states:
-                break
-            # Full credit once per span and entry. A listed exact spelling is
-            # stronger evidence than a rule-derived route to the same entry.
-            for entry_id in sorted(exact.keys() | alternatives.keys()):
+                if end > start:
+                    previous = tokens[end - 1]
+                    gap = text[previous.end:token.start]
+                    if gap and not gap.isspace():
+                        break
+                    if not gap and previous.kind == token.kind == "word":
+                        break
+                yield end, token.normalized
+
+        def alternatives(observed):
+            return [word for word in sorted(self.spelling_tokens.get(nukta_key(observed), ()))
+                    if omitted_nukta_match(observed, word)]
+
+        paths = matching_prefixes(self.trie, spellings(), alternatives)
+        for end, routes in groupby(paths, key=lambda route: route[0]):
+            exact, inferred = {}, {}
+            for _, entries, path in routes:
+                for entry_id, rules in entries.items():
+                    evidence = (inferred if path else exact).setdefault(entry_id, set())
+                    evidence.update(rules)
+                    if path:
+                        evidence.update({OMITTED_NUKTA, 'spelling:matched-form:' + ' '.join(path)})
+            for entry_id in sorted(exact.keys() | inferred.keys()):
                 entry = self.entries[entry_id]
-                # A local exclusion must also block a spelling-rule fallback.
-                if entry.get('excluded_forms') and normalize(' '.join(text[tokens[start].start:token.end].split())) in excluded_forms(entry):
-                    continue
-                yield end, entry, sorted(exact.get(entry_id, alternatives.get(entry_id)))
+                if entry.get('excluded_forms'):
+                    surface = normalize(' '.join(text[tokens[start].start:tokens[end].end].split()))
+                    if surface in excluded_forms(entry):
+                        continue
+                yield end, entry, sorted(exact.get(entry_id) or inferred.get(entry_id, ()))

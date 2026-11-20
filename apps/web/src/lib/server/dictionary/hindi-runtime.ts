@@ -1,7 +1,7 @@
 import { execFile } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
-import type { Inventory, WorkshopReport } from '$lib/dictionary/hindi-workshop';
+import type { Inventory, WorkshopReport } from '$lib/dictionary/workshop';
 import { DATABASE_URL } from '../env.js';
 
 // pnpm runs in apps/web. The production container starts at the workspace root.
@@ -52,6 +52,7 @@ export function previewHindiEntry(
     inventory?: boolean;
     validate_inventory?: boolean;
     phrase?: string;
+    phrase_candidates?: boolean;
     negative_variants?: boolean;
   } = {},
 ) {

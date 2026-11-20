@@ -31,6 +31,7 @@ export async function getOfficialBook(textId: string, userId?: string) {
   return { ...metadata, words: stats?.words ?? 0, uniqueWords: stats?.uniqueWords ?? 0,
     unresolved: stats?.unresolved ?? 0, unparsedWords: stats?.unparsedWords ?? 0, knownPct: stats?.knownPct ?? null,
     knownWords: stats?.knownWords ?? 0, learningWords: stats?.learningWords ?? 0,
+    knownHeadwords: stats?.knownHeadwords ?? 0, learningHeadwords: stats?.learningHeadwords ?? 0,
     learningPct: stats?.learningPct ?? null, uniquePct: stats?.uniquePct ?? null,
     chapters: Number(chapters?.chapters ?? 0), analysisStale: Boolean(stale?.stale),
     personalTextId: copy?.textId ?? (userId && ownerId === userId ? textId : null) };

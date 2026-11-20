@@ -2,8 +2,25 @@
 
 HindiDB is Parhiba’s dictionary format. Each entry has a root word, its accepted forms,
 and any saved spelling rules or exceptions. The reader matches passages against the
-editable PostgreSQL dictionary. Marathi, Basque, Odia, and Yiddish use their saved root
-entries and word forms in the same database.
+editable PostgreSQL dictionary. To set up entries for another supported language, open
+**Dictionary > Edit dictionary**, choose **New entry**, and enter the headword, part of
+speech, and meaning. Enter additional spellings in **Other forms**, separated by commas. Alternative headwords and exclusions also affect
+reader matching. Reprocess an existing book to refresh its saved matches.
+
+For suffix patterns, an admin can create a paradigm and its slots under
+**Dictionary moderation > Paradigms**. Under **Inflection pattern**, select the saved pattern for the entry's language and part of speech,
+enter the stem, and choose **Apply pattern**.
+Saving the draft makes those forms available to the reader.
+
+For rules that need custom logic, register a `savedFormProfile` in
+`apps/web/src/lib/dictionary/profiles.ts`. Each pattern supplies an ID, label, an
+`applies(lemma, pos)` predicate, and a `forms(lemma)` generator. The workshop previews
+the selected pattern and indexes its spellings on save. Languages without a registered
+pattern use their explicit forms. The same editor can merge entries in every supported language.
+A profile can supply negative markers for phrase variants. Source retrieval, report
+generation, and extra book analysis can be registered independently in
+`apps/web/src/lib/server/dictionary/workshop-adapters.ts`. Hindi uses these hooks for
+Hindwi and Rekhta, spelling reports, and stutter review.
 
 ## Local migration, 2026-11-17
 
@@ -100,8 +117,12 @@ frequency remain independent.
 
 The **Dictionary** navigation item opens the current language's dictionary.
 Staff can follow **Unparsed words and context review** to inspect a book's
-unmatched words by frequency or its ambiguous occurrences. Each occurrence
-marks the target word with brackets so repeated words can be distinguished.
+occurrences requiring attention. This includes stale decisions, uncertain decisions,
+occurrences with no fitting entry, unresolved choices between entry groups covering
+the same span, and unparsed words. Valid selections leave the attention queue.
+The status dropdown shows live counts for the current book and word filter,
+including AI suggestions and confirmations. The other review lists show unparsed spellings by frequency and ambiguous
+reader tokens, including overlapping phrases.
 
 In the reader or review page, **Confirm here** saves a human context choice;
 click a confirmed entry again to clear it. Multiple entries can be confirmed.

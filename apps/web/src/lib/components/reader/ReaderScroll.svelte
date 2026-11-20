@@ -70,7 +70,7 @@
   // Apply per-token lemma corrections + per-lemma status
   // overrides before paragraph splitting so the new picks colour
   // the rendered tokens immediately.
-  const dictionaryTokens = dictionaryChapterTokens(() => current, () => textId, (lemmaId) => {
+  const dictionaryTokens = dictionaryChapterTokens(() => current, () => textId, () => language, (lemmaId) => {
     const selected = activeToken && tokensById.get(activeToken.id);
     if (selected && (selected.lemmaId === lemmaId || activeToken?.lemmaId === lemmaId)) activeToken = selected;
     const hovered = preview.token && tokensById.get(preview.token.id);

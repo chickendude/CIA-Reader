@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { hindiReviewHref } from '$lib/dictionary/hindi-review-link';
+  import { page } from '$app/state';
   import { enhance } from '$app/forms';
   import BookMetrics from '$lib/components/library/BookMetrics.svelte';
   import SubpageHeading from '$lib/components/shell/SubpageHeading.svelte';
@@ -29,7 +31,7 @@
       {/key}
       <div class="reading">
         {#if data.isStaff}
-          {#if book.language === 'hi'}<a class="btn" href={`/moderation/hindi?textId=${book.id}`}>Review dictionary matches</a>{/if}
+          {#if book.language === 'hi'}<a class="btn" href={hindiReviewHref(page.url, book.id)}>Review dictionary matches</a>{/if}
           <a class="btn" href={`/reader/${book.id}`}>Read book</a>
           {#if book.personalTextId}<a class="btn" href={`/reader/${book.personalTextId}`}>Open in my library</a>
           {:else}<form method="POST" action="?/import" use:enhance={() => {

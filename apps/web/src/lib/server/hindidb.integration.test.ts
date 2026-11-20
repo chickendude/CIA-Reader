@@ -127,10 +127,19 @@ describe.skipIf(!url)('HindiDB PostgreSQL integration (always rolls back)', () =
           const [selectedToken] = (await loadChapterTokens(chapter!.id, user!.id, text!.id))!;
           expect(selectedToken).toMatchObject({ lemmaId: entries[1]!.id, selectedBy: 'ai', bookFrequency: 1 });
           expect(selectedToken!.candidates.map((c) => c.lemmaId)).toContain(entries[0]!.id);
+          const { reviewPage } = await import('./texts/hindi-review.js');
+          const attention = (status: 'attention' | 'ai_suggested' | 'confirmed' = 'attention') =>
+            reviewPage(text!.id, { ...user!, role: 'admin' }, 0, '', status);
+          expect(await attention()).toMatchObject({ total: 0, occurrences: [], attentionCounts: { attention: 0, ai_suggested: 1 } });
+          expect(await attention('ai_suggested')).toMatchObject({ total: 1, occurrences: [{ status: 'ai_suggested' }] });
           const { saveHindiContextChoice } = await import('./texts/hindi-context.js');
           await saveHindiContextChoice(selectedToken!.id,[entries[1]!.id],selectedToken!.contextVersion!,user!);
           const [confirmed] = (await loadChapterTokens(chapter!.id,user!.id))!;
           expect(confirmed!.selectedBy).toBe('human');
+          expect(await attention('confirmed')).toMatchObject({
+            total: 1, occurrences: [{ status: 'confirmed' }], attentionCounts: { attention: 0, confirmed: 1 },
+          });
+          expect(await attention('ai_suggested')).toMatchObject({ total: 0, occurrences: [] });
           await expect(saveHindiContextChoice(confirmed!.id,[entries[0]!.id],confirmed!.contextVersion!,{...user!,role:'admin'},
             {model:'test',reason:'test',outcome:'selected'})).rejects.toMatchObject({status:409});
           await expect(saveHindiContextChoice(selectedToken!.id,[entries[0]!.id],selectedToken!.contextVersion!,user!))
@@ -138,6 +147,10 @@ describe.skipIf(!url)('HindiDB PostgreSQL integration (always rolls back)', () =
           await saveHindiContextChoice(confirmed!.id,[],confirmed!.contextVersion!,user!);
           const [cleared] = (await loadChapterTokens(chapter!.id,user!.id))!;
           expect(cleared!.selectedBy).toBeUndefined();
+          expect(await attention()).toMatchObject({
+            total: 1, attentionCounts: { unconfirmed: 1 },
+            occurrences: [{ surface: 'खाना', status: 'unconfirmed' }],
+          });
           await saveHindiContextChoice(cleared!.id,[entries[1]!.id],cleared!.contextVersion!,user!);
           const choicesAfterReview=await tx.select().from(schema.hindiContextChoices).where(eq(schema.hindiContextChoices.chapterId,chapter!.id));
           expect(choicesAfterReview[0]!.metadata.context_reviews).toHaveLength(3);
@@ -146,6 +159,7 @@ describe.skipIf(!url)('HindiDB PostgreSQL integration (always rolls back)', () =
           expect((await loadHindiContextChoices(chapter!.id)).get(0)).toMatchObject({
             selectedLemmaIds: [], status: 'needs_review',
           });
+          expect(await attention()).toMatchObject({ total: 1, attentionCounts: { needs_review: 1 } });
           await tx.update(schema.textChapters).set({ body: chapter!.body }).where(eq(schema.textChapters.id, chapter!.id));
           const [stats] = await listTextStats(user!.id, 'hi');
           expect(stats).toMatchObject({
@@ -264,7 +278,7 @@ describe.skipIf(!url)('HindiDB PostgreSQL integration (always rolls back)', () =
             .insert(schema.lemmaForms)
             .values({ lemmaId: entries[0]!.id, surface: 'परीक्षणों', createdBy: 'curator' });
           expect((await listTextStats(user!.id, 'hi'))[0]!.analysisStale).toBe(true);
-          const { workshopQueue } = await import('./dictionary/hindi-queue.js');
+          const { workshopQueue } = await import('./dictionary/workshop-queue.js');
           const [secondBook] = await tx.insert(schema.texts).values({
             ownerId: user!.id, language: 'hi', title: 'Second review book', sourceType: 'paste',
           }).returning();
@@ -293,17 +307,80 @@ describe.skipIf(!url)('HindiDB PostgreSQL integration (always rolls back)', () =
           expect((await workshopQueue(user!.id, null, 'unresolved', missing, 1)).rows[0]?.count).toBe(2);
           expect((await workshopQueue(user!.id, secondBook!.id, 'ignored', missing, 1)).rows[0]?.count).toBe(1);
           expect((await workshopQueue(randomUUID(), secondBook!.id, '', missing, 10)).rows).toEqual([]);
-          const { saveDraft } = await import('./dictionary/hindi-workshop.js');
-          const { emptyDraft } = await import('$lib/dictionary/hindi-workshop');
+          const { saveDraft } = await import('./dictionary/workshop.js');
+          const { emptyDraft } = await import('$lib/dictionary/workshop');
           const savedId = await saveDraft({
             ...emptyDraft('परीक्षण' + suffix), meaning: 'test word', other: [missing],
-          }, user!.id);
+          }, user!.id, 'hi');
           const reopened = await loadChapterTokens(chapter!.id, user!.id);
           expect(reopened?.filter((t) => t.surface === missing).map((t) => t.lemmaId))
             .toEqual([savedId, savedId]);
           const legacy = await loadChapterTokens(secondChapter!.id, null);
           expect(legacy?.[0]).toMatchObject({ lemmaId: savedId, isOov: false, glossDefault: 'test word' });
           expect(legacy?.[1]).toMatchObject({ lemmaId: null, isOov: true });
+          const { getWorkshopWord, previewDraft, searchWorkshop } = await import('./dictionary/workshop.js');
+          const basque = { ...emptyDraft('etxe' + suffix), meaning: 'house',
+            alternatives: ['etche' + suffix], other: ['etxe zaharra', 'etxeetan'], excluded: ['etxeetan'] };
+          const revisionBefore = (await tx.select().from(schema.hindiDictionaryState))[0]!.revision;
+          const basqueId = await saveDraft(basque, user!.id, 'eu');
+          const [basqueBook] = await tx.insert(schema.texts).values({
+            ownerId: user!.id, language: 'eu', title: 'Workshop example', sourceType: 'paste',
+          }).returning();
+          const [basqueChapter] = await tx.insert(schema.textChapters).values({
+            textId: basqueBook!.id, idx: 0, body: basque.alternatives[0]!,
+          }).returning();
+          await tx.insert(schema.textTokens).values({
+            chapterId: basqueChapter!.id, idx: 0, surface: basque.alternatives[0]!.toUpperCase(),
+            isWord: true, isOov: true,
+          });
+          expect((await loadChapterTokens(basqueChapter!.id, null))?.[0]).toMatchObject({
+            lemmaId: basqueId, isOov: false, glossDefault: 'house',
+          });
+          const { draft } = await getWorkshopWord(basqueId, 'eu');
+          expect(draft).toMatchObject({ ...basque, id: basqueId, version: expect.any(String) });
+          expect(await previewDraft('eu', draft, false)).toEqual({ forms: {
+            [basque.lemma]: ['citation'], [basque.alternatives[0]!]: ['alternative-headword'],
+            'etxe zaharra': ['explicit-form'],
+          } });
+          expect(await searchWorkshop('eu', basque.alternatives[0]!, 1)).toMatchObject([{ id: basqueId }]);
+          await expect(getWorkshopWord(basqueId, 'hi')).rejects.toMatchObject({ status: 404 });
+          await expect(saveDraft(draft, user!.id, 'mr')).rejects.toMatchObject({ status: 404 });
+          const updated = { ...draft, other: ['etxeak'], meaning: 'home', alternatives: [] };
+          await saveDraft(updated, user!.id, 'eu');
+          expect((await getWorkshopWord(basqueId, 'eu')).draft).toMatchObject({ meaning: 'home', other: ['etxeak'] });
+          await expect(saveDraft(draft, user!.id, 'eu')).rejects.toMatchObject({ status: 409 });
+          expect(await tx.select().from(schema.dictionaryPatternForms).where(eq(schema.dictionaryPatternForms.lemmaId, basqueId))).toEqual([]);
+          expect((await tx.select().from(schema.hindiDictionaryState))[0]!.revision).toBe(revisionBefore);
+          const { mergeWorkshopWords, previewPhrase } = await import('./dictionary/workshop.js');
+          const testVerb = 'egin' + randomUUID().slice(0, 8).replace(/[0-9]/g, 'a');
+          const verb = { ...emptyDraft(testVerb, 'VERB'), other: ['egiten', 'eginda'], excluded: ['eginda'] };
+          await saveDraft(verb, user!.id, 'eu');
+          const phrase = await previewPhrase('eu', 'lan ' + testVerb, testVerb, false);
+          expect(Object.keys(phrase.forms).sort()).toEqual(['lan ' + testVerb, 'lan egiten'].sort());
+          await expect(previewPhrase('mr', 'lan egin', 'egin', false)).rejects.toMatchObject({ status: 400 });
+          const [target] = await tx.insert(schema.lemmas).values({
+            language: 'eu', headword: 'etxebizitza', pos: 'NOUN', script: 'Latn',
+            source: 'official_dictionary', glossDefault: 'dwelling',
+          }).returning();
+          const current = await getWorkshopWord(basqueId, 'eu');
+          await expect(tx.transaction((nested) => mergeWorkshopWords(
+            'mr', nested, basqueId, target!.id, user!.id, current.draft.version,
+          ))).rejects.toMatchObject({ status: 404 });
+          await mergeWorkshopWords('eu', tx, basqueId, target!.id, user!.id, current.draft.version);
+          const merged = await getWorkshopWord(target!.id, 'eu');
+          expect(merged.draft.other).toEqual(expect.arrayContaining([basque.lemma, 'etxeak']));
+          expect(merged.draft.alternatives).toContain(basque.lemma);
+          expect(merged.draft.meaning).toContain('dwelling');
+          expect(merged.draft.meaning).toContain('home');
+          await expect(getWorkshopWord(basqueId, 'eu')).rejects.toMatchObject({ status: 404 });
+          expect((await tx.select().from(schema.hindiDictionaryState))[0]!.revision).toBe(revisionBefore);
+          const stem = 'बोल' + [...randomUUID().slice(0, 8)].map((c) => 'कखगघचछजझटठडढतथदध'[parseInt(c, 16)]).join('');
+          const infinitive = stem + 'ना';
+          await saveDraft({ ...emptyDraft(infinitive, 'VERB'), other: [stem + 'ा', stem + 'कर'], excluded: [stem + 'कर'] }, user!.id, 'hi');
+          const hindiPhrase = await previewPhrase('hi', 'न ' + infinitive, infinitive, true);
+          expect(Object.keys(hindiPhrase.forms).sort()).toEqual(
+            ['न ', 'नहीं '].flatMap((prefix) => [prefix + infinitive, prefix + stem + 'ा']).sort(),
+          );
           throw rollback;
         }),
       ).rejects.toBe(rollback);
@@ -397,19 +474,21 @@ describe.skipIf(!url)('HindiDB PostgreSQL integration (always rolls back)', () =
         await tx.execute(sql`INSERT INTO book_word_frequencies (text_id,lemma_id,occurrences)
           SELECT md5(title)::uuid,md5(word)::uuid,n FROM (VALUES
             ('Standalone A','one',9), ('Standalone A','three',1),
-            ('Standalone B','one',1), ('Standalone B','two',1), ('Standalone B','three',3),
+            ('Standalone B','one',1), ('Standalone B','two',1), ('Standalone B','three',4),
             ('Chapter 1','one',1), ('Chapter 1','three',1),
-            ('Chapter 2','one',1), ('Chapter 2','four',1)
+            ('Chapter 2','one',1), ('Chapter 2','three',1), ('Chapter 2','four',1)
           ) AS fixture(title,word,n)`);
         const userId = randomUUID();
         await tx.execute(sql`INSERT INTO users VALUES (${userId})`);
         await tx.execute(sql`INSERT INTO user_known_lemmas (user_id,lemma_id,status)
-          SELECT ${userId}::uuid,md5(word)::uuid,'known' FROM (VALUES ('one'),('two')) AS known(word)`);
+          SELECT ${userId}::uuid,md5(word)::uuid,status::known_lemma_status
+          FROM (VALUES ('one','known'),('two','known'),('three','learning')) AS vocabulary(word,status)`);
         const { listOfficialBooks } = await import('./texts/library.js');
         const page = { language: 'hi' as const, limit: 1, offset: 1, userId };
         expect(await listOfficialBooks({ ...page, sort: 'reading' })).toMatchObject({
           totalCount: 3,
-          cards: [{ title: 'Chapter book', stats: { words: 4, uniqueWords: 3, knownPct: 50, uniquePct: 33.3 } }],
+          cards: [{ title: 'Chapter book', stats: { words: 5, uniqueWords: 3, knownPct: 40, uniquePct: 33.3,
+            knownWords: 2, learningWords: 2, knownHeadwords: 1, learningHeadwords: 1 } }],
         });
         // Warm reads must still work with the source frequencies unavailable.
         await tx.execute(sql`ALTER TABLE book_word_frequencies RENAME COLUMN occurrences TO hidden_during_cached_read`);

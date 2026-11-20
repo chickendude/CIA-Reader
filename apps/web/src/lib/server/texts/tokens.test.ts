@@ -21,7 +21,7 @@ function makeSelectChain() {
   return chain;
 }
 
-const hindiAnalysis = vi.fn<() => { stale: boolean }[]>(() => []);
+const hindiAnalysis = vi.fn<() => { stale: boolean; language: string }[]>(() => []);
 const liveForms = vi.fn();
 const selectFn = vi.fn(() => makeSelectChain());
 vi.mock('./hindi-context.js', () => ({ loadHindiContextChoices: async () => new Map(), canVerifyHindiContext: async () => false, contextVersion: () => 'version' }));
@@ -111,7 +111,7 @@ describe('loadChapterTokens', () => {
   it('resolves a saved Hindi form for previously unmatched occurrences', async () => {
     const unseen = { surface: 'खोजियों', lemmaId: null, isOov: true };
     stage([tokenRow({ ...unseen, id: 'first' }), tokenRow({ ...unseen, id: 'second', idx: 2 })]);
-    hindiAnalysis.mockReturnValueOnce([{ stale: true }]);
+    hindiAnalysis.mockReturnValueOnce([{ stale: true, language: 'hi' }]);
     liveForms.mockResolvedValueOnce([{ surface: unseen.surface, id: 'new-lemma' }]);
     stage([]);
     stage([{ lemmaId: 'new-lemma', status: 'known' }]);

@@ -1,9 +1,12 @@
 <script lang="ts">
+  import { hindiReviewHref } from '$lib/dictionary/hindi-review-link';
+  import { page } from '$app/state';
   import Pagination from '$lib/components/input/Pagination.svelte';
   import '$lib/styles/entry-table.css';
   import { afterNavigate, beforeNavigate, goto } from '$app/navigation';
   import { onDestroy } from 'svelte';
   import Button from '$lib/components/input/Button.svelte';
+  import { workshopPath } from '$lib/dictionary/profiles';
   import { patternLabel } from '$lib/dictionary/hindi-patterns.js';
   import EditableDefinition from '$lib/components/reader/EditableDefinition.svelte';
   import ScriptAwareInput from '$lib/components/input/ScriptAwareInput.svelte';
@@ -73,15 +76,16 @@
     <nav class="actions" aria-label="Dictionary tools">
       {#if data.canEdit}
         <Button
-          href={data.language.code === 'hi'
-            ? '/moderation/hindi/workshop?view=entries'
-            : `/moderation/dictionary?language=${data.language.code}`}>Edit dictionary</Button
+          href={workshopPath(data.language.code) + '?view=entries'}>Edit dictionary</Button
         >
+        {#if data.language.code !== 'hi'}
+          <Button href={`/moderation/dictionary?language=${data.language.code}`}>Manage entries</Button>
+        {/if}
         {#if data.language.code === 'hi'}
           <Button variant="primary" href="/dictionary/hi/review">Review unparsed words</Button>
         {/if}
       {:else if data.language.code === 'hi' && data.user?.role === 'curator'}
-        <Button href="/moderation/hindi">Review book context</Button>
+        <Button href={hindiReviewHref(page.url)}>Review book context</Button>
       {/if}
     </nav>
   </header>
@@ -176,9 +180,7 @@
               {#if data.canEdit}
                 <td class="edit"
                   ><a
-                    href={data.language.code === 'hi'
-                      ? `/moderation/hindi/workshop?id=${lemma.id}`
-                      : `/moderation/dictionary/${lemma.id}`}>Edit entry</a
+                    href={`${workshopPath(data.language.code)}?id=${lemma.id}`}>Edit entry</a
                   >
                   {#if data.language.code === 'hi'}<a
                       href={`/moderation/hindi/workshop?id=${lemma.id}#inflection`}

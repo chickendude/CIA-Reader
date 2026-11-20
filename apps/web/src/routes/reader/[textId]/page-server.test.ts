@@ -331,18 +331,18 @@ describe('/reader/[textId] loader', () => {
     expect(anonData.isAdmin).toBe(false);
   });
 
-  it('offers the Hindi editor only to dictionary editors for a Hindi book', async () => {
+  it('offers the dictionary editor to staff who can edit the book language', async () => {
     const book = ownedTextWithChapters(1);
     const curator = { id: USER.id, role: 'curator' } as const;
     getReadableText.mockResolvedValue(book);
     const load = (user: TestUser | null) => callLoad('http://x/reader/' + VALID_ID, VALID_ID, user);
-    await expect(load(null)).resolves.toMatchObject({ hindiDictionary: null });
-    await expect(load(USER)).resolves.toMatchObject({ hindiDictionary: null });
-    await expect(load(curator)).resolves.toMatchObject({ hindiDictionary: null });
+    await expect(load(null)).resolves.toMatchObject({ dictionaryEditor: false });
+    await expect(load(USER)).resolves.toMatchObject({ dictionaryEditor: false });
+    await expect(load(curator)).resolves.toMatchObject({ dictionaryEditor: false });
     hindiCuratorGrant = true;
-    await expect(load(curator)).resolves.toMatchObject({ hindiDictionary: { ai: expect.any(Boolean) } });
+    await expect(load(curator)).resolves.toMatchObject({ dictionaryEditor: true });
     book.text.language = 'eu';
-    await expect(load({ id: USER.id, role: 'admin' })).resolves.toMatchObject({ hindiDictionary: null });
+    await expect(load({ id: USER.id, role: 'admin' })).resolves.toMatchObject({ dictionaryEditor: true });
   });
 
   it('lets anonymous viewers read official texts and reports isOwner=false', async () => {
@@ -461,6 +461,28 @@ describe('/reader/[textId] loader', () => {
       true,
     );
     expect(jsonPayloadBytes(data)).toBeLessThan(MOBILE_RESPONSE_BUDGET_BYTES);
+  });
+
+  it('shares repeated readings on the wire and restores each word at its own position', async () => {
+    const { load: unpack } = await import('./+page.js');
+    const word = {
+      id: 'first', idx: 0, surface: 'पाठ', isWord: true,
+      candidates: [{ lemmaId: 'alternative' }], status: 'unknown',
+    };
+    const tokens = [
+      word,
+      { ...word, id: 'second', idx: 4 },
+      { ...word, id: 'corrected', idx: 9, correctedByViewer: true, candidates: [] },
+    ];
+    getReadableText.mockResolvedValueOnce(ownedTextWithChapters(2));
+    loadChapterTokens.mockResolvedValueOnce(tokens);
+    const data = await callLoad(`http://x/reader/${VALID_ID}`) as Parameters<typeof unpack>[0]['data'];
+    const packed = data.chapters[0]!.tokens!;
+    expect(packed[1]![2]).toBe(packed[0]![2]);
+    expect(packed[2]![2]).not.toBe(packed[0]![2]);
+    const result = await unpack({ data } as Parameters<typeof unpack>[0]);
+    expect(result.chapters[0]!.tokens).toEqual(tokens);
+    expect(result.chapters[1]!.tokens).toBeNull();
   });
 
   it('lazy-loads only the requested chapter when ?chapter=N is set', async () => {

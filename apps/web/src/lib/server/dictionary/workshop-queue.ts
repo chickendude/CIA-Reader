@@ -1,6 +1,7 @@
+import type { LanguageCode } from '@ciareader/shared-types';
 import { sql } from 'drizzle-orm';
 import { db } from '../db/index';
-import type { ReviewItem } from '$lib/dictionary/hindi-workshop';
+import type { ReviewItem } from '$lib/dictionary/workshop';
 import { SENTENCE_END_RE } from '../texts/sentences';
 
 export async function workshopQueue(
@@ -10,11 +11,12 @@ export async function workshopQueue(
   query: string,
   limit: number,
   offset = 0,
+  language: LanguageCode = 'hi',
 ) {
   const pattern = '%' + query.replace(/[\\%_]/g, '\\$&') + '%';
   const boundary = `${SENTENCE_END_RE.source}|\n[[:space:]]*\n`;
   const rows = await db.execute<ReviewItem & { total: number }>(sql`
-    WITH books AS (SELECT id FROM texts WHERE language='hi' AND (owner_id=${actor} OR visibility='official')
+    WITH books AS (SELECT id FROM texts WHERE language=${language} AND (owner_id=${actor} OR visibility='official')
       AND (${book}::uuid IS NULL OR id=${book}::uuid)),
     items AS (
       SELECT t.surface word,NULL::uuid id,CASE WHEN i.surface IS NULL THEN 'unresolved' ELSE 'ignored' END kind,
@@ -28,6 +30,15 @@ export async function workshopQueue(
       FROM books b JOIN text_chapters c ON c.text_id=b.id JOIN hindi_occurrences o ON o.chapter_id=c.id
       JOIN lemmas l ON l.id=o.lemma_id JOIN text_tokens t ON t.chapter_id=c.id AND t.idx=o.start_idx
       WHERE nullif(l.gloss_default,'') IS NULL AND l.headword ILIKE ${pattern}
+      UNION ALL
+      SELECT l.headword,l.id,'missing-definition',c.text_id,c.idx,t.idx,t.idx+1,c.id,'',NULL,NULL
+      FROM books b JOIN text_chapters c ON c.text_id=b.id JOIN text_tokens t ON t.chapter_id=c.id
+      CROSS JOIN LATERAL (SELECT DISTINCT value->>'lemmaId' AS id
+        FROM jsonb_array_elements(t.lemma_candidates) AS value
+        UNION SELECT t.lemma_id::text) candidate
+      JOIN lemmas l ON l.id=candidate.id::uuid AND l.language=${language}
+      WHERE nullif(l.gloss_default,'') IS NULL AND l.headword ILIKE ${pattern}
+        AND NOT EXISTS (SELECT 1 FROM hindi_chapter_analyses a WHERE a.chapter_id=c.id)
       UNION ALL
       SELECT s->>'surface',NULL::uuid,'stutter',b.id,c.idx,(s->>'first')::int,(s->>'word')::int+1,c.id,
         c.id::text||':'||(s->>'start'),(s->>'start')::int,a.stats->>'stutter_text_hash'

@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { afterEach, expect, it, vi } from 'vitest';
-import { blankWorkshopWord } from '$lib/dictionary/hindi-workshop';
+import { blankWorkshopWord, type Draft } from '$lib/dictionary/workshop';
 import { workshop } from '$lib/dictionary/workshop-client';
 import ReaderDictionaryEditor from './ReaderDictionaryEditor.svelte';
 import type { ServerToken } from './types';
@@ -36,17 +36,24 @@ it('keeps the observed form and context when attaching it to an existing headwor
     id: 'existing',
     version: 'v1',
     meaning: 'seeker',
+    excerpts: [{ url: '', original: 'खोजी', english: 'seeker' }],
     paradigm: 'noun_m_ii',
   });
   const saved = vi.fn();
-  vi.mocked(workshop).mockImplementation(async (action) => {
+  vi.mocked(workshop).mockImplementation(async (action, fields) => {
+    if (action === 'patterns') return [];
     if (action === 'search')
       return [{ id: 'existing', lemma: 'खोजी', pos: 'NOUN', meaning: 'seeker' }];
-    if (action === 'preview') return { forms: { खोजी: [], खोजियों: [] } };
+    if (action === 'preview') {
+      const draft = fields.draft as Draft;
+      return { forms: Object.fromEntries([draft.lemma, ...draft.other].map((form) => [form, []])) };
+    }
+    if (action === 'save') existing.draft = JSON.parse(JSON.stringify(fields.draft));
     return existing;
   });
 
-  render(ReaderDictionaryEditor, {
+  const props = {
+    language: 'hi' as const,
     token,
     chapterTokens: [
       { ...token, idx: 0, surface: 'इन ' },
@@ -55,12 +62,13 @@ it('keeps the observed form and context when attaching it to an existing headwor
     ],
     lemmaId: null,
     headword: token.surface,
-    ai: false,
     onClose: vi.fn(),
     onSaved: saved,
-  });
+  };
+  const editor = render(ReaderDictionaryEditor, props);
   const form = await screen.findByRole<HTMLInputElement>('textbox', { name: 'Dictionary form' });
   expect(form.value).toBe('खोजियों');
+  expect(screen.queryByText('Dictionary lookup')).toBeNull();
   await fireEvent.input(form, { target: { value: 'खोजी' } });
   const prompt = new URL(
     screen.getByRole<HTMLAnchorElement>('link', { name: 'Ask ChatGPT ↗' }).href,
@@ -72,14 +80,26 @@ it('keeps the observed form and context when attaching it to an existing headwor
     expect(screen.getByLabelText<HTMLTextAreaElement>('English meaning').value).toBe('seeker'),
   );
   expect(screen.getByRole<HTMLInputElement>('radio', { name: 'Masculine ई' }).checked).toBe(true);
-  await fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+  const other = screen.getByRole<HTMLTextAreaElement>('textbox', { name: 'Other forms' });
+  expect(other.value).toBe('खोजियों');
+  const typed = 'खोजियों, खोजी लोग, खोजी लोग,  ,\nखोजिए';
+  other.focus();
+  await fireEvent.input(other, { target: { value: typed } });
+  expect(other.value).toBe(typed);
+  expect(await screen.findByRole('button', { name: 'खोजी लोग' })).toBeTruthy();
+  await fireEvent.keyDown(other, { key: 's', ctrlKey: true });
   await waitFor(() => expect(saved).toHaveBeenCalled());
   expect(workshop).toHaveBeenCalledWith('save', {
     draft: expect.objectContaining({
       id: 'existing',
       version: 'v1',
-      other: ['खोजियों'],
+      other: ['खोजियों', 'खोजी लोग', 'खोजिए'],
       meaning: 'seeker',
+      excerpts: existing.draft.excerpts,
     }),
-  });
+  }, undefined, 'hi');
+  editor.unmount();
+  render(ReaderDictionaryEditor, { ...props, lemmaId: existing.draft.id });
+  expect((await screen.findByRole<HTMLTextAreaElement>('textbox', { name: 'Other forms' })).value)
+    .toBe('खोजियों, खोजी लोग, खोजिए');
 });

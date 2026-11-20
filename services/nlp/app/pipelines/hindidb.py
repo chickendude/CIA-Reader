@@ -12,7 +12,7 @@ from app.schemas import LemmaCandidate, Token
 from hindidb.parser import PARSER_VERSION, analyze
 from parhiba_hindi.database import DatabaseLexicon
 
-from .base import Pipeline, PipelineResult
+from .dictionary import DictionaryPassage, DictionaryPipeline
 
 
 @lru_cache(maxsize=100_000)
@@ -20,13 +20,12 @@ def _romanize(surface):
     return to_roman(surface, from_script="Deva", to_scheme="iso15919", language="hi")
 
 
-class HindiDBPipeline(Pipeline):
-    pipeline_id = "hindidb-hi"
-
+class HindiDBPipeline(DictionaryPipeline):
     def __init__(self, provider=None):
+        super().__init__("hi")
         self.provider = provider or DatabaseLexicon()
 
-    def process(self, text: str) -> PipelineResult:
+    def match_passage(self, text: str) -> DictionaryPassage:
         lexicon, ids, revision = self.provider.load()
         analysis = analyze(text, lexicon)
         tokens = []
@@ -69,7 +68,6 @@ class HindiDBPipeline(Pipeline):
                     is_word=source["kind"] == "word",
                     sentence_idx=source["sentence"],
                     is_oov=source["kind"] == "word",
-                    romanization=_romanize(source["surface"]) if source["kind"] == "word" else None,
                     number_forms=number_forms(source["surface"])
                     if source["kind"] == "number"
                     else None,
@@ -79,6 +77,7 @@ class HindiDBPipeline(Pipeline):
         if cursor < len(text):
             tokens.append(Token(idx=len(tokens), surface=text[cursor:], is_word=False))
         occurrences = []
+        matches = []
         for occurrence in analysis["occurrences"]:
             entry = lexicon.entries[occurrence["entry_id"]]
             start = source_to_output[occurrence["token_start"]]
@@ -94,27 +93,19 @@ class HindiDBPipeline(Pipeline):
                     "rules": occurrence["rules"],
                 }
             )
-            for token in tokens[start:end]:
-                if token.is_word:
-                    token.is_oov = False
-            # Compounds are selectable at their first word; their exact spans
-            # are stored independently and never counted as extra physical words.
-            # Matching provenance belongs to the stored occurrence, not the
-            # reader's grammatical form chips.
-            features = {}
-            if occurrence["compound"]:
-                features["Compound"] = "Yes"
-            tokens[start].candidates.append(
-                LemmaCandidate(
-                    lemma=entry["lemma"],
-                    pos=entry["pos"],
-                    score=1,
-                    features=features,
-                    dictionary_id=uid,
+            matches.append(
+                (
+                    start,
+                    end,
+                    LemmaCandidate(
+                        lemma=entry["lemma"],
+                        pos=entry["pos"],
+                        score=1,
+                        features={},
+                        dictionary_id=uid,
+                    ),
                 )
             )
-        for token in tokens:
-            token.is_ambiguous = len(token.candidates) > 1
         payload: dict[str, Any] = {
             "revision": revision,
             "parser_version": PARSER_VERSION,
@@ -123,7 +114,9 @@ class HindiDBPipeline(Pipeline):
             "occurrences": occurrences,
             "constructions": analysis["constructions"],
         }
-        return PipelineResult(self.pipeline_id, tokens, hindi_analysis=payload)
+        return DictionaryPassage(
+            tokens, {t.idx for t in tokens if t.is_word}, matches, analysis=payload
+        )
 
 
 def build_hindidb_pipeline():

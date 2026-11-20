@@ -1,5 +1,5 @@
 <script lang="ts">
-  import HindiWorkshop from '../../../moderation/hindi/workshop/HindiWorkshop.svelte';
+  import HindiWorkshop from '$lib/components/dictionary/Workshop.svelte';
   import type { PageProps } from './$types';
   let { data }: PageProps = $props();
 </script>

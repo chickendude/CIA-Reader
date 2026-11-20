@@ -10,17 +10,24 @@
     type Draft,
     type Match,
     type ReviewItem,
-  } from '$lib/dictionary/hindi-workshop';
-  import { workshop } from '$lib/dictionary/workshop-client';
+  } from '$lib/dictionary/workshop';
+  import { workshop as send } from '$lib/dictionary/workshop-client';
   import WorkshopReports from './WorkshopReports.svelte';
   import WorkshopEditor from '$lib/components/dictionary/WorkshopEditor.svelte';
-  import type { loadHindiWorkshop } from '$lib/server/dictionary/workshop-page';
+  import type { loadWorkshop } from '$lib/server/dictionary/workshop-page';
   import { reprocessWithToast } from '$lib/text/reprocess.js';
   import Button from '$lib/components/input/Button.svelte';
 
   const toastStore = getToastStore();
-  type PageData = Awaited<ReturnType<typeof loadHindiWorkshop>>;
+  import { dictionaryProfile } from '$lib/dictionary/profiles';
+  type PageData = Awaited<ReturnType<typeof loadWorkshop>>;
   let { data, reviewOnly = false }: { data: PageData; reviewOnly?: boolean } = $props();
+  const language = $derived(data.language.code);
+  const scriptLetters = $derived(new RegExp('\\p{Script=' + data.language.script + '}', 'u'));
+  const profile = $derived(dictionaryProfile(language));
+  function workshop<T>(action: string, fields: Record<string, unknown>, signal?: AbortSignal) {
+    return send<T>(action, fields, signal, language);
+  }
   let word = $state<Word>(untrack(() => data.initial ?? blankWorkshopWord(data.observed)));
   let draft = $state<Draft>(untrack(() => structuredClone($state.snapshot(word.draft))));
   let selectionSource = $state<'none' | 'editor' | 'list'>(
@@ -33,15 +40,15 @@
     offset = $state(0),
     refresh = $state(0);
   const limit = 40;
-  const bookPreference = $derived(`parhiba.hindi.reviewBook.${page.data.user?.id}`);
-  const kindPreference = $derived(`parhiba.hindi.reviewKind.${page.data.user?.id}`);
-  const reviewTypes = [
+  const bookPreference = $derived(`parhiba.${profile.preferenceKey ?? language}.reviewBook.${page.data.user?.id}`);
+  const kindPreference = $derived(`parhiba.${profile.preferenceKey ?? language}.reviewKind.${page.data.user?.id}`);
+  const reviewTypes = $derived([
     { value: '', label: 'All items' },
     { value: 'unresolved', label: 'Unresolved forms' },
     { value: 'stutter', label: 'Possible stutters' },
     { value: 'missing-definition', label: 'Missing definitions' },
     { value: 'ignored', label: 'Ignored in books' },
-  ];
+  ].filter(item => item.value !== 'stutter' || data.stutterReview));
   let rememberedBook = $state('');
   let rememberedKind = $state<string | null>(null);
   $effect(() => {
@@ -91,7 +98,7 @@
   let sampleBook = $state('');
   const sample = $derived(active?.samples.find((s) => s.book === sampleBook) ?? active?.samples[0]);
   function stutterQuestion({ before, match, after }: ReviewItem['samples'][number]['context']) {
-    return 'Does the marked Hindi expression represent a speaker stuttering? Consider ordinary repetition and compounds too. ' +
+    return 'Does the marked ' + data.language.displayName + ' expression represent a speaker stuttering? Consider ordinary repetition and compounds too. ' +
       'Answer in English with “Stutter”, “Keep separate”, or “Uncertain”. Give a brief reason and, if it is a stutter, identify the intended word.\n\n' +
       `${before}【${match}】${after}`.trim();
   }
@@ -290,14 +297,14 @@
 <div class="workshop">
   <header>
     <div>
-      <h1 class="page-title">{reviewOnly ? 'Hindi dictionary' : 'Dictionary workshop'}</h1>
+      <h1 class="page-title">{reviewOnly ? data.language.displayName + ' dictionary' : 'Dictionary workshop'}</h1>
     </div>
     <div class="controls">
-      <Button href="/dictionary/hi">Browse entries</Button>
-      <Button href="/moderation/hindi?kind=ambiguous">Review ambiguous words</Button>
+      <Button href={'/dictionary/' + language}>Browse entries</Button>
+      {#if profile.reviewHref}<Button href={profile.reviewHref(page.url, book)}>Review book context</Button>{/if}
     </div>
   </header>
-  {#if !reviewOnly}<WorkshopReports
+  {#if !reviewOnly && data.reports.length}<WorkshopReports {language}
       reports={data.reports}
       open={(id) => open(id)}
       changed={() => {
@@ -344,7 +351,7 @@
       <input
         type="search"
         aria-label="Search words"
-        placeholder={tab === 'dictionary' ? 'Search Hindi or English' : 'Find a word'}
+        placeholder={tab === 'dictionary' ? 'Search ' + data.language.displayName + ' or English' : 'Find a word'}
         bind:value={query}
         oninput={() => {
           offset = 0;
@@ -352,8 +359,8 @@
       />
       <div class="controls">
         <Button
-          disabled={working}
-          onclick={() => open(null, { lemma: query.match(/\p{Script=Devanagari}/u) ? query : '' })}
+          disabled={!mounted || working}
+          onclick={() => open(null, { lemma: scriptLetters.test(query) ? query : '' })}
         >New entry</Button>
         <Button disabled={pending} onclick={() => refresh++}>{pending ? 'Refreshing…' : 'Refresh'}</Button>
         {#if tab === 'review' && reviewBook?.canReprocess}
@@ -368,7 +375,7 @@
               class:chosen={isSelected(row)}
               disabled={working || pending}
               onclick={() => openResult(row)}
-              ><strong lang="hi">{row.lemma}</strong> <small>{row.pos}</small><span
+              ><strong lang={language} dir="auto">{row.lemma}</strong> <small>{row.pos}</small><span
                 >{row.meaning}</span
               ></button
             >{/each}
@@ -378,7 +385,7 @@
               class:chosen={isSelected(row)}
               disabled={working || pending}
               onclick={() => openResult(row)}
-              ><strong lang="hi">{row.word}</strong>
+              ><strong lang={language} dir="auto">{row.word}</strong>
               {#if row.pos}<small>{row.pos.toLowerCase()}</small>{/if}
               <small>{row.count}</small><span
                 >{row.kind === 'missing-definition'
@@ -399,7 +406,7 @@
     {#if selectionSource !== 'none' || message}<article>
       {#if active && sample}<div class="context">
           <div class="context-heading">
-          <strong lang="hi">{active.word}</strong>
+          <strong lang={language} dir="auto">{active.word}</strong>
           {#if active.samples.length > 1}
             <select aria-label="Example book" bind:value={sampleBook}>
               {#each active.samples as example}
@@ -418,7 +425,7 @@
               href={`/reader/${sample.book}?chapter=${sample.chapter}&token=${sample.token}`}>View in text</Button>
           </div>
           </div>
-          <p lang="hi">{sample.context.before}<mark>{sample.context.match}</mark>{sample.context.after}</p>
+          <p lang={language} dir="auto">{sample.context.before}<mark>{sample.context.match}</mark>{sample.context.after}</p>
           {#if active.kind === 'stutter'}
             <div class="stutter-actions">
               <Button disabled={working} onclick={() => decideStutter(true)}>Confirm stutter</Button>
@@ -430,10 +437,10 @@
         </div>{/if}
       {#if selectionSource !== 'none' && active?.kind !== 'stutter'}{#key generation}
         <WorkshopEditor
+          {language}
           bind:draft
           bind:working
           {word}
-          ai={data.ai}
           context={sample?.context}
           observed={active?.word ?? data.observed}
           review={!!active}

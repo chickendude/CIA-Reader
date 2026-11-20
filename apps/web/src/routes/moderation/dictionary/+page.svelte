@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { hindiReviewHref } from '$lib/dictionary/hindi-review-link';
+  import { page } from '$app/state';
   import Pagination from '$lib/components/input/Pagination.svelte';
   import type { PageProps } from './$types';
   let { data }: PageProps = $props();
@@ -33,7 +35,7 @@
     {/if}
     <nav class="mod-nav" aria-label="Moderation sections">
       <a href="/moderation/hindi/workshop">Hindi dictionary workshop</a>
-      <a href="/moderation/hindi">Hindi unparsed words and context review →</a>
+      <a href={hindiReviewHref(page.url)}>Hindi unparsed words and context review →</a>
       <a href="/moderation/translations">Translation reports →</a>
       <a href="/moderation/parses">Parse reports →</a>
       <a href="/moderation/transcribe">Transcribe →</a>

@@ -44,7 +44,7 @@ export async function persistTokens(args: {
       lemmaCandidates: matches,
       features: matches[0]?.features ?? {},
       isAmbiguous: matches.length > 1,
-      isOov: t.is_word && matches.length === 0,
+      isOov: t.is_word && matches.length === 0 && t.is_oov,
       isWord: t.is_word,
       sentenceIdx: t.sentence_idx ?? 0,
       romanization: t.romanization,

@@ -103,7 +103,7 @@
 
   // Apply any pending optimistic status flips to the token list
   // before paragraph splitting so the .status-* classes update live.
-  const dictionaryTokens = dictionaryChapterTokens(() => chapter, () => textId, (lemmaId) => {
+  const dictionaryTokens = dictionaryChapterTokens(() => chapter, () => textId, () => language, (lemmaId) => {
     const selected = activeToken && tokensById.get(activeToken.id);
     if (selected && (selected.lemmaId === lemmaId || activeToken?.lemmaId === lemmaId)) activeToken = selected;
     const hovered = preview.token && tokensById.get(preview.token.id);

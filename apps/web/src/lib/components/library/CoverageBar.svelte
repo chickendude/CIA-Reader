@@ -41,8 +41,8 @@
   </button>
   {#if mode}
     <div class="breakdown" id={tooltipId} role="tooltip">
-      <div><span class="key known"></span>Known <strong>{number.format(known)}%</strong> ({number.format(stats.knownWords)} {stats.knownWords === 1 ? 'word' : 'words'})</div>
-      <div><span class="key learning"></span>Learning <strong>{number.format(learning)}%</strong> ({number.format(stats.learningWords)} {stats.learningWords === 1 ? 'word' : 'words'})</div>
+      <div><span class="key known"></span>Known <strong>{number.format(known)}%</strong> ({number.format(stats.knownHeadwords)} {stats.knownHeadwords === 1 ? 'word' : 'words'})</div>
+      <div><span class="key learning"></span>Learning <strong>{number.format(learning)}%</strong> ({number.format(stats.learningHeadwords)} {stats.learningHeadwords === 1 ? 'word' : 'words'})</div>
     </div>
   {/if}
 </div>

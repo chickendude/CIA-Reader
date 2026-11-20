@@ -9,6 +9,23 @@ from .morphology import forms
 from .text import normalize, tokenize
 
 
+def verb_forms(entry):
+    verb = entry["lemma"]
+    generated = forms({'lemma': verb, 'pos': entry['pos'], 'paradigm': entry.get('paradigm', 'invariant')})
+    candidates = forms(entry)
+    supported = set()
+    for word in candidates:
+        if len(tokenize(word)) != 1 or any(t.kind != 'word' for t in tokenize(word)):
+            continue
+        evidence = entry.get('form_evidence', {}).get(word, [])
+        # A root-link alone may point to a related/derived word, not an inflected
+        # verb. Do not multiply such imported links into an entire phrase family.
+        if (word in generated or entry.get('review_status') == 'reviewed' or not evidence
+                or any(record.get('kind') == 'conjugation' for record in evidence)):
+            supported.add(word)
+    return supported
+
+
 def build(lexicon, phrase, verb, negative_variants=False):
     if not isinstance(phrase, str) or not isinstance(verb, str) or not isinstance(negative_variants, bool):
         raise ValueError('Supply a phrase, verb, and boolean negation option')
@@ -30,18 +47,7 @@ def build(lexicon, phrase, verb, negative_variants=False):
         alternate = words.copy()
         alternate[index - 1] = 'नहीं' if words[index - 1] == 'न' else 'न'
         frames.append(alternate)
-    generated = forms({'lemma': verb, 'pos': entry['pos'], 'paradigm': entry.get('paradigm', 'invariant')})
-    candidates = forms(entry)
-    supported = set()
-    for word in candidates:
-        if len(tokenize(word)) != 1 or any(t.kind != 'word' for t in tokenize(word)):
-            continue
-        evidence = entry.get('form_evidence', {}).get(word, [])
-        # A root-link alone may point to a related/derived word, not an inflected
-        # verb. Do not multiply such imported links into an entire phrase family.
-        if (word in generated or entry.get('review_status') == 'reviewed' or not evidence
-                or any(record.get('kind') == 'conjugation' for record in evidence)):
-            supported.add(word)
+    supported = verb_forms(entry)
     result = {}
     for frame in frames:
         for word in sorted(supported):

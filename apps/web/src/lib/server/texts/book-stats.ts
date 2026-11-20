@@ -8,6 +8,8 @@ export type BookWordStats = {
   unparsedWords: number;
   knownWords: number;
   learningWords: number;
+  knownHeadwords: number;
+  learningHeadwords: number;
   knownPct: number | null;
   learningPct: number | null;
   uniquePct: number | null;
@@ -30,7 +32,8 @@ export function scoreBookEntries(userId?: string) {
       coalesce(sum(e.n) FILTER (WHERE e.lemma_id IS NULL), 0)::int AS unresolved,
       coalesce(sum(e.n) FILTER (WHERE k.status = 'known'), 0)::int AS "knownWords",
       coalesce(sum(e.n) FILTER (WHERE k.status = 'learning'), 0)::int AS "learningWords",
-      count(*) FILTER (WHERE k.status = 'known')::int AS known_entries,
+      count(*) FILTER (WHERE k.status = 'known')::int AS "knownHeadwords",
+      count(*) FILTER (WHERE k.status = 'learning')::int AS "learningHeadwords",
       CASE WHEN ${userId ?? null}::uuid IS NOT NULL THEN
         coalesce(sum(e.n) FILTER (WHERE k.status = 'known'), 0) / sum(e.n) END AS reading_ratio,
       CASE WHEN ${userId ?? null}::uuid IS NOT NULL THEN
@@ -59,7 +62,7 @@ export async function libraryBookStats(textIds: string[], collectionIds: string[
     ), scores AS (${scoreBookEntries(userId)})
     SELECT id, words, "uniqueWords", unresolved,
       ${unparsedWordCount(sql`SELECT m.text_id FROM members m WHERE m.id = scores.id`)} AS "unparsedWords",
-      "knownWords", "learningWords", round(100 * reading_ratio, 1)::float8 AS "knownPct",
+      "knownWords", "learningWords", "knownHeadwords", "learningHeadwords", round(100 * reading_ratio, 1)::float8 AS "knownPct",
       round(100 * learning_ratio, 1)::float8 AS "learningPct", round(100 * unique_ratio, 1)::float8 AS "uniquePct"
     FROM scores
   `);

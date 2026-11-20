@@ -70,6 +70,7 @@ describe('handle — onboarding redirect', () => {
       locals: {},
       cookies: { get: () => undefined },
       request: { headers: new Headers() },
+      route: { id: pathname },
       url: new URL(`http://x${pathname}`),
     } as unknown as Parameters<typeof handle>[0]['event'];
   }
@@ -98,5 +99,43 @@ describe('handle — onboarding redirect', () => {
     const res = await handle({ event, resolve: resolve as never });
     expect(res).toBeInstanceOf(Response);
     expect(resolve).toHaveBeenCalledOnce();
+  });
+});
+
+describe('reader chapter transfers', () => {
+  const body = JSON.stringify({ tokens: Array(1000).fill('पाठ') });
+  async function requestChapter(routeId: string, encoding: string, isDataRequest: boolean) {
+    const event = {
+      locals: {},
+      cookies: { get: () => undefined },
+      request: new Request('http://x', { headers: { 'accept-encoding': encoding } }),
+      route: { id: routeId },
+      url: new URL('http://x/reader/book'),
+      isDataRequest,
+    } as unknown as Event;
+    const response = new Response(body, { headers: {
+      'content-length': String(Buffer.byteLength(body)),
+      'cache-control': 'private, no-store',
+    } });
+    return handle({ event, resolve: vi.fn(async () => response) as never });
+  }
+
+  it.each([
+    ['/reader/[textId]', true],
+    ['/api/v1/texts/[id]/chapters/[idx]/tokens', false],
+  ] as const)('compresses %s when the client accepts gzip', async (routeId, isDataRequest) => {
+    const response = await requestChapter(routeId, 'br, gzip', isDataRequest);
+    expect(response.headers.get('content-encoding')).toBe('gzip');
+    expect(response.headers.has('content-length')).toBe(false);
+    expect(response.headers.get('cache-control')).toBe('private, no-store');
+    expect(response.headers.get('vary')).toContain('Accept-Encoding');
+    const decoded = response.body!.pipeThrough(new DecompressionStream('gzip'));
+    expect(await new Response(decoded).text()).toBe(body);
+  });
+
+  it('honors clients that decline gzip', async () => {
+    const response = await requestChapter('/reader/[textId]', 'br, gzip;q=0', true);
+    expect(response.headers.has('content-encoding')).toBe(false);
+    expect(await response.text()).toBe(body);
   });
 });

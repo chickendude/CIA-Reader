@@ -1,23 +1,19 @@
 <script lang="ts">
   import { untrack } from 'svelte';
-  import { workshop } from '$lib/dictionary/workshop-client';
+  import { workshop as send } from '$lib/dictionary/workshop-client';
   import {
-    emptyDraft,
-    partsOfSpeech,
     type Draft,
     type WorkshopWord as Word,
-    type Inventory,
     type Match,
-    type Reference,
-    type Excerpt,
     type ReviewItem,
-  } from '$lib/dictionary/hindi-workshop';
-  import { hindiPatterns } from '$lib/dictionary/hindi-patterns';
+  } from '$lib/dictionary/workshop';
+  import { dictionaryProfile } from '$lib/dictionary/profiles';
+  import { getLanguage, type LanguageCode } from '@ciareader/shared-types';
   let {
+    language,
     word,
     draft = $bindable(),
     working = $bindable(),
-    ai,
     observed,
     context,
     review,
@@ -25,10 +21,10 @@
     onopen,
     ondeleted,
   }: {
+    language: LanguageCode;
     word: Word;
     draft: Draft;
     working: boolean;
-    ai: boolean;
     observed: string;
     context?: ReviewItem['samples'][number]['context'];
     review: boolean;
@@ -36,46 +32,26 @@
     onopen: (id: string | null, lemma: string, pos: string, attach?: string) => void;
     ondeleted?: () => void;
   } = $props();
+  const profile = $derived(dictionaryProfile(language));
+  const languageName = $derived(getLanguage(language).displayName);
+  const partsOfSpeech = $derived(Object.hasOwn(profile.partsOfSpeech, draft.pos)
+    ? profile.partsOfSpeech : { ...profile.partsOfSpeech, [draft.pos]: draft.pos });
+  function workshop<T>(action: string, fields: Record<string, unknown>, signal?: AbortSignal) {
+    return send<T>(action, fields, signal, language);
+  }
   let message = $state(''),
     previewError = $state(''),
-    preview = $state<Record<string, string[]>>({}),
-    template = $state<Inventory | null>(null);
+    preview = $state<Record<string, string[]>>({});
   let panel = $state(''),
     search = $state(''),
     matches = $state<Match[]>([]),
     group = $state<string[]>(untrack(() => [...word.group]));
-  let spelling = $state(''),
-    pattern = $state('invariant'),
-    verb = $state(''),
-    negative = $state(false),
-    alternative = $state(false);
-  let provider = $state<'hindwi' | 'rekhta'>('hindwi'),
-    lookup = $state(untrack(() => draft.lemma)),
-    sourceUrl = $state(''),
-    excerpt = $state(''),
-    english = $state('');
-  type WikiWord = {
-    lemma: string;
-    pos: string;
-    definitions: {
-      original: string;
-      language: string;
-      source_url?: string;
-      translation?: string;
-    }[];
-  };
-  let wiki = $state<WikiWord[]>([]);
-  async function findWiki() {
-    await act(async () => {
-      wiki = await workshop<WikiWord[]>('wiktionary', { query: lookup });
-      if (!wiki.length) message = 'No matches in the imported Wiktionary data';
-    });
-  }
-  let results = $state<Reference[]>([]),
-    page = $state(''),
-    retrieved = $state(''),
-    addPOS = $state('VERB');
-  const patterns = $derived(hindiPatterns(draft.lemma, draft.pos, word.draft.paradigm));
+  let savedPatterns = $state<{ id: string; label: string }[]>([]);
+  let savedPattern = $state('');
+  let stem = $state('');
+  let otherFormsText = $state<string | null>(null);
+  let addPOS = $state('VERB');
+  const patterns = $derived(profile.patterns(draft.lemma, draft.pos, word.draft.paradigm));
   const selectedForms = $derived(Object.keys(preview));
   const split = (s: string, delim: RegExp) => [
     ...new Set(
@@ -87,9 +63,21 @@
   ];
   function identity() {
     draft.lemma = draft.lemma.normalize('NFC');
-    if (!hindiPatterns(draft.lemma, draft.pos, '').some((p) => p.id === draft.paradigm))
+    if (!profile.patterns(draft.lemma, draft.pos, '').some((p) => p.id === draft.paradigm))
       draft.paradigm = 'invariant';
-    lookup = draft.lemma;
+    preserveReviewedForms();
+  }
+  function preserveReviewedForms() {
+    const inventory = draft.inventory;
+    if (!inventory || (inventory.lemma === draft.lemma && inventory.pos === draft.pos && inventory.paradigm === draft.paradigm)) return;
+    // A reviewed slot belongs to its original pattern. Carry its accepted spellings into the new entry.
+    const reviewed = inventory.slots.filter((slot) => slot.include).flatMap((slot) => slot.forms);
+    draft.other = [...new Set([...draft.other, ...reviewed])];
+    draft.inventory = null;
+  }
+  function editOtherForms(text: string) {
+    otherFormsText = text;
+    draft.other = split(text, /[,\n]/u);
   }
   $effect(() => {
     const d: Draft = JSON.parse(JSON.stringify(draft));
@@ -97,35 +85,18 @@
     const timer = setTimeout(async () => {
       if (!d.lemma.trim()) {
         preview = {};
-        template = null;
         previewError = '';
         return;
       }
       try {
-        const r = await workshop<{ forms: Record<string, string[]>; inventory?: Inventory }>(
+        const r = await workshop<{ forms: Record<string, string[]> }>(
           'preview',
-          { draft: d, inventory: true },
+          { draft: d, inventory: false },
           ctrl.signal,
         );
         if (ctrl.signal.aborted) return;
         preview = r.forms;
-        template = r.inventory ?? null;
-        if (!r.inventory) {
-          previewError = 'Inflection slot suggestions are unavailable.';
-          return;
-        }
         previewError = '';
-        const inv = d.inventory;
-        if (!inv || inv.lemma !== d.lemma || inv.pos !== d.pos || inv.paradigm !== d.paradigm) {
-          const slots = r.inventory.slots.map((s) => {
-            const prior =
-              inv?.lemma === d.lemma && inv.pos === d.pos
-                ? inv.slots.find((p) => p.id === s.id)
-                : null;
-            return prior ?? { ...s, forms: [], include: false, applicability: 'unknown' as const };
-          });
-          draft.inventory = { ...r.inventory, slots };
-        }
       } catch (e) {
         if (!ctrl.signal.aborted) previewError = (e as Error).message;
       }
@@ -154,6 +125,16 @@
       clearTimeout(timer);
       ctrl.abort();
     };
+  });
+  $effect(() => {
+    const pos = draft.pos;
+    savedPatterns = [];
+    savedPattern = '';
+    const ctrl = new AbortController();
+    workshop<{ id: string; label: string }[]>('patterns', { pos }, ctrl.signal)
+      .then((rows) => { if (!ctrl.signal.aborted) savedPatterns = rows; })
+      .catch((e) => { if (!ctrl.signal.aborted) message = (e as Error).message; });
+    return () => ctrl.abort();
   });
   async function act(fn: () => Promise<void>) {
     if (working) return;
@@ -184,50 +165,11 @@
     panel = panel === name ? '' : name;
     matches = [];
     if (name === 'attach' || name === 'merge') search = draft.lemma;
-    if (name === 'forms') {
-      spelling = draft.lemma;
-      pattern = draft.paradigm;
-      verb =
-        spelling
-          .split(/\s+/)
-          .reverse()
-          .find((w) => w.endsWith('ना')) ?? '';
-    }
   }
-  function fillSlots() {
-    if (!template || !draft.inventory) return;
-    let count = 0;
-    for (const slot of draft.inventory.slots) {
-      const attested = template.slots.find((r) => r.id === slot.id);
-      if (!attested?.forms.length || slot.forms.length || slot.applicability === 'not_applicable')
-        continue;
-      slot.forms = [...new Set([...slot.forms, ...attested.forms])];
-      slot.applicability = 'applicable';
-      slot.include = true;
-      count++;
-    }
-    message = count
-      ? 'Filled ' + count + ' slots from imported evidence.'
-      : 'No tagged Wiktionary forms available for this entry.';
-  }
-  function addForms() {
+  function applySavedPattern() {
     return act(async () => {
-      const r =
-        pattern === 'phrase'
-          ? await workshop<{ forms: Record<string, string[]> }>('phrase', {
-              phrase: spelling,
-              verb,
-              negative,
-            })
-          : await workshop<{ forms: Record<string, string[]> }>('preview', {
-              draft: { ...emptyDraft(spelling, draft.pos), paradigm: pattern },
-              inventory: false,
-            });
-      draft.other = [...new Set([...draft.other, ...Object.keys(r.forms)])];
-      if (alternative && spelling !== draft.lemma)
-        draft.alternatives = [...new Set([...draft.alternatives, spelling.trim()])];
-      panel = '';
-      message = 'Forms added to draft';
+      const forms = await workshop<string[]>('patternForms', { id: savedPattern, stem, pos: draft.pos });
+      draft.other = [...new Set([...draft.other, ...forms])];
     });
   }
   function choose(i: Match) {
@@ -260,70 +202,11 @@
     [a[i], a[i + step]] = [a[i + step]!, a[i]!];
     group = a;
   }
-  function findRefs(refresh: boolean) {
-    return act(async () => {
-      const res = await workshop<{ result: Reference[] }>('reference', {
-        provider,
-        query: lookup,
-        refresh,
-      });
-      results = res.result;
-      if (!results.length) message = 'No dictionary matches';
-    });
-  }
-  function loadPage(refresh: boolean) {
-    return act(async () => {
-      const res = await workshop<{ result: { text: string }; retrievedAt: string }>('reference', {
-        url: sourceUrl,
-        refresh,
-      });
-      page = res.result.text;
-      retrieved = new Date(res.retrievedAt).toLocaleString();
-    });
-  }
-  function useWiki(w: WikiWord) {
-    if (draft.id && (draft.lemma !== w.lemma || draft.pos !== w.pos)) {
-      message = 'Choose the matching headword and POS use before applying this source.';
-      return;
-    }
-    draft.lemma = w.lemma;
-    draft.pos = w.pos;
-    identity();
-    for (const d of w.definitions ?? [])
-      addExcerpt({
-        url: d.source_url ?? '',
-        original: d.original,
-        english: d.translation ?? (d.language === 'en' ? d.original : ''),
-      });
-  }
-  function addExcerpt(e: Excerpt) {
-    if (
-      !draft.excerpts.some(
-        (x) => x.original === e.original && x.url === e.url && x.english === e.english,
-      )
-    )
-      draft.excerpts = [...draft.excerpts, e];
-    if (
-      e.english &&
-      !draft.meaning
-        .split(';')
-        .map((x) => x.trim())
-        .includes(e.english)
-    )
-      draft.meaning = [draft.meaning, e.english].filter(Boolean).join('; ');
-  }
-  // A generated empty slot template is presentation until the user enters forms.
-  function signature(d: Draft) {
-    return JSON.stringify({
-      ...d,
-      inventory: d.inventory?.slots.some((s) => s.include || s.forms.length) ? d.inventory : null,
-    });
-  }
-  const dirty = $derived(signature(draft) !== signature(word.draft));
+  const dirty = $derived(JSON.stringify(draft) !== JSON.stringify(word.draft));
   const questionWord = $derived(context?.match ?? draft.lemma.trim());
   const sentence = $derived(context ? (context.before + context.match + context.after).trim() : '');
   const question = $derived(
-    `Explain the Hindi word 【${questionWord}】 in English. Give its dictionary form, part of speech, full range of meanings, gender where relevant, and inflections. Check Hindwi or Rekhta and explain any spelling variants or disagreements between sources.` +
+    `Explain the ${languageName} word 【${questionWord}】 in English. Give its dictionary form, part of speech, full range of meanings, gender where relevant, and inflections.${profile.sources.length ? ' Check ' + profile.sources.map((s) => s.name).join(' or ') + ' and explain any spelling variants or disagreements between sources.' : ''}` +
       (sentence ? `\nContext: ${sentence}` : ''),
   );
 </script>
@@ -331,7 +214,7 @@
 <svelte:window onkeydown={keyboard} />
 <fieldset class="editor" disabled={working}>
   <div class="heading">
-    <h2 lang="hi">{draft.lemma || 'Edit a word'}</h2>
+    <h2 lang={language} dir="auto">{draft.lemma || 'Edit a word'}</h2>
     {#if questionWord}<a
         href={'https://chatgpt.com/?q=' + encodeURIComponent(question)}
         target="_blank"
@@ -347,7 +230,7 @@
   <div class="identity">
     <label
       >Dictionary form<input
-        lang="hi"
+        lang={language} dir="auto"
         value={draft.lemma}
         oninput={(e) => {
           draft.lemma = e.currentTarget.value;
@@ -360,7 +243,7 @@
     >
     <label
       >Alternative headwords<input
-        lang="hi"
+        lang={language} dir="auto"
         value={draft.alternatives.join(', ')}
         onchange={(e) => (draft.alternatives = split(e.currentTarget.value, /[,;\n]/))}
         placeholder="Comma-separated spellings"
@@ -391,7 +274,7 @@
         >{panel === 'attach' ? 'Find dictionary entry' : 'Merge saved entry into'}<input
           type="search"
           bind:value={search}
-          placeholder="Hindi or English"
+          placeholder={languageName + ' or English'}
         /></label
       >
       {#each matches.filter((m) => m.id !== draft.id) as m}<button
@@ -444,15 +327,26 @@
       placeholder="synonym, synonym; another meaning"
     ></textarea></label
   >
-  <fieldset>
+  <fieldset id="inflection">
     <legend>Inflection pattern</legend>
     <nav>
       {#each patterns as p}<label class="check"
-          ><input type="radio" bind:group={draft.paradigm} value={p.id} />{p.label}</label
+          ><input type="radio" checked={draft.paradigm === p.id} name="inflection-pattern" value={p.id}
+          onchange={() => { draft.paradigm = p.id; preserveReviewedForms(); }} />{p.label}</label
         >{/each}
     </nav>
+    {#if savedPatterns.length}
+      <label>Saved pattern<select bind:value={savedPattern} onchange={() => (stem = draft.lemma)}>
+        <option value="">Choose a pattern</option>
+        {#each savedPatterns as p}<option value={p.id}>{p.label}</option>{/each}
+      </select></label>
+      {#if savedPattern}<div class="row">
+        <label>Stem<input lang={language} dir="auto" bind:value={stem} /></label>
+        <button disabled={!stem.trim()} onclick={applySavedPattern}>Apply pattern</button>
+      </div>{/if}
+    {/if}
   </fieldset>
-  <div class="chips" lang="hi">
+  <div class="chips" lang={language} dir="auto">
     {#each selectedForms as f}<button
         disabled={f === draft.lemma || draft.alternatives.includes(f)}
         title={'Exclude ' + f}
@@ -465,7 +359,7 @@
       >{/each}
   </div>
   {#if observed && !selectedForms.includes(observed)}<p>
-      Observed form <strong lang="hi">{observed}</strong>
+      Observed form <strong lang={language} dir="auto">{observed}</strong>
       <button
         onclick={() => {
           draft.other = [...new Set([...draft.other, observed])];
@@ -474,158 +368,12 @@
       >
     </p>{/if}
   {#if previewError}<p role="alert">{previewError}</p>{/if}
-  <div class="heading">
-    <h3 id="inflection">Inflected forms</h3>
-    <nav>
-      <button onclick={() => changePanel('forms')}>Add forms</button><button
-        disabled={!template}
-        onclick={fillSlots}>Fill from Wiktionary</button
-      >
-    </nav>
-  </div>
-  {#if panel === 'forms'}<div class="sub">
-      <label
-        >Spelling or phrase<input
-          lang="hi"
-          bind:value={spelling}
-          oninput={() => (pattern = 'invariant')}
-        /></label
-      >
-      <label
-        >Inflection pattern<select bind:value={pattern}
-          >{#each hindiPatterns(spelling, draft.pos, '') as p}<option value={p.id}>{p.label}</option
-            >{/each}{#if spelling.includes(' ')}<option value="phrase"
-              >Inflect a verb in this phrase</option
-            >{/if}</select
-        ></label
-      >
-      {#if pattern === 'phrase'}<label>Verb to inflect<input lang="hi" bind:value={verb} /></label
-        ><label class="check"
-          ><input type="checkbox" bind:checked={negative} /> Include न / नहीं variants</label
-        >{/if}
-      <label class="check"
-        ><input type="checkbox" bind:checked={alternative} /> Show as alternative headword</label
-      ><button onclick={addForms}>Add forms to draft</button>
-    </div>{/if}
-  {#each draft.inventory?.slots ?? [] as slot (slot.id)}
-    <div class="slot">
-      <label class="check"
-        ><input
-          type="checkbox"
-          disabled={!slot.forms.length}
-          bind:checked={slot.include}
-        />{slot.label}</label
-      >
-      <input
-        lang="hi"
-        aria-label={slot.label + ' forms'}
-        placeholder="Forms separated by ;"
-        value={slot.forms.join('; ')}
-        onchange={(e) => {
-          slot.forms = split(e.currentTarget.value, /[;\n]/);
-          slot.include = !!slot.forms.length;
-          slot.applicability = slot.include ? 'applicable' : 'unknown';
-        }}
-      />
-    </div>
-  {/each}
-  <details>
-    <summary>Other attested forms ({draft.other.length})</summary><label
-      >One form per line<textarea
-        rows="4"
-        lang="hi"
-        value={draft.other.join('\n')}
-        onchange={(e) => (draft.other = split(e.currentTarget.value, /\n/))}
-      ></textarea></label
-    >
-  </details>
-  <details>
-    <summary>Dictionary lookup</summary>
-    <nav>
-      <a
-        href={'https://en.wiktionary.org/wiki/' + encodeURIComponent(lookup) + '#Hindi'}
-        target="_blank"
-        rel="noreferrer">Wiktionary ↗</a
-      >
-      {#each ['hindwi', 'rekhta'] as p}<a
-          href={'https://www.google.com/search?q=' +
-            encodeURIComponent('site:' + p + 'dictionary.com ' + lookup)}
-          target="_blank"
-          rel="noreferrer">{p === 'hindwi' ? 'Hindwi' : 'Rekhta'} ↗</a
-        >{/each}
-    </nav>
-    <div class="row">
-      <input aria-label="Look up word" bind:value={lookup} /><select
-        aria-label="Source dictionary"
-        bind:value={provider}
-        ><option value="hindwi">Hindwi</option><option value="rekhta">Rekhta</option></select
-      ><button onclick={() => findRefs(false)}>Find entries</button><button
-        onclick={() => findRefs(true)}>Refresh search</button
-      >
-    </div>
-    <button onclick={findWiki}>Look up imported Wiktionary entries</button>
-    {#each wiki as w}<div class="sub">
-        <strong>{w.lemma}</strong> <small>{w.pos}</small>
-        <p>{w.definitions?.map((d) => d.translation || d.original).join('; ')}</p>
-        <button onclick={() => useWiki(w)}>Use as draft</button>
-      </div>{/each}
-    {#each results as r}<button
-        onclick={() => {
-          sourceUrl = r.source_url;
-          page = '';
-          excerpt = '';
-          english = '';
-          void loadPage(false);
-        }}>{r.label}</button
-      >{/each}
-    <label
-      >Source page URL<input
-        type="url"
-        bind:value={sourceUrl}
-        oninput={() => {
-          page = '';
-          retrieved = '';
-        }}
-      /></label
-    >
-    <nav>
-      <button disabled={!sourceUrl} onclick={() => loadPage(false)}>Load page</button><button
-        disabled={!sourceUrl}
-        onclick={() => loadPage(true)}>Refresh page</button
-      >
-    </nav>
-    {#if page}<details>
-        <summary>Cached source page ({retrieved})</summary>
-        <pre>{page}</pre>
-      </details>{/if}
-    <label>Source excerpt<textarea bind:value={excerpt} rows="3"></textarea></label><label
-      >English draft<textarea bind:value={english} rows="2"></textarea></label
-    >
-    <nav>
-      <button
-        disabled={!excerpt || !ai}
-        title={ai ? 'Translate this excerpt' : 'Configure an AI key to translate excerpts'}
-        onclick={() =>
-          act(async () => {
-            english = (await workshop<{ english: string }>('translate', { excerpt })).english;
-          })}>Draft English with AI</button
-      >
-      <button
-        disabled={!excerpt.trim()}
-        onclick={() => addExcerpt({ url: sourceUrl, original: excerpt, english })}
-        >Use excerpt</button
-      >
-    </nav>
-    {#each [...word.evidence, ...draft.excerpts] as e}<button
-        class="result"
-        onclick={() => {
-          sourceUrl = e.url;
-          excerpt = e.original;
-          english = e.english;
-          page = '';
-        }}>{e.original}</button
-      >{/each}
-  </details>
+  <label>Other forms<textarea
+    lang={language} dir="auto" rows="2" placeholder="Separate forms with commas"
+    value={otherFormsText ?? draft.other.join(', ')}
+    oninput={(e) => editOtherForms(e.currentTarget.value)}
+    onblur={() => (otherFormsText = null)}
+  ></textarea></label>
   <div class="save">
     <button class="primary" disabled={!draft.lemma.trim()} onclick={() => save()}>Save</button>
     {#if review}<button disabled={!draft.lemma.trim()} onclick={() => save(true)}
@@ -634,8 +382,7 @@
     {#if draft.id && ondeleted}<button
         disabled={dirty}
         title={dirty ? 'Save edits before merging' : ''}
-        onclick={() => changePanel('merge')}>Merge into…</button
-      >
+        onclick={() => changePanel('merge')}>Merge into…</button>
       <button
         onclick={() => {
           if (
@@ -675,12 +422,10 @@
   .heading {
     justify-content: space-between;
   }
-  .heading h2,
-  .heading h3 {
+  .heading h2 {
     margin: 0.5rem 0;
   }
-  .heading a,
-  nav a {
+  .heading a {
     color: var(--accent);
   }
   .identity {
@@ -746,22 +491,6 @@
   .chips button {
     padding: 0.15rem 0.45rem;
   }
-  .slot {
-    display: grid;
-    grid-template-columns: minmax(8rem, 1fr) minmax(6rem, 1fr);
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0.4rem 0;
-    border-bottom: 1px solid var(--rule);
-  }
-  details,
-  .sub {
-    padding: 0.7rem 0;
-  }
-  summary {
-    cursor: pointer;
-    font-weight: 600;
-  }
   .result {
     display: block;
     width: 100%;
@@ -780,11 +509,6 @@
   button.current {
     background: var(--accent);
     color: var(--paper);
-  }
-  pre {
-    white-space: pre-wrap;
-    overflow: auto;
-    max-height: 16rem;
   }
   nav {
     margin: 0.5rem 0;

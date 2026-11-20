@@ -2,7 +2,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { goto } from '$app/navigation';
 
-import { emptyDraft } from '$lib/dictionary/hindi-workshop';
+import { emptyDraft } from '$lib/dictionary/workshop';
 import ChapterBody from './ChapterBody.svelte';
 import ReaderImage from './ReaderImage.svelte';
 import type { ChapterView, ServerToken } from './types.js';
@@ -110,7 +110,7 @@ it('reopens a saved form at another occurrence while the chapter is refreshing',
   }));
   const view = render(ChapterBody, {
     props: { chapter: chapter(occurrences), language: 'hi', textId: 'book' },
-    context: new Map([['readerHindiDictionary', () => ({ ai: false })]]),
+    context: new Map([['readerDictionary', () => true]]),
   });
   const words = view.container.querySelectorAll<HTMLElement>('[data-token-id]');
   await fireEvent.click(words[0]!);

@@ -12,11 +12,11 @@ export async function listHindiPatterns(ids: string[]) {
   if (!ids.length) return {};
   const rows = await db
     .select({
-      id: schema.hindiEntries.lemmaId,
-      pattern: sql<string>`coalesce(${schema.hindiEntries.entry}->>'paradigm', 'invariant')`,
+      id: schema.dictionaryEntries.lemmaId,
+      pattern: sql<string>`coalesce(${schema.dictionaryEntries.entry}->>'paradigm', 'invariant')`,
     })
-    .from(schema.hindiEntries)
-    .where(inArray(schema.hindiEntries.lemmaId, ids));
+    .from(schema.dictionaryEntries)
+    .where(inArray(schema.dictionaryEntries.lemmaId, ids));
   return Object.fromEntries(rows.map((row) => [row.id, row.pattern])) as Record<string, string>;
 }
 
@@ -45,8 +45,8 @@ export async function getHindiEntry(id: string) {
   if (!lemma || lemma.language !== 'hi') return null;
   const [stored] = await db
     .select()
-    .from(schema.hindiEntries)
-    .where(eq(schema.hindiEntries.lemmaId, id));
+    .from(schema.dictionaryEntries)
+    .where(eq(schema.dictionaryEntries.lemmaId, id));
   const forms = await db.select().from(schema.lemmaForms).where(eq(schema.lemmaForms.lemmaId, id));
   const entry = stored?.entry ?? {};
   return {
@@ -121,9 +121,9 @@ export async function saveHindiMorphology(
     // The full editor's explicit exclusions take precedence over the generic
     // form-delete trigger. Preview and the saved parser input must match.
     await tx
-      .insert(schema.hindiEntries)
+      .insert(schema.dictionaryEntries)
       .values({ lemmaId: id, externalId: `parhiba:${id}`, entry })
-      .onConflictDoUpdate({ target: schema.hindiEntries.lemmaId, set: { entry } });
+      .onConflictDoUpdate({ target: schema.dictionaryEntries.lemmaId, set: { entry } });
     await tx.insert(schema.lemmaEditHistory).values({
       lemmaId: id,
       editorId: user.id,

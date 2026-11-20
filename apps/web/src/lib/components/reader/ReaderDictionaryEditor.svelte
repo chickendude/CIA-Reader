@@ -1,26 +1,27 @@
 <script lang="ts">
+  import { getLanguage, type LanguageCode } from '@ciareader/shared-types';
   import { onMount } from 'svelte';
   import WorkshopEditor from '$lib/components/dictionary/WorkshopEditor.svelte';
   import Sheet from '$lib/components/overlay/Sheet.svelte';
-  import { blankWorkshopWord, type Draft, type WorkshopWord } from '$lib/dictionary/hindi-workshop';
+  import { blankWorkshopWord, type Draft, type WorkshopWord } from '$lib/dictionary/workshop';
   import { workshop } from '$lib/dictionary/workshop-client';
   import { wordContext } from '$lib/dictionary/word-context';
   import type { ServerToken } from './types';
 
   let {
+    language,
     token,
     chapterTokens,
     lemmaId,
     headword,
-    ai,
     onClose,
     onSaved,
   }: {
+    language: LanguageCode;
     token: ServerToken;
     chapterTokens?: ServerToken[] | null;
     lemmaId: string | null;
     headword: string;
-    ai: boolean;
     onClose: () => void;
     onSaved: (word: WorkshopWord) => void;
   } = $props();
@@ -41,7 +42,7 @@
     error = '';
     try {
       const next = id
-        ? await workshop<WorkshopWord>('word', { id }, controller.signal)
+        ? await workshop<WorkshopWord>('word', { id }, controller.signal, language)
         : blankWorkshopWord(lemma, pos);
       if (controller.signal.aborted) return;
       const edit = structuredClone(next.draft);
@@ -69,7 +70,7 @@
   onClose={() => {
     if (!working) onClose();
   }}
-  title="Hindi dictionary entry"
+  title={getLanguage(language).displayName + ' dictionary entry'}
   width={660}
   maxHeight="94dvh"
 >
@@ -78,10 +79,10 @@
   {:else if word && draft}
     {#key word}
       <WorkshopEditor
+        {language}
         {word}
         bind:draft
         bind:working
-        {ai}
         observed={token.surface}
         {context}
         review={false}

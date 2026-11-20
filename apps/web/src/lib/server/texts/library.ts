@@ -316,6 +316,7 @@ export async function listOfficialBooks(opts: {
             WHERE c."chapterCount" IS NOT NULL AND ci.collection_id = c.id
           `)},
           'knownWords', s."knownWords", 'learningWords', s."learningWords",
+          'knownHeadwords', s."knownHeadwords", 'learningHeadwords', s."learningHeadwords",
           'knownPct', round(100*s.reading_ratio,1), 'learningPct', round(100*s.learning_ratio,1),
           'uniquePct', round(100*s.unique_ratio,1)) END AS stats
       FROM candidates c LEFT JOIN scores s USING(id)

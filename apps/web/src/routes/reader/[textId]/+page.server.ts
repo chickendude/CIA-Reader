@@ -5,11 +5,10 @@
 import { error } from '@sveltejs/kit';
 import { and, eq } from 'drizzle-orm';
 
-import { canEditDictionary } from '$lib/server/dictionary/permissions';
-import { OPENAI_API_KEY } from '$lib/server/env';
+import { canEditDictionary, isCuratorOrAdmin } from '$lib/server/dictionary/permissions';
 import { getReadableText } from '$lib/server/texts/upload.js';
 import { getPdfStorage } from '$lib/server/pdf/storage.js';
-import { loadChapterTokens } from '$lib/server/texts/tokens.js';
+import { loadChapterTokens, type RenderedToken } from '$lib/server/texts/tokens.js';
 import { loadChapterPhraseSpans } from '$lib/server/texts/phrase-spans.js';
 import { getTextProgress } from '$lib/server/texts/progress.js';
 import { readerCollectionContext } from '$lib/server/collections.js';
@@ -51,6 +50,18 @@ function readMode(
 function readBool(url: URL, key: string): boolean {
   const raw = url.searchParams.get(key);
   return raw === '1' || raw === 'true';
+}
+
+function packTokens(tokens: RenderedToken[]) {
+  // SvelteKit transmits a shared object once. Repeated words and spaces can share their
+  // dictionary data while each occurrence keeps its own ID and original token index.
+  const readings = new Map<string, Omit<RenderedToken, 'id' | 'idx'>>();
+  return tokens.map(({ id, idx, ...reading }) => {
+    const key = JSON.stringify(reading);
+    const shared = readings.get(key) ?? reading;
+    if (shared === reading) readings.set(key, reading);
+    return [id, idx, shared] as const;
+  });
 }
 
 export const load: PageServerLoad = async ({ params, locals, url }) => {
@@ -204,7 +215,7 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
       // Only the active chapter ships with server-rendered tokens.
       // Siblings carry `tokens: null`; the lazy endpoint returns both
       // body and tokens when a sibling needs to render.
-      tokens: c.idx === chapterIdx ? activeTokens : null,
+      tokens: c.idx === chapterIdx && activeTokens ? packTokens(activeTokens) : null,
       phraseSpans: c.idx === chapterIdx ? activeChapterSpans : null,
       // PDF page image (all pages — cheap URL). Null for non-PDF / pages
       // not yet processed.
@@ -223,10 +234,10 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
     // Persist the popover's per-language state for any signed-in
     // reader; anonymous viewers (anon reads of an official text) get
     // a session-only live preview.
+    canReviewHindi: result.text.language === 'hi' && isCuratorOrAdmin(locals.user)
+      && (result.text.visibility === 'official' || result.text.ownerId === locals.user?.id),
     canPersistSettings: locals.user != null,
-    hindiDictionary: result.text.language === 'hi' && await canEditDictionary(locals.user, 'hi')
-      ? { ai: Boolean(OPENAI_API_KEY) }
-      : null,
+    dictionaryEditor: await canEditDictionary(locals.user, result.text.language),
     isOwner: Boolean(locals.user && locals.user.id === result.text.ownerId),
     // Surface admin status so the reader chrome can offer the
     // reprocess affordance to admins on any text (owners get the

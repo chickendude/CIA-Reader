@@ -1,14 +1,18 @@
+import type { ReviewFilter } from '$lib/dictionary/review-status';
+import { wordContext } from '$lib/dictionary/word-context';
+import { bookAttention } from './hindi-attention.js';
+import type { LanguageCode } from '@ciareader/shared-types';
 import { and, eq, sql } from 'drizzle-orm';
 import { db, schema } from '../db/index.js';
 import type { User } from '../db/schema.js';
 import { canReadText } from '../auth/can-read.js';
 import { isCuratorOrAdmin } from '../dictionary/permissions.js';
 import { ContextChoiceError, saveHindiContextChoice } from './hindi-context.js';
-import { loadChapterTokens, type RenderedToken } from './tokens.js';
+import { loadChapterTokens } from './tokens.js';
 import { hindiContextPassage, suggestHindiContext } from '../hindi-ai.js';
 
 type Actor = Pick<User, 'id' | 'role'>;
-export async function reviewBooks(actor: Actor) {
+export async function reviewBooks(actor: Actor, language: LanguageCode = 'hi') {
   if (!isCuratorOrAdmin(actor)) throw new ContextChoiceError('Staff access required', 403);
   return db
     .select({
@@ -20,7 +24,7 @@ export async function reviewBooks(actor: Actor) {
     })
     .from(schema.texts)
     .where(
-      sql`${schema.texts.language}='hi' AND (${schema.texts.ownerId}=${actor.id} OR ${schema.texts.visibility}='official')`,
+      sql`${schema.texts.language}=${language} AND (${schema.texts.ownerId}=${actor.id} OR ${schema.texts.visibility}='official')`,
     )
     .orderBy(schema.texts.title);
 }
@@ -28,9 +32,9 @@ export async function reviewBooks(actor: Actor) {
 export async function reviewPage(
   textId: string,
   actor: Actor,
-  kind: 'unparsed' | 'ambiguous',
   offset = 0,
   query = '',
+  filter: ReviewFilter = 'attention',
 ) {
   if (!isCuratorOrAdmin(actor)) throw new ContextChoiceError('Staff access required', 403);
   const [text] = await db
@@ -40,49 +44,36 @@ export async function reviewPage(
     .limit(1);
   if (!text || !(await canReadText(actor, text)))
     throw new ContextChoiceError('Book not found', 404);
-  const pattern = `%${query.replace(/[\\%_]/g, '\\$&')}%`;
-  const where = sql`ch.text_id=${textId} AND t.is_word AND t.surface ILIKE ${pattern}
-    AND ${kind === 'unparsed' ? sql`t.is_oov` : sql`jsonb_array_length(t.lemma_candidates)>1`}`;
-  const [count] =
-    await db.execute(sql`SELECT ${kind === 'unparsed' ? sql`count(DISTINCT t.surface)` : sql`count(*)`}::int AS total
-    FROM text_tokens t JOIN text_chapters ch ON ch.id=t.chapter_id WHERE ${where}`);
-  const unparsed =
-    kind === 'unparsed'
-      ? await db.execute(sql`SELECT t.surface,count(*)::int AS frequency,
-    (array_agg(t.idx ORDER BY ch.idx,t.idx))[1] AS token_idx,(array_agg(ch.idx ORDER BY ch.idx,t.idx))[1] AS chapter_idx
-    FROM text_tokens t JOIN text_chapters ch ON ch.id=t.chapter_id WHERE ${where}
-    GROUP BY t.surface ORDER BY frequency DESC,t.surface LIMIT 40 OFFSET ${offset}`)
-      : [];
-  const ambiguous: { token: RenderedToken; context: string; chapterIdx: number }[] = [];
-  if (kind === 'ambiguous') {
-    const rows =
-      await db.execute(sql`SELECT t.id,t.chapter_id,ch.idx AS chapter_idx FROM text_tokens t
-      JOIN text_chapters ch ON ch.id=t.chapter_id WHERE ${where} ORDER BY ch.idx,t.idx LIMIT 20 OFFSET ${offset}`);
-    const cache = new Map<string, RenderedToken[]>();
-    for (const row of rows) {
-      const chapterId = String(row.chapter_id);
-      if (!cache.has(chapterId))
-        cache.set(chapterId, (await loadChapterTokens(chapterId, actor.id)) ?? []);
-      const token = cache.get(chapterId)!.find((t) => t.id === row.id);
-      if (token)
-        ambiguous.push({
-          token,
-          context: hindiContextPassage(cache.get(chapterId)!, token.idx),
-          chapterIdx: Number(row.chapter_idx),
-        });
-    }
+  const { rows, counts, total, offset: pageOffset } = await bookAttention(textId, query, offset, filter);
+  const chapters = new Map<string, Map<string, number>>();
+  for (const row of rows) {
+    const starts = chapters.get(row.chapter_id) ?? new Map<string, number>();
+    starts.set(row.id, row.start);
+    chapters.set(row.chapter_id, starts);
   }
-  return {
-    book: { id: text.id, title: text.title },
-    total: Number(count?.total ?? 0),
-    unparsed: unparsed.map((r) => ({
-      surface: String(r.surface),
-      frequency: Number(r.frequency),
-      tokenIdx: Number(r.token_idx),
-      chapterIdx: Number(r.chapter_idx),
-    })),
-    ambiguous,
-  };
+
+  const details = new Map(await Promise.all([...chapters].map(async ([chapterId, starts]) => {
+    const [rendered, words] = await Promise.all([
+      loadChapterTokens(chapterId, actor.id, undefined, false, starts),
+      db.select({ idx: schema.textTokens.idx, surface: schema.textTokens.surface, isWord: schema.textTokens.isWord })
+        .from(schema.textTokens).where(eq(schema.textTokens.chapterId, chapterId)).orderBy(schema.textTokens.idx),
+    ]);
+    return [chapterId, { tokens: new Map(rendered?.map(token => [token.id, token])), words }] as const;
+  })));
+
+  const occurrences = rows.flatMap(row => {
+    const chapter = details.get(row.chapter_id)!;
+    const token = chapter.tokens.get(row.id);
+    const context = token && wordContext(chapter.words, token.idx);
+    if (!token || !context) return [];
+    if (row.surface.startsWith(context.match) && row.surface.length > context.match.length) {
+      context.after = context.after.slice(row.surface.length - context.match.length);
+      context.match = row.surface;
+    }
+    return [{ token, context, surface: row.surface, status: row.status, spanEntries: row.ids ?? [],
+      chapterIdx: row.chapter_idx, key: token.id + ':' + row.stop }];
+  });
+  return { book: { id: text.id, title: text.title }, attentionCounts: counts, total, offset: pageOffset, occurrences };
 }
 
 export async function reviewTokenWithAi(tokenId: string, actor: Actor) {

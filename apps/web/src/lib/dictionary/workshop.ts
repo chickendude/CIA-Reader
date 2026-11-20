@@ -1,7 +1,3 @@
-export function normalizeHindiForm(word: string) {
-  return word.replace(/\u200c|\u200d|\ufeff/gu, '').normalize('NFC');
-}
-
 export const partsOfSpeech = {
   NOUN: 'noun',
   PROPN: 'proper noun',
@@ -98,6 +94,8 @@ export type ReviewItem = {
   }[];
 };
 export type Reference = { provider: string; label: string; source_url: string };
+
+export type ReportOption = { name: string; label: string; action: 'merge' | 'delete' };
 
 export type WorkshopReport = {
   fingerprint: string;

@@ -1,17 +1,28 @@
 <script lang="ts">
   import { workshop } from '$lib/dictionary/workshop-client';
-  import type { WorkshopReport } from '$lib/dictionary/hindi-workshop';
+  import type { ReportOption, WorkshopReport } from '$lib/dictionary/workshop';
+  import type { LanguageCode } from '@ciareader/shared-types';
+  import { untrack } from 'svelte';
   let {
+    language,
     reports,
     open,
     changed,
-  }: { reports: string[]; open: (id: string) => void; changed: () => void } = $props();
-  let name = $state('spellings'),
+  }: {
+    language: LanguageCode;
+    reports: ReportOption[];
+    open: (id: string) => void;
+    changed: () => void;
+  } = $props();
+  let name = $state(untrack(() => reports[0]?.name ?? '')),
     filter = $state(''),
     report = $state<WorkshopReport | null>(null);
   let selected = $state<string[]>([]),
     message = $state(''),
     busy = $state(false);
+  const verb = $derived(
+    reports.find((r) => r.name === name)?.action === 'merge' ? 'Merge' : 'Delete',
+  );
   const rows = $derived(report?.rows.filter((r) => !filter || r.state === filter) ?? []);
   const eligible = $derived(rows.flatMap((r) => (r.state === 'ready' && r.id ? [r.id] : [])));
   function reset() {
@@ -24,7 +35,7 @@
     busy = true;
     reset();
     try {
-      report = await workshop<WorkshopReport>('report', { report: name });
+      report = await workshop<WorkshopReport>('report', { report: name }, undefined, language);
     } catch (e) {
       message = (e as Error).message;
     } finally {
@@ -33,15 +44,19 @@
   }
   async function apply() {
     if (!report || !selected.length) return;
-    const verb = name === 'spellings' ? 'Merge' : 'Delete';
     if (!confirm(verb + ' ' + selected.length + ' selected dictionary entries?')) return;
     busy = true;
     try {
-      const { count } = await workshop<{ count: number }>('applyReport', {
-        report: name,
-        ids: selected,
-        fingerprint: report.fingerprint,
-      });
+      const { count } = await workshop<{ count: number }>(
+        'applyReport',
+        {
+          report: name,
+          ids: selected,
+          fingerprint: report.fingerprint,
+        },
+        undefined,
+        language,
+      );
       changed();
       await preview();
       message = count + ' entries updated.';
@@ -58,9 +73,7 @@
   <fieldset disabled={busy}>
     <label
       >Report <select bind:value={name} onchange={reset}
-        ><option value="spellings">Merge spelling variants</option>{#each reports as r}<option
-            value={r}>{r}</option
-          >{/each}</select
+        >{#each reports as r}<option value={r.name}>{r.label}</option>{/each}</select
       ></label
     >
     <button onclick={preview}>Preview</button>
@@ -92,8 +105,7 @@
             <p>{row.recommendation ?? ''} {row.reason} {row.blocked ?? ''}</p>
           </div>{/each}
       </div>
-      {#if selected.length}<button onclick={apply}
-          >{name === 'spellings' ? 'Merge' : 'Delete'} {selected.length} selected entries</button
+      {#if selected.length}<button onclick={apply}>{verb} {selected.length} selected entries</button
         >{/if}{/if}
   </fieldset>
   {#if busy || message}<p role="status">{busy ? 'Loading…' : message}</p>{/if}
