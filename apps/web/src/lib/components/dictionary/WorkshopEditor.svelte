@@ -6,6 +6,8 @@
     type WorkshopWord as Word,
     type Match,
     type ReviewItem,
+    formatAlternativeHeadwords,
+    parseAlternativeHeadwords,
   } from '$lib/dictionary/workshop';
   import { dictionaryProfile } from '$lib/dictionary/profiles';
   import { getLanguage, type LanguageCode } from '@ciareader/shared-types';
@@ -244,9 +246,10 @@
     <label
       >Alternative headwords<input
         lang={language} dir="auto"
-        value={draft.alternatives.join(', ')}
-        onchange={(e) => (draft.alternatives = split(e.currentTarget.value, /[,;\n]/))}
-        placeholder="Comma-separated spellings"
+        value={formatAlternativeHeadwords(draft.alternatives, draft.hiddenAlternatives).join(', ')}
+        onchange={(e) => Object.assign(draft, parseAlternativeHeadwords(split(e.currentTarget.value, /[,;\n]/)))}
+        title="Prefix a spelling with a period to hide it from the headword list."
+        placeholder="Separate with commas. Prefix hidden spellings with a period."
       /></label
     >
     <label

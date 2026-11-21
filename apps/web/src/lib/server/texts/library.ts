@@ -297,14 +297,14 @@ export async function listOfficialBooks(opts: {
   const { limit, offset } = clampPage(opts);
   const order = opts.sort === 'recent' ? sql`created_at DESC, id`
     : sql`${opts.sort === 'unique' ? sql`unique_ratio` : sql`reading_ratio`} DESC NULLS LAST, title, id`;
-  if (opts.userId) await ensureReaderCoverage(opts.userId);
+  const hasIgnores = opts.userId ? await ensureReaderCoverage(opts.userId) : false;
   const rows = await db.execute<{ cards: Card[]; total: number }>(sql`
     WITH catalog AS (${officialCatalog(opts.language)}), candidates AS (
       SELECT * FROM catalog
       ${opts.sort === 'recent' ? sql`ORDER BY created_at DESC, id LIMIT ${limit} OFFSET ${offset}` : sql``}
     ), scores AS (
-      ${opts.userId ? cachedBookScores(opts.userId) : sql`
-        WITH entries AS (${catalogEntries}) ${scoreBookEntries()}
+      ${opts.userId ? cachedBookScores(opts.userId, hasIgnores) : sql`
+        WITH entries AS (${catalogEntries()}) ${scoreBookEntries()}
       `}
     ), page AS (
       SELECT c.*,s.reading_ratio,s.unique_ratio,
@@ -314,7 +314,7 @@ export async function listOfficialBooks(opts: {
             SELECT c.id WHERE c."chapterCount" IS NULL
             UNION ALL SELECT ci.text_id FROM collection_items ci
             WHERE c."chapterCount" IS NOT NULL AND ci.collection_id = c.id
-          `)},
+          `, hasIgnores ? opts.userId : undefined)},
           'knownWords', s."knownWords", 'learningWords', s."learningWords",
           'knownHeadwords', s."knownHeadwords", 'learningHeadwords', s."learningHeadwords",
           'knownPct', round(100*s.reading_ratio,1), 'learningPct', round(100*s.learning_ratio,1),

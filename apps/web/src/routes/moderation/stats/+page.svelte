@@ -1,4 +1,6 @@
 <script lang="ts">
+  import PageLayout from '$lib/components/shell/PageLayout.svelte';
+  import PageTitle from '$lib/components/shell/PageTitle.svelte';
   import { LANGUAGES } from '@ciareader/shared-types';
   import type { PageProps } from './$types';
 
@@ -18,9 +20,14 @@
   <title>Correction stats | moderation | Parhiba</title>
 </svelte:head>
 
+{#snippet heading()}
+  <PageTitle>Correction stats</PageTitle>
+{/snippet}
+
+<PageLayout {heading}>
 <div class="ms">
   <header class="ms-h">
-    <h1 class="page-title">Correction stats</h1>
+    {@render heading()}
     <p class="ms-h-sub">
       Lightweight per-language metrics on parse accuracy, the curator queue,
       and time-to-resolution. Track these over time as overrides + dictionary
@@ -138,6 +145,7 @@
     </table>
   </section>
 </div>
+</PageLayout>
 
 <style>
   .ms-h-sub {

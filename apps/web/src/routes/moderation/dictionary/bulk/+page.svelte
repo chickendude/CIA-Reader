@@ -1,4 +1,6 @@
 <script lang="ts">
+  import PageLayout from '$lib/components/shell/PageLayout.svelte';
+  import PageTitle from '$lib/components/shell/PageTitle.svelte';
   import { enhance } from '$app/forms';
   import type { PageProps } from './$types';
 
@@ -19,13 +21,18 @@
   <meta name="robots" content="noindex" />
 </svelte:head>
 
+{#snippet heading()}
+  <PageTitle>Bulk curator tools</PageTitle>
+{/snippet}
+
+<PageLayout {heading}>
 <div class="page page-form">
   <p class="crumb">
     <a href="/moderation/dictionary">← Back to dictionary</a>
   </p>
 
   <header>
-    <h1 class="page-title">Bulk curator tools</h1>
+    {@render heading()}
     <p class="sub">
       Admin-only. Each operation requires a reason and writes one audit row
       per affected translation. Hard cap of {data.bulkLimit} rows per submission.
@@ -178,6 +185,7 @@ bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
     </form>
   </section>
 </div>
+</PageLayout>
 
 <style>
   .crumb {

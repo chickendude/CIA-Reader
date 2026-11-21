@@ -15,16 +15,12 @@
   import PageCloseLink from '$lib/components/shell/PageCloseLink.svelte';
   import { reprocessWithToast } from '$lib/text/reprocess.js';
   import { getToastStore } from '$lib/components/toast/toast-store.js';
+  import { readerOccurrenceIgnores } from '$lib/components/reader/ignored-occurrences';
   import ReaderSettings from '$lib/components/reader/ReaderSettings.svelte';
   import { ProgressWriter, type ProgressAnchor } from '$lib/components/reader/progress-client.js';
   import { computePctRead } from '$lib/components/reader/reader-progress.js';
   import { buildReaderAnchorUrl } from '$lib/components/reader/url-anchor.js';
   import { buildReaderToc } from '$lib/components/reader/reader-toc.js';
-  import {
-    isImmersiveAttributeSet,
-    setImmersiveAttribute,
-    writePersistedImmersive,
-  } from '$lib/components/reader/immersive.js';
   import {
     readPersistedFlagUndefined,
     setFlagUndefinedAttribute,
@@ -38,6 +34,7 @@
   import type { PageProps } from './$types';
 
   const toastStore = getToastStore();
+  readerOccurrenceIgnores();
 
   let { data }: PageProps = $props();
 
@@ -46,8 +43,6 @@
   // PDF texts render as a page-image reader (clickable word overlays)
   // regardless of the saved layout mode.
   const usesPageImages = $derived(data.text.sourceType === 'pdf' || !!data.chapters[data.anchor.chapterIdx]?.pageImageUrl);
-
-  // The shell controls immersive mode. Escape also exits it from the reader.
 
   // Live status mirrors data.text.status; flips when the polling loop
   // hits a terminal state.
@@ -283,26 +278,6 @@
 
     if (data.isAdmin) flagUndefined = readPersistedFlagUndefined();
 
-    // Reading is immersive: hide the app-shell rail / bottom nav so the
-    // text owns the screen. The × button (→ library) and Esc are the ways
-    // out; leaving the reader restores the chrome (cleanup below).
-    setImmersiveAttribute(true);
-    writePersistedImmersive(true);
-
-    // AppShell hydrates the immersive flag now. The reader
-    // only owns the Esc-to-exit shortcut — quick way out of
-    // full-screen reading without hunting for the hamburger button.
-    // We skip Esc when the word side-panel is open since the popup
-    // owns that key.
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape') return;
-      if (!isImmersiveAttributeSet()) return;
-      if (document.querySelector('[data-testid="word-popup"]')) return;
-      e.preventDefault();
-      setImmersiveAttribute(false);
-      writePersistedImmersive(false);
-    };
-    window.addEventListener('keydown', onKey);
     const refreshMerge = async () => {
       await invalidateAll();
       continuousRevision++;
@@ -349,12 +324,8 @@
     return () => {
       cleanupPoll?.();
       window.removeEventListener('reader-words-merged', refreshMerge);
-      window.removeEventListener('keydown', onKey);
       topRO?.disconnect();
       document.documentElement.style.removeProperty('--reader-top-h');
-      // Leaving the reader restores the app-shell chrome everywhere else.
-      setImmersiveAttribute(false);
-      writePersistedImmersive(false);
     };
   });
 

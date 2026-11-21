@@ -7,6 +7,8 @@
 </svelte:head>
 
 <script lang="ts">
+  import PageLayout from '$lib/components/shell/PageLayout.svelte';
+  import PageTitle from '$lib/components/shell/PageTitle.svelte';
   const authEnvelope = `{
   "user": {
     "id": "user-id",
@@ -57,11 +59,16 @@
 }`;
 </script>
 
+{#snippet heading()}
+  <PageTitle>Parhiba API</PageTitle>
+{/snippet}
+
+<PageLayout {heading}>
 <div class="api-reference">
   <article>
     <header class="hero">
       <p class="eyebrow">Client reference</p>
-      <h1 class="page-title">Parhiba API</h1>
+      {@render heading()}
       <p>
         A practical first read for mobile clients and external integrations using
         the stable <code>/api/v1/*</code> API.
@@ -296,6 +303,7 @@
     </section>
   </article>
 </div>
+</PageLayout>
 
 <style>
   .api-reference {
@@ -316,7 +324,6 @@
     text-transform: uppercase;
   }
 
-  h1,
   h2 {
     font-family: var(--font-serif, system-ui);
     letter-spacing: 0;

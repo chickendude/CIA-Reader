@@ -1,4 +1,6 @@
 <script lang="ts">
+  import PageLayout from '$lib/components/shell/PageLayout.svelte';
+  import PageTitle from '$lib/components/shell/PageTitle.svelte';
   import Pagination from '$lib/components/input/Pagination.svelte';
   import { getToastStore } from '$lib/components/toast/toast-store.js';
   import { goto } from '$app/navigation';
@@ -294,10 +296,15 @@
   });
 </script>
 
+{#snippet heading()}
+  <PageTitle>{reviewOnly ? data.language.displayName + ' dictionary' : 'Dictionary workshop'}</PageTitle>
+{/snippet}
+
+<PageLayout {heading}>
 <div class="workshop">
   <header>
     <div>
-      <h1 class="page-title">{reviewOnly ? data.language.displayName + ' dictionary' : 'Dictionary workshop'}</h1>
+      {@render heading()}
     </div>
     <div class="controls">
       <Button href={'/dictionary/' + language}>Browse entries</Button>
@@ -458,6 +465,7 @@
     </article>{/if}
   </div>
 </div>
+</PageLayout>
 
 <style>
   header,

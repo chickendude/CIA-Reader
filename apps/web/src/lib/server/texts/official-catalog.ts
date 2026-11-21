@@ -1,3 +1,4 @@
+import { readerFrequencies } from './reader-frequencies';
 import { sql } from 'drizzle-orm';
 import type { LanguageCode } from '@ciareader/shared-types';
 import { schema } from '../db/index.js';
@@ -24,14 +25,16 @@ export function officialCatalog(language?: LanguageCode) {
 }
 
 // The caller supplies a candidates relation with the catalog titles to score.
-export const catalogEntries = sql`
+export function catalogEntries(userId?: string) {
+  return sql`
       SELECT c.id, f.lemma_id, f.occurrences AS n FROM candidates c
-      JOIN book_word_frequencies f ON f.text_id=c.id
+      JOIN ${readerFrequencies('book', userId)} f ON f.text_id=c.id
       WHERE c."chapterCount" IS NULL
       UNION ALL
       SELECT c.id, f.lemma_id, sum(f.occurrences) AS n FROM candidates c
       JOIN collection_items ci ON ci.collection_id=c.id
-      JOIN book_word_frequencies f ON f.text_id=ci.text_id
+      JOIN ${readerFrequencies('book', userId)} f ON f.text_id=ci.text_id
       WHERE c."chapterCount" IS NOT NULL
       GROUP BY c.id,f.lemma_id
 `;
+}

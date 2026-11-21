@@ -1,4 +1,6 @@
 <script lang="ts">
+  import PageLayout from '$lib/components/shell/PageLayout.svelte';
+  import PageTitle from '$lib/components/shell/PageTitle.svelte';
   import { invalidateAll, goto } from '$app/navigation';
   import Modal from '$lib/components/overlay/Modal.svelte';
   import BookActions from '$lib/components/library/BookActions.svelte';
@@ -242,10 +244,15 @@
   <title>{data.collection.title} | Parhiba</title>
 </svelte:head>
 
+{#snippet heading()}
+  <PageTitle>{data.collection.title}</PageTitle>
+{/snippet}
+
+<PageLayout {heading}>
 <div class="cd">
   <header class="cd-h">
     <div class="collection-heading">
-      <h1 class="page-title">{data.collection.title}</h1>
+      {@render heading()}
       {#if data.user?.role === 'admin' || (data.isOwner && data.collection.visibility !== 'official')}
         <BookActions id={data.collection.id} title={data.collection.title} collection canRename />
       {/if}
@@ -447,6 +454,7 @@
     </button>
   {/snippet}
 </Modal>
+</PageLayout>
 
 <style>
   .collection-heading { position: relative; }

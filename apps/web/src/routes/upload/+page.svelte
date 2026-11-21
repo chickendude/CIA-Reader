@@ -1,4 +1,6 @@
 <script lang="ts">
+  import PageLayout from '$lib/components/shell/PageLayout.svelte';
+  import PageTitle from '$lib/components/shell/PageTitle.svelte';
   import { enhance } from '$app/forms';
   import { goto } from '$app/navigation';
   import { untrack } from 'svelte';
@@ -279,9 +281,14 @@
   <title>{pageTitle} | Parhiba</title>
 </svelte:head>
 
+{#snippet heading()}
+  <PageTitle>{pageTitle}</PageTitle>
+{/snippet}
+
+<PageLayout {heading}>
 <div class="page page-form">
   <header>
-    <h1 class="page-title">{pageTitle}</h1>
+    {@render heading()}
   </header>
 
   {#if errorMessage}
@@ -472,6 +479,7 @@
     {/if}
   </form>
 </div>
+</PageLayout>
 
 <style>
   form label {

@@ -14,6 +14,7 @@ function revisions(userId: string) {
 function cacheState(userId: string) {
   return sql`
     SELECT c.user_id IS NOT NULL AS populated,
+      EXISTS (SELECT 1 FROM reader_ignored_tokens WHERE user_id=${userId}) AS has_ignores,
       c.catalog_revision=r.catalog AND c.vocabulary_revision=r.vocabulary AS fresh
     FROM (${revisions(userId)}) r LEFT JOIN reader_coverage_cache c ON c.user_id=${userId} AND c.learning_entries IS NOT NULL
   `;
@@ -30,7 +31,7 @@ async function rebuild(userId: string) {
     // An edit committed during the build leaves the saved versions behind automatically.
     await tx.execute(sql`
       WITH versions AS (${revisions(userId)}), candidates AS (${officialCatalog()}),
-      entries AS (${catalogEntries}), scores AS (${scoreBookEntries(userId)}),
+      entries AS (${catalogEntries()}), scores AS (${scoreBookEntries(userId)}),
       packed AS (
         SELECT ARRAY(SELECT id FROM scores ORDER BY id) AS ids,
           ARRAY(SELECT words FROM scores ORDER BY id) AS words,
@@ -71,15 +72,16 @@ export function refreshReaderCoverage(userId: string): Promise<void> {
   return next;
 }
 
-export async function ensureReaderCoverage(userId: string): Promise<void> {
-  const [state] = await db.execute<{ populated: boolean; fresh: boolean }>(cacheState(userId));
-  if (state?.fresh) return;
+export async function ensureReaderCoverage(userId: string): Promise<boolean> {
+  const [state] = await db.execute<{ populated: boolean; fresh: boolean; has_ignores: boolean }>(cacheState(userId));
+  if (state?.fresh) return state.has_ignores;
   const refresh = refreshReaderCoverage(userId);
   if (!state?.populated) await refresh;
+  return state?.has_ignores ?? false;
 }
 
-export function cachedBookScores(userId: string) {
-  return sql`
+export function cachedBookScores(userId: string, hasIgnores = true) {
+  const cached = sql`
     SELECT b.id,b.words,b.distinct_words AS "uniqueWords",b.unresolved,
       b.known AS "knownWords", b.learning AS "learningWords",
       b.known_entries AS "knownHeadwords", b.learning_entries AS "learningHeadwords",
@@ -90,5 +92,20 @@ export function cachedBookScores(userId: string) {
     CROSS JOIN LATERAL unnest(l.book_ids,l.words,l.unique_words,l.unresolved,c.known_words,c.learning_words,c.known_entries,c.learning_entries)
       AS b(id,words,distinct_words,unresolved,known,learning,known_entries,learning_entries)
     WHERE c.user_id=${userId}
+  `;
+  if (!hasIgnores) return cached;
+  return sql`
+    WITH affected_texts AS (
+      SELECT DISTINCT ch.text_id FROM reader_ignored_tokens i JOIN text_tokens t ON t.id=i.token_id
+      JOIN text_chapters ch ON ch.id=t.chapter_id WHERE i.user_id=${userId}
+    ), affected AS (
+      SELECT text_id AS id FROM affected_texts UNION
+      SELECT ci.collection_id FROM collection_items ci JOIN affected_texts a ON a.text_id=ci.text_id
+    ), candidates AS (
+      SELECT c.* FROM (${officialCatalog()}) c JOIN affected a ON a.id=c.id
+    ), entries AS (${catalogEntries(userId)}), adjusted AS (${scoreBookEntries(userId)})
+    ${cached} AND NOT EXISTS (SELECT 1 FROM affected a WHERE a.id=b.id)
+    UNION ALL SELECT id,words,"uniqueWords",unresolved,"knownWords","learningWords","knownHeadwords",
+      "learningHeadwords",reading_ratio,learning_ratio,unique_ratio FROM adjusted
   `;
 }

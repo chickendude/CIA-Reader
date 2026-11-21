@@ -8,10 +8,8 @@
  * `.word.no-definition` while that attribute is present, so the class
  * TokenSpan always emits stays inert for everyone else.
  *
- * Unlike immersive mode (sessionStorage, fresh each visit), the
- * preference lives in `localStorage`: an admin doing a
- * definition-coverage pass keeps the overlay on across visits until
- * they switch it off.
+ * The preference lives in localStorage so admins can keep the overlay
+ * on across visits.
  *
  * The helpers are pure DOM/storage so they're testable under jsdom
  * without rendering a Svelte component.

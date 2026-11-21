@@ -18,3 +18,24 @@ it('returns a dictionary validation error for an incompatible inventory', async 
     message: 'Unsupported form inventory version',
   });
 });
+
+it('declines both spellings of क़ब्ज़ा in the preview and the same grammatical slots', async () => {
+  const entry = {
+    lemma: 'क़ब्ज़ा',
+    pos: 'NOUN',
+    paradigm: 'noun_m_aa',
+    alternative_headwords: ['कब्जा', 'qabza'],
+  };
+  const result = await previewHindiEntry(entry, { include_slots: true });
+  expect(Object.keys(result.forms).sort()).toEqual([
+    'क़ब्ज़ा', 'क़ब्ज़े', 'क़ब्ज़ों', 'क़ब्ज़ो', 'कब्जा', 'कब्जे', 'कब्जों', 'कब्जो', 'qabza',
+  ].sort());
+  expect(result.slots).toContainEqual({
+    label: 'Plural, oblique',
+    forms: ['कब्जों', 'क़ब्ज़ों'],
+  });
+  expect(result.forms['कब्जे']).toContain('noun_m_aa');
+  const excluded = await previewHindiEntry({ ...entry, excluded_forms: ['कब्जे'] });
+  expect(excluded.forms['कब्जे']).toBeUndefined();
+  expect(excluded.forms['क़ब्ज़े']).toContain('noun_m_aa');
+});

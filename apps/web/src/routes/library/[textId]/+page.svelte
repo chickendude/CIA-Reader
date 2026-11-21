@@ -1,4 +1,5 @@
 <script lang="ts">
+  import PageLayout from '$lib/components/shell/PageLayout.svelte';
   import { hindiReviewHref } from '$lib/dictionary/hindi-review-link';
   import { page } from '$app/state';
   import { enhance } from '$app/forms';
@@ -16,9 +17,14 @@
 
 <svelte:head><title>{book.title} | Official | Parhiba</title></svelte:head>
 
+{#snippet heading()}
+  <SubpageHeading title={book.title} href="/library?tab=official" closeLabel="Back to official library" />
+{/snippet}
+
+<PageLayout {heading}>
 <div class="book-page">
   <div class="book-header">
-    <SubpageHeading title={book.title} href="/library?tab=official" closeLabel="Back to official library" />
+    {@render heading()}
     <BookComparison comparison={data.comparison} title={book.title} />
   </div>
   <div class="book-layout">
@@ -48,10 +54,11 @@
     </div>
   </div>
 </div>
+</PageLayout>
 
 <style>
   .book-header { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: .75rem; margin-bottom: 1rem; }
-  .book-header :global(header) { margin-bottom: 0; }
+  .book-header :global(.subpage-heading) { margin-bottom: 0; }
   .book-layout { display: grid; grid-template-columns: 240px minmax(0, 1fr); gap: 2.5rem; }
   .book-cover { min-height: 330px; align-self: start; padding: 2rem; border-radius: 10px; background: var(--accent); color: var(--accent-ink,white); display: flex; flex-direction: column; justify-content: space-between; box-shadow: 0 8px 24px #0002; }
   .book-cover span { font-family: var(--font-serif); font-size: 2rem; line-height: 1.3; }

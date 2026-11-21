@@ -15,13 +15,13 @@ export function listComparisonBooks(book: Book) {
 
 type Frequency = { lemma: string | null; source: number; target: number };
 
-export async function compareBooks(book: Book, sourceId: string, known: number, goal: number) {
+export async function compareBooks(book: Book, sourceId: string, known: number, goal: number, userId?: string) {
   const books = sql`
     SELECT id FROM texts WHERE id IN (${book.id}, ${sourceId}) AND visibility = 'official'
       AND language = ${book.language} AND status = 'ready'
   `;
   const rows = await db.execute<Frequency>(sql`
-    WITH frequencies AS (${studyFrequencies(books, book.language)})
+    WITH frequencies AS (${studyFrequencies(books, book.language, userId)})
     SELECT lemma_id AS lemma, coalesce(sum(occurrences) FILTER (WHERE text_id = ${sourceId}), 0)::float8 AS source,
       coalesce(sum(occurrences) FILTER (WHERE text_id = ${book.id}), 0)::float8 AS target
     FROM frequencies GROUP BY lemma_id ORDER BY source DESC, lemma_id

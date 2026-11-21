@@ -64,6 +64,16 @@ def test_grammatical_constructions_do_not_become_vocabulary_occurrences():
     assert len(result.hindi_analysis["constructions"]) == 1
 
 
+def test_hidden_headword_matches_its_inflections_and_is_omitted_from_display():
+    noun = entry("क़ब्ज़ा", "NOUN", paradigm="noun_m_aa",
+                 alternative_headwords=["कब्जा", "कब्ज़ा"], hidden_alternative_headwords=["कब्जा"])
+    analysis = analyze("कब्जा कब्जे कब्जों", Provider([noun]).lexicon)
+    [row] = analysis["frequencies"]
+    assert row["lemma"] == "क़ब्ज़ा"
+    assert row["alternative_headwords"] == ["कब्ज़ा"]
+    assert row["forms"] == {"कब्जा": 1, "कब्जे": 1, "कब्जों": 1}
+
+
 def test_original_joiners_and_unicode_offsets_are_preserved():
     provider = Provider([entry("किताब", "NOUN")])
     text = "🙂 कि\u200dताब\nकिताब"

@@ -14,11 +14,11 @@ import type { RequestHandler } from './$types';
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-export const GET: RequestHandler = async ({ params }) => {
+export const GET: RequestHandler = async ({ params, locals }) => {
   const { textId, lemmaId } = params;
   if (!textId || !UUID_RE.test(textId)) throw error(400, 'Invalid text id');
   if (!lemmaId || !UUID_RE.test(lemmaId)) throw error(400, 'Invalid lemma id');
 
-  const { book, text } = await lemmaBookFrequency(textId, lemmaId);
+  const { book, text } = await lemmaBookFrequency(textId, lemmaId, locals.user?.id);
   return json({ book, text });
 };

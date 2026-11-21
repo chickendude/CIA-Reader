@@ -78,6 +78,7 @@ export type ServerNumberForms = {
  *  component renders these spans directly; when null, it falls back
  *  to client-side whitespace tokenization. */
 export type ServerToken = {
+  ignoredHere?: boolean;
   mergeOptions?: HindiMerge[];
   confirmedMerge?: HindiMerge;
   /** Exclusive source-token end for each multiword dictionary reading starting here. */

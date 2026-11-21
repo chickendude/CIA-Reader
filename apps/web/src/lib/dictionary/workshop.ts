@@ -32,6 +32,26 @@ export type Inventory = {
   slots: Slot[];
 };
 export type Excerpt = { url: string; original: string; english: string };
+
+// The dot is editor notation. Matching always uses the unmarked spelling.
+export function parseAlternativeHeadwords(values: string[]) {
+  const alternatives = new Set<string>();
+  const hiddenAlternatives = new Set<string>();
+  for (const value of values) {
+    const marked = value.startsWith('.');
+    const word = (marked ? value.slice(1) : value).replace(/^\\(?=[.\\])/u, '').trim();
+    if (!word) continue;
+    alternatives.add(word);
+    if (marked) hiddenAlternatives.add(word);
+  }
+  return { alternatives: [...alternatives], hiddenAlternatives: [...hiddenAlternatives] };
+}
+
+export function formatAlternativeHeadwords(words: string[], hidden: string[] = []) {
+  const marked = new Set(hidden);
+  return words.map((word) => (marked.has(word) ? '.' : '') + word.replace(/^[.\\]/u, '\\$&'));
+}
+
 export type Draft = {
   id: string | null;
   version: string;
@@ -40,6 +60,7 @@ export type Draft = {
   meaning: string;
   paradigm: string;
   alternatives: string[];
+  hiddenAlternatives?: string[];
   other: string[];
   excluded: string[];
   loan: boolean;

@@ -6,6 +6,7 @@
   import { looksLikeNumberToken, withLemmaCorrection } from './types.js';
   import { seekAudioForToken } from './audio-bus.js';
   import TokenSpan from './TokenSpan.svelte';
+  import { isIgnoredHere, readerOccurrenceIgnores } from './ignored-occurrences';
   import WordPopup from './WordPopup.svelte';
   import WordTooltip from './WordTooltip.svelte';
   import { joinDictionaryEntries } from './joined-tokens.js';
@@ -60,6 +61,7 @@
   // the script — every reader mode renders through this component, so
   // this is the single switch for RTL reading.
   const textDirection = $derived(LANGUAGES[language].textDirection);
+  const occurrenceIgnores = readerOccurrenceIgnores();
 
   // Local override map: lemmaId → user's most recent status. The
   // popup's optimistic update writes through here so every other
@@ -583,11 +585,11 @@
         <span
           class="ovl-hotspot"
           class:anchor={activeToken?.id === t.id}
-          class:no-definition={t.hasDefinition === false}
+          class:no-definition={!isIgnoredHere(t, occurrenceIgnores) && t.hasDefinition === false}
           data-token-id={t.id}
           data-token-idx={t.idx}
           data-lemma-id={t.lemmaId ?? undefined}
-          data-s={statusToCode(t.status)}
+          data-s={statusToCode(isIgnoredHere(t, occurrenceIgnores) ? 'ignored' : t.status)}
           title={t.surface}
           style={`left:${(t.bbox!.x * 100).toFixed(3)}%;top:${(t.bbox!.y * 100).toFixed(3)}%;width:${(t.bbox!.w * 100).toFixed(3)}%;height:${(t.bbox!.h * 100).toFixed(3)}%`}
         ></span>

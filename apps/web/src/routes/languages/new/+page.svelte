@@ -6,6 +6,8 @@
   baseline — then adds it, switches to it, and opens its library.
 -->
 <script lang="ts">
+  import PageLayout from '$lib/components/shell/PageLayout.svelte';
+  import PageTitle from '$lib/components/shell/PageTitle.svelte';
   import { enhance } from '$app/forms';
   import type { PageProps } from './$types';
 
@@ -37,8 +39,13 @@
   <title>Add a language | Parhiba</title>
 </svelte:head>
 
+{#snippet heading()}
+  <PageTitle>Add a language</PageTitle>
+{/snippet}
+
+<PageLayout {heading}>
 <div class="page page-form">
-  <h1 class="page-title">Add a language</h1>
+  {@render heading()}
 
   {#if data.addable.length === 0}
     <p class="lede">
@@ -99,6 +106,7 @@
     </form>
   {/if}
 </div>
+</PageLayout>
 
 <style>
   .lede {

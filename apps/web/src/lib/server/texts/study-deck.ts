@@ -9,7 +9,7 @@ type DeckRow = StudyEntry & { matches: number; id: string | null; word: string |
 export function officialDeckRows(book: { id: string; language: LanguageCode }, userId?: string) {
   const books = sql`SELECT id FROM texts WHERE id = ${book.id} AND visibility = 'official' AND language = ${book.language}`;
   return db.execute<DeckRow>(sql`
-    WITH matches AS (${studyFrequencies(books, book.language)}), frequencies AS (
+    WITH matches AS (${studyFrequencies(books, book.language, userId)}), frequencies AS (
       SELECT lemma_id, sum(occurrences)::float8 AS frequency, sum(matches)::int AS matches
       FROM matches GROUP BY lemma_id
     )

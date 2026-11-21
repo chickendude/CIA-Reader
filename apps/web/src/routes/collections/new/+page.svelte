@@ -1,4 +1,6 @@
 <script lang="ts">
+  import PageLayout from '$lib/components/shell/PageLayout.svelte';
+  import PageTitle from '$lib/components/shell/PageTitle.svelte';
   import { goto } from '$app/navigation';
   import type { PageProps } from './$types';
 
@@ -49,8 +51,13 @@
   <title>New collection | Parhiba</title>
 </svelte:head>
 
+{#snippet heading()}
+  <PageTitle>New collection</PageTitle>
+{/snippet}
+
+<PageLayout {heading}>
 <div class="nc page-form">
-  <header><h1 class="page-title">New collection</h1></header>
+  <header>{@render heading()}</header>
   <form onsubmit={submit} class="nc-form">
     <label class="nc-row">
       <span class="nc-l">Title</span>
@@ -94,6 +101,7 @@
     </footer>
   </form>
 </div>
+</PageLayout>
 
 <style>
   .nc-form {

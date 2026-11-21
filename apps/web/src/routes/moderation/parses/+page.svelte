@@ -1,4 +1,6 @@
 <script lang="ts">
+  import PageLayout from '$lib/components/shell/PageLayout.svelte';
+  import PageTitle from '$lib/components/shell/PageTitle.svelte';
   import { goto, invalidateAll } from '$app/navigation';
   import { LANGUAGES, SUPPORTED_LANGUAGE_CODES } from '@ciareader/shared-types';
   import type { PageProps } from './$types';
@@ -70,9 +72,14 @@
   <title>Parse reports | moderation | Parhiba</title>
 </svelte:head>
 
+{#snippet heading()}
+  <PageTitle>Parse reports</PageTitle>
+{/snippet}
+
+<PageLayout {heading}>
 <div class="mp">
   <header class="mp-h">
-    <h1 class="page-title">Parse reports</h1>
+    {@render heading()}
     <p class="mp-h-sub">
       User-filed corrections + system-flagged consensus. Accept promotes a fix to
       <code>form_lemma_overrides</code>; reject closes the report.
@@ -247,6 +254,7 @@
     </section>
   </div>
 </div>
+</PageLayout>
 
 <style>
   .mp-h-sub {

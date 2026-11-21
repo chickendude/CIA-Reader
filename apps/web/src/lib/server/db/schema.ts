@@ -1480,6 +1480,14 @@ export const tokenCorrectionType = pgEnum('token_correction_type', [
   'mark_not_a_word',
 ]);
 
+export const readerIgnoredTokens = pgTable('reader_ignored_tokens', {
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  tokenId: uuid('token_id').notNull().references(() => textTokens.id, { onDelete: 'cascade' }),
+}, (t) => ({
+  pk: primaryKey({ columns: [t.userId, t.tokenId] }),
+  tokenIdx: index('reader_ignored_tokens_token_idx').on(t.tokenId),
+}));
+
 export const tokenCorrections = pgTable(
   'token_corrections',
   {

@@ -114,6 +114,35 @@ it.skipIf(!url)(
             });
           await parse();
           const before = (await loadChapterTokens(ch!.id, user!.id))!;
+          const { setOccurrenceIgnored } = await import('./ignored-occurrences');
+          const { libraryBookStats } = await import('./book-stats');
+          const { lemmaBookFrequency, lemmaBookFrequencies } = await import('./book-frequency');
+          const { getAnkiCards } = await import('../anki');
+          const { studyFrequencies } = await import('./study-frequencies');
+          const frequency = () => lemmaBookFrequency(book!.id, fragment!.id, user!.id);
+          const stats = async () => (await libraryBookStats([book!.id], [], user!.id))[book!.id];
+          const studyCount = async () => {
+            const [row] = await tx.execute(sql`SELECT coalesce(sum(occurrences),0)::int AS n
+              FROM (${studyFrequencies(sql`SELECT ${book!.id}::uuid AS id`, 'hi', user!.id)}) f`);
+            return row!.n;
+          };
+          await tx.execute(sql`SET CONSTRAINTS ALL IMMEDIATE`);
+          expect(await frequency()).toEqual({ book: 1, text: 1 });
+          await setOccurrenceIgnored(user!.id, before[2]!.id, true);
+          expect(await stats()).toMatchObject({ words: 11, uniqueWords: 0, unparsedWords: 11 });
+          expect(await studyCount()).toBe(11);
+          expect(await frequency()).toEqual({ book: 0, text: 0 });
+          expect((await lemmaBookFrequencies(book!.id, [fragment!.id], user!.id)).get(fragment!.id)).toBe(0);
+          expect((await getAnkiCards(user!.id, { textId: book!.id })).cards).toEqual([]);
+          expect((await libraryBookStats([book!.id], []))[book!.id]).toMatchObject({ words: 12, uniqueWords: 1 });
+          await setOccurrenceIgnored(user!.id, before[2]!.id, false);
+          expect(await stats()).toMatchObject({ words: 12, uniqueWords: 1 });
+          expect(await frequency()).toEqual({ book: 1, text: 1 });
+          await setOccurrenceIgnored(user!.id, before[0]!.id, true);
+          expect(await stats()).toMatchObject({ words: 11, uniqueWords: 1, unparsedWords: 10 });
+          expect(await studyCount()).toBe(11);
+          await setOccurrenceIgnored(user!.id, before[0]!.id, false);
+          await tx.execute(sql`SET CONSTRAINTS ALL DEFERRED`);
           const option = before[8]!.mergeOptions!.find((m) => m.lemmaId === entry!.id)!;
           expect(option.surface).toBe(source);
           await expect(

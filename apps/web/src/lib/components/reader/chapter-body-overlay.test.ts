@@ -8,6 +8,9 @@ import ReaderImage from './ReaderImage.svelte';
 import type { ChapterView, ServerToken } from './types.js';
 
 vi.mock('$app/navigation', () => ({ goto: vi.fn() }));
+vi.mock('$lib/components/toast/toast-store.js', () => ({
+  getToastStore: () => ({ pushToast: vi.fn() }),
+}));
 
 beforeAll(() => {
   // jsdom doesn't ship matchMedia; WordPopup (mounted by ChapterBody)
@@ -94,6 +97,36 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+it('can ignore and restore just one occurrence of a repeated fragment', async () => {
+  const fragment = { surface: 'गार', ignoredHere: false, isOov: true, hasDefinition: false, lemmaId: null };
+  const { container } = render(ChapterBody, {
+    chapter: chapter([word(fragment), word({ ...fragment, id: 't2', idx: 1 })]),
+    language: 'hi', isOwner: true, textId: 'book',
+  });
+  const [first, second] = container.querySelectorAll<HTMLElement>('[data-token-id]');
+  await fireEvent.click(first!);
+  const ignore = screen.getByRole('button', { name: 'Ignore' });
+  expect(ignore.previousElementSibling?.textContent?.trim()).toBe('Fix');
+  vi.mocked(fetch).mockResolvedValueOnce(new Response(null, { status: 503 }));
+  await fireEvent.click(ignore);
+  expect(first!.classList.contains('no-definition')).toBe(true);
+  await fireEvent.click(ignore);
+  const unignore = await screen.findByRole('button', { name: 'Unignore' });
+  expect(fetch).toHaveBeenLastCalledWith('/api/v1/tokens/t1/ignore', expect.objectContaining({
+    method: 'PUT', body: JSON.stringify({ ignored: true }),
+  }));
+  expect(first!.classList.contains('no-definition')).toBe(false);
+  expect(second!.classList.contains('no-definition')).toBe(true);
+  await fireEvent.click(second!);
+  expect(screen.getByRole('button', { name: 'Ignore' })).toBeTruthy();
+  await fireEvent.click(first!);
+  await fireEvent.click(unignore);
+  expect(fetch).toHaveBeenLastCalledWith('/api/v1/tokens/t1/ignore', expect.objectContaining({
+    method: 'PUT', body: JSON.stringify({ ignored: false }),
+  }));
+  expect(first!.classList.contains('no-definition')).toBe(true);
+});
+
 it('reopens a saved form at another occurrence while the chapter is refreshing', async () => {
   const missing = { surface: 'खोजियों', lemmaId: null, isOov: true, hasDefinition: false, glossDefault: null };
   const occurrences = [word(missing), word({ ...missing, id: 't2', idx: 1 })];
@@ -114,11 +147,11 @@ it('reopens a saved form at another occurrence while the chapter is refreshing',
   });
   const words = view.container.querySelectorAll<HTMLElement>('[data-token-id]');
   await fireEvent.click(words[0]!);
-  expect(screen.getByRole('button', { name: 'Add dictionary entry' })).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Add entry' })).toBeTruthy();
   window.dispatchEvent(new CustomEvent('reader-dictionary-saved', { detail: draft }));
   await fireEvent.click(words[1]!);
   await waitFor(() => expect(words[1]?.dataset.lemmaId).toBe(draft.id));
-  await fireEvent.click(await screen.findByRole('button', { name: 'Edit dictionary entry' }));
+  await fireEvent.click(await screen.findByRole('button', { name: 'Edit entry' }));
   const dialog = await screen.findByRole('dialog', { name: 'Hindi dictionary entry' });
   refresh.resolve(Response.json({
     chapterId: 'chap-0',

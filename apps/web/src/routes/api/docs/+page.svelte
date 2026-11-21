@@ -11,6 +11,8 @@
 </svelte:head>
 
 <script lang="ts">
+  import PageLayout from '$lib/components/shell/PageLayout.svelte';
+  import PageTitle from '$lib/components/shell/PageTitle.svelte';
   import { onMount } from 'svelte';
 
   const specUrl = '/api/openapi.json';
@@ -113,11 +115,16 @@
   });
 </script>
 
+{#snippet heading()}
+  <PageTitle>Parhiba API</PageTitle>
+{/snippet}
+
+<PageLayout {heading}>
 <div class="api-docs">
   <header>
     <div>
       <p class="eyebrow">OpenAPI 3.1</p>
-      <h1 class="page-title">Parhiba API</h1>
+      {@render heading()}
     </div>
     <nav aria-label="API documentation links">
       <a href="/docs/api/">Client guide</a>
@@ -158,6 +165,7 @@
     {/if}
   </section>
 </div>
+</PageLayout>
 
 <style>
   .api-docs {

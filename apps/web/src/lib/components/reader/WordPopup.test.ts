@@ -1,8 +1,13 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen, waitFor } from '@testing-library/svelte';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 
 import WordPopup from './WordPopup.svelte';
 import type { ServerToken, ServerNumberForms } from './types.js';
+
+const { pushToast } = vi.hoisted(() => ({ pushToast: vi.fn() }));
+vi.mock('$lib/components/toast/toast-store.js', () => ({
+  getToastStore: () => ({ pushToast }),
+}));
 
 beforeAll(() => {
   // jsdom doesn't ship matchMedia; the popup uses it to switch between
@@ -69,6 +74,30 @@ function makeToken(overrides: Partial<ServerToken> = {}): ServerToken {
   };
 }
 
+it('copies the source sentence for the current selection, including punctuation', async () => {
+  const chapterTokens = ['पहले', '।', ' ', 'एक', ' ', 'बात', '!', ' ', 'फिर', '।'].map(
+    (surface, idx) => makeToken({ id: String(idx), idx, surface, isWord: /\p{L}/u.test(surface) }),
+  );
+  const writeText = vi.fn().mockResolvedValue(undefined);
+  const props = { chapterTokens, language: 'hi' as const, isOwner: false, onClose: vi.fn() };
+  const view = render(WordPopup, { ...props, token: chapterTokens[5]! });
+  vi.stubGlobal('navigator', Object.assign(Object.create(navigator), { clipboard: { writeText } }));
+  try {
+    const copy = screen.getByRole('button', { name: 'Copy sentence' });
+    await fireEvent.click(copy);
+    expect(writeText).toHaveBeenLastCalledWith('एक बात!');
+    expect(pushToast).toHaveBeenCalledWith({ kind: 'success', message: 'Sentence copied.' });
+    await view.rerender({ ...props, token: chapterTokens[8]! });
+    writeText.mockRejectedValueOnce(new Error('Clipboard access denied'));
+    await fireEvent.click(copy);
+    expect(writeText).toHaveBeenLastCalledWith('फिर।');
+    expect(pushToast).toHaveBeenLastCalledWith({ kind: 'error', message: 'Could not copy the sentence.' });
+    expect(props.onClose).not.toHaveBeenCalled();
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
+
 describe('WordPopup number-only token block', () => {
   it.each([
     ['hi', 'Hindi', '१२३', 'एक सौ तेईस', 'ek sau teīs'],
@@ -123,7 +152,7 @@ describe('WordPopup number-only token block', () => {
     expect(document.body.querySelector('.sp-status')).toBeNull();
     expect(document.body.querySelector('.translations')).toBeNull();
     expect(document.body.querySelector('.add-toggle')).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Fix this word' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Fix' })).toBeNull();
   });
 
   it('renders the existing lemma popup when numberForms is null', () => {
@@ -238,7 +267,7 @@ describe('WordPopup number-only token block', () => {
     expect(document.body.querySelector('.sp-row')).toBeNull();
     expect(document.body.querySelector('.sp-status')).toBeNull();
     expect(document.body.querySelector('.translations')).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Fix this word' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Fix' })).toBeNull();
   });
 });
 

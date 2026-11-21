@@ -60,17 +60,23 @@ export type PublicLemma = {
   id: string;
   language: Lemma['language'];
   headword: string;
+  alternativeHeadwords: string[];
   pos: string;
   script: string;
   glossDefault: string | null;
   frequencyRank: number | null;
 };
 
-function toPublicLemma(row: Lemma): PublicLemma {
+function toPublicLemma(row: Pick<Lemma, 'id' | 'language' | 'headword' | 'pos' | 'script' | 'glossDefault' | 'frequencyRank'> & {
+  alternatives: string[] | null;
+  hiddenAlternatives: string[] | null;
+}): PublicLemma {
+  const hidden = new Set(row.hiddenAlternatives);
   return {
     id: row.id,
     language: row.language,
     headword: row.headword,
+    alternativeHeadwords: (row.alternatives ?? []).filter((word) => word !== row.headword && !hidden.has(word)),
     pos: row.pos,
     script: row.script,
     glossDefault: row.glossDefault,
@@ -286,8 +292,19 @@ export async function getLemmaTranslations(
   viewer: { id: string; role: User['role'] } | null,
 ): Promise<LemmaTranslationBuckets> {
   const [lemma] = await db
-    .select()
+    .select({
+      id: schema.lemmas.id,
+      language: schema.lemmas.language,
+      headword: schema.lemmas.headword,
+      pos: schema.lemmas.pos,
+      script: schema.lemmas.script,
+      glossDefault: schema.lemmas.glossDefault,
+      frequencyRank: schema.lemmas.frequencyRank,
+      alternatives: sql<string[] | null>`${schema.dictionaryEntries.entry}->'alternative_headwords'`,
+      hiddenAlternatives: sql<string[] | null>`${schema.dictionaryEntries.entry}->'hidden_alternative_headwords'`,
+    })
     .from(schema.lemmas)
+    .leftJoin(schema.dictionaryEntries, eq(schema.dictionaryEntries.lemmaId, schema.lemmas.id))
     .where(eq(schema.lemmas.id, lemmaId))
     .limit(1);
   if (!lemma) throw new LemmaNotFoundError(lemmaId);
@@ -307,7 +324,6 @@ export async function getLemmaTranslations(
     );
 
   // For languages that allow fallback, try the exact headword before ignoring nukta marks.
-  const lemmaTyped = lemma as Lemma;
   // A viewer's own definition is stored on the directly-linked lemma, so once
   // they save one the primary is no longer empty. That used to suppress the
   // sibling-lemma dictionary fallback below — making the built-in Wiktionary /
@@ -328,7 +344,7 @@ export async function getLemmaTranslations(
   let rows: Translation[] = personalRows.length
     ? primaryTyped.filter((r) => !personalRows.includes(r))
     : primaryTyped;
-  if (rows.length === 0 && lemmaTyped.language !== 'hi') {
+  if (rows.length === 0 && lemma.language !== 'hi') {
     const joined = await db
       .select({ translation: schema.translations })
       .from(schema.translations)
@@ -342,16 +358,16 @@ export async function getLemmaTranslations(
       .where(
         and(
           eq(schema.translations.targetType, 'lemma'),
-          eq(schema.lemmas.language, lemmaTyped.language),
-          eq(schema.lemmas.headword, lemmaTyped.headword),
+          eq(schema.lemmas.language, lemma.language),
+          eq(schema.lemmas.headword, lemma.headword),
           ne(schema.lemmas.id, lemmaId),
         ),
       );
     rows = joined.map((r) => r.translation as Translation);
   }
-  if (rows.length === 0 && lemmaTyped.language !== 'hi') {
+  if (rows.length === 0 && lemma.language !== 'hi') {
     // Either spelling can be the one with the nukta, so compare the search keys on both sides.
-    const stripped = stripNukta(lemmaTyped.headword);
+    const stripped = stripNukta(lemma.headword);
     const joinedStripped = await db
       .select({ translation: schema.translations })
       .from(schema.translations)
@@ -367,7 +383,7 @@ export async function getLemmaTranslations(
       .where(
         and(
           eq(schema.translations.targetType, 'lemma'),
-          eq(schema.lemmas.language, lemmaTyped.language),
+          eq(schema.lemmas.language, lemma.language),
           eq(schema.lemmas.headwordNuktaStripped, stripped),
           ne(schema.lemmas.id, lemmaId),
         ),
@@ -384,7 +400,7 @@ export async function getLemmaTranslations(
 
   const translations = bucketTranslations(rowsWithVotes, viewer);
   return {
-    lemma: toPublicLemma(lemmaTyped),
+    lemma: toPublicLemma(lemma),
     translations,
     definitionLanguages: distinctDefinitionLanguages(translations),
   };

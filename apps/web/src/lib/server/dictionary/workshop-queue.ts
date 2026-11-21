@@ -45,6 +45,9 @@ export async function workshopQueue(
       FROM books b JOIN text_chapters c ON c.text_id=b.id JOIN hindi_chapter_analyses a ON a.chapter_id=c.id
       CROSS JOIN LATERAL jsonb_array_elements(a.stats->'stutters') s
       WHERE s->>'status'='pending' AND s->>'surface' ILIKE ${pattern}
+    ), ignored_occurrences AS (
+      SELECT t.chapter_id,t.idx FROM reader_ignored_tokens i
+      JOIN text_tokens t ON t.id=i.token_id WHERE i.user_id=${actor}
     ), per_book AS (
       SELECT word,id,kind,book,occurrence,min(source_start) source_start,min(body_hash) body_hash,count(*)::int count,
         (array_agg(chapter_id ORDER BY chapter,token))[1] chapter_id,
@@ -52,6 +55,8 @@ export async function workshopQueue(
         (array_agg(token ORDER BY chapter,token))[1] token,
         (array_agg(end_token ORDER BY chapter,token,end_token DESC))[1] end_token
       FROM items WHERE ${kind ? sql`kind=${kind}` : sql`kind<>'ignored'`}
+        AND (kind='stutter' OR NOT EXISTS (SELECT 1 FROM ignored_occurrences i
+          WHERE i.chapter_id=items.chapter_id AND i.idx=items.token))
       GROUP BY word,id,kind,book,occurrence
     ), page AS (
       SELECT word,id,kind,occurrence,sum(count)::int count,count(*) OVER()::int total

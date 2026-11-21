@@ -1,4 +1,5 @@
 import { sql, type SQL } from 'drizzle-orm';
+import { ignoredWords, readerFrequencies } from './reader-frequencies';
 import { db } from '../db/index.js';
 
 export type BookWordStats = {
@@ -16,9 +17,10 @@ export type BookWordStats = {
 };
 
 // A Hindi word can match several entries before a context choice assigns it to one.
-export function unparsedWordCount(textIds: SQL) {
+export function unparsedWordCount(textIds: SQL, userId?: string) {
   return sql`(
-    SELECT coalesce(sum(coalesce(a.unresolved_words, f.occurrences)), 0)::int
+    SELECT greatest(0, coalesce(sum(coalesce(a.unresolved_words, f.occurrences)), 0)::int
+      ${userId ? sql`- (SELECT count(*)::int FROM (${ignoredWords(userId)}) i WHERE i.unparsed AND i.text_id IN (${textIds}))` : sql``})
     FROM text_chapters ch LEFT JOIN hindi_chapter_analyses a ON a.chapter_id = ch.id
     LEFT JOIN chapter_word_frequencies f ON f.chapter_id = ch.id AND f.lemma_id IS NULL
     WHERE ch.text_id IN (${textIds})
@@ -58,10 +60,10 @@ export async function libraryBookStats(textIds: string[], collectionIds: string[
   const rows = await db.execute<BookWordStats & { id: string }>(sql`
     WITH members AS (${sql.join(members, sql` UNION ALL `)}), entries AS (
       SELECT m.id, f.lemma_id, sum(f.occurrences) AS n FROM members m
-      JOIN book_word_frequencies f ON f.text_id = m.text_id GROUP BY m.id, f.lemma_id
+      JOIN ${readerFrequencies('book', userId)} f ON f.text_id = m.text_id GROUP BY m.id, f.lemma_id
     ), scores AS (${scoreBookEntries(userId)})
     SELECT id, words, "uniqueWords", unresolved,
-      ${unparsedWordCount(sql`SELECT m.text_id FROM members m WHERE m.id = scores.id`)} AS "unparsedWords",
+      ${unparsedWordCount(sql`SELECT m.text_id FROM members m WHERE m.id = scores.id`, userId)} AS "unparsedWords",
       "knownWords", "learningWords", "knownHeadwords", "learningHeadwords", round(100 * reading_ratio, 1)::float8 AS "knownPct",
       round(100 * learning_ratio, 1)::float8 AS "learningPct", round(100 * unique_ratio, 1)::float8 AS "uniquePct"
     FROM scores

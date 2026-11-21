@@ -1,4 +1,6 @@
 <script lang="ts">
+  import PageLayout from '$lib/components/shell/PageLayout.svelte';
+  import PageTitle from '$lib/components/shell/PageTitle.svelte';
   import type { PageProps } from './$types';
   let { data }: PageProps = $props();
 
@@ -13,9 +15,14 @@
   <meta name="robots" content="noindex" />
 </svelte:head>
 
+{#snippet heading()}
+  <PageTitle>Transcription workbench</PageTitle>
+{/snippet}
+
+<PageLayout {heading}>
 <div class="page">
   <header>
-    <h1 class="page-title">Transcription workbench</h1>
+    {@render heading()}
     <p class="sub">
       Verify imported dictionary drafts against the public-domain page
       scans. A verified entry becomes our own transcription and is
@@ -58,6 +65,7 @@
     {/each}
   </div>
 </div>
+</PageLayout>
 
 <style>
   .sub {

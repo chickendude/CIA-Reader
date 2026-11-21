@@ -3,8 +3,10 @@ import { db, schema } from '../db/index.js';
 import type { User } from '../db/schema.js';
 import { requireCanEditDictionary } from './permissions.js';
 import { previewHindiEntry } from './hindi-runtime.js';
+import { replacePatternForms } from './pattern-forms.js';
 
 import { hindiPatterns } from '$lib/dictionary/hindi-patterns.js';
+import { formatAlternativeHeadwords, parseAlternativeHeadwords } from '$lib/dictionary/workshop';
 
 type ReviewedSlot = { label: string; forms: string[]; include: boolean };
 
@@ -59,6 +61,10 @@ export async function getHindiEntry(id: string) {
     },
     paradigm: String(entry.paradigm ?? 'invariant'),
     alternatives: (entry.alternative_headwords ?? []) as string[],
+    editableAlternatives: formatAlternativeHeadwords(
+      (entry.alternative_headwords ?? []) as string[],
+      (entry.hidden_alternative_headwords ?? []) as string[],
+    ),
     excluded: (entry.excluded_forms ?? []) as string[],
     forms: forms.filter((f) => !f.quarantinedAt).map((f) => f.surface),
     reviewedSlots: (
@@ -91,11 +97,13 @@ export async function saveHindiMorphology(
     )
   )
     throw new Error('Unknown Hindi paradigm');
+  const { alternatives, hiddenAlternatives } = parseAlternativeHeadwords(lines('alternatives'));
   const entry = {
     ...current.entry,
     paradigm,
     forms: lines('forms'),
-    alternative_headwords: lines('alternatives'),
+    alternative_headwords: alternatives,
+    hidden_alternative_headwords: hiddenAlternatives,
     excluded_forms: lines('excluded'),
     review_status: 'reviewed',
     reviewed_at: new Date().toISOString(),
@@ -124,6 +132,7 @@ export async function saveHindiMorphology(
       .insert(schema.dictionaryEntries)
       .values({ lemmaId: id, externalId: `parhiba:${id}`, entry })
       .onConflictDoUpdate({ target: schema.dictionaryEntries.lemmaId, set: { entry } });
+    await replacePatternForms(tx, id, preview.forms);
     await tx.insert(schema.lemmaEditHistory).values({
       lemmaId: id,
       editorId: user.id,
@@ -144,7 +153,7 @@ export async function hindiPatternPreviews(
       if (id === 'invariant') return { id, label, forms: [], slots: [] };
       try {
         const preview = await previewHindiEntry(
-          { lemma, pos, source, paradigm: id },
+          { lemma, pos, source, paradigm: id, alternative_headwords: current.alternatives },
           { include_slots: true },
         );
         return { id, label, forms: Object.keys(preview.forms), slots: preview.slots ?? [] };

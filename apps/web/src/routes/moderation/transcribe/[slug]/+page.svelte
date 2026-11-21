@@ -1,4 +1,6 @@
 <script lang="ts">
+  import PageLayout from '$lib/components/shell/PageLayout.svelte';
+  import PageTitle from '$lib/components/shell/PageTitle.svelte';
   import Pagination from '$lib/components/input/Pagination.svelte';
   import { page } from '$app/state';
   import { enhance } from '$app/forms';
@@ -18,12 +20,17 @@
   <meta name="robots" content="noindex" />
 </svelte:head>
 
+{#snippet heading()}
+  <PageTitle>{data.citation}</PageTitle>
+{/snippet}
+
+<PageLayout {heading}>
 <div class="page">
   <header>
     <nav class="crumbs">
       <a href="/moderation/transcribe">← Workbench</a>
     </nav>
-    <h1 class="page-title">{data.citation}</h1>
+    {@render heading()}
     <p class="sub">
       {data.progress.verified.toLocaleString()} /
       {data.progress.total.toLocaleString()} verified
@@ -131,6 +138,7 @@
     {/if}
   </section>
 </div>
+</PageLayout>
 
 <style>
   .crumbs a {

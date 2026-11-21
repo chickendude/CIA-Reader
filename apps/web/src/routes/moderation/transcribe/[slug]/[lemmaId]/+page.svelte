@@ -1,4 +1,6 @@
 <script lang="ts">
+  import PageLayout from '$lib/components/shell/PageLayout.svelte';
+  import PageTitle from '$lib/components/shell/PageTitle.svelte';
   import { enhance } from '$app/forms';
   import ScanCropPane from '$lib/components/moderation/ScanCropPane.svelte';
   import type { PageProps } from './$types';
@@ -52,13 +54,18 @@
   <meta name="robots" content="noindex" />
 </svelte:head>
 
+{#snippet heading()}
+  <PageTitle>{data.lemma.headword}</PageTitle>
+{/snippet}
+
+<PageLayout {heading}>
 <div class="page">
   <header>
     <nav class="crumbs">
       <a href={`/moderation/transcribe/${data.slug}`}>← {data.citation}</a>
     </nav>
     <div class="headrow">
-      <h1 class="page-title">{data.lemma.headword}</h1>
+      {@render heading()}
       {#if data.lemma.curatorLocked}
         <span class="badge verified">verified</span>
       {:else}
@@ -243,6 +250,7 @@
     </details>
   {/if}
 </div>
+</PageLayout>
 
 <style>
   .crumbs a {

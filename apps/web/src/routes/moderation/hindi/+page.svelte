@@ -1,4 +1,5 @@
 <script lang="ts">
+  import PageLayout from '$lib/components/shell/PageLayout.svelte';
   import FilterDropdown from '$lib/components/input/FilterDropdown.svelte';
   import TextField from '$lib/components/input/TextField.svelte';
   import { reviewStatusLabels, reviewFilters, type ReviewFilter } from '$lib/dictionary/review-status';
@@ -84,9 +85,14 @@
 
 <svelte:head><title>Hindi dictionary review | Parhiba</title></svelte:head>
 
+{#snippet heading()}
+  <SubpageHeading title="Hindi dictionary review" href={data.destination.href} closeLabel={data.destination.label} />
+{/snippet}
+
+<PageLayout {heading}>
 <div class="review-page">
   <div class="heading">
-    <SubpageHeading title="Hindi dictionary review" href={data.destination.href} closeLabel={data.destination.label} />
+    {@render heading()}
     <Button href={`/moderation/hindi/workshop${data.result ? '?textId=' + data.result.book.id : ''}`}>Open dictionary workshop</Button>
   </div>
 
@@ -150,6 +156,7 @@
     <Pagination offset={data.result.offset} limit={20} total={data.result.total} hrefFor={(offset) => link(data.status, data.result!.book.id, offset)} />
   {:else}<p>No Hindi books are available for review.</p>{/if}
 </div>
+</PageLayout>
 
 <style>
   .review-page { max-width: 64rem; }

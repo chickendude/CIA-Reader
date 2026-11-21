@@ -11,7 +11,7 @@
  * client-side whitespace tokenizer in that case (still readable, just
  * no lemma colouring).
  */
-import { and, eq, inArray, isNotNull, sql } from 'drizzle-orm';
+import { and, eq, getTableColumns, inArray, isNotNull, sql } from 'drizzle-orm';
 
 import type { LanguageCode } from '@ciareader/shared-types';
 
@@ -78,6 +78,7 @@ export type RenderedNumberForms = {
 };
 
 export type RenderedToken = {
+  ignoredHere?: boolean;
   mergeOptions?: HindiMerge[];
   confirmedMerge?: HindiMerge;
   /** Exclusive source-token end for each multiword dictionary reading starting here. */
@@ -156,11 +157,16 @@ export async function loadChapterTokens(
   sourceStartsById?: ReadonlyMap<string, number>,
 ): Promise<RenderedToken[] | null> {
   const tokens = (await db
-    .select()
+    .select({
+      ...getTableColumns(schema.textTokens),
+      ignoredHere: viewerId ? sql<boolean>`EXISTS (
+        SELECT 1 FROM reader_ignored_tokens i WHERE i.user_id=${viewerId} AND i.token_id=${schema.textTokens.id}
+      )` : sql<boolean>`false`,
+    })
     .from(schema.textTokens)
     .where(and(eq(schema.textTokens.chapterId, chapterId),
       sourceStartsById && inArray(schema.textTokens.id, [...sourceStartsById.keys()])))
-    .orderBy(schema.textTokens.idx)) as TextToken[];
+    .orderBy(schema.textTokens.idx)) as (TextToken & { ignoredHere: boolean })[];
 
   if (tokens.length === 0) return null;
 
@@ -434,7 +440,7 @@ export async function loadChapterTokens(
     ? await loadHindiContextChoices(chapterId, sourceStartsById && [...sourceStartsById.values()]) : new Map();
   const canVerifyContext = analysis?.language === 'hi'
     ? await canVerifyHindiContext(chapterId, viewerId) : false;
-  const bookFrequencies = textId ? await lemmaBookFrequencies(textId, lemmaIds) : undefined;
+  const bookFrequencies = textId ? await lemmaBookFrequencies(textId, lemmaIds, viewerId ?? undefined) : undefined;
   let sourceOffset = 0;
   const rendered = tokens.map<RenderedToken>((t) => {
     const choice = liveMatches.has(t.id) ? undefined : choices.get(sourceStartsById?.get(t.id) ?? sourceOffset);
@@ -535,6 +541,7 @@ export async function loadChapterTokens(
 
     return {
       ...(correction?.chosenLemmaId && { correctedByViewer: true }),
+      ...(viewerId && t.isWord && { ignoredHere: t.ignoredHere }),
       canVerifyContext: canVerifyContext && !liveMatches.has(t.id),
       contextVersion: contextVersion(t.lemmaCandidates.flatMap(c=>c.lemmaId?[c.lemmaId]:[]),choice),
       selectedBy: effectiveLemmaId ? choice?.selectedOrigins[effectiveLemmaId] : undefined,

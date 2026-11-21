@@ -4,6 +4,8 @@
   page handles editing.
 -->
 <script lang="ts">
+  import PageLayout from '$lib/components/shell/PageLayout.svelte';
+  import PageTitle from '$lib/components/shell/PageTitle.svelte';
   import type { PageProps } from './$types';
 
   let { data }: PageProps = $props();
@@ -27,9 +29,14 @@
   <title>Phrase dictionary | moderation | Parhiba</title>
 </svelte:head>
 
+{#snippet heading()}
+  <PageTitle>Phrases</PageTitle>
+{/snippet}
+
+<PageLayout {heading}>
 <div class="ph">
   <header class="ph-h">
-    <h1 class="page-title">Phrases</h1>
+    {@render heading()}
     <p class="muted">
       Choose a language, then open a phrase to edit its definition or change its lock and moderation settings.
     </p>
@@ -106,6 +113,7 @@
     {/if}
   {/if}
 </div>
+</PageLayout>
 
 <style>
   .muted {

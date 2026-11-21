@@ -10,6 +10,7 @@
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import type { LanguageCode } from '@ciareader/shared-types';
 
+import { readerFrequencies } from './reader-frequencies';
 import { canReadText } from '../auth/can-read.js';
 import { db, schema } from '../db/index.js';
 
@@ -80,11 +81,12 @@ type HeadwordKey = { id?: string; headword: string; language: LanguageCode };
 async function countHeadwordInChapters(
   chapterIds: string[],
   lemma: HeadwordKey,
+  userId?: string,
 ): Promise<number> {
   if (chapterIds.length === 0) return 0;
   if (lemma.language === 'hi' && lemma.id) {
     const [row] = await db.select({ n: sql<number>`coalesce(sum(${schema.chapterWordFrequencies.occurrences}),0)::int` })
-      .from(schema.chapterWordFrequencies).where(and(
+      .from(userId ? sql`${readerFrequencies('chapter', userId)} AS chapter_word_frequencies` : schema.chapterWordFrequencies).where(and(
         inArray(schema.chapterWordFrequencies.chapterId, chapterIds),
         eq(schema.chapterWordFrequencies.lemmaId, lemma.id),
       ));
@@ -99,6 +101,7 @@ async function countHeadwordInChapters(
         inArray(schema.textTokens.chapterId, chapterIds),
         eq(schema.lemmas.language, lemma.language),
         eq(schema.lemmas.headword, lemma.headword),
+        userId ? sql`NOT EXISTS (SELECT 1 FROM reader_ignored_tokens i WHERE i.user_id=${userId} AND i.token_id=${schema.textTokens.id})` : undefined,
       ),
     );
   return row?.n ?? 0;
@@ -108,6 +111,7 @@ async function countHeadwordInChapters(
 export async function lemmaBookFrequency(
   textId: string,
   lemmaId: string,
+  userId?: string,
 ): Promise<{ book: number; text: number }> {
   const [lemma] = await db
     .select({ id: schema.lemmas.id, headword: schema.lemmas.headword, language: schema.lemmas.language })
@@ -117,8 +121,8 @@ export async function lemmaBookFrequency(
   if (!lemma) return { book: 0, text: 0 };
   const { bookChapterIds, textChapterIds } = await resolveBookChapterScope(textId);
   const [book, text] = await Promise.all([
-    countHeadwordInChapters(bookChapterIds, lemma),
-    countHeadwordInChapters(textChapterIds, lemma),
+    countHeadwordInChapters(bookChapterIds, lemma, userId),
+    countHeadwordInChapters(textChapterIds, lemma, userId),
   ]);
   return { book, text };
 }
@@ -130,6 +134,7 @@ export async function lemmaBookFrequency(
 export async function lemmaBookFrequencies(
   textId: string,
   lemmaIds: string[],
+  userId?: string,
 ): Promise<Map<string, number>> {
   const counts = new Map<string, number>();
   if (lemmaIds.length === 0) return counts;
@@ -164,6 +169,7 @@ export async function lemmaBookFrequencies(
         and(
           inArray(schema.textTokens.chapterId, bookChapterIds),
           inArray(schema.lemmas.headword, headwords),
+          userId ? sql`NOT EXISTS (SELECT 1 FROM reader_ignored_tokens i WHERE i.user_id=${userId} AND i.token_id=${schema.textTokens.id})` : undefined,
         ),
       )
       .groupBy(schema.lemmas.headword, schema.lemmas.language);
@@ -176,8 +182,8 @@ export async function lemmaBookFrequencies(
   }
   const hindiIds = requested.filter((r) => r.language === 'hi').map((r) => r.id);
   if (hindiIds.length) {
-    const hindiRows = await db.select({ id: schema.chapterWordFrequencies.lemmaId, n: sql<number>`sum(${schema.chapterWordFrequencies.occurrences})::int` })
-      .from(schema.chapterWordFrequencies).where(and(
+    const hindiRows = await db.select({ id: sql<string>`${schema.chapterWordFrequencies.lemmaId}`, n: sql<number>`sum(${schema.chapterWordFrequencies.occurrences})::int` })
+      .from(userId ? sql`${readerFrequencies('chapter', userId)} AS chapter_word_frequencies` : schema.chapterWordFrequencies).where(and(
         inArray(schema.chapterWordFrequencies.chapterId, bookChapterIds),
         inArray(schema.chapterWordFrequencies.lemmaId, hindiIds),
       )).groupBy(schema.chapterWordFrequencies.lemmaId);

@@ -1,4 +1,6 @@
 <script lang="ts">
+  import PageLayout from '$lib/components/shell/PageLayout.svelte';
+  import PageTitle from '$lib/components/shell/PageTitle.svelte';
   import { enhance } from '$app/forms';
   import EditableDefinition from '$lib/components/reader/EditableDefinition.svelte';
   import { invalidateAll } from '$app/navigation';
@@ -318,6 +320,11 @@
   <meta name="robots" content="noindex" />
 </svelte:head>
 
+{#snippet heading()}
+  <PageTitle class="mod-hw-script" lang={lemma.language}>{lemma.headword}</PageTitle>
+{/snippet}
+
+<PageLayout {heading}>
 <div class="page mod">
   <!-- ════════ Compact 3-col header strip ════════ -->
   <header class="mod-head">
@@ -330,7 +337,7 @@
     </nav>
 
     <div class="mod-id">
-      <h1 class="page-title mod-hw-script" lang={lemma.language}>{lemma.headword}</h1>
+      {@render heading()}
       <span class="mod-id-pos">{lemma.pos}</span>
     </div>
 
@@ -552,8 +559,8 @@
         <label>Listed forms (one spelling per line)
           <textarea name="forms" rows="5" value={data.hindi.forms.join('\n')}></textarea>
         </label>
-        <label>Alternative headwords (one per line)
-          <textarea name="alternatives" rows="2" value={data.hindi.alternatives.join('\n')}></textarea>
+        <label>Alternative headwords (one per line, prefix hidden spellings with a period)
+          <textarea name="alternatives" rows="2" value={data.hindi.editableAlternatives.join('\n')}></textarea>
         </label>
         <label>Excluded spellings (also blocks generated matches)
           <textarea name="excluded" rows="2" value={data.hindi.excluded.join('\n')}></textarea>
@@ -907,6 +914,7 @@
   </section>
 
 </div>
+</PageLayout>
 
 <style>
   #inflection form, #inflection form > label { display: grid; gap: .5rem; }
@@ -961,7 +969,7 @@
     gap: 12px;
     justify-self: center;
   }
-  .mod-hw-script {
+  .mod-id :global(.mod-hw-script) {
     font-size: 28px;
     font-family: var(--font-script, var(--font-serif, ui-serif, serif));
     color: var(--ink, var(--color-fg));

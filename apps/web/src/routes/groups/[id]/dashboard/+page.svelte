@@ -1,4 +1,6 @@
 <script lang="ts">
+  import PageLayout from '$lib/components/shell/PageLayout.svelte';
+  import PageTitle from '$lib/components/shell/PageTitle.svelte';
   import type { PageProps } from './$types';
 
   let { data }: PageProps = $props();
@@ -35,9 +37,14 @@
   <title>{data.dashboard.group.name} | classroom dashboard | Parhiba</title>
 </svelte:head>
 
+{#snippet heading()}
+  <PageTitle>{data.dashboard.group.name}</PageTitle>
+{/snippet}
+
+<PageLayout {heading}>
 <div class="cd">
   <header class="cd-h">
-    <h1 class="page-title">{data.dashboard.group.name}</h1>
+    {@render heading()}
     {#if data.dashboard.group.description}
       <p class="cd-desc">{data.dashboard.group.description}</p>
     {/if}
@@ -81,6 +88,7 @@
     </p>
   {/each}
 </div>
+</PageLayout>
 
 <style>
   .cd-desc {

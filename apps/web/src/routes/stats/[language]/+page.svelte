@@ -1,4 +1,6 @@
 <script lang="ts">
+  import PageLayout from '$lib/components/shell/PageLayout.svelte';
+  import PageTitle from '$lib/components/shell/PageTitle.svelte';
   import Pagination from '$lib/components/input/Pagination.svelte';
   import ReanalysisNotice from '$lib/components/library/ReanalysisNotice.svelte';
   import type { PageProps } from './$types';
@@ -34,12 +36,17 @@
   <title>Stats | {data.languageDescriptor.displayName} | Parhiba</title>
 </svelte:head>
 
+{#snippet heading()}
+  <PageTitle>
+    {data.languageDescriptor.displayName}
+    <span class="ls-native">{data.languageDescriptor.nativeName}</span>
+  </PageTitle>
+{/snippet}
+
+<PageLayout {heading}>
 <div class="ls">
   <header class="ls-h">
-    <h1 class="page-title">
-      {data.languageDescriptor.displayName}
-      <span class="ls-native">{data.languageDescriptor.nativeName}</span>
-    </h1>
+    {@render heading()}
     <p class="ls-h-sub">Your reading, listening, and vocabulary stats for this language.</p>
   </header>
 
@@ -189,6 +196,7 @@
     </p>
   </section>
 </div>
+</PageLayout>
 
 <style>
   .ls-native {

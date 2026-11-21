@@ -1,4 +1,6 @@
 <script lang="ts">
+  import PageLayout from '$lib/components/shell/PageLayout.svelte';
+  import PageTitle from '$lib/components/shell/PageTitle.svelte';
   import { enhance } from '$app/forms';
   import { goto } from '$app/navigation';
   import { LANGUAGES, SUPPORTED_LANGUAGE_CODES } from '@ciareader/shared-types';
@@ -66,9 +68,14 @@
   <meta name="robots" content="noindex" />
 </svelte:head>
 
+{#snippet heading()}
+  <PageTitle>Translation reports</PageTitle>
+{/snippet}
+
+<PageLayout {heading}>
 <div class="tr">
   <header class="tr-h">
-    <h1 class="page-title">Translation reports</h1>
+    {@render heading()}
     <p class="tr-h-sub">
       Reader-filed reports against community translations. Hide writes an
       audit row to <code>lemma_edit_history</code>; Keep closes the report
@@ -265,6 +272,7 @@
     </ul>
   {/if}
 </div>
+</PageLayout>
 
 <style>
   .tr-h-sub {

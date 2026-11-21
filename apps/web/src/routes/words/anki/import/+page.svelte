@@ -1,4 +1,5 @@
 <script lang="ts">
+  import PageLayout from '$lib/components/shell/PageLayout.svelte';
   import Button from '$lib/components/input/Button.svelte';
   import { onMount } from 'svelte';
   import type { PageProps } from './$types';
@@ -148,8 +149,14 @@
 </script>
 
 <svelte:head><title>Import Anki vocabulary | Parhiba</title></svelte:head>
-<div class="import-page page-form">
+
+{#snippet heading()}
   <SubpageHeading title="Import Anki vocabulary" href="/words" closeLabel="Close import and return to vocabulary" />
+{/snippet}
+
+<PageLayout {heading}>
+<div class="import-page page-form">
+  {@render heading()}
   <Button disabled={busy} onclick={() => connect()}>
     {connecting ? 'Connecting…' : connected ? 'Refresh decks' : 'Connect to Anki Desktop'}
   </Button>
@@ -216,6 +223,7 @@
   {/if}
   {#if message}<p role="status">{message}</p>{/if}
 </div>
+</PageLayout>
 
 <style>
   fieldset,

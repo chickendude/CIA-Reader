@@ -1,17 +1,9 @@
-<!--
-  App shell.
-
-  Desktop (>=960px): left rail with brand mark, sectioned nav and
-  sign-out at the foot. Mobile (<960px): a thin top strip with
-  the brand + sign-out, plus a full-width bottom tab bar with icons +
-  labels. Each screen owns its own top bar — there is no global
-  full-width header on desktop, matching the CIAR design.
--->
 <script lang="ts">
   import PageLayout from './PageLayout.svelte';
+  import { mobileMenuButtonKey } from './mobile-navigation';
   import { page } from '$app/state';
-  import { invalidateAll } from '$app/navigation';
-  import { onMount } from 'svelte';
+  import { afterNavigate, invalidateAll } from '$app/navigation';
+  import { MediaQuery } from 'svelte/reactivity';
   import {
     TABS,
     getActiveTabId,
@@ -21,14 +13,8 @@
     type TabIcon,
     type ViewerRole,
   } from './tabs.js';
-  import {
-    isImmersiveAttributeSet,
-    readPersistedImmersive,
-    setImmersiveAttribute,
-    writePersistedImmersive,
-  } from '../reader/immersive.js';
   import { switchCurrentLanguage } from './language-switch.js';
-  import type { Snippet } from 'svelte';
+  import { setContext, type Snippet } from 'svelte';
 
   interface LanguageOption {
     code: string;
@@ -51,8 +37,7 @@
     currentLanguage?: string | null;
     /** Language choices available to this viewer. */
     availableLanguages?: LanguageOption[];
-    /** Supported languages the user hasn't added yet — the switcher's
-     *  "Add a language" options. Empty for anonymous visitors. */
+    /** Languages available through the Add a language page. */
     addableLanguages?: LanguageOption[];
     children: Snippet;
   }
@@ -69,17 +54,24 @@
     availableLanguages.find((l) => l.code === currentLanguage) ?? null,
   );
 
-  // language picker. Click the top-left brand icon → custom
-  // dropdown anchored beneath it, listing every active language.
-  // Selecting one PUTs the cookie + reloads layout data so every
-  // loader picks up the new pick.
+  const desktop = new MediaQuery('(min-width: 960px)', true);
+  setContext<Snippet>(mobileMenuButtonKey, menuButton);
+  let drawer = $state<globalThis.HTMLDialogElement>();
+  let languageTrigger = $state<HTMLButtonElement>();
   let langPickerOpen = $state(false);
   let switching = $state(false);
   let switchError = $state<string | null>(null);
 
-  // Close on outside-click / Escape while the dropdown is open. Two
-  // dropdowns can be in the DOM at once (rail + mobile top-strip), so
-  // we match by class rather than a single bind:this.
+  afterNavigate(() => {
+    drawer?.close();
+    langPickerOpen = false;
+  });
+
+  function closeLanguagePicker() {
+    langPickerOpen = false;
+    languageTrigger?.focus();
+  }
+
   $effect(() => {
     if (!langPickerOpen) return;
     function onPointer(e: MouseEvent) {
@@ -90,7 +82,10 @@
       langPickerOpen = false;
     }
     function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape') langPickerOpen = false;
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        closeLanguagePicker();
+      }
     }
     document.addEventListener('mousedown', onPointer);
     document.addEventListener('keydown', onKey);
@@ -105,14 +100,16 @@
   async function pickLanguage(code: string) {
     if (switching) return;
     if (code === currentLanguage) {
-      langPickerOpen = false;
+      closeLanguagePicker();
+      drawer?.close();
       return;
     }
     switching = true;
     switchError = null;
     try {
       await switchCurrentLanguage(code);
-      langPickerOpen = false;
+      if (langPickerOpen) closeLanguagePicker();
+      drawer?.close();
       // Refresh language-scoped pages and the rail indicator.
       await invalidateAll();
     } catch (e) {
@@ -130,35 +127,8 @@
   );
   const activeId = $derived(getActiveTabId(page.url.pathname, tabs));
 
-  // The reader is immersive: it renders full-bleed over the shell and owns
-  // its own exit (the × button / Esc). Hide the rail-toggle chevron there so
-  // no nav chrome pokes through on top of the text.
   const onReader = $derived(page.url.pathname.startsWith('/reader/'));
   const groups = $derived(groupTabsBySection(tabs));
-
-  // The shell and reader share the immersive-mode setting for this browser tab.
-  let collapsed = $state(false);
-  onMount(() => {
-    collapsed = readPersistedImmersive();
-    setImmersiveAttribute(collapsed);
-    // Reflect any external attribute mutation (e.g. the reader page's
-    // Esc handler clearing immersive on exit) back into our local
-    // state so the button glyph stays in sync.
-    const obs = new MutationObserver(() => {
-      const next = isImmersiveAttributeSet();
-      if (next !== collapsed) collapsed = next;
-    });
-    obs.observe(document.documentElement, {
-      attributes: true,
-      attributeFilter: ['data-reader-immersive'],
-    });
-    return () => obs.disconnect();
-  });
-  function toggleCollapsed() {
-    collapsed = !collapsed;
-    setImmersiveAttribute(collapsed);
-    writePersistedImmersive(collapsed);
-  }
 
   // Inline-SVG glyphs match the CIAR design's atom set
   // (see design-handoff/ciar/project/atoms.jsx). One viewBox + a list
@@ -178,173 +148,125 @@
   };
 </script>
 
-<!-- chevron toggles the rail / shell chrome. Positioned fixed
-     so it stays clickable in both states — sits flush against the
-     rail's inner-right edge when expanded (chevron points left, "tuck
-     it in"), and snaps to the viewport's left edge when collapsed
-     (chevron points right, "pull it out"). -->
-{#if !onReader}
+<div class="shell" class:reader-route={onReader}>
+  {#if !onReader}
+    {#if desktop.current}
+      <aside class="rail">{@render navigation()}</aside>
+    {:else}
+      <dialog bind:this={drawer} class="drawer" aria-label="Navigation" onclose={() => (langPickerOpen = false)}>
+        <div class="drawer-panel">
+          <button type="button" class="menu-button close-menu" aria-label="Close navigation" onclick={() => drawer?.close()}>
+            <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+              <path d="m6 6 12 12M18 6 6 18" />
+            </svg>
+          </button>
+          {@render navigation()}
+        </div>
+        <button type="button" class="backdrop" tabindex="-1" aria-label="Dismiss navigation" onclick={() => drawer?.close()}></button>
+      </dialog>
+    {/if}
+  {/if}
+
+  {#if onReader}
+    <main class="content">{@render children()}</main>
+  {:else}
+    <div class="content">
+      {#if page.error}
+        <PageLayout>{@render children()}</PageLayout>
+      {:else}
+        {@render children()}
+      {/if}
+    </div>
+  {/if}
+</div>
+
+{#snippet menuButton()}
   <button
     type="button"
-    class="rail-toggle"
-    data-collapsed={collapsed ? '1' : '0'}
-    aria-label={collapsed ? 'Show navigation' : 'Hide navigation'}
-    aria-pressed={collapsed}
-    title={collapsed ? 'Show navigation' : 'Hide navigation'}
-    onclick={toggleCollapsed}
+    class="menu-button"
+    aria-label="Open navigation"
+    aria-haspopup="dialog"
+    disabled={!drawer}
+    onclick={() => drawer?.showModal()}
   >
-    <svg
-      viewBox="0 0 24 24"
-      width="14"
-      height="14"
-      fill="none"
-      stroke="currentColor"
-      stroke-width="2"
-      stroke-linecap="round"
-      stroke-linejoin="round"
-      aria-hidden="true"
-    >
-      {#if collapsed}
-        <path d="M9 6l6 6-6 6" />
-      {:else}
-        <path d="M15 6l-6 6 6 6" />
-      {/if}
+    <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
+      <path d="M3 6h18M3 12h18M3 18h18" />
     </svg>
   </button>
-{/if}
+{/snippet}
 
-<div class="shell" class:reader-route={onReader}>
-  <aside class="rail" aria-label="Primary navigation">
-    <div class="lang-wrap">
-      {#if currentOption}
-        <button
-          type="button"
-          class="brand brand-trigger lang-trigger"
-          aria-haspopup="menu"
-          aria-expanded={langPickerOpen}
-          aria-label="Switch language (currently {currentOption.displayName})"
-          title="Switch language"
-          onclick={() => (langPickerOpen = !langPickerOpen)}
-        >
-          <span class="brand-mark" aria-hidden="true">{currentOption.glyph}</span>
-          <span class="brand-text">
-            <span class="brand-name">Parhiba</span>
-            <span class="brand-sub">Indo-Aryan Reader</span>
-          </span>
-        </button>
-      {:else}
-        <a class="brand" href={user ? '/languages/new' : '/library'} aria-label={user ? 'Add a language' : 'Parhiba Library'}>
-          <span class="brand-mark" aria-hidden="true">अ</span>
-          <span class="brand-text">
-            <span class="brand-name">Parhiba</span>
-            <span class="brand-sub">Indo-Aryan Reader</span>
-          </span>
-        </a>
-      {/if}
-      {#if langPickerOpen && currentOption}
-        {@render langDropdown()}
-      {/if}
-    </div>
-
-    <nav class="nav" aria-label="Sections">
-      {#each groups as group (group.section ?? '_')}
-        {#if group.section}
-          <div class="nav-section">{group.section}</div>
-        {/if}
-        {#each group.tabs as tab (tab.id)}
-          <a
-            href={tab.href}
-            class="nav-item"
-            class:active={activeId === tab.id}
-            aria-current={activeId === tab.id ? 'page' : undefined}
-          >
-            {#if tab.icon}
-              <span class="nav-icon" aria-hidden="true">
-                <svg viewBox="0 0 24 24" width="16" height="16">
-                  {#each ICONS[tab.icon] as d (d)}
-                    <path {d} />
-                  {/each}
-                </svg>
-              </span>
-            {/if}
-            <span>{tab.label}</span>
-          </a>
-        {/each}
-      {/each}
-    </nav>
-
-    {#if user}
-      <footer class="rail-foot">
-        <form method="post" action="/logout" class="logout-form">
-          <button type="submit" class="logout">Sign out</button>
-        </form>
-      </footer>
+{#snippet navigation()}
+  <div class="lang-wrap">
+    {#if currentOption}
+      <button
+        type="button"
+        class="brand brand-trigger lang-trigger"
+        bind:this={languageTrigger}
+        aria-haspopup="menu"
+        aria-expanded={langPickerOpen}
+        aria-label="Switch language (currently {currentOption.displayName})"
+        title="Switch language"
+        onclick={() => (langPickerOpen = !langPickerOpen)}
+      >
+        <span class="brand-mark" aria-hidden="true">{currentOption.glyph}</span>
+        <span class="brand-text">
+          <span class="brand-name">Parhiba</span>
+          <span class="brand-sub">{currentOption.displayName}</span>
+        </span>
+        <svg class="language-chevron" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+          <path d="m6 9 6 6 6-6" />
+        </svg>
+      </button>
+    {:else}
+      <a class="brand" href={user ? '/languages/new' : '/library'} aria-label={user ? 'Add a language' : 'Parhiba Library'}>
+        <span class="brand-mark" aria-hidden="true">अ</span>
+        <span class="brand-text">
+          <span class="brand-name">Parhiba</span>
+          <span class="brand-sub">{user ? 'Add a language' : 'Indo-Aryan Reader'}</span>
+        </span>
+      </a>
     {/if}
-  </aside>
+    {#if langPickerOpen && currentOption}
+      {@render langDropdown()}
+    {/if}
+  </div>
 
-  <header class="top-strip" aria-label="Account">
-    <div class="lang-wrap-compact">
-      {#if currentOption}
-        <button
-          type="button"
-          class="brand-strip brand-trigger lang-trigger"
-          aria-haspopup="menu"
-          aria-expanded={langPickerOpen}
-          aria-label="Switch language (currently {currentOption.displayName})"
-          title="Switch language"
-          onclick={() => (langPickerOpen = !langPickerOpen)}
+  <nav class="nav" aria-label="Primary navigation">
+    {#each groups as group (group.section ?? '_')}
+      {#if group.section}
+        <div class="nav-section">{group.section}</div>
+      {/if}
+      {#each group.tabs as tab (tab.id)}
+        <a
+          href={tab.href}
+          class="nav-item"
+          class:active={activeId === tab.id}
+          aria-current={activeId === tab.id ? 'page' : undefined}
         >
-          <span class="brand-mark" aria-hidden="true">{currentOption.glyph}</span>
-        </button>
-      {:else}
-        <a class="brand-strip" href={user ? '/languages/new' : '/library'} aria-label={user ? 'Add a language' : 'Parhiba Library'}>
-          <span class="brand-mark" aria-hidden="true">अ</span>
+          {#if tab.icon}
+            <span class="nav-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="16" height="16">
+                {#each ICONS[tab.icon] as d (d)}
+                  <path {d} />
+                {/each}
+              </svg>
+            </span>
+          {/if}
+          <span>{tab.label}</span>
         </a>
-      {/if}
-      {#if langPickerOpen && currentOption}
-        {@render langDropdown()}
-      {/if}
-    </div>
-    {#if user}
-      <span class="who" aria-label="Signed-in user">
-        {user.displayName ?? user.email}
-      </span>
+      {/each}
+    {/each}
+  </nav>
+
+  {#if user}
+    <footer class="rail-foot">
+      <span class="who">{user.displayName ?? user.email}</span>
       <form method="post" action="/logout" class="logout-form">
         <button type="submit" class="logout">Sign out</button>
       </form>
-    {/if}
-  </header>
-
-  <main class="content">
-    {#if onReader}
-      {@render children()}
-    {:else}
-      <PageLayout>{@render children()}</PageLayout>
-    {/if}
-  </main>
-
-  <nav class="bottom-nav" aria-label="Primary navigation">
-    {#each tabs as tab (tab.id)}
-      <a
-        href={tab.href}
-        class="bottom-tab"
-        class:active={activeId === tab.id}
-        aria-current={activeId === tab.id ? 'page' : undefined}
-      >
-        {#if tab.icon}
-          <span class="nav-icon" aria-hidden="true">
-            <svg viewBox="0 0 24 24" width="18" height="18">
-              {#each ICONS[tab.icon] as d (d)}
-                <path {d} />
-              {/each}
-            </svg>
-          </span>
-        {/if}
-        <span>{tab.label}</span>
-      </a>
-    {/each}
-  </nav>
-</div>
+    </footer>
+  {/if}
+{/snippet}
 
 {#snippet langDropdown()}
   <div class="lang-dropdown" role="menu" aria-label="Languages">
@@ -394,84 +316,106 @@
 {/snippet}
 
 <style>
-  /* Desktop: rail + content. Mobile: top-strip + content + bottom-nav.
-     The shell uses the design's paper / ink / rule tokens with a
-     fallback to the legacy --color-* family so anything not yet
-     redesigned still looks coherent. */
   .shell {
     min-height: 100dvh;
     display: grid;
     grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: auto 1fr auto;
-    grid-template-areas:
-      'top'
-      'content'
-      'bottom';
-    background: var(--paper, var(--color-bg));
-    color: var(--ink, var(--color-fg));
+    grid-template-rows: 1fr;
+    background: var(--paper);
+    color: var(--ink);
   }
-  @media (min-width: 960px) {
-    .shell {
-      grid-template-columns: 232px 1fr;
-      grid-template-rows: 1fr;
-      grid-template-areas: 'rail content';
-    }
+  .menu-button {
+    flex-shrink: 0;
+    display: grid;
+    place-items: center;
+    width: var(--touch-target);
+    height: var(--touch-target);
+    background: transparent;
+    color: var(--ink);
+    border: 0;
+    border-radius: var(--radius-md);
+    cursor: pointer;
   }
-
-  /* —— Top strip (mobile only) —— */
-  .top-strip {
-    grid-area: top;
-    min-width: 0;
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    padding: 0.6rem 0.9rem;
-    border-bottom: 1px solid var(--rule, var(--color-border));
-    background: color-mix(
-      in oklch,
-      var(--paper, var(--color-bg)) 88%,
-      var(--paper-2, transparent)
-    );
+  .menu-button:hover {
+    background: var(--paper-2);
   }
-  @media (min-width: 960px) {
-    .top-strip {
-      display: none;
-    }
+  .menu-button svg, .language-chevron {
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
   }
-  .brand-strip .brand-mark {
-    width: 30px;
-    height: 30px;
-  }
-  .who {
-    flex: 1;
-    color: var(--ink-3, var(--color-fg-muted));
-    font-size: 0.85rem;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-  /* —— Rail (desktop only) —— */
-  .rail {
-    grid-area: rail;
-    display: none;
+  .rail, .drawer-panel {
     flex-direction: column;
     gap: 1.4rem;
-    padding: 1.4rem 1rem 1rem;
-    border-right: 1px solid var(--rule, var(--color-border));
-    background: color-mix(
-      in oklch,
-      var(--paper, var(--color-bg)) 88%,
-      var(--paper-2, transparent)
-    );
-    position: sticky;
-    top: 0;
+    background: var(--paper);
+    border-right: 1px solid var(--rule);
+  }
+  .rail {
+    display: none;
+  }
+  .drawer {
+    inset: 0;
+    margin: 0;
+    width: 100%;
+    max-width: none;
     height: 100dvh;
+    max-height: none;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: var(--ink);
+  }
+  .drawer[open] {
+    display: flex;
+  }
+  .drawer::backdrop {
+    background: var(--color-overlay);
+  }
+  :global(html:has(.drawer[open])) {
+    overflow: hidden;
+  }
+  .drawer-panel {
+    display: flex;
+    position: relative;
+    width: min(20rem, 88%);
+    padding: max(0.75rem, env(safe-area-inset-top)) 1rem max(1rem, env(safe-area-inset-bottom)) max(1rem, env(safe-area-inset-left));
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+  .close-menu {
+    position: absolute;
+    top: max(0.75rem, env(safe-area-inset-top));
+    right: 0.5rem;
+    z-index: 1;
+  }
+  .drawer-panel .lang-wrap {
+    padding-right: var(--touch-target);
+  }
+  .backdrop {
+    flex: 1;
+    border: 0;
+    background: transparent;
   }
   @media (min-width: 960px) {
-    .rail {
-      display: flex;
+    .shell:not(.reader-route) {
+      grid-template-columns: 232px minmax(0, 1fr);
     }
+    .rail {
+      position: sticky;
+      top: 0;
+      display: flex;
+      height: 100dvh;
+      overflow-y: auto;
+      padding: 1.4rem 1rem 1rem;
+    }
+  }
+  .who {
+    min-width: 0;
+    overflow-wrap: anywhere;
+    color: var(--ink-2);
+    font-size: 0.85rem;
   }
   .brand {
     display: flex;
@@ -510,7 +454,7 @@
   .brand-sub {
     font-family: var(--font-sans, var(--font-ui));
     font-size: 0.66rem;
-    color: var(--ink-3, var(--color-fg-muted));
+    color: var(--ink-2);
     letter-spacing: 0.06em;
     text-transform: uppercase;
   }
@@ -525,7 +469,7 @@
     font-size: 0.62rem;
     letter-spacing: 0.1em;
     text-transform: uppercase;
-    color: var(--ink-4, var(--color-fg-subtle));
+    color: var(--ink-2);
     padding: 0.85rem 0.5rem 0.35rem;
   }
   .nav-item {
@@ -544,20 +488,16 @@
     color: var(--ink, var(--color-fg));
   }
   .nav-item.active {
-    background: color-mix(in oklch, var(--ink, var(--color-fg)) 8%, transparent);
-    color: var(--ink, var(--color-fg));
-    font-weight: 500;
+    background: var(--ink);
+    color: var(--paper);
+    font-weight: 600;
   }
   .nav-icon {
     width: 16px;
     height: 16px;
     display: grid;
     place-items: center;
-    color: var(--ink-3, var(--color-fg-muted));
     flex-shrink: 0;
-  }
-  .nav-item.active .nav-icon {
-    color: var(--accent-ink, var(--color-accent));
   }
   .nav-icon svg {
     stroke: currentColor;
@@ -573,19 +513,21 @@
     border-top: 1px solid var(--rule, var(--color-border));
     display: flex;
     align-items: center;
-    justify-content: flex-end;
+    justify-content: space-between;
+    gap: 0.5rem;
     font-family: var(--font-sans, var(--font-ui));
     font-size: 0.72rem;
-    color: var(--ink-3, var(--color-fg-muted));
+    color: var(--ink-2);
   }
   .logout-form {
+    flex-shrink: 0;
     margin: 0;
   }
   .logout {
     background: transparent;
     border: 1px solid var(--rule, var(--color-border));
     border-radius: 6px;
-    color: var(--ink-3, var(--color-fg-muted));
+    color: var(--ink-2);
     cursor: pointer;
     font: inherit;
     font-size: 0.7rem;
@@ -595,109 +537,10 @@
     color: var(--ink, var(--color-fg));
   }
 
-  /* —— Main content —— */
   .content {
-    grid-area: content;
     display: block;
     min-width: 0;
   }
-  /* On mobile, leave room for the bottom nav so sticky reader-foot bars
-     and trailing content aren't hidden under it. */
-  @media (max-width: 959.98px) {
-    .content {
-      padding-bottom: calc(
-        var(--touch-target) * 1.4 + env(safe-area-inset-bottom, 0px)
-      );
-    }
-  }
-
-  /* —— Bottom tab bar (mobile only) —— */
-  .bottom-nav {
-    grid-area: bottom;
-    display: grid;
-    grid-auto-flow: column;
-    grid-auto-columns: minmax(max-content, 1fr);
-    overflow-x: auto;
-    position: fixed;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    background: color-mix(
-      in oklch,
-      var(--paper, var(--color-bg)) 92%,
-      var(--paper-2, transparent)
-    );
-    border-top: 1px solid var(--rule, var(--color-border));
-    padding: 0.25rem 0.4rem;
-    padding-bottom: calc(0.25rem + env(safe-area-inset-bottom, 0px));
-    z-index: 10;
-  }
-  @media (min-width: 960px) {
-    .bottom-nav {
-      display: none;
-    }
-  }
-  .bottom-tab {
-    display: grid;
-    grid-template-rows: auto auto;
-    align-items: center;
-    justify-items: center;
-    gap: 0.15rem;
-    padding: 0.35rem 0.2rem;
-    color: var(--ink-3, var(--color-fg-muted));
-    text-decoration: none;
-    font-family: var(--font-sans, var(--font-ui));
-    font-size: 0.65rem;
-    border-radius: 8px;
-  }
-  .bottom-tab.active {
-    color: var(--accent-ink, var(--color-accent));
-  }
-  .bottom-tab .nav-icon {
-    color: inherit;
-    width: 18px;
-    height: 18px;
-  }
-
-  /* Chevron / rail-toggle button
-   * Mobile-only now. The rail is static on desktop, so there's
-   * nothing to expand/collapse there; on mobile we keep the toggle as
-   * an immersive-mode affordance (hides top-strip + bottom-nav for
-   * full-screen reading). Vertical tab on the viewport's left edge. */
-  .rail-toggle {
-    position: fixed;
-    top: 1rem;
-    left: 0;
-    width: 22px;
-    height: 44px;
-    display: grid;
-    place-items: center;
-    border-radius: 0 8px 8px 0;
-    background: var(--card, var(--color-bg));
-    border: 1px solid var(--card-edge, var(--color-border));
-    border-left: 0;
-    color: var(--ink-3, var(--color-fg-muted));
-    cursor: pointer;
-    z-index: 30;
-    box-shadow: 2px 0 8px rgba(0, 0, 0, 0.08);
-    transition:
-      background 150ms ease,
-      color 150ms ease;
-  }
-  @media (min-width: 960px) {
-    .rail-toggle {
-      display: none;
-    }
-  }
-  .rail-toggle:hover {
-    background: var(--accent-soft, var(--color-accent));
-    color: var(--accent-ink, var(--color-accent-fg, #fff));
-  }
-
-  /* Language picker dropdown
-   * Anchored to the top-left brand icon (rail on desktop, top-strip
-   * on mobile). The brand-mark glyph reflects the current language so
-   * the trigger doubles as a status indicator. */
   .brand-trigger {
     background: transparent;
     border: 0;
@@ -705,6 +548,7 @@
     margin: 0;
     font: inherit;
     color: inherit;
+    text-align: left;
     cursor: pointer;
     border-radius: 8px;
     transition: background 150ms ease;
@@ -723,18 +567,12 @@
   .lang-wrap {
     position: relative;
   }
-  .lang-wrap-compact {
-    position: relative;
-    flex-shrink: 0;
-  }
-
   .lang-dropdown {
     position: absolute;
     top: calc(100% + 8px);
     left: 0;
     z-index: 50;
-    min-width: 240px;
-    max-width: min(90vw, 320px);
+    width: 100%;
     max-height: min(70dvh, 480px);
     overflow-y: auto;
     background: var(--paper, var(--color-bg));
@@ -815,19 +653,18 @@
   .lang-row-en {
     font-family: var(--font-sans, var(--font-ui));
     font-size: 0.7rem;
-    color: var(--ink-3, var(--color-fg-muted));
+    color: var(--ink-2);
   }
   .lang-row-current {
-    color: var(--accent-ink, var(--color-accent));
     font-size: 0.85rem;
   }
   .lang-empty {
-    color: var(--ink-3, var(--color-fg-muted));
+    color: var(--ink-2);
     font-size: 0.85rem;
     margin: 0;
   }
   .lang-empty a {
-    color: var(--accent-ink, var(--color-accent));
+    color: inherit;
   }
   .lang-err {
     color: var(--rose, var(--color-danger));
@@ -865,40 +702,20 @@
     background: color-mix(in oklch, var(--ink, var(--color-fg)) 88%, transparent);
   }
 
-  /* —— Immersive mode (mobile-only) ————————————————————————————
-   * `data-reader-immersive="1"` on <html> hides the mobile chrome
-   * (top-strip + bottom-nav) so the screen content occupies the
-   * whole viewport. Desktop's rail stays static regardless. */
-  :global(html[data-reader-immersive='1']) .top-strip,
-  :global(html[data-reader-immersive='1']) .bottom-nav {
-    display: none;
+  @media (max-width: 959.98px) {
+    .nav-item, .brand, .logout {
+      min-height: var(--touch-target);
+    }
+    .logout {
+      font-size: var(--font-size-sm);
+    }
+    .lang-dropdown {
+      position: static;
+      margin-top: 0.5rem;
+      width: calc(100% + var(--touch-target));
+    }
   }
-  :global(html[data-reader-immersive='1']) .content {
-    /* Bottom nav is gone — drop the safe-area padding too. */
-    padding-bottom: 0;
-  }
-
-  /* —— Reader route: immersive on every breakpoint ————————————————
-   * The reader owns the whole window — its × button / Esc are the way out, so
-   * the shell's nav chrome is hidden and the content reclaims the full width.
-   * (The rail-toggle chevron lives outside .shell and is hidden in markup.) */
   .shell.reader-route:has(:global(.reader[data-mode='page'])) {
     min-height: 100svh;
-  }
-  .shell.reader-route .content:has(:global(.reader[data-mode='page'])) {
-    padding-bottom: 0;
-  }
-  .shell.reader-route .top-strip,
-  .shell.reader-route .bottom-nav {
-    display: none;
-  }
-  @media (min-width: 960px) {
-    .shell.reader-route {
-      grid-template-columns: 1fr;
-      grid-template-areas: 'content';
-    }
-    .shell.reader-route .rail {
-      display: none;
-    }
   }
 </style>

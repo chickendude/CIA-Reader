@@ -1,6 +1,8 @@
 <script lang="ts">
   import { getContext, untrack } from 'svelte';
   import Button from '$lib/components/input/Button.svelte';
+  import { getToastStore } from '$lib/components/toast/toast-store.js';
+  import { wordContext } from '$lib/dictionary/word-context';
   import ReaderDictionaryEditor from './ReaderDictionaryEditor.svelte';
   import type { WorkshopWord } from '$lib/dictionary/workshop';
   import HindiMergeButtons from './HindiMergeButtons.svelte';
@@ -25,6 +27,7 @@
     type ReferenceLanguage,
   } from './definition-languages.js';
   import { browser } from '$app/environment';
+  import { isIgnoredHere, readerOccurrenceIgnores } from './ignored-occurrences';
   import type { LanguageCode } from '@ciareader/shared-types';
   import { looksLikeNumberToken, type ServerToken } from './types.js';
 
@@ -56,6 +59,7 @@
     lemma: {
       id: string;
       headword: string;
+      alternativeHeadwords?: string[];
       romanization: string | null;
       pos: string;
       glossDefault: string | null;
@@ -150,6 +154,43 @@
   let savedTokenId = $state<string>();
 
   const selectedTokenId = $derived(token?.id);
+  const { pushToast } = getToastStore();
+  const sentenceContext = $derived(token && chapterTokens && wordContext(chapterTokens, token.idx));
+  let ignoringOccurrence = $state(false);
+  const occurrenceIgnores = readerOccurrenceIgnores();
+  const ignoredHere = $derived(token && isIgnoredHere(token, occurrenceIgnores));
+
+  async function ignoreOccurrence() {
+    if (!token || !canIgnoreOccurrence || ignoringOccurrence) return;
+    const tokenId = token.id;
+    const ignored = !ignoredHere;
+    ignoringOccurrence = true;
+    try {
+      const response = await fetch(`/api/v1/tokens/${tokenId}/ignore`, {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ ignored }),
+      });
+      if (!response.ok) throw new Error();
+      occurrenceIgnores.set(tokenId, ignored);
+    } catch {
+      pushToast({ kind: 'error', message: 'Could not save this change. Try again.' });
+    } finally {
+      ignoringOccurrence = false;
+    }
+  }
+
+  async function copySentence() {
+    if (!sentenceContext) return;
+    const { before, match, after } = sentenceContext;
+    try {
+      await navigator.clipboard.writeText((before + match + after).trim());
+      pushToast({ kind: 'success', message: 'Sentence copied.' });
+    } catch {
+      pushToast({ kind: 'error', message: 'Could not copy the sentence.' });
+    }
+  }
+
   $effect(() => {
     // A chapter refresh can replace the token object while the same word is open.
     if (editor && editor.tokenId !== selectedTokenId) editor = null;
@@ -348,7 +389,8 @@
     const lemmaId = displayedLemmaId;
     const count = lemmaId === token?.lemmaId ? token?.bookFrequency ?? null : null;
     bookFrequency = count;
-    if (count !== null || !textId || !lemmaId) return;
+    // A toggle can change a frequency cached in the loaded chapter.
+    if ((count !== null && !ignoredHere && !occurrenceIgnores.size) || !textId || !lemmaId) return;
 
     const controller = new AbortController();
     void (async () => {
@@ -905,6 +947,7 @@
 
   const canChooseDefinition = $derived(isAdmin && !!token?.lemmaId && token.candidates.length > 0 &&
     (language === 'hi' ? !!(token.canVerifyContext && token.contextVersion) : isOwner));
+  const canIgnoreOccurrence = $derived(token?.ignoredHere !== undefined && token.isWord && !isNumberToken && !pendingSelection);
   const compactOfficial = $derived(payload?.translations.official.find(
     (row) => !row.hidden && isDefLangVisible(row.targetLanguage),
   ));
@@ -1671,9 +1714,17 @@
               <span class="sp-freq-tip" role="tooltip">this word appears {bookFrequency}{bookFrequency === 1 ? ' time' : ' times'} in the book</span>
             </span>
           {/if}
+          {#if sentenceContext}
+            <button type="button" class="sp-header-button" aria-label="Copy sentence" title="Copy sentence" onclick={copySentence}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+                <rect x="8" y="8" width="12" height="13" rx="2" />
+                <path d="M15 5V4a1 1 0 0 0-1-1H5a2 2 0 0 0-2 2v10a1 1 0 0 0 1 1h1" />
+              </svg>
+            </button>
+          {/if}
           <button
             type="button"
-            class="sp-close"
+            class="sp-header-button"
             aria-label="Close"
             title="Close"
             onclick={onClose}
@@ -1736,6 +1787,9 @@
               </span>
               {#if payload?.lemma.romanization && headwordInput === payload.lemma.headword}
                 <span class="sp-roman">{payload.lemma.romanization}</span>
+              {/if}
+              {#if payload && headwordInput === payload.lemma.headword && payload.lemma.alternativeHeadwords?.length}
+                <span class="sp-alternative-headwords" lang={language} dir="auto">{payload.lemma.alternativeHeadwords.join(', ')}</span>
               {/if}
             </span>
             {#if payload}
@@ -1847,7 +1901,7 @@
           lemmaId: displayedLemmaId ?? null,
           headword: headwordInput.trim() || token.surface,
         };
-      }}>{displayedLemmaId ? 'Edit dictionary entry' : 'Add dictionary entry'}</Button>
+      }}>{displayedLemmaId ? 'Edit entry' : 'Add entry'}</Button>
       {#if savedTokenId === token.id}<p role="status">Dictionary entry saved.</p>{/if}
     {/if}
     {#if !isNumberToken}
@@ -1865,15 +1919,14 @@
           {/if}
           <p class="sp-translate-out">{sentenceTranslation}</p>
         {:else}
-          <button
-            type="button"
-            class="sp-translate-btn"
+          <Button
+            title="Translate sentence"
             data-testid="translate-sentence-btn"
             onclick={translateSentence}
             disabled={translating}
           >
-            {translating ? 'Translating…' : 'Translate sentence'}
-          </button>
+            {translating ? 'Translating…' : 'Translate'}
+          </Button>
         {/if}
         {#if translateError}
           <p class="err small" data-testid="translate-error">{translateError}</p>
@@ -2346,11 +2399,17 @@
         {/if}
       {/if}
     {/if}
-    {#if isOwner || (token.confirmedMerge && !pendingSelection)}
+    {#if isOwner || canIgnoreOccurrence || (token.confirmedMerge && !pendingSelection)}
       <div class="sp-correction-actions">
         {#if isOwner}
           <Button aria-haspopup="dialog" onclick={() => (showCorrectionModal = true)}
-            title="Search the dictionary or mark this surface">Fix this word</Button>
+            title="Search the dictionary or mark this surface">Fix</Button>
+        {/if}
+        {#if canIgnoreOccurrence}
+          <Button disabled={ignoringOccurrence} onclick={ignoreOccurrence}
+            title={ignoredHere ? 'Restore this occurrence' : "Don't treat this word (just this instance) as a real word so it's not used for vocabulary counts"}>
+            {ignoredHere ? 'Unignore' : 'Ignore'}
+          </Button>
         {/if}
         {#if token.chapterId && token.confirmedMerge && !pendingSelection}
           {#key token.id}
@@ -2526,7 +2585,7 @@
   .sp-head > .sp-word-crop {
     grid-column: 1;
   }
-  .sp-close {
+  .sp-header-button {
     width: 28px;
     height: 28px;
     display: grid;
@@ -2539,7 +2598,7 @@
     line-height: 1;
     cursor: pointer;
   }
-  .sp-close:hover {
+  .sp-header-button:hover {
     background: color-mix(in oklch, var(--ink, var(--color-fg)) 8%, transparent);
     color: var(--ink, var(--color-fg));
   }
@@ -2569,6 +2628,7 @@
     min-width: 1ch;
     max-width: 100%;
   }
+  .sp-alternative-headwords { max-width: 100%; overflow-wrap: anywhere; }
   .sp-headword-measure, .sp-word-input { grid-area: 1 / 1; }
   .sp-headword-measure { visibility: hidden; white-space: pre; }
   .sp-word-input {
@@ -2855,16 +2915,6 @@
 
   .sp-translate {
     margin: 0.5rem 0;
-  }
-  .sp-translate-btn {
-    padding: 0.3rem 0.7rem;
-    font: inherit;
-    font-size: 0.8rem;
-    color: var(--ink, var(--color-fg));
-    background: var(--paper, var(--color-bg));
-    border: 1px solid var(--rule, var(--color-border));
-    border-radius: 7px;
-    cursor: pointer;
   }
   .sp-translate-src {
     margin: 0 0 0.2rem;

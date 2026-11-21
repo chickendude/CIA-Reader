@@ -117,15 +117,22 @@ async function reviewIndex(connection: Pick<DB, 'execute'>, textId: string) {
   }
 }
 
-export async function bookAttention(textId: string, query: string, offset: number, filter: ReviewFilter) {
+export async function bookAttention(textId: string, userId: string, query: string, offset: number, filter: ReviewFilter) {
   // A concurrent edit must not put new occurrences under an older version.
-  const index = await db.transaction(tx => reviewIndex(tx, textId), {
+  const [index, ignored] = await db.transaction(async tx => Promise.all([
+    reviewIndex(tx, textId),
+    tx.execute<{ token_id: string }>(sql`SELECT i.token_id FROM reader_ignored_tokens i
+      JOIN text_tokens t ON t.id=i.token_id JOIN text_chapters c ON c.id=t.chapter_id
+      WHERE i.user_id=${userId} AND c.text_id=${textId}`),
+  ]), {
     isolationLevel: 'repeatable read', accessMode: 'read only',
   });
   const needle = query.toLowerCase();
+  const ignoredIds = new Set(ignored.map(row => row.token_id));
   const counts: Partial<Record<ReviewFilter, number>> & { attention: number } = { attention: 0 };
   const matches: ReviewOccurrence[] = [];
   for (const row of index) {
+    if (ignoredIds.has(row.id)) continue;
     if (needle && !row.surface.toLowerCase().includes(needle)) continue;
     counts[row.status] = (counts[row.status] ?? 0) + 1;
     const needsAttention = row.status !== 'ai_suggested' && row.status !== 'confirmed';

@@ -42,10 +42,15 @@ def analyze(text: str, lexicon: Lexicon | None = None) -> dict:
                 "example_start": token.start, "source": entry["source"],
                 "review_status": entry["review_status"],
                 "definitions": entry.get("definitions", []),
-                **{field: entry[field] for field in ('group_id', 'group_primary', 'group_uses', 'alternative_headwords') if field in entry},
+                **{field: entry[field] for field in ('group_id', 'group_primary', 'group_uses') if field in entry},
             })
             row["count"] += 1
             row["forms"][occurrence["surface"]] = row["forms"].get(occurrence["surface"], 0) + 1
+    for key, row in frequencies.items():
+        entry = lexicon.entries[key]
+        if 'alternative_headwords' in entry:
+            hidden = set(entry.get('hidden_alternative_headwords', []))
+            row['alternative_headwords'] = [word for word in entry['alternative_headwords'] if word not in hidden]
     unresolved = {}
     for index, token in enumerate(tokens):
         if token.kind == "word" and index not in covered:

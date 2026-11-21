@@ -44,7 +44,7 @@ export async function reviewPage(
     .limit(1);
   if (!text || !(await canReadText(actor, text)))
     throw new ContextChoiceError('Book not found', 404);
-  const { rows, counts, total, offset: pageOffset } = await bookAttention(textId, query, offset, filter);
+  const { rows, counts, total, offset: pageOffset } = await bookAttention(textId, actor.id, query, offset, filter);
   const chapters = new Map<string, Map<string, number>>();
   for (const row of rows) {
     const starts = chapters.get(row.chapter_id) ?? new Map<string, number>();

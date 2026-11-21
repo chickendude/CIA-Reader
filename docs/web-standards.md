@@ -15,7 +15,7 @@
 
 | Interaction | Standard |
 | --- | --- |
-| Page layout | Use the spacing and title styles supplied by `AppShell` and `PageLayout`. The reader owns its full-screen layout. |
+| Page layout | Pass the route’s heading snippet to `PageLayout` for the mobile bar and render that snippet in the desktop content. Use `PageTitle` for the main heading. The reader owns its full-screen layout. |
 | Return to a parent page | Put the X before the title using `SubpageHeading`. Supply the parent URL and an accessible label naming the destination. A direct link to a subpage should close to the same parent as a visit from within the app. Custom headers such as the reader can use `PageCloseLink` directly. |
 | Buttons and choices | Use `Button` with an `href` for navigation and a button for actions. Use `SegmentedControl` for mutually exclusive settings and pressed toggle buttons for independent filters. |
 | Tables that open an item | Give each row one native link in its title cell. Use `linked-row` and `row-link` to extend that link over the row. Use ordinary text styling for the title, row highlighting on hover, and a visible keyboard focus outline. Keep secondary actions above the link hit area and independently operable. |

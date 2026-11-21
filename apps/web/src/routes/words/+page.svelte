@@ -1,4 +1,6 @@
 <script lang="ts">
+  import PageLayout from '$lib/components/shell/PageLayout.svelte';
+  import PageTitle from '$lib/components/shell/PageTitle.svelte';
   import '$lib/styles/entry-table.css';
   import { beforeNavigate, goto } from '$app/navigation';
   import { onDestroy } from 'svelte';
@@ -99,9 +101,14 @@
   <title>Words | Parhiba</title>
 </svelte:head>
 
+{#snippet heading()}
+  <PageTitle>Words</PageTitle>
+{/snippet}
+
+<PageLayout {heading}>
 <section class="content">
   <header class="topbar">
-    <h1 class="page-title">Words</h1>
+    {@render heading()}
     <div class="actions">
       <Button variant="primary" href={`/api/v1/me/vocabulary/export?language=${data.filters.language}`}>Export CSV</Button>
       <Button variant="primary" href="/words/anki/import">Import from Anki</Button>
@@ -194,6 +201,7 @@
   {/if}
   <Pagination {...data.pagination} hrefFor={wordsHref} />
 </section>
+</PageLayout>
 
 <style>
   .topbar,

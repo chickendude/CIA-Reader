@@ -1,4 +1,6 @@
 <script lang="ts">
+  import PageLayout from '$lib/components/shell/PageLayout.svelte';
+  import PageTitle from '$lib/components/shell/PageTitle.svelte';
   import { enhance } from '$app/forms';
   import { getToastStore } from '$lib/components/toast/toast-store.js';
   import type { PageProps } from './$types';
@@ -383,13 +385,18 @@
   <meta name="robots" content="noindex" />
 </svelte:head>
 
+{#snippet heading()}
+  <PageTitle>{data.paradigm.name}</PageTitle>
+{/snippet}
+
+<PageLayout {heading}>
 <div class="page">
   <p class="crumb">
     <a href="/moderation/paradigms">← Back to paradigms</a>
   </p>
 
   <header>
-    <h1 class="page-title">{data.paradigm.name}</h1>
+    {@render heading()}
     <p class="sub">
       <span class="lang-badge">{data.paradigm.language}</span>
       <span class="pos-badge">{data.paradigm.pos}</span>
@@ -754,6 +761,7 @@
     </div>
   {/if}
 </dialog>
+</PageLayout>
 
 <style>
   .page {

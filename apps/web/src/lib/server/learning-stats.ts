@@ -1,3 +1,4 @@
+import { readerFrequencies } from './texts/reader-frequencies';
 /**
  * Calculate learning statistics separately for each language. Library cards use the per-text
  * comprehension estimate.
@@ -88,7 +89,7 @@ export async function getLanguageStats(
   const encountered = unwrapRows<{ n: number }>(
     await db.execute(sql`
       SELECT COUNT(DISTINCT tt.lemma_id)::int AS n
-      FROM book_word_frequencies tt
+      FROM ${readerFrequencies('book', userId)} tt
       INNER JOIN texts tx ON tx.id = tt.text_id
       WHERE tx.owner_id = ${userId}
         AND tx.language = ${language}
@@ -182,7 +183,7 @@ export async function languageComprehensionPct(
         COALESCE(SUM(tt.occurrences),0)::int AS total,
         COALESCE(SUM(tt.occurrences) FILTER (WHERE ukl.status='known'),0)::int AS known
       FROM texts tx
-      INNER JOIN book_word_frequencies tt ON tt.text_id = tx.id
+      INNER JOIN ${readerFrequencies('book', userId)} tt ON tt.text_id = tx.id
       LEFT JOIN user_known_lemmas ukl
         ON ukl.lemma_id = tt.lemma_id AND ukl.user_id = ${userId}
       WHERE tx.owner_id = ${userId}
@@ -286,7 +287,7 @@ export async function listTextStats(
             AND ual.text_id = tx.id
         ) AS listened_ms
       FROM texts tx
-      LEFT JOIN book_word_frequencies tt ON tt.text_id = tx.id
+      LEFT JOIN ${readerFrequencies('book', userId)} tt ON tt.text_id = tx.id
       LEFT JOIN user_known_lemmas ukl
         ON ukl.lemma_id = tt.lemma_id AND ukl.user_id = ${userId}
       WHERE tx.owner_id = ${userId}
@@ -338,7 +339,7 @@ export async function estimatedComprehensionForTexts(
         tt.text_id AS text_id,
         COALESCE(SUM(tt.occurrences),0)::int AS total,
         COALESCE(SUM(tt.occurrences) FILTER (WHERE ukl.status='known'),0)::int AS known
-      FROM book_word_frequencies tt
+      FROM ${readerFrequencies('book', userId)} tt
       LEFT JOIN user_known_lemmas ukl
         ON ukl.lemma_id = tt.lemma_id AND ukl.user_id = ${userId}
       WHERE tt.text_id IN (${sql.join(
@@ -380,7 +381,7 @@ export async function bookComprehensionPct(
       SELECT
         COALESCE(SUM(tt.occurrences),0)::int AS total,
         COALESCE(SUM(tt.occurrences) FILTER (WHERE ukl.status='known'),0)::int AS known
-      FROM book_word_frequencies tt
+      FROM ${readerFrequencies('book', userId)} tt
       LEFT JOIN user_known_lemmas ukl
         ON ukl.lemma_id = tt.lemma_id AND ukl.user_id = ${userId}
       WHERE tt.text_id IN (${sql.join(
@@ -404,7 +405,7 @@ export async function estimatedComprehensionForText(
       SELECT
         COALESCE(SUM(tt.occurrences),0)::int AS total,
         COALESCE(SUM(tt.occurrences) FILTER (WHERE ukl.status='known'),0)::int AS known
-      FROM book_word_frequencies tt
+      FROM ${readerFrequencies('book', userId)} tt
       LEFT JOIN user_known_lemmas ukl
         ON ukl.lemma_id = tt.lemma_id AND ukl.user_id = ${userId}
       WHERE tt.text_id = ${textId}
@@ -446,7 +447,7 @@ export async function estimatedComprehensionForCollections(
         COALESCE(SUM(tt.occurrences),0)::int AS total,
         COALESCE(SUM(tt.occurrences) FILTER (WHERE ukl.status='known'),0)::int AS known
       FROM collection_items ci
-      INNER JOIN book_word_frequencies tt ON tt.text_id = ci.text_id
+      INNER JOIN ${readerFrequencies('book', userId)} tt ON tt.text_id = ci.text_id
       LEFT JOIN user_known_lemmas ukl
         ON ukl.lemma_id = tt.lemma_id AND ukl.user_id = ${userId}
       WHERE ci.collection_id IN (${sql.join(
@@ -513,7 +514,7 @@ export async function listCollectionStats(
         ) AS listened_ms
       FROM collections c
       INNER JOIN collection_items ci ON ci.collection_id = c.id
-      LEFT JOIN book_word_frequencies tt ON tt.text_id = ci.text_id
+      LEFT JOIN ${readerFrequencies('book', userId)} tt ON tt.text_id = ci.text_id
       LEFT JOIN user_known_lemmas ukl
         ON ukl.lemma_id = tt.lemma_id AND ukl.user_id = ${userId}
       WHERE c.owner_id = ${userId}

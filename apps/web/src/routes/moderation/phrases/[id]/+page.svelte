@@ -5,6 +5,8 @@
   phrase's gloss / pos / frequency / source attribution.
 -->
 <script lang="ts">
+  import PageLayout from '$lib/components/shell/PageLayout.svelte';
+  import PageTitle from '$lib/components/shell/PageTitle.svelte';
   import type { PageProps } from './$types';
 
   let { data }: PageProps = $props();
@@ -75,10 +77,15 @@
   <title>{data.phrase.surfaceNormalised} | phrase editor | Parhiba</title>
 </svelte:head>
 
+{#snippet heading()}
+  <PageTitle class="pe-surface">{data.phrase.surfaceNormalised}</PageTitle>
+{/snippet}
+
+<PageLayout {heading}>
 <div class="pe">
   <header class="pe-h">
     <a class="back" href={`/moderation/phrases?language=${data.languageDescriptor.code}`}>← All phrases</a>
-    <h1 class="page-title pe-surface">{data.phrase.surfaceNormalised}</h1>
+    {@render heading()}
     <p class="muted">
       {data.languageDescriptor.displayName} · {data.phrase.tokens.length} tokens · {data.translations.length} translations
       · {data.chapterIds.length} chapters
@@ -170,6 +177,7 @@
     {/if}
   </section>
 </div>
+</PageLayout>
 
 <style>
   .back {

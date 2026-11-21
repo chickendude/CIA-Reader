@@ -9,6 +9,7 @@ import JSZip from 'jszip';
 import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
 
 import { db, schema } from './db/index.js';
+import { readerFrequencies } from './texts/reader-frequencies';
 import { resolveBookChapterScope } from './texts/book-frequency.js';
 import { sentenceFromTokens } from './texts/sentences.js';
 import { canReadText } from './auth/can-read.js';
@@ -46,6 +47,7 @@ type LemmaRow = {
  * around the lemma's occurrences.
  */
 async function bookSamples(
+  userId: string,
   bookChapterIds: string[],
   lemmas: LemmaRow[],
 ): Promise<Map<string, string[]>> {
@@ -64,6 +66,7 @@ async function bookSamples(
       and(
         inArray(schema.textTokens.lemmaId, lemmaIds),
         inArray(schema.textTokens.chapterId, bookChapterIds),
+        sql`NOT EXISTS (SELECT 1 FROM reader_ignored_tokens i WHERE i.token_id=${schema.textTokens.id} AND i.user_id=${userId})`,
       ),
     )
     .orderBy(asc(schema.textTokens.chapterId), asc(schema.textTokens.idx));
@@ -158,7 +161,7 @@ export async function getAnkiCards(
   const frequency = sql<number>`sum(${chapterWordFrequencies.occurrences})::int`;
   const rows = opts.textId
     ? await db.select({ ...fields, frequency })
-        .from(chapterWordFrequencies)
+        .from(sql`${readerFrequencies('chapter', userId)} AS chapter_word_frequencies`)
         .innerJoin(lemmas, eq(lemmas.id, chapterWordFrequencies.lemmaId))
         .leftJoin(userKnownLemmas, savedByUser)
         .where(and(selection, inArray(chapterWordFrequencies.chapterId, chapterIds)))
@@ -169,7 +172,7 @@ export async function getAnkiCards(
         .innerJoin(userKnownLemmas, savedByUser)
         .where(selection)
         .orderBy(asc(lemmas.headword), asc(lemmas.id));
-  const samples = opts.textId ? await bookSamples(chapterIds, rows) : new Map<string, string[]>();
+  const samples = opts.textId ? await bookSamples(userId, chapterIds, rows) : new Map<string, string[]>();
 
   const cards = rows.map((row) => ({
     id: row.lemmaId,

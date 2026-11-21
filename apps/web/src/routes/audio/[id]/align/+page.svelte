@@ -1,4 +1,6 @@
 <script lang="ts">
+  import PageLayout from '$lib/components/shell/PageLayout.svelte';
+  import PageTitle from '$lib/components/shell/PageTitle.svelte';
   import type { PageProps } from './$types';
 
   let { data }: PageProps = $props();
@@ -99,8 +101,13 @@
 
 <svelte:window onkeydown={onKey} onkeyup={onKeyUp} />
 
+{#snippet heading()}
+  <PageTitle>Align audio</PageTitle>
+{/snippet}
+
+<PageLayout {heading}>
 <div class="ae">
-  <header><h1 class="page-title">Align audio</h1></header>
+  <header>{@render heading()}</header>
 
   <audio
     bind:this={audioEl}
@@ -160,6 +167,7 @@
     <button type="button" class="ae-link" onclick={() => window.history.back()}>← back</button>
   </p>
 </div>
+</PageLayout>
 
 <style>
   audio {

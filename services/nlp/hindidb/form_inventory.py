@@ -7,7 +7,7 @@ to every lemma. Derivations and periphrastic auxiliary sequences are excluded.
 
 from copy import deepcopy
 
-from .morphology import forms, verb_pattern_slots, uu_noun_pattern_slots, nasal_aa_noun_pattern_slots, aa_noun_pattern_slots, adjective_agreement_forms
+from .morphology import forms, inflectable_alternatives, verb_pattern_slots, uu_noun_pattern_slots, nasal_aa_noun_pattern_slots, aa_noun_pattern_slots, adjective_agreement_forms
 from .text import normalize
 
 VERSION = "hindi-form-slots-1"
@@ -145,7 +145,14 @@ def slot_pattern_forms(entry, slot):
     'invariant' is the editor default (no generation), not evidence that a noun
     is indeclinable. Keep unknown classes unverified instead of guessing one.
     """
-    lemma = normalize(entry["lemma"])
+    expected = _headword_slot_forms(entry, slot, normalize(entry['lemma']))
+    if expected is not None:
+        for alias in inflectable_alternatives(entry):
+            expected.update(_headword_slot_forms(entry, slot, alias) or ())
+    return expected
+
+
+def _headword_slot_forms(entry, slot, lemma):
     pattern = entry.get("paradigm", "invariant")
     if slot["id"] == "citation":
         return {lemma}
@@ -165,7 +172,7 @@ def slot_pattern_forms(entry, slot):
                    'paradigm': 'noun_f_ii' if feminine else 'noun_m_aa'}
         case = next(c for c in ('direct', 'oblique', 'vocative') if c in tags)
         number = 'plural' if 'plural' in tags else 'singular'
-        return slot_pattern_forms(nominal, {**slot, 'id': number + '-' + case})
+        return _headword_slot_forms(nominal, {**slot, 'id': number + '-' + case}, nominal['lemma'])
     if entry["pos"] not in {"NOUN", "PROPN", "NUM"}:
         return None
     if pattern == 'noun_m_ind_aan':

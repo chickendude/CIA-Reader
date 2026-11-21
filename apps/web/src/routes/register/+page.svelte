@@ -1,4 +1,6 @@
 <script lang="ts">
+  import PageLayout from '$lib/components/shell/PageLayout.svelte';
+  import PageTitle from '$lib/components/shell/PageTitle.svelte';
   import { enhance } from '$app/forms';
   import { untrack } from 'svelte';
   import type { PageProps } from './$types';
@@ -14,9 +16,14 @@
   <title>Create account | Parhiba</title>
 </svelte:head>
 
+{#snippet heading()}
+  <PageTitle>Create account</PageTitle>
+{/snippet}
+
+<PageLayout {heading}>
 <div class="page page-auth">
   <header>
-    <h1 class="page-title">Create account</h1>
+    {@render heading()}
     <p class="sub">
       Already have one? <a href={`/login?next=${encodeURIComponent(data.next)}`}>
         Sign in
@@ -64,6 +71,7 @@
     <button type="submit">Create account</button>
   </form>
 </div>
+</PageLayout>
 
 <style>
   .sub {

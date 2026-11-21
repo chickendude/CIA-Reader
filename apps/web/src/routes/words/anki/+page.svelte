@@ -1,4 +1,6 @@
 <script lang="ts">
+  import PageLayout from '$lib/components/shell/PageLayout.svelte';
+  import PageTitle from '$lib/components/shell/PageTitle.svelte';
   import Button from '$lib/components/input/Button.svelte';
   import TextField from '$lib/components/input/TextField.svelte';
   import { ankiConnect, rememberAnkiConnection } from '$lib/anki-connect';
@@ -73,8 +75,13 @@
 
 <svelte:head><title>Export to Anki | Parhiba</title></svelte:head>
 
+{#snippet heading()}
+  <PageTitle>Export to Anki</PageTitle>
+{/snippet}
+
+<PageLayout {heading}>
 <section class="anki page-form">
-  <h1 class="page-title">Export to Anki</h1>
+  {@render heading()}
   <a href="/words/anki/import">Import vocabulary from Anki Desktop</a>
 
   {#if data.mode === 'pick'}
@@ -152,6 +159,7 @@
     {/if}
   {/if}
 </section>
+</PageLayout>
 
 <style>
   .muted {

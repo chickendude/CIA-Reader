@@ -4,6 +4,7 @@ import { error } from '@sveltejs/kit';
 import { z } from 'zod';
 import { db, schema } from '../db/index.js';
 import { archiveKey, workshopAdapter } from './workshop-adapters';
+import { replacePatternForms } from './pattern-forms.js';
 import { getLanguage, type LanguageCode } from '@ciareader/shared-types';
 import { dictionaryProfile } from '$lib/dictionary/profiles';
 import { type Draft, type Inventory, type Match, type Excerpt } from '$lib/dictionary/workshop';
@@ -34,6 +35,7 @@ export function draftInputFor(language: LanguageCode) {
     meaning: z.string().trim().max(64000),
     paradigm: z.string().max(80),
     alternatives: words,
+    hiddenAlternatives: words.optional(),
     other: words,
     excluded: words,
     loan: z.boolean(),
@@ -63,6 +65,7 @@ type Source = Record<string, unknown> & {
   paradigm?: string;
   form_evidence?: Record<string, unknown[]>;
   alternative_headwords?: string[];
+  hidden_alternative_headwords?: string[];
   excluded_forms?: string[];
   english_loan?: boolean;
   form_inventory?: Inventory;
@@ -104,6 +107,7 @@ async function readEntry(language: LanguageCode, id: string, conn: Executor = db
     meaning: row.meaning,
     paradigm: entry.paradigm ?? 'invariant',
     alternatives: entry.alternative_headwords ?? [],
+    hiddenAlternatives: entry.hidden_alternative_headwords ?? [],
     other: forms.filter((f) => !included.has(f)),
     excluded: entry.excluded_forms ?? [],
     loan: entry.english_loan ?? row.inferred_loan,
@@ -178,6 +182,8 @@ function lexicalEntry(language: LanguageCode, d: Draft, raw: Source) {
     paradigm: d.paradigm,
     forms,
     alternative_headwords: d.alternatives,
+    hidden_alternative_headwords: (d.hiddenAlternatives ?? raw.hidden_alternative_headwords ?? [])
+      .filter((word) => word !== d.lemma && d.alternatives.includes(word)),
     excluded_forms: d.excluded,
     form_inventory: d.inventory,
     english_loan: d.loan,
@@ -351,12 +357,7 @@ export async function saveDraft(d: Draft, actor: string, language: LanguageCode)
       .insert(schema.dictionaryEntries)
       .values({ lemmaId: id, externalId: 'parhiba:' + id, entry: saved })
       .onConflictDoUpdate({ target: schema.dictionaryEntries.lemmaId, set: { entry: saved } });
-    const generated = Object.entries(preview.forms)
-      .filter(([, rules]) => rules.some((rule) => rule !== 'citation' && rule !== 'explicit-form'))
-      .map(([surface]) => surface);
-    await tx.execute(sql`DELETE FROM dictionary_pattern_forms WHERE lemma_id=${id}`);
-    await tx.execute(sql`INSERT INTO dictionary_pattern_forms(lemma_id,surface)
-      SELECT ${id}, value FROM jsonb_array_elements_text(${JSON.stringify(generated)}::text::jsonb)`);
+    await replacePatternForms(tx, id, preview.forms);
     if (d.meaning !== (current?.draft.meaning ?? '')) {
       const canonical = sql`target_id=${id} AND target_type='lemma' AND target_language='en' AND source IN ('curator','official_dictionary') AND NOT hidden AND NOT is_private`;
       const [first] = await tx.execute<{ id: string }>(
@@ -479,12 +480,18 @@ export async function mergeWorkshopWords(
       ...((from.entry.merged_entry_ids as string[]) ?? []),
     ]),
   ];
+  const alternatives = [...new Set([...to.draft.alternatives, ...from.draft.alternatives, from.draft.lemma])]
+    .filter((word) => word !== to.draft.lemma && !excluded.has(key(word)));
+  // Keep the destination's display choice when both entries have the same spelling.
+  const hidden = new Set([
+    ...(to.draft.hiddenAlternatives ?? []),
+    ...(from.draft.hiddenAlternatives ?? []).filter((word) => !to.draft.alternatives.includes(word)),
+  ]);
   const entry = {
     ...to.entry,
     merged_entry_ids: aliases,
-    alternative_headwords: [
-      ...new Set([...to.draft.alternatives, ...from.draft.alternatives, from.draft.lemma]),
-    ].filter((w) => w !== to.draft.lemma && !excluded.has(key(w))),
+    alternative_headwords: alternatives,
+    hidden_alternative_headwords: alternatives.filter((word) => hidden.has(word)),
     workshop_excerpts: [...to.draft.excerpts, ...from.draft.excerpts],
     definitions: spellingOnly
       ? to.entry.definitions

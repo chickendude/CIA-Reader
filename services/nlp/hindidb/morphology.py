@@ -6,7 +6,7 @@ These limited paradigms are developmental, not a complete Hindi grammar.
 
 import unicodedata
 
-from .text import normalize
+from .text import normalize, tokenize
 from .headwords import alternative_headwords
 from .spelling import AA_NOUN_PLURAL, AA_NOUN_E_GLIDE, aa_plural_spellings, aa_e_spellings
 
@@ -215,6 +215,17 @@ def excluded_forms(entry: dict) -> set[str]:
     return excluded
 
 
+def inflectable_alternatives(entry):
+    pattern = entry.get('paradigm', 'invariant')
+    if pattern == 'invariant':
+        return
+    for word in alternative_headwords(entry):
+        # Entries may also list a romanization or a spelling with a different ending.
+        tokens = tokenize(word)
+        if tokens and tokens[-1].kind == 'word' and pattern_fits_ending(word, pattern):
+            yield word
+
+
 def forms(entry: dict) -> dict[str, set[str]]:
     excluded = excluded_forms(entry)
     lemma = normalize(entry["lemma"])
@@ -237,6 +248,16 @@ def forms(entry: dict) -> dict[str, set[str]]:
         add(word, "explicit-form")
         for evidence in entry.get("form_evidence", {}).get(normalize(word), []):
             add(word, "wiktionary:" + evidence["kind"])
+    _add_pattern_forms(lemma, paradigm, entry.get('pos'), result)
+    for alias in inflectable_alternatives(entry):
+        _add_pattern_forms(alias, paradigm, entry.get('pos'), result)
+    return {word: rules for word, rules in result.items() if word not in excluded}
+
+
+def _add_pattern_forms(lemma, paradigm, pos, result):
+    def add(word, evidence):
+        result.setdefault(normalize(word), set()).add(evidence)
+
     if paradigm == 'noun_m_ind_aan':
         for words in nasal_aa_noun_pattern_slots(lemma).values():
             for word in words:
@@ -288,10 +309,9 @@ def forms(entry: dict) -> dict[str, set[str]]:
             if variant in result:
                 result[variant].discard(paradigm)
                 result[variant].update({AA_NOUN_E_GLIDE, 'spelling:matched-form:' + base})
-    if entry.get('pos') in {'NOUN', 'PROPN'} and canonical_plural in result:
+    if pos in {'NOUN', 'PROPN'} and canonical_plural in result:
         for variant in sorted(aa_plural_spellings(lemma, canonical_plural) - {canonical_plural}):
             # Explicitly listed spellings retain their own evidence. Derived
             # variants are marked as reading rules, never dictionary attestations.
             if variant not in result:
                 result[variant] = {AA_NOUN_PLURAL, 'spelling:matched-form:' + canonical_plural}
-    return {word: rules for word, rules in result.items() if word not in excluded}

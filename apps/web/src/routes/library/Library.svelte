@@ -1,4 +1,6 @@
 <script lang="ts">
+  import PageLayout from '$lib/components/shell/PageLayout.svelte';
+  import PageTitle from '$lib/components/shell/PageTitle.svelte';
   import CoverageOrder from '$lib/components/library/CoverageOrder.svelte';
   import Pagination from '$lib/components/input/Pagination.svelte';
   import Button from '$lib/components/input/Button.svelte';
@@ -84,12 +86,21 @@
   <title>{data.allBooks ? 'All books' : 'Library'} | Parhiba</title>
 </svelte:head>
 
-<section class="content">
+{#snippet heading()}
   {#if data.allBooks}
     <SubpageHeading title="All books" href="/library" closeLabel="Close all books and return to Library" />
   {:else}
+    <PageTitle>Library</PageTitle>
+  {/if}
+{/snippet}
+
+<PageLayout {heading}>
+<section class="content">
+  {#if data.allBooks}
+    {@render heading()}
+  {:else}
     <header class="topbar">
-      <h1 class="page-title">Library</h1>
+      {@render heading()}
       <nav class="status-tabs" aria-label="Library tabs">
         {#each TABS as t (t.id)}
           {#if !t.requiresAuth || data.isAuthenticated}
@@ -287,6 +298,7 @@
     </button>
   {/snippet}
 </Modal>
+</PageLayout>
 
 <style>
   .recent-heading {

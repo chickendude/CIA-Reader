@@ -1,5 +1,6 @@
 <script lang="ts">
   import { untrack } from 'svelte';
+  import { isIgnoredHere, readerOccurrenceIgnores } from './ignored-occurrences';
   import EditableDefinition from './EditableDefinition.svelte';
   import PosPill from './PosPill.svelte';
   import type { ServerCandidate, ServerToken } from './types.js';
@@ -20,6 +21,7 @@
   let status = $state<ServerToken['status']>(untrack(() => candidate.status ?? 'unknown'));
   let saving = $state(false);
   let error = $state<string | null>(null);
+  const occurrenceIgnores = readerOccurrenceIgnores();
   let frequency = $state<number | null>(null);
   let canonical = $state<{ id: string; body: string } | null>(null);
   let canEdit = $state(false);
@@ -29,8 +31,8 @@
   $effect(() => {
     const id = candidate.lemmaId;
     frequency = null;
-    canonical = null;
-    canEdit = false;
+    // Refetch the count when this occurrence enters or leaves the vocabulary.
+    isIgnoredHere(token, occurrenceIgnores);
     const controller = new AbortController();
     if (textId)
       void fetch(`/api/v1/texts/${textId}/lemmas/${id}/frequency`, { signal: controller.signal })
@@ -41,6 +43,13 @@
           }
         })
         .catch(() => {});
+    return () => controller.abort();
+  });
+  $effect(() => {
+    const id = candidate.lemmaId;
+    canonical = null;
+    canEdit = false;
+    const controller = new AbortController();
     void fetch(`/api/v1/lemmas/${id}/translations`, { signal: controller.signal })
       .then(async (res) => {
         if (!res.ok) return;

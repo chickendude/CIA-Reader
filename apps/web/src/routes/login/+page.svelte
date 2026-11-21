@@ -1,4 +1,6 @@
 <script lang="ts">
+  import PageLayout from '$lib/components/shell/PageLayout.svelte';
+  import PageTitle from '$lib/components/shell/PageTitle.svelte';
   import { enhance } from '$app/forms';
   import { untrack } from 'svelte';
   import type { PageProps } from './$types';
@@ -24,13 +26,18 @@
   <title>Sign in | Parhiba</title>
 </svelte:head>
 
+{#snippet heading()}
+  <PageTitle>{data.alreadySignedIn && data.authError ? 'Link expired' : 'Sign in'}</PageTitle>
+{/snippet}
+
+<PageLayout {heading}>
 <div class="page page-auth">
   {#if data.alreadySignedIn && data.authError}
     <!-- Signed-in user landed here via a stale magic-link redirect.
          Skip the sign-in forms entirely — they're redundant. Just
          show the error and a way back to the app. -->
     <header>
-      <h1 class="page-title">Link expired</h1>
+      {@render heading()}
     </header>
     <p class="err" role="alert">{data.authError}</p>
     <p class="sub">
@@ -38,7 +45,7 @@
     </p>
   {:else}
   <header>
-    <h1 class="page-title">Sign in</h1>
+    {@render heading()}
     <p class="sub">
       New to CIA Reader? <a href={`/register?next=${encodeURIComponent(data.next)}`}>
         Create an account
@@ -106,6 +113,7 @@
   </section>
   {/if}
 </div>
+</PageLayout>
 
 <style>
   .sub {

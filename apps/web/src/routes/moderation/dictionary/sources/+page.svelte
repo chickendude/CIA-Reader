@@ -1,4 +1,6 @@
 <script lang="ts">
+  import PageLayout from '$lib/components/shell/PageLayout.svelte';
+  import PageTitle from '$lib/components/shell/PageTitle.svelte';
   import { onDestroy } from 'svelte';
   import { invalidateAll } from '$app/navigation';
   import type { PageData, PageProps } from './$types';
@@ -93,9 +95,14 @@
   <meta name="robots" content="noindex" />
 </svelte:head>
 
+{#snippet heading()}
+  <PageTitle>Dictionary sources</PageTitle>
+{/snippet}
+
+<PageLayout {heading}>
 <div class="page">
   <header>
-    <h1 class="page-title">Dictionary sources</h1>
+    {@render heading()}
     <p class="sub">
       Cache state, last import, and contribution counts for every registered importer.
       Admin-only — actions kick off in-process jobs.
@@ -217,6 +224,7 @@
     </tbody>
   </table>
 </div>
+</PageLayout>
 
 <style>
   .sub {

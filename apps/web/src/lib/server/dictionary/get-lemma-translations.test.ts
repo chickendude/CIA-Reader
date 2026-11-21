@@ -17,6 +17,7 @@ function makeSelectChain() {
   chain.where = vi.fn(() => chain);
   chain.limit = vi.fn(() => chain);
   chain.innerJoin = vi.fn(() => chain);
+  chain.leftJoin = vi.fn(() => chain);
   chain.then = (resolve: (v: unknown) => unknown) => resolve(nextStaged());
   return chain;
 }
@@ -33,6 +34,7 @@ vi.mock('../db/index.js', () => ({
     execute: (query: unknown) => executeFn(query),
   },
   schema: {
+    dictionaryEntries: { lemmaId: 'dictionary_entries.lemma_id', entry: 'dictionary_entries.entry' },
     lemmas: {
       id: 'lemmas.id',
       language: 'lemmas.language',
@@ -151,6 +153,15 @@ describe('translations from other entries for the same word', () => {
     const out = await getLemmaTranslations('lemma-1', null);
     expect(out.translations.official).toEqual([]);
     expect(selectFn).toHaveBeenCalledTimes(2);
+  });
+
+  it('returns only visible alternative spellings in the reader heading', async () => {
+    stage([lemmaRow({ language: 'hi', headword: 'क़ब्ज़ा', alternatives: ['कब्जा', 'कब्ज़ा'],
+      hiddenAlternatives: ['कब्जा'] })]);
+    stage([]);
+    const { lemma } = await getLemmaTranslations('lemma-1', null);
+    expect(lemma.headword).toBe('क़ब्ज़ा');
+    expect(lemma.alternativeHeadwords).toEqual(['कब्ज़ा']);
   });
 
   it('still returns empty when neither the primary nor any sibling tier has translations', async () => {

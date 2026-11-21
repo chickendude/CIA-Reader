@@ -1,16 +1,18 @@
+import { ignoredWords, readerFrequencies } from './reader-frequencies';
 import type { LanguageCode } from '@ciareader/shared-types';
 import { sql, type SQL } from 'drizzle-orm';
 
 // Prefer a valid context choice, then the shortest lexical span covering the word.
 // Split its single occurrence evenly if that span still has several possible readings.
-export function studyFrequencies(books: SQL, language: LanguageCode) {
+export function studyFrequencies(books: SQL, language: LanguageCode, userId?: string) {
   if (language !== 'hi') return sql`
     SELECT f.text_id, f.lemma_id, f.occurrences, f.occurrences AS matches
-    FROM (${books}) b JOIN book_word_frequencies f ON f.text_id = b.id
+    FROM (${books}) b JOIN ${readerFrequencies('book', userId)} f ON f.text_id = b.id
   `;
   return sql`
     WITH books AS (${books}), chapters AS MATERIALIZED (
       SELECT ch.id, ch.text_id, md5(ch.body) AS body_hash, a.unresolved_words
+        ${userId ? sql`- (SELECT count(*)::int FROM (${ignoredWords(userId)}) i WHERE i.chapter_id=ch.id AND i.unparsed)` : sql``} AS unresolved_words
       FROM books b JOIN text_chapters ch ON ch.text_id = b.id
       LEFT JOIN hindi_chapter_analyses a ON a.chapter_id = ch.id
     ), spans AS (
@@ -39,6 +41,7 @@ export function studyFrequencies(books: SQL, language: LanguageCode) {
       FROM covered_tokens m
       JOIN text_tokens t ON t.chapter_id = m.chapter_id AND t.idx = m.idx AND t.is_word
       JOIN chapters ch ON ch.id = m.chapter_id
+      ${userId ? sql`WHERE NOT EXISTS (SELECT 1 FROM reader_ignored_tokens i WHERE i.token_id=t.id AND i.user_id=${userId})` : sql``}
       ORDER BY m.chapter_id, m.idx, (m.status IS NULL), m.end_idx - m.start_idx,
         m.start_idx, m.source_end, (m.status = 'confirmed') DESC, m.source_occurrence_id
     ), grouped AS (
@@ -53,6 +56,6 @@ export function studyFrequencies(books: SQL, language: LanguageCode) {
     WHERE unresolved_words > 0 GROUP BY text_id
     UNION ALL
     SELECT ch.text_id, f.lemma_id, f.occurrences, f.occurrences FROM chapters ch
-    JOIN chapter_word_frequencies f ON f.chapter_id = ch.id WHERE ch.unresolved_words IS NULL
+    JOIN ${readerFrequencies('chapter', userId)} f ON f.chapter_id = ch.id WHERE ch.unresolved_words IS NULL
   `;
 }

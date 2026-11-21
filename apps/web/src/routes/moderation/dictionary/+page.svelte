@@ -1,4 +1,6 @@
 <script lang="ts">
+  import PageLayout from '$lib/components/shell/PageLayout.svelte';
+  import PageTitle from '$lib/components/shell/PageTitle.svelte';
   import { hindiReviewHref } from '$lib/dictionary/hindi-review-link';
   import { page } from '$app/state';
   import Pagination from '$lib/components/input/Pagination.svelte';
@@ -22,9 +24,14 @@
   <meta name="robots" content="noindex" />
 </svelte:head>
 
+{#snippet heading()}
+  <PageTitle>Dictionary moderation</PageTitle>
+{/snippet}
+
+<PageLayout {heading}>
 <div class="page">
   <header>
-    <h1 class="page-title">Dictionary moderation</h1>
+    {@render heading()}
     {#if data.language}
       <p class="sub">
         Editing <strong>{data.language.nativeName}</strong> —
@@ -108,6 +115,7 @@
     <Pagination offset={data.offset} limit={data.limit} total={data.totalCount} hrefFor={hrefWith} />
   {/if}
 </div>
+</PageLayout>
 
 <style>
   .sub {

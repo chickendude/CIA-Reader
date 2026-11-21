@@ -1,4 +1,6 @@
 <script lang="ts">
+  import PageLayout from '$lib/components/shell/PageLayout.svelte';
+  import PageTitle from '$lib/components/shell/PageTitle.svelte';
   import { hindiReviewHref } from '$lib/dictionary/hindi-review-link';
   import { page } from '$app/state';
   import Pagination from '$lib/components/input/Pagination.svelte';
@@ -62,13 +64,18 @@
   />
 </svelte:head>
 
+{#snippet heading()}
+  <PageTitle dir="ltr">
+    <bdi lang={data.language.code} dir={data.language.textDirection}>{data.language.nativeDictionaryTitle}</bdi>
+    <span lang="en">{data.language.displayName} Dictionary</span>
+  </PageTitle>
+{/snippet}
+
+<PageLayout {heading}>
 <div class="page" dir={data.language.textDirection}>
   <header class="toolbar">
     <div>
-      <h1 class="page-title" dir="ltr">
-        <bdi lang={data.language.code} dir={data.language.textDirection}>{data.language.nativeDictionaryTitle}</bdi>
-        <span lang="en">{data.language.displayName} Dictionary</span>
-      </h1>
+      {@render heading()}
       <p class="entry-count muted" lang="en" dir="ltr">
         {data.totalCount.toLocaleString('en-US')} {data.totalCount === 1 ? 'entry' : 'entries'}
       </p>
@@ -197,6 +204,7 @@
   {/if}
   <Pagination offset={data.offset} limit={data.limit} total={data.totalCount} hrefFor={hrefWith} />
 </div>
+</PageLayout>
 
 <style>
   .entry-count {

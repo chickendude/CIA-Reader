@@ -1,4 +1,6 @@
 <script lang="ts">
+  import PageLayout from '$lib/components/shell/PageLayout.svelte';
+  import PageTitle from '$lib/components/shell/PageTitle.svelte';
   import Pagination from '$lib/components/input/Pagination.svelte';
   import CoverageOrder from '$lib/components/library/CoverageOrder.svelte';
   import { page } from '$app/state';
@@ -32,9 +34,14 @@
   />
 </svelte:head>
 
+{#snippet heading()}
+  <PageTitle>Official library</PageTitle>
+{/snippet}
+
+<PageLayout {heading}>
 <div class="ol">
   <header class="ol-h">
-    <h1 class="page-title">Official library</h1>
+    {@render heading()}
   </header>
 
   <div class="ol-filters">
@@ -74,6 +81,7 @@
   </ul>
   <Pagination offset={data.page.offset} limit={data.page.limit} total={data.page.totalCount} hrefFor={pageHref} />
 </div>
+</PageLayout>
 
 <style>
   .ol-filters {

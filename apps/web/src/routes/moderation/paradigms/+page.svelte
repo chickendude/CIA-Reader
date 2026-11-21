@@ -1,4 +1,6 @@
 <script lang="ts">
+  import PageLayout from '$lib/components/shell/PageLayout.svelte';
+  import PageTitle from '$lib/components/shell/PageTitle.svelte';
   import { enhance } from '$app/forms';
   import type { PageProps } from './$types';
 
@@ -23,13 +25,18 @@
   <meta name="robots" content="noindex" />
 </svelte:head>
 
+{#snippet heading()}
+  <PageTitle>Paradigms</PageTitle>
+{/snippet}
+
+<PageLayout {heading}>
 <div class="page">
   <p class="crumb">
     <a href="/moderation/dictionary">← Back to dictionary</a>
   </p>
 
   <header>
-    <h1 class="page-title">Paradigms</h1>
+    {@render heading()}
     <p class="sub">
       Admin-only. A paradigm is a conjugation/declension pattern (e.g. "Odia
       regular verb"); each row pairs a (language, pos) scope with a list of
@@ -139,6 +146,7 @@
     </form>
   </section>
 </div>
+</PageLayout>
 
 <style>
   .crumb {

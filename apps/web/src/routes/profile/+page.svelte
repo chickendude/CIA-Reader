@@ -1,4 +1,6 @@
 <script lang="ts">
+  import PageLayout from '$lib/components/shell/PageLayout.svelte';
+  import PageTitle from '$lib/components/shell/PageTitle.svelte';
   import { enhance } from '$app/forms';
   import { invalidateAll } from '$app/navigation';
   import { isThemePreference, resolveTheme } from '$lib/theme/index.js';
@@ -131,9 +133,14 @@
   <title>Settings | Parhiba</title>
 </svelte:head>
 
+{#snippet heading()}
+  <PageTitle class="title">Settings</PageTitle>
+{/snippet}
+
+<PageLayout {heading}>
 <section class="content">
   <header class="topbar">
-    <h1 class="page-title title">Settings</h1>
+    {@render heading()}
   </header>
 
   <div class="card">
@@ -317,6 +324,7 @@
     </section>
   </div>
 </section>
+</PageLayout>
 
 <style>
   .topbar {

@@ -1,6 +1,16 @@
+<script lang="ts">
+  import PageLayout from '$lib/components/shell/PageLayout.svelte';
+  import PageTitle from '$lib/components/shell/PageTitle.svelte';
+</script>
+
 <svelte:head><title>About | Parhiba</title></svelte:head>
 
-<h1 class="page-title">About</h1>
+{#snippet heading()}
+  <PageTitle>About</PageTitle>
+{/snippet}
+
+<PageLayout {heading}>
+{@render heading()}
 <section>
   <h2>Where the data comes from</h2>
   <p>
@@ -9,6 +19,7 @@
     <a href="https://creativecommons.org/licenses/by-sa/4.0/">Creative Commons Attribution-ShareAlike 4.0 International license</a>.
   </p>
 </section>
+</PageLayout>
 
 <style>
   h2 { font-size: 1.1rem; }

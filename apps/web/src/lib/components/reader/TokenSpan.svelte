@@ -4,6 +4,7 @@
 -->
 <script lang="ts">
   import { looksLikeNumberToken, statusToCode, type ServerToken } from './types.js';
+  import { isIgnoredHere, readerOccurrenceIgnores } from './ignored-occurrences';
 
   let {
     token,
@@ -18,13 +19,16 @@
     isAnchor?: boolean;
   } = $props();
 
+  const changes = readerOccurrenceIgnores();
+  const ignored = $derived(isIgnoredHere(token, changes));
+
   // A dashed underline marks a missing dictionary entry. Learning status uses a separate style.
   const cssClass = $derived.by(() => {
     if (!token.isWord && !token.numberForms && !looksLikeNumberToken(token.surface)) return '';
     const classes: string[] = ['word'];
-    if (token.isOov) classes.push('oov');
+    if (!ignored && token.isOov) classes.push('oov');
     if (isAnchor) classes.push('anchor');
-    if (token.hasDefinition === false) classes.push('no-definition');
+    if (!ignored && token.hasDefinition === false) classes.push('no-definition');
     return classes.join(' ');
   });
 
@@ -32,7 +36,7 @@
   // and skips the colored tint regardless of `data-hl`. We omit
   // data-s on those so the highlight rules never match.
   const dataS = $derived(
-    token.isWord && !token.isOov ? statusToCode(token.status) : undefined,
+    token.isWord && !ignored && !token.isOov ? statusToCode(token.status) : undefined,
   );
 
   const showRuby = $derived(

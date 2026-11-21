@@ -1,4 +1,6 @@
 <script lang="ts">
+  import PageLayout from '$lib/components/shell/PageLayout.svelte';
+  import PageTitle from '$lib/components/shell/PageTitle.svelte';
   import { enhance } from '$app/forms';
   import type { PageProps } from './$types';
 
@@ -32,8 +34,13 @@
   <title>Welcome | Parhiba</title>
 </svelte:head>
 
+{#snippet heading()}
+  <PageTitle>Welcome to CIA Reader</PageTitle>
+{/snippet}
+
+<PageLayout {heading}>
 <div class="page page-form">
-  <h1 class="page-title">Welcome to CIA Reader</h1>
+  {@render heading()}
   <p class="lede">
     Pick the language you want to read and a rough sense of what you already know. You can add
     more languages or change these choices later from your profile.
@@ -82,6 +89,7 @@
     {/if}
   </form>
 </div>
+</PageLayout>
 
 <style>
   .lede {
