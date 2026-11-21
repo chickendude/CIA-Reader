@@ -140,6 +140,11 @@ export function withLemmaCorrection(token: ServerToken, lemmaId: string | undefi
   if (!lemmaId || lemmaId === token.lemmaId) return token;
   const chosen = token.candidates.find((candidate) => candidate.lemmaId === lemmaId);
   if (!chosen) return token;
+  return { ...withReaderCandidate(token, chosen), correctedByViewer: true };
+}
+
+export function withReaderCandidate(token: ServerToken, chosen: ServerCandidate): ServerToken {
+  const { lemmaId } = chosen;
   const candidates = token.candidates.filter((candidate) => candidate.lemmaId !== lemmaId);
   if (token.lemmaId) {
     candidates.push({
@@ -151,7 +156,6 @@ export function withLemmaCorrection(token: ServerToken, lemmaId: string | undefi
   }
   return {
     ...token,
-    correctedByViewer: true,
     bookFrequency: chosen.bookFrequency,
     lemmaId, headword: chosen.headword, pos: chosen.pos, features: chosen.features,
     glossDefault: chosen.glossDefault, personalGloss: chosen.personalGloss ?? null,
