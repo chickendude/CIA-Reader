@@ -47,15 +47,23 @@ async function loadReviewIndex(connection: Pick<DB, 'execute'>, textId: string) 
       SELECT DISTINCT ON (chapter_id,start,stop) chapter_id,start,stop,status FROM saved
       ORDER BY chapter_id,start,stop,array_position(
         ARRAY['confirmed','ai_suggested','needs_review','uncertain','none_fit','unconfirmed'],status)
+    ), merges AS (
+      SELECT a.chapter_id,m.first,m.surface FROM chapters ch JOIN hindi_chapter_analyses a ON a.chapter_id=ch.id
+      CROSS JOIN LATERAL jsonb_to_recordset(a.stats->'syllable_merges') m(first int,surface text)
+    ), compound_tokens AS (
+      SELECT DISTINCT o.chapter_id, part.idx FROM chapters ch JOIN hindi_occurrences o ON o.chapter_id=ch.id
+      CROSS JOIN LATERAL generate_series(o.start_idx,o.end_idx-1) part(idx)
+      WHERE o.end_idx>o.start_idx+1
     ), locations AS (
       SELECT chapter_id,start,stop FROM decisions
       UNION SELECT chapter_id,start,stop FROM spans WHERE choices>1
-      UNION SELECT chapter_id,start,start+char_length(surface) FROM tokens WHERE is_word
+      UNION SELECT t.chapter_id,t.start,t.start+char_length(coalesce(m.surface,t.surface)) FROM tokens t
+        LEFT JOIN merges m ON m.chapter_id=t.chapter_id AND m.first=t.idx WHERE t.is_word
     ), classified AS (
       SELECT t.id,t.idx,t.chapter_id,ch.idx AS chapter_idx,p.start,p.stop,t.surface,s.ids,
         CASE WHEN d.status IS NOT NULL AND d.status<>'unconfirmed' THEN d.status
           WHEN s.choices>1 THEN 'unconfirmed'
-          WHEN s.ids IS NULL AND t.is_word AND p.stop=p.start+char_length(t.surface)
+          WHEN s.ids IS NULL AND covered.idx IS NULL AND t.is_word AND p.stop=p.start+char_length(t.surface)
             AND i.surface IS NULL AND (t.is_oov OR EXISTS (
               SELECT 1 FROM hindi_chapter_analyses a WHERE a.chapter_id=t.chapter_id))
             THEN 'unparsed' END AS status
@@ -63,6 +71,7 @@ async function loadReviewIndex(connection: Pick<DB, 'execute'>, textId: string) 
       JOIN chapters ch ON ch.id=p.chapter_id
       LEFT JOIN spans s USING (chapter_id,start,stop)
       LEFT JOIN decisions d USING (chapter_id,start,stop)
+      LEFT JOIN compound_tokens covered ON covered.chapter_id=t.chapter_id AND covered.idx=t.idx
       LEFT JOIN hindi_review_ignored i ON i.text_id=${textId} AND i.surface=t.surface
     ), reviewable AS (
       SELECT c.id,c.chapter_id,c.chapter_idx,c.idx,c.start,c.stop,c.status,c.ids,

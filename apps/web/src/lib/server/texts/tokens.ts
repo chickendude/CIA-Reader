@@ -19,7 +19,10 @@ import { dictionaryProfile } from '$lib/dictionary/profiles';
 import { db, schema } from '../db/index.js';
 import type { TextToken, TokenCorrection, UserKnownLemma } from '../db/schema.js';
 import { lemmaBookFrequencies } from './book-frequency.js';
-import { type HindiStutter, joinReaderStutters } from './hindi-stutters.js';
+import type { HindiStutter } from './hindi-stutters.js';
+import { joinReaderSpans } from '$lib/components/reader/joined-tokens.js';
+import { findHindiMerges } from './hindi-merges.js';
+import type { HindiMerge } from '$lib/dictionary/hindi-merge';
 import { loadHindiContextChoices, canVerifyHindiContext, contextVersion } from './hindi-context.js';
 
 /**
@@ -75,6 +78,11 @@ export type RenderedNumberForms = {
 };
 
 export type RenderedToken = {
+  mergeOptions?: HindiMerge[];
+  confirmedMerge?: HindiMerge;
+  /** Exclusive source-token end for each multiword dictionary reading starting here. */
+  dictionarySpanEnds?: Record<string, number>;
+  lastTokenIdx?: number;
   bookFrequency?: number;
   correctedByViewer?: boolean;
   canVerifyContext?: boolean;
@@ -182,6 +190,8 @@ export async function loadChapterTokens(
     language: schema.texts.language,
     stale: sql<boolean>`${schema.hindiChapterAnalyses.revision} IS DISTINCT FROM
       (SELECT revision FROM hindi_dictionary_state WHERE id=1)`,
+    hasHindiAnalysis: sql<boolean>`${schema.hindiChapterAnalyses.chapterId} IS NOT NULL`,
+    merges: sql<HindiMerge[] | null>`${schema.hindiChapterAnalyses.stats}->'syllable_merges'`,
     stutters: sql<HindiStutter[] | null>`${schema.hindiChapterAnalyses.stats}->'stutters'`,
   })
     .from(schema.textChapters)
@@ -422,7 +432,7 @@ export async function loadChapterTokens(
 
   const choices = [...lemmaMetaById.values()].some((entry) => entry.language === 'hi')
     ? await loadHindiContextChoices(chapterId, sourceStartsById && [...sourceStartsById.values()]) : new Map();
-  const canVerifyContext = [...lemmaMetaById.values()].some((entry) => entry.language === 'hi')
+  const canVerifyContext = analysis?.language === 'hi'
     ? await canVerifyHindiContext(chapterId, viewerId) : false;
   const bookFrequencies = textId ? await lemmaBookFrequencies(textId, lemmaIds) : undefined;
   let sourceOffset = 0;
@@ -556,7 +566,40 @@ export async function loadChapterTokens(
       hasDefinition: effectiveGloss != null,
     };
   });
-  return joinStutters ? joinReaderStutters(rendered, analysis?.stutters ?? []) : rendered;
+  if (!joinStutters) return rendered;
+  const grouped = joinReaderSpans(rendered, [
+    ...(analysis?.merges ?? []).map(m => ({ ...m, anchor: m.first })),
+    ...(analysis?.stutters ?? []).filter(s => s.status === 'auto' || s.status === 'confirmed')
+      .map(s => ({ first: s.first, last: s.word, anchor: s.word, surface: s.surface })),
+  ]);
+  if (analysis?.hasHindiAnalysis && grouped.some(t => t.features.Compound === 'Yes' ||
+    t.candidates.some(c => c.features.Compound === 'Yes'))) {
+    const compounds = await db.execute<{ start_idx: number; end_idx: number; lemma_id: string }>(sql`
+      SELECT start_idx, max(end_idx)::int end_idx, lemma_id FROM hindi_occurrences
+      WHERE chapter_id=${chapterId} AND end_idx > start_idx + 1
+      GROUP BY start_idx, lemma_id`);
+    const byIndex = new Map(grouped.map(t => [t.idx, t]));
+    for (const match of compounds) {
+      const anchor = byIndex.get(match.start_idx);
+      if (anchor) (anchor.dictionarySpanEnds ??= {})[match.lemma_id] = match.end_idx;
+    }
+  }
+  if (canVerifyContext && analysis?.hasHindiAnalysis) {
+    const saved = new Map(analysis.merges?.map(m => [m.first, m]));
+    for (const token of grouped) {
+      const merge = saved.get(token.idx);
+      if (merge?.surface === token.surface) token.confirmedMerge = merge;
+    }
+    const options = await findHindiMerges(db, grouped);
+    if (options.length) {
+      for (const t of grouped) {
+        if (!t.isWord) continue;
+        const matches = options.filter(m => m.first <= t.idx && t.idx <= m.last);
+        if (matches.length) t.mergeOptions = matches;
+      }
+    }
+  }
+  return grouped;
 }
 
 /**

@@ -43,13 +43,14 @@ export async function getOfficialBookCards(
   textId: string, userId: string, scope: DeckScope,
   settings: Omit<DeckOptions, 'scope'> = { target: 98, ignoreProper: false, ignoreLoans: false },
 ): Promise<AnkiCard[]> {
-  if (!(await getOfficialBook(textId))) throw new OfficialBookError('Book not found', 404);
+  const book = await getOfficialBook(textId);
+  if (!book) throw new OfficialBookError('Book not found', 404);
   const options = { ...settings, scope };
-  const rows = await officialDeckRows(textId, userId);
+  const rows = await officialDeckRows(book, userId);
   const plan = studyDeckPlan(studyBands(rows), options);
   return rows.filter(row => eligibleForDeck(row, options)).slice(0, plan.count).map(row => ({
     id: row.id!, word: row.word!, pos: row.pos!, definition: row.definition ?? '',
-    frequency: row.frequency, minedSentence: null, samples: [],
+    frequency: row.matches, minedSentence: null, samples: [],
   }));
 }
 

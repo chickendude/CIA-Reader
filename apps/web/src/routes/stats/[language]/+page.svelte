@@ -1,5 +1,6 @@
 <script lang="ts">
   import Pagination from '$lib/components/input/Pagination.svelte';
+  import ReanalysisNotice from '$lib/components/library/ReanalysisNotice.svelte';
   import type { PageProps } from './$types';
 
   let { data }: PageProps = $props();
@@ -114,7 +115,7 @@
             <tr>
               <td>
                 <a href={`/reader/${t.textId}`} class="ls-link">{t.title}</a>
-                {#if t.analysisStale}<small>Dictionary changed — reprocess this text.</small>{/if}
+                {#if data.isStaff && t.analysisStale}<ReanalysisNotice />{/if}
               </td>
               <td class="num">{t.uniqueLemmas.toLocaleString()}</td>
               <td class="num">{t.totalWords.toLocaleString()}</td>
@@ -158,7 +159,7 @@
             <tr>
               <td>
                 <a href={`/collections/${c.collectionId}`} class="ls-link">{c.title}</a>
-                {#if c.analysisStale}<small>Dictionary changed — reprocess this collection.</small>{/if}
+                {#if data.isStaff && c.analysisStale}<ReanalysisNotice />{/if}
               </td>
               <td class="num">{c.textCount}</td>
               <td class="num">{c.totalWords.toLocaleString()}</td>

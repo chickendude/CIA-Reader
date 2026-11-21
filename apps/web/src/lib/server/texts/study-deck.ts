@@ -1,17 +1,19 @@
+import type { LanguageCode } from '@ciareader/shared-types';
+import { studyFrequencies } from './study-frequencies.js';
 import { sql } from 'drizzle-orm';
 import { db } from '../db/index.js';
 import type { StudyBand, StudyEntry } from '$lib/library/study-deck.js';
 
-type DeckRow = StudyEntry & { id: string | null; word: string | null; pos: string | null; definition: string | null };
+type DeckRow = StudyEntry & { matches: number; id: string | null; word: string | null; pos: string | null; definition: string | null };
 
-export function officialDeckRows(textId: string, userId?: string) {
+export function officialDeckRows(book: { id: string; language: LanguageCode }, userId?: string) {
+  const books = sql`SELECT id FROM texts WHERE id = ${book.id} AND visibility = 'official' AND language = ${book.language}`;
   return db.execute<DeckRow>(sql`
-    WITH frequencies AS (
-      SELECT o.lemma_id, o.occurrences AS frequency
-      FROM texts t JOIN book_word_frequencies o ON o.text_id = t.id
-      WHERE t.id = ${textId} AND t.visibility = 'official'
+    WITH matches AS (${studyFrequencies(books, book.language)}), frequencies AS (
+      SELECT lemma_id, sum(occurrences)::float8 AS frequency, sum(matches)::int AS matches
+      FROM matches GROUP BY lemma_id
     )
-    SELECT l.id, l.headword AS word, l.pos, l.gloss_default AS definition, f.frequency,
+    SELECT l.id, l.headword AS word, l.pos, l.gloss_default AS definition, f.frequency, f.matches,
       CASE WHEN l.id IS NULL THEN 'unresolved' ELSE coalesce(k.status::text, 'unknown') END AS status,
       coalesce(l.pos = 'PROPN', false) AS proper,
       coalesce((h.entry->>'english_loan')::boolean, EXISTS (

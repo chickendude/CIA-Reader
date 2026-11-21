@@ -18,6 +18,7 @@ export const GET: RequestHandler = async (event) => {
   const book = await getOfficialBook(id);
   if (!book) throw error(404, 'Book not found');
   const cards = await getOfficialBookCards(id, user.id, scope as OfficialDeckScope, {
+    includeStudied: params.get('includeStudied') === '1',
     target, ignoreProper: params.get('ignoreProper') === '1', ignoreLoans: params.get('ignoreLoans') === '1',
   });
   if (!cards.length) throw error(404, 'No words match this selection');

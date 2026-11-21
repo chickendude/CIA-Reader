@@ -123,17 +123,19 @@
     background: rgba(20, 16, 10, 0.42);
     z-index: 50;
     display: grid;
+    grid-template: minmax(0, 1fr) / minmax(0, 1fr);
     place-items: center;
     padding: 1.5rem;
     backdrop-filter: blur(6px);
   }
   .modal {
     max-width: 100%;
+    max-height: 100%;
     background: var(--paper, var(--color-bg));
     border: 1px solid var(--card-edge, var(--color-border));
     border-radius: 14px;
     box-shadow: 0 24px 60px rgba(0, 0, 0, 0.3);
-    overflow: hidden;
+    overflow: auto;
     color: var(--ink, var(--color-fg));
   }
   .modal-h {

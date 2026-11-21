@@ -10,6 +10,7 @@
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import type { LanguageCode } from '@ciareader/shared-types';
 
+import { canReadText } from '../auth/can-read.js';
 import { db, schema } from '../db/index.js';
 
 export type BookChapterScope = {
@@ -24,7 +25,7 @@ export type BookChapterScope = {
  * current text's own chapters. When the text isn't a member of any collection
  * the book scope is just the text itself.
  */
-export async function resolveBookChapterScope(textId: string): Promise<BookChapterScope> {
+export async function resolveBookChapterScope(textId: string, userId?: string): Promise<BookChapterScope> {
   const ownChapters = await db
     .select({ id: schema.textChapters.id })
     .from(schema.textChapters)
@@ -45,7 +46,13 @@ export async function resolveBookChapterScope(textId: string): Promise<BookChapt
     .select({ textId: schema.collectionItems.textId })
     .from(schema.collectionItems)
     .where(eq(schema.collectionItems.collectionId, item.collectionId));
-  const bookTextIds = siblingTexts.map((r) => r.textId);
+  let bookTextIds = siblingTexts.map((r) => r.textId);
+  if (userId && bookTextIds.length) {
+    // Exports include sample sentences, so check access to each collection member.
+    const members = await db.select().from(schema.texts).where(inArray(schema.texts.id, bookTextIds));
+    const readable = await Promise.all(members.map((member) => canReadText({ id: userId }, member)));
+    bookTextIds = members.filter((_, index) => readable[index]).map((member) => member.id);
+  }
 
   const bookChapters =
     bookTextIds.length > 0

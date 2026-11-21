@@ -1,10 +1,3 @@
-/**
- * GET /api/v1/me/anki/export?textId=&language=&deck=&status=
- *
- * Download the caller's learning words as an Anki `.apkg` deck. Scoped to a
- * book when `textId` is given (cards carry frequency + sample sentences),
- * otherwise language-wide.
- */
 import { error } from '@sveltejs/kit';
 
 import { requireUser } from '$lib/server/auth/require-user.js';
@@ -34,15 +27,16 @@ export const GET: RequestHandler = async (event) => {
   }
   if (!textId && !languageParam) throw error(400, 'Provide textId or language');
 
-  const statusParam = searchParams.get('status') ?? 'learning';
-  if (!STATUSES.has(statusParam)) throw error(400, 'Invalid status');
+  const statusParam = searchParams.get('status') ?? undefined;
+  if (statusParam !== undefined && !STATUSES.has(statusParam)) throw error(400, 'Invalid status');
 
   const deckName = searchParams.get('deck')?.trim() || 'CIA Reader';
 
   const { cards } = await getAnkiCards(user.id, {
     textId,
     language: languageParam as LanguageCode | undefined,
-    status: statusParam as VocabularyStatus,
+    status: statusParam as VocabularyStatus | undefined,
+    includeStudied: searchParams.get('includeStudied') === '1',
   });
   if (cards.length === 0) throw error(404, 'No cards to export');
 

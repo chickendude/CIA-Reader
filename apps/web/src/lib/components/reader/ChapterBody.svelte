@@ -8,6 +8,7 @@
   import TokenSpan from './TokenSpan.svelte';
   import WordPopup from './WordPopup.svelte';
   import WordTooltip from './WordTooltip.svelte';
+  import { joinDictionaryEntries } from './joined-tokens.js';
   import { dictionaryChapterTokens } from './dictionary-chapter.svelte.js';
   import { WordPreview } from './word-preview.svelte.js';
   import CorrectionToast from './CorrectionToast.svelte';
@@ -73,8 +74,8 @@
       if (next.chapterId !== chapter.id) return;
       contextOverrides = new Map(contextOverrides).set(next.id,next);
       const corrections = new Map(lemmaCorrections); corrections.delete(next.id); lemmaCorrections = corrections;
-      if (activeToken?.id === next.id) activeToken = next;
-      if (preview.token?.id === next.id) preview.token = next;
+      if (activeToken?.id === next.id) activeToken = tokensById.get(next.id) ?? next;
+      if (preview.token?.id === next.id) preview.token = tokensById.get(next.id) ?? next;
     };
     window.addEventListener('hindi-context-choice-changed',update);
     return () => window.removeEventListener('hindi-context-choice-changed',update);
@@ -109,7 +110,7 @@
     const hovered = preview.token && tokensById.get(preview.token.id);
     if (hovered && (hovered.lemmaId === lemmaId || preview.token?.lemmaId === lemmaId)) preview.token = hovered;
   });
-  const tokensWithOverrides = $derived.by(() => {
+  const readings = $derived.by(() => {
     const tokens = dictionaryTokens();
     if (!tokens) return null;
     if (
@@ -145,6 +146,7 @@
     });
   });
 
+  const tokensWithOverrides = $derived(readings && joinDictionaryEntries(readings));
   const serverParagraphs = $derived(
     tokensWithOverrides ? paragraphsOfServerTokens(tokensWithOverrides) : null,
   );
@@ -620,7 +622,7 @@
      itself decides whether to render its full body or an empty-state
      prompt based on whether `token` is null. -->
 <WordPopup
-  chapterTokens={chapter.tokens}
+  chapterTokens={tokensWithOverrides}
   token={popupToken}
   phrase={activePhrase}
   pendingSelection={pendingSelection ?? undefined}

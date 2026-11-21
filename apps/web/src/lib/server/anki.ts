@@ -1,17 +1,3 @@
-/**
- * Anki export for the words a user is learning.
- *
- * Builds one card per `learning` lemma: front = the word, back = its
- * definition + the sentence the user mined it from + 1–2 more sample
- * sentences from the book. When a `textId` is given the cards are scoped to
- * that book and carry the book-wide occurrence count (so the page can sort
- * frequent words first); otherwise it's a language-wide export.
- *
- * Two delivery paths share this builder: a downloadable `.apkg`
- * (`buildApkg`) and AnkiConnect (the page posts `getAnkiCards` JSON to the
- * user's local Anki). `.apkg` generation uses the existing Anki schema with
- * Node's built-in SQLite so full-book decks can exceed 16 MB.
- */
 import { createRequire } from 'node:module';
 import { createHash } from 'node:crypto';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
@@ -20,10 +6,10 @@ import { join } from 'node:path';
 import type { DatabaseSync as SQLiteDatabase } from 'node:sqlite';
 import JSZip from 'jszip';
 
-import { and, asc, eq, inArray } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
 
 import { db, schema } from './db/index.js';
-import { lemmaBookFrequencies, resolveBookChapterScope } from './texts/book-frequency.js';
+import { resolveBookChapterScope } from './texts/book-frequency.js';
 import { sentenceFromTokens } from './texts/sentences.js';
 import { canReadText } from './auth/can-read.js';
 import type { LanguageCode } from '@ciareader/shared-types';
@@ -60,15 +46,12 @@ type LemmaRow = {
  * around the lemma's occurrences.
  */
 async function bookSamples(
-  textId: string,
+  bookChapterIds: string[],
   lemmas: LemmaRow[],
 ): Promise<Map<string, string[]>> {
   const samples = new Map<string, string[]>();
   const lemmaIds = lemmas.map((l) => l.lemmaId);
   if (lemmaIds.length === 0) return samples;
-
-  const { bookChapterIds } = await resolveBookChapterScope(textId);
-  if (bookChapterIds.length === 0) return samples;
 
   const occ = await db
     .select({
@@ -138,7 +121,7 @@ async function bookSamples(
 
 export async function getAnkiCards(
   userId: string,
-  opts: { textId?: string; language?: LanguageCode; status?: VocabularyStatus },
+  opts: { textId?: string; language?: LanguageCode; status?: VocabularyStatus; includeStudied?: boolean },
 ): Promise<{ language: LanguageCode; cards: AnkiCard[] }> {
   let language = opts.language;
   if (opts.textId) {
@@ -154,45 +137,49 @@ export async function getAnkiCards(
     return { language: 'eu' as LanguageCode, cards: [] };
   }
 
-  const status = opts.status ?? 'learning';
-  const rows: LemmaRow[] = await db
-    .select({
-      lemmaId: schema.userKnownLemmas.lemmaId,
-      headword: schema.lemmas.headword,
-      pos: schema.lemmas.pos,
-      glossDefault: vocabularyDefinition(userId),
-      minedSentence: schema.userKnownLemmas.minedSentence,
-    })
-    .from(schema.userKnownLemmas)
-    .innerJoin(schema.lemmas, eq(schema.lemmas.id, schema.userKnownLemmas.lemmaId))
-    .where(
-      and(
-        eq(schema.userKnownLemmas.userId, userId),
-        eq(schema.userKnownLemmas.status, status),
-        eq(schema.lemmas.language, language),
-      ),
-    )
-    .orderBy(asc(schema.lemmas.headword));
+  const { lemmas, userKnownLemmas, chapterWordFrequencies } = schema;
+  const statuses: VocabularyStatus[] = opts.status ? [opts.status]
+    : opts.includeStudied ? ['unknown', 'learning', 'known'] : ['unknown'];
+  const selection = and(
+    eq(lemmas.language, language),
+    inArray(sql`coalesce(${userKnownLemmas.status}, 'unknown')`, statuses),
+  );
+  const fields = {
+    lemmaId: lemmas.id,
+    headword: lemmas.headword,
+    pos: lemmas.pos,
+    glossDefault: vocabularyDefinition(userId),
+    minedSentence: userKnownLemmas.minedSentence,
+  };
+  const savedByUser = and(eq(userKnownLemmas.lemmaId, lemmas.id), eq(userKnownLemmas.userId, userId));
 
-  const lemmaIds = rows.map((r) => r.lemmaId);
-  const frequencies = opts.textId
-    ? await lemmaBookFrequencies(opts.textId, lemmaIds)
-    : new Map<string, number>();
-  const samples = opts.textId ? await bookSamples(opts.textId, rows) : new Map();
+  const chapterIds = opts.textId ? (await resolveBookChapterScope(opts.textId, userId)).bookChapterIds : [];
+  if (opts.textId && !chapterIds.length) return { language, cards: [] };
+  const frequency = sql<number>`sum(${chapterWordFrequencies.occurrences})::int`;
+  const rows = opts.textId
+    ? await db.select({ ...fields, frequency })
+        .from(chapterWordFrequencies)
+        .innerJoin(lemmas, eq(lemmas.id, chapterWordFrequencies.lemmaId))
+        .leftJoin(userKnownLemmas, savedByUser)
+        .where(and(selection, inArray(chapterWordFrequencies.chapterId, chapterIds)))
+        .groupBy(lemmas.id, userKnownLemmas.minedSentence)
+        .orderBy(desc(frequency), asc(lemmas.headword), asc(lemmas.id))
+    : await db.select({ ...fields, frequency: sql<number>`0` })
+        .from(lemmas)
+        .innerJoin(userKnownLemmas, savedByUser)
+        .where(selection)
+        .orderBy(asc(lemmas.headword), asc(lemmas.id));
+  const samples = opts.textId ? await bookSamples(chapterIds, rows) : new Map<string, string[]>();
 
-  const cards: AnkiCard[] = rows.map((r) => ({
-    id: r.lemmaId,
-    word: r.headword,
-    pos: r.pos,
-    definition: r.glossDefault ?? '',
-    frequency: frequencies.get(r.lemmaId) ?? 0,
-    minedSentence: r.minedSentence ?? null,
-    samples: samples.get(r.lemmaId) ?? [],
+  const cards = rows.map((row) => ({
+    id: row.lemmaId,
+    word: row.headword,
+    pos: row.pos,
+    definition: row.glossDefault ?? '',
+    frequency: row.frequency,
+    minedSentence: row.minedSentence,
+    samples: samples.get(row.lemmaId) ?? [],
   }));
-
-  // Most-frequent first when we have counts; otherwise alphabetical (already
-  // sorted by headword above).
-  if (opts.textId) cards.sort((a, b) => b.frequency - a.frequency);
   return { language, cards };
 }
 

@@ -1,16 +1,19 @@
 <script lang="ts">
+  import { page } from '$app/state';
   import Button from '$lib/components/input/Button.svelte';
+  import Modal from '$lib/components/overlay/Modal.svelte';
   import type { PageData } from './$types';
 
   let { comparison, title }: { comparison: PageData['comparison']; title: string } = $props();
+  let open = $derived(page.url.searchParams.has('from'));
   const percent = new Intl.NumberFormat('en', { maximumFractionDigits: 2 });
 </script>
 
-<section aria-labelledby="compare-title">
-  <h2 id="compare-title">Compare books</h2>
+<Button aria-haspopup="dialog" onclick={() => open = true}>Compare books</Button>
+<Modal {open} onClose={() => open = false} title="Compare books">
   {#if comparison.books.length}
-    <form method="GET" data-sveltekit-noscroll>
-      <label>Book you know
+    <form method="GET" data-sveltekit-noscroll data-sveltekit-keepfocus>
+      <label class="source">Book you know
         <select name="from" required value={comparison.source?.id ?? ''}>
           <option value="" disabled>Choose a book</option>
           {#each comparison.books as book (book.id)}
@@ -24,36 +27,38 @@
       <label>Target coverage (%)
         <input name="goal" type="number" min="0" max="100" step="0.1" required value={comparison.goal} />
       </label>
-      <Button type="submit">Compare</Button>
+      <div class="submit"><Button type="submit" variant="primary">Compare</Button></div>
     </form>
-    {#if comparison.result && comparison.source}
-      {@const result = comparison.result}
-      {#if result.kind === 'estimate'}
-        <p>Knowing {comparison.known}% of {comparison.source.title} covers an estimated
-          <strong>{percent.format(result.coverage)}%</strong> of {title}.
-          {#if result.additionalWords === null}
-            Unresolved words limit coverage to {percent.format(result.maximum)}%, below your {comparison.goal}% target.
-          {:else if result.additionalWords === 0}
-            You already meet the {comparison.goal}% target with those words.
-          {:else}
-            Learn <strong>{result.additionalWords.toLocaleString()} more {result.additionalWords === 1 ? 'word' : 'words'}</strong> to reach {comparison.goal}%.
-          {/if}
-        </p>
-      {:else if result.kind === 'source-limit'}
-        <p>Unresolved words limit coverage in {comparison.source.title} to {percent.format(result.maximum)}%. Choose a lower known coverage.</p>
-      {:else}
-        <p>Both books need vocabulary analysis before they can be compared.</p>
+    <div aria-live="polite">
+      {#if comparison.result && comparison.source}
+        {@const result = comparison.result}
+        {#if result.kind === 'estimate'}
+          <p>Knowing {comparison.known}% of {comparison.source.title} covers an estimated
+            <strong>{percent.format(result.coverage)}%</strong> of {title}.
+            {#if result.additionalWords === null}
+              Unparsed words limit estimated coverage to {percent.format(result.maximum)}%, below your {comparison.goal}% target.
+            {:else if result.additionalWords === 0}
+              You already meet the {comparison.goal}% target with those words.
+            {:else}
+              Learn <strong>{result.additionalWords.toLocaleString()} more {result.additionalWords === 1 ? 'word' : 'words'}</strong> to reach {comparison.goal}%.
+            {/if}
+          </p>
+        {:else if result.kind === 'source-limit'}
+          <p>The dictionary matches {percent.format(result.maximum)}% of the words in {comparison.source.title}. Choose a known coverage at or below that percentage.</p>
+        {:else}
+          <p>Both books need vocabulary analysis before they can be compared.</p>
+        {/if}
       {/if}
-    {/if}
+    </div>
   {:else}
     <p>No other books in this language are ready to compare.</p>
   {/if}
-</section>
+</Modal>
 
 <style>
-  section { border-top: 1px solid var(--rule); padding: 1.5rem 0; }
-  h2 { font-size: 1.1rem; margin: 0 0 1rem; }
-  form { display: flex; align-items: end; flex-wrap: wrap; gap: .75rem; }
+  form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .75rem; }
+  .source, .submit { grid-column: 1 / -1; }
+  .submit { justify-self: end; }
   label { display: grid; gap: .35rem; font-size: .85rem; min-width: 0; }
   input, select {
     box-sizing: border-box; max-width: 100%; min-height: 2.25rem; padding: .4rem .55rem;

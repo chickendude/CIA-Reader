@@ -9,7 +9,7 @@ const { DatabaseSync } = createRequire(import.meta.url)('node:sqlite') as typeof
 
 let queue: unknown[][] = [];
 
-vi.mock('$lib/server/db/index.js', () => {
+vi.mock('$lib/server/db/index.js', async () => {
   const chain: Record<string, unknown> = {};
   for (const m of ['select', 'from', 'where', 'innerJoin', 'orderBy', 'limit', 'groupBy']) {
     chain[m] = () => chain;
@@ -18,23 +18,7 @@ vi.mock('$lib/server/db/index.js', () => {
     resolve(queue.shift() ?? []);
   return {
     db: chain,
-    schema: {
-      userKnownLemmas: {
-        lemmaId: 'ukl.lemma_id',
-        userId: 'ukl.user_id',
-        status: 'ukl.status',
-        minedSentence: 'ukl.mined_sentence',
-      },
-      lemmas: { id: 'l.id', headword: 'l.headword', pos: 'l.pos', glossDefault: 'l.gloss', language: 'l.language' },
-      translations: {
-        targetId: 'tr.target_id',
-        targetType: 'tr.target_type',
-        source: 'tr.source',
-        submittedBy: 'tr.submitted_by',
-        body: 'tr.body',
-      },
-      texts: { id: 't.id', language: 't.language' },
-    },
+    schema: await import('./db/schema.js'),
   };
 });
 
@@ -78,9 +62,9 @@ describe('cardBackHtml', () => {
 describe('getAnkiCards (language-wide path)', () => {
   it('builds cards with the resolved vocabulary definition', async () => {
     queue = [
-      // learning lemmas
       [
         {
+          frequency: 0,
           lemmaId: 'l1',
           headword: 'etxe',
           pos: 'NOUN',
@@ -88,6 +72,7 @@ describe('getAnkiCards (language-wide path)', () => {
           minedSentence: 'Etxe bat.',
         },
         {
+          frequency: 0,
           lemmaId: 'l2',
           headword: 'ur',
           pos: 'NOUN',

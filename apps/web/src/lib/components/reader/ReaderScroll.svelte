@@ -24,6 +24,7 @@
 
   import WordPopup from './WordPopup.svelte';
   import WordTooltip from './WordTooltip.svelte';
+  import { joinDictionaryEntries } from './joined-tokens.js';
   import { dictionaryChapterTokens } from './dictionary-chapter.svelte.js';
   import { WordPreview } from './word-preview.svelte.js';
 
@@ -76,7 +77,7 @@
     const hovered = preview.token && tokensById.get(preview.token.id);
     if (hovered && (hovered.lemmaId === lemmaId || preview.token?.lemmaId === lemmaId)) preview.token = hovered;
   });
-  const correctedTokens = $derived.by(() => {
+  const readings = $derived.by(() => {
     const tokens = dictionaryTokens();
     if (!tokens) return null;
     if (
@@ -111,6 +112,7 @@
       return next;
     });
   });
+  const correctedTokens = $derived(readings && joinDictionaryEntries(readings));
   const serverParagraphs = $derived(
     correctedTokens ? paragraphsOfServerTokens(correctedTokens) : null,
   );
@@ -343,8 +345,8 @@
       if (next.chapterId !== current?.id) return;
       contextOverrides = new Map(contextOverrides).set(next.id,next);
       const corrections = new Map(lemmaCorrections); corrections.delete(next.id); lemmaCorrections = corrections;
-      if (activeToken?.id === next.id) activeToken = next;
-      if (preview.token?.id === next.id) preview.token = next;
+      if (activeToken?.id === next.id) activeToken = tokensById.get(next.id) ?? next;
+      if (preview.token?.id === next.id) preview.token = tokensById.get(next.id) ?? next;
     };
     window.addEventListener('hindi-context-choice-changed',update);
     return () => window.removeEventListener('hindi-context-choice-changed',update);
@@ -491,7 +493,7 @@
 
 {#if activeToken && activeRect}
   <WordPopup
-    chapterTokens={current?.tokens}
+    chapterTokens={correctedTokens}
     token={activeToken}
     anchorRect={activeRect}
     {language}

@@ -7,10 +7,11 @@
   } = $props();
   let scope = $state<DeckScope>('target');
   let target = $state<number | undefined>(98);
+  let includeStudied = $state(false);
   let ignoreProper = $state(false);
   let ignoreLoans = $state(false);
   const valid = $derived(scope !== 'target' || (target !== undefined && target > 0 && target <= 100 && Number.isInteger(target * 10)));
-  const plan = $derived(studyDeckPlan(bands, { scope, target: target ?? 98, ignoreProper, ignoreLoans }));
+  const plan = $derived(studyDeckPlan(bands, { scope, target: target ?? 98, ignoreProper, ignoreLoans, includeStudied }));
 </script>
 
 <section aria-labelledby="study-title">
@@ -19,8 +20,8 @@
     <div class="settings">
       <label>Include
         <select name="scope" bind:value={scope}>
-          <option value="target">Unseen words needed for target</option>
-          <option value="unknown">All unseen words</option>
+          <option value="target">Words needed for target</option>
+          <option value="unknown">{includeStudied ? 'All non-ignored words' : 'All unseen words'}</option>
           <option value="learning">Learning words</option>
           <option value="all">All vocabulary</option>
         </select>
@@ -32,20 +33,25 @@
       {/if}
     </div>
     <div class="filters">
+      {#if scope === 'target' || scope === 'unknown'}
+        <label><input type="checkbox" name="includeStudied" value="1" bind:checked={includeStudied} /> Include known and learning words</label>
+      {/if}
       <label><input type="checkbox" name="ignoreProper" value="1" bind:checked={ignoreProper} /> Ignore proper nouns</label>
       {#if book.language === 'hi'}
         <label><input type="checkbox" name="ignoreLoans" value="1" bind:checked={ignoreLoans} /> Ignore English loans</label>
       {/if}
     </div>
     {#if scope === 'target'}
-      <p>Known and learning words count toward the target. The deck adds the most frequent unseen words first.</p>
+      <p>{includeStudied
+        ? 'The deck includes the most frequent words until it reaches the target.'
+        : 'Known and learning words count toward the target. The deck adds the most frequent unseen words first.'}</p>
     {/if}
     <div aria-live="polite">
       {#if valid}
         <strong>{plan.count.toLocaleString()} {plan.count === 1 ? 'card' : 'cards'}</strong>
         {#if scope === 'target' && plan.total}
-          <span> for {Number((plan.covered / plan.total * 100).toFixed(2))}% projected coverage.</span>
-          {#if !plan.reached}<span> Unresolved words put the target out of reach.</span>{/if}
+          <span> for {Number((plan.covered / plan.total * 100).toFixed(2))}% {includeStudied ? 'deck coverage' : 'projected coverage'}.</span>
+          {#if !plan.reached}<span> Unparsed words put the target out of reach.</span>{/if}
         {/if}
       {:else}
         Enter a target from 0.1% to 100% in steps of 0.1%.

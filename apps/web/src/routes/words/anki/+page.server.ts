@@ -1,7 +1,3 @@
-/**
- * Anki export page. With `?textId` it shows the book's learning words ready to
- * export; without it, a picker of the user's books. Auth-gated.
- */
 import { redirect } from '@sveltejs/kit';
 import { desc, eq } from 'drizzle-orm';
 
@@ -20,7 +16,8 @@ export const load: PageServerLoad = async ({ locals, url }) => {
       .from(schema.texts)
       .where(eq(schema.texts.id, textId))
       .limit(1);
-    const { language, cards } = await getAnkiCards(userId, { textId });
+    const includeStudied = url.searchParams.get('includeStudied') === '1';
+    const { language, cards } = await getAnkiCards(userId, { textId, includeStudied });
     const title = text?.title ?? 'this book';
     return {
       mode: 'export' as const,
@@ -28,6 +25,7 @@ export const load: PageServerLoad = async ({ locals, url }) => {
       title,
       language,
       cards,
+      includeStudied,
       deckName: `CIA Reader::${title}`,
     };
   }

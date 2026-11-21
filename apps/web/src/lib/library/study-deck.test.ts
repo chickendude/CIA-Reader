@@ -16,6 +16,13 @@ describe('study deck selection', () => {
     expect(studyDeckPlan(bands, { ...options, target: 50 }).count).toBe(0);
   });
 
+  it('can build a target deck from scratch including known and learning words', () => {
+    expect(studyDeckPlan(bands, { ...options, target: 50, includeStudied: true }))
+      .toEqual({ count: 2, total: 100, covered: 50, reached: true });
+    expect(studyDeckPlan(bands, { ...options, includeStudied: true }))
+      .toEqual({ count: 8, total: 100, covered: 95, reached: false });
+  });
+
   it('removes ignored categories from both the deck and the denominator, counting overlap once', () => {
     expect(studyDeckPlan(bands, { ...options, target: 80, ignoreProper: true })).toEqual({ count: 3, total: 85, covered: 70, reached: true });
     expect(studyDeckPlan(bands, { ...options, target: 80, ignoreProper: true, ignoreLoans: true }))
@@ -27,9 +34,18 @@ describe('study deck selection', () => {
     expect(studyDeckPlan([], options)).toEqual({ count: 0, total: 0, covered: 0, reached: false });
   });
 
+  it('takes only the cards needed to reach a fractional coverage threshold', () => {
+    const partial = [band('known', 1), band('unknown', .5, 2), band('unresolved', 1)];
+    expect(studyDeckPlan(partial, { ...options, target: 50 }))
+      .toEqual({ count: 1, total: 3, covered: 1.5, reached: true });
+    expect(studyDeckPlan([band('known', .7), band('unknown', .1, 3)], { ...options, target: 100 }))
+      .toMatchObject({ count: 3, reached: true });
+  });
+
   it('keeps the existing export scopes and applies category filters to each', () => {
     expect(studyDeckPlan(bands, { ...options, scope: 'all' }).count).toBe(9);
     expect(studyDeckPlan(bands, { ...options, scope: 'unknown', ignoreLoans: true }).count).toBe(4);
+    expect(studyDeckPlan(bands, { ...options, scope: 'unknown', includeStudied: true }).count).toBe(8);
     expect(studyDeckPlan(bands, { ...options, scope: 'learning' }).count).toBe(1);
   });
 });

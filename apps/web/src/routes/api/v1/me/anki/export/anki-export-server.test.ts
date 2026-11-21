@@ -61,9 +61,22 @@ describe('GET /api/v1/me/anki/export', () => {
     expect(getAnkiCards).toHaveBeenCalledWith('u1', {
       textId: UUID,
       language: undefined,
-      status: 'learning',
+      status: undefined,
+      includeStudied: false,
     });
     expect(buildApkg).toHaveBeenCalledWith('My Deck', [CARD]);
+  });
+
+  it('passes the opt-in and explicit status selections to the card builder', async () => {
+    getAnkiCards.mockResolvedValue({ language: 'eu', cards: [] });
+    await callGet('?language=eu&includeStudied=1');
+    expect(getAnkiCards).toHaveBeenLastCalledWith('u1', {
+      language: 'eu', textId: undefined, status: undefined, includeStudied: true,
+    });
+    await callGet('?language=eu&status=learning');
+    expect(getAnkiCards).toHaveBeenLastCalledWith('u1', {
+      language: 'eu', textId: undefined, status: 'learning', includeStudied: false,
+    });
   });
 
   it('400s when neither textId nor language is given', async () => {

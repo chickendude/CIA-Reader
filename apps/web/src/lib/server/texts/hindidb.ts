@@ -1,9 +1,30 @@
 import { createHash } from 'node:crypto';
 import { error } from '@sveltejs/kit';
-import { eq, inArray, sql } from 'drizzle-orm';
+import { and, between, eq, inArray, sql } from 'drizzle-orm';
 import { db, schema } from '../db/index.js';
-import { applyHindiStutters, chapterStutters, projectStutters } from './hindi-stutters.js';
-import type { HindiAnalysis, NlpToken, OcrBBox } from '../nlp-client.js';
+import {
+  applyHindiStutters,
+  chapterStutters,
+  detectStutters,
+  projectStutters,
+} from './hindi-stutters.js';
+import {
+  coveredStutters,
+  fragmentReading,
+  hindiMergeStats,
+  mergeOriginals,
+  originalForMerge,
+  projectHindiMerges,
+  sameMerge,
+  storedHindiMerges,
+  type MergeSelection,
+} from './hindi-merge-projection.js';
+import { hindiMergeEntries } from './hindi-merges.js';
+import { canReadText } from '../auth/can-read.js';
+import { isCuratorOrAdmin } from '../dictionary/permissions.js';
+import type { User } from '../db/schema.js';
+import { hindiSyllableRuns, matchHindiMerges } from '$lib/dictionary/hindi-merge';
+import { nlpClient, type HindiAnalysis, type NlpToken, type OcrBBox } from '../nlp-client.js';
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 type StoredToken = NlpToken & { bbox?: OcrBBox | null };
@@ -30,16 +51,281 @@ export async function persistHindiTokens(
   analysis: HindiAnalysis,
 ) {
   return db.transaction(async (tx) => {
-    const { chapter, hash, spans } = await lockChapter(tx, chapterId);
+    const { chapter, hash, spans, analysis: previous } = await lockChapter(tx, chapterId);
     const hasHyphen = /[-‐‑]/u.test(chapter.body);
     if (hasHyphen) {
       if (tokens.map((t) => t.surface).join('') !== chapter.body)
         error(409, 'The chapter changed during processing.');
-      const result = applyHindiStutters(tokens, analysis, spans, hash);
-      return writeHindiTokens(tx, chapterId, result.tokens, result.analysis);
+      const reviewed =
+        previous?.stats.stutter_text_hash === hash
+          ? [...spans, ...coveredStutters(previous.stats)]
+          : spans;
+      const result = applyHindiStutters(tokens, analysis, reviewed, hash);
+      const saved =
+        previous?.stats.stutter_text_hash === hash ? storedHindiMerges(previous.stats) : [];
+      if (!saved.length) return writeHindiTokens(tx, chapterId, result.tokens, result.analysis);
+      const entries = await hindiMergeEntries(
+        tx,
+        inArray(
+          sql`l.id`,
+          saved.map((m) => m.lemmaId),
+        ),
+      );
+      const options = matchHindiMerges(
+        hindiSyllableRuns(result.tokens.map((t) => ({ ...t, isWord: t.is_word }))),
+        entries,
+      );
+      const valid = options.filter((m) => saved.some((s) => sameMerge(s, m)));
+      const projected = projectHindiMerges(
+        result.tokens,
+        result.analysis.occurrences,
+        result.analysis.stats,
+        valid,
+        fragmentReading,
+      );
+      return writeHindiTokens(tx, chapterId, projected.tokens, {
+        ...result.analysis,
+        stats: projected.stats,
+        occurrences: projected.occurrences,
+      });
     }
     return writeHindiTokens(tx, chapterId, tokens, analysis);
   });
+}
+
+async function mergeChapter(tx: Tx, chapterId: string, actor: Pick<User, 'id' | 'role'>) {
+  const { chapter, hash, analysis } = await lockChapter(tx, chapterId);
+  const [book] = await tx
+    .select()
+    .from(schema.texts)
+    .where(eq(schema.texts.id, chapter.textId))
+    .for('share');
+  if (!book || book.language !== 'hi' || !(await canReadText(actor, book)))
+    error(404, 'Book not found');
+  if (book.visibility === 'official' ? !isCuratorOrAdmin(actor) : actor.id !== book.ownerId)
+    error(403, 'Only the owner or Official library staff can merge this occurrence');
+  if (!analysis) error(409, 'Process the chapter before merging its words.');
+  const tokens = await tx
+    .select({
+      idx: schema.textTokens.idx,
+      surface: schema.textTokens.surface,
+      isWord: schema.textTokens.isWord,
+      isOov: schema.textTokens.isOov,
+      isAmbiguous: schema.textTokens.isAmbiguous,
+      lemmaId: schema.textTokens.lemmaId,
+      lemmaCandidates: schema.textTokens.lemmaCandidates,
+      features: schema.textTokens.features,
+    })
+    .from(schema.textTokens)
+    .where(eq(schema.textTokens.chapterId, chapterId))
+    .orderBy(schema.textTokens.idx);
+  if (tokens.map((t) => t.surface).join('') !== chapter.body)
+    error(409, 'The chapter text changed.');
+  return { chapter, hash, analysis, tokens };
+}
+
+function chapterOccurrences(tx: Tx, chapterId: string) {
+  return tx
+    .select({
+      start_idx: schema.hindiOccurrences.startIdx,
+      end_idx: schema.hindiOccurrences.endIdx,
+      source_start: schema.hindiOccurrences.sourceStart,
+      source_end: schema.hindiOccurrences.sourceEnd,
+      lemma_id: schema.hindiOccurrences.lemmaId,
+      rules: schema.hindiOccurrences.rules,
+    })
+    .from(schema.hindiOccurrences)
+    .where(eq(schema.hindiOccurrences.chapterId, chapterId));
+}
+
+async function replaceMergeOccurrences(
+  tx: Tx,
+  chapterId: string,
+  merge: MergeSelection,
+  occurrences: HindiAnalysis['occurrences'],
+) {
+  await tx
+    .delete(schema.hindiOccurrences)
+    .where(
+      and(
+        eq(schema.hindiOccurrences.chapterId, chapterId),
+        between(schema.hindiOccurrences.startIdx, merge.first, merge.last),
+      ),
+    );
+  if (occurrences.length)
+    await tx.insert(schema.hindiOccurrences).values(
+      occurrences.map((o) => ({
+        chapterId,
+        startIdx: o.start_idx,
+        endIdx: o.end_idx,
+        sourceStart: o.source_start,
+        sourceEnd: o.source_end,
+        lemmaId: o.lemma_id,
+        rules: o.rules,
+      })),
+    );
+}
+
+async function writeMergeStats(tx: Tx, chapterId: string, stats: HindiAnalysis['stats']) {
+  await tx
+    .update(schema.hindiChapterAnalyses)
+    .set({ stats, sourceWords: stats.source_words, unresolvedWords: stats.unresolved_occurrences })
+    .where(eq(schema.hindiChapterAnalyses.chapterId, chapterId));
+  await tx
+    .update(schema.textChapters)
+    .set({ tokenCount: stats.source_words })
+    .where(eq(schema.textChapters.id, chapterId));
+}
+
+export async function confirmHindiMerge(
+  chapterId: string,
+  selection: MergeSelection,
+  actor: Pick<User, 'id' | 'role'>,
+) {
+  await db.transaction(async (tx) => {
+    const { hash, analysis, tokens } = await mergeChapter(tx, chapterId, actor);
+    const saved = storedHindiMerges(analysis.stats);
+    if (saved.some((m) => sameMerge(m, selection))) return;
+    const entries = await hindiMergeEntries(tx, sql`l.id=${selection.lemmaId}`, true);
+    const options = matchHindiMerges(hindiSyllableRuns(tokens), entries);
+    const match = options.find((m) => sameMerge(m, selection));
+    if (!match || saved.some((m) => m.first <= match.last && match.first <= m.last))
+      error(409, 'This dictionary match changed. Reopen the chapter.');
+    const occurrences = await chapterOccurrences(tx, chapterId);
+    const projected = projectHindiMerges(
+      tokens.map((t) => ({
+        idx: t.idx,
+        surface: t.surface,
+        is_word: t.isWord,
+        is_oov: t.isOov,
+        original: t,
+      })),
+      occurrences,
+      {
+        ...analysis.stats,
+        source_words: analysis.sourceWords,
+        unresolved_occurrences: analysis.unresolvedWords,
+      },
+      [match],
+      (t) => t.original,
+    );
+    const merged = projected.occurrences.find((o) => o.start_idx === match.first)!;
+    await replaceMergeOccurrences(tx, chapterId, match, [merged]);
+    await tx.execute(sql`UPDATE text_tokens SET is_word=(idx=${match.first}),is_oov=false,is_ambiguous=false,
+      lemma_id=CASE WHEN idx=${match.first} THEN ${match.lemmaId}::uuid END,
+      lemma_candidates=CASE WHEN idx=${match.first}
+        THEN ${JSON.stringify([{ lemmaId: match.lemmaId, features: {}, score: 1 }])}::jsonb ELSE '[]'::jsonb END,
+      features='{}' WHERE chapter_id=${chapterId} AND idx BETWEEN ${match.first} AND ${match.last}`);
+    await writeMergeStats(tx, chapterId, { ...projected.stats, stutter_text_hash: hash });
+  });
+}
+
+export async function undoHindiMerge(
+  chapterId: string,
+  selection: MergeSelection,
+  actor: Pick<User, 'id' | 'role'>,
+) {
+  type Parse = Awaited<ReturnType<typeof nlpClient.process>>;
+  const restore = (fresh?: { body: string; parse: Parse }) =>
+    db.transaction(async (tx) => {
+      const { chapter, hash, analysis, tokens } = await mergeChapter(tx, chapterId, actor);
+      const saved = storedHindiMerges(analysis.stats);
+      const merge = saved.find((m) => sameMerge(m, selection));
+      if (!merge) {
+        if (saved.some((m) => m.first <= selection.last && selection.first <= m.last))
+          error(409, 'This merge changed. Reopen the word.');
+        return;
+      }
+      if (analysis.stats.stutter_text_hash !== hash) error(409, 'The chapter text changed.');
+      const originals = { ...mergeOriginals(analysis.stats) };
+      let original = originals[merge.first];
+      if (fresh) {
+        const { parse } = fresh;
+        const [dict] = await tx.select().from(schema.hindiDictionaryState).for('share');
+        if (
+          fresh.body !== chapter.body ||
+          !parse.hindi_analysis ||
+          parse.hindi_analysis.revision !== dict?.revision ||
+          tokens.length !== parse.tokens.length ||
+          tokens.some(
+            (t, i) => t.idx !== parse.tokens[i]?.idx || t.surface !== parse.tokens[i]?.surface,
+          )
+        )
+          error(409, 'The chapter or dictionary changed. Reopen the word and try again.');
+        const stutters = detectStutters(
+          parse.tokens,
+          parse.hindi_analysis.occurrences,
+          chapterStutters(analysis.stats),
+        );
+        original = originalForMerge(
+          merge,
+          parse.tokens.map(fragmentReading),
+          parse.hindi_analysis.occurrences,
+          stutters.map((s) => (s.status === 'auto' ? { ...s, status: 'separate' } : s)),
+        );
+      } else if (original) {
+        const ids = new Set([
+          ...original.occurrences.map((o) => o.lemma_id),
+          ...original.tokens.flatMap((t) =>
+            [t.lemmaId, ...t.lemmaCandidates.map((c) => c.lemmaId)].filter(
+              (id): id is string => !!id,
+            ),
+          ),
+        ]);
+        if (ids.size) {
+          const current = await tx
+            .select({ id: schema.lemmas.id })
+            .from(schema.lemmas)
+            .where(inArray(schema.lemmas.id, [...ids]))
+            .for('share');
+          if (current.length !== ids.size) original = undefined;
+        }
+      }
+      // Older merges have no saved fragment readings. Parse outside the chapter lock.
+      if (!original) return chapter.body;
+      const restored = new Map(original.tokens.map((t) => [t.idx, t]));
+      if (
+        restored.size !== merge.last - merge.first + 1 ||
+        original.tokens.map((t) => t.surface).join('') !== merge.surface ||
+        original.tokens.some((t) => tokens[t.idx]?.surface !== t.surface)
+      )
+        error(409, 'The source words changed. Reopen the chapter.');
+      for (const t of original.tokens) {
+        await tx
+          .update(schema.textTokens)
+          .set({
+            isWord: t.isWord,
+            isOov: t.isOov,
+            isAmbiguous: t.isAmbiguous,
+            lemmaId: t.lemmaId,
+            features: t.features,
+            lemmaCandidates: t.lemmaCandidates,
+          })
+          .where(and(eq(schema.textTokens.chapterId, chapterId), eq(schema.textTokens.idx, t.idx)));
+      }
+      await replaceMergeOccurrences(tx, chapterId, merge, original.occurrences);
+      delete originals[merge.first];
+      const words = tokens.map((t) => {
+        const reading = restored.get(t.idx) ?? t;
+        return { idx: t.idx, surface: t.surface, is_word: reading.isWord, is_oov: reading.isOov };
+      });
+      const stats = hindiMergeStats(
+        words,
+        await chapterOccurrences(tx, chapterId),
+        {
+          ...analysis.stats,
+          syllable_merge_originals: originals,
+          stutters: [...chapterStutters(analysis.stats), ...original.stutters],
+        },
+        saved.filter((m) => m !== merge),
+      );
+      await writeMergeStats(tx, chapterId, stats);
+    });
+  const body = await restore();
+  if (body !== undefined) {
+    const parse = await nlpClient.process('hi', body);
+    await restore({ body, parse });
+  }
 }
 
 export async function reviewHindiStutter(
@@ -167,18 +453,7 @@ async function writeHindiTokens(
     .where(eq(schema.phraseChapterSpans.chapterId, chapterId));
   const rows = tokens.map((t) => ({
     chapterId,
-    idx: t.idx,
-    surface: t.surface,
-    lemmaId: t.candidates[0]?.dictionary_id ?? null,
-    lemmaCandidates: t.candidates.map((c) => ({
-      lemmaId: c.dictionary_id ?? null,
-      features: c.features,
-      score: 1,
-    })),
-    features: t.candidates[0]?.features ?? {},
-    isAmbiguous: t.is_ambiguous,
-    isOov: t.is_oov,
-    isWord: t.is_word,
+    ...fragmentReading(t),
     sentenceIdx: t.sentence_idx ?? 0,
     romanization: t.romanization,
     numberForms: t.number_forms ?? null,

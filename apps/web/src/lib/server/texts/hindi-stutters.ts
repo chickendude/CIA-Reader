@@ -1,5 +1,4 @@
 import type { HindiAnalysis, NlpToken } from '../nlp-client.js';
-import type { RenderedToken } from './tokens.js';
 
 export interface HindiStutter {
   start: number;
@@ -144,51 +143,4 @@ export function applyHindiStutters<T extends NlpToken>(
     ),
     analysis: { ...analysis, stats: result.stats, occurrences: result.occurrences },
   };
-}
-
-/** Keep the final token's identity and lexical selection for the whole printed word. */
-export function joinReaderStutters(
-  tokens: RenderedToken[],
-  spans: HindiStutter[],
-): RenderedToken[] {
-  const merged = new Map(
-    spans.filter((s) => s.status === 'auto' || s.status === 'confirmed').map((s) => [s.first, s]),
-  );
-  if (!merged.size) return tokens;
-  const result: RenderedToken[] = [];
-  for (let i = 0; i < tokens.length; i++) {
-    const first = tokens[i]!;
-    const span = merged.get(first.idx);
-    if (!span) {
-      result.push(first);
-      continue;
-    }
-    const end = i + span.word - span.first;
-    const word = tokens[end];
-    const parts = tokens.slice(i, end + 1);
-    if (word?.idx !== span.word || parts.map((t) => t.surface).join('') !== span.surface) {
-      result.push(first);
-      continue;
-    }
-    const boxes = parts.flatMap((t) => (t.bbox ? [t.bbox] : []));
-    let bbox = word.bbox;
-    if (boxes.length) {
-      const x = Math.min(...boxes.map((b) => b.x)),
-        y = Math.min(...boxes.map((b) => b.y));
-      bbox = {
-        x,
-        y,
-        w: Math.max(...boxes.map((b) => b.x + b.w)) - x,
-        h: Math.max(...boxes.map((b) => b.y + b.h)) - y,
-      };
-    }
-    result.push({
-      ...word,
-      surface: span.surface,
-      bbox,
-      romanization: parts.map((t) => t.romanization ?? t.surface).join(''),
-    });
-    i = end;
-  }
-  return result;
 }

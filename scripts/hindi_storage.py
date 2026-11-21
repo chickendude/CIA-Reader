@@ -6,27 +6,28 @@ import subprocess
 from uuid import uuid4
 from psycopg.types.json import Jsonb
 from app.ocr.align import OcrPage, assign_token_boxes
-from app.schemas import BBox
+from app.schemas import BBox, LemmaCandidate
 
 
-def apply_web_stutters(body, result, previous):
+def apply_web_stutters(body, result, previous, entries=()):
     if not any(h in body for h in "-‐‑"):
         return
     analysis = result.hindi_analysis
     script = Path(__file__).resolve().parents[1] / "apps/web/scripts/hindi-stutters.mjs"
-    payload = {"body": body, "previous": previous, "stats": analysis["stats"],
-               "tokens": [t.model_dump(include={"idx", "surface", "is_word", "is_oov"})
+    payload = {"body": body, "previous": previous, "entries": entries, "stats": analysis["stats"],
+               "tokens": [t.model_dump(include={"idx", "surface", "is_word", "is_oov", "is_ambiguous", "candidates"})
                           for t in result.tokens], "occurrences": analysis["occurrences"]}
     response = subprocess.run(["node", "--experimental-strip-types", str(script)],
                               input=json.dumps(payload), text=True, stdout=subprocess.PIPE, check=True)
     applied = json.loads(response.stdout)
-    prefixes = set(applied["prefixes"])
     analysis["stats"] = applied["stats"]
-    analysis["occurrences"] = [o for o in analysis["occurrences"] if o["start_idx"] not in prefixes]
-    for i in prefixes:
-        token = result.tokens[i]
-        token.is_word = token.is_oov = token.is_ambiguous = False
-        token.candidates = []
+    analysis["occurrences"] = applied["occurrences"]
+    for change in applied["changed"]:
+        token = result.tokens[change["idx"]]
+        token.is_word = change["is_word"]
+        token.is_oov = change["is_oov"]
+        token.is_ambiguous = change["is_ambiguous"]
+        token.candidates = [LemmaCandidate(**candidate) for candidate in change["candidates"]]
 
 
 def persist_chapter(conn, chapter_id, body, result, *, preserve_phrase_spans=False):
@@ -55,7 +56,13 @@ def persist_chapter(conn, chapter_id, body, result, *, preserve_phrase_spans=Fal
         conn.execute("SELECT id FROM text_chapters WHERE id=%s FOR UPDATE", (chapter_id,))
         previous = conn.execute("SELECT stats FROM hindi_chapter_analyses WHERE chapter_id=%s",
                                 (chapter_id,)).fetchone()
-        apply_web_stutters(body, result, previous[0] if previous else {})
+        previous_stats = previous[0] if previous else {}
+        merge_ids = [m["lemmaId"] for m in previous_stats.get("syllable_merges", [])]
+        entries = [{"id": str(uid), "headword": word, "pos": pos} for uid, word, pos in
+                   conn.execute("""SELECT l.id,l.headword,l.pos FROM lemmas l JOIN hindi_entries e ON e.lemma_id=l.id
+                     WHERE l.id=ANY(%s::uuid[]) AND NOT coalesce(e.entry->'excluded_forms','[]') ? l.headword""",
+                                (merge_ids,))] if merge_ids else []
+        apply_web_stutters(body, result, previous_stats, entries)
         if preserve_phrase_spans and not analysis["stats"].get("stutters") and not (
             previous and previous[0].get("stutters")
         ):

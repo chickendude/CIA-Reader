@@ -2,7 +2,6 @@
   import Button from '$lib/components/input/Button.svelte';
   import TextField from '$lib/components/input/TextField.svelte';
   import { ankiConnect, rememberAnkiConnection } from '$lib/anki-connect';
-  import { untrack } from 'svelte';
   import type { PageProps } from './$types';
 
   let { data }: PageProps = $props();
@@ -16,12 +15,8 @@
     samples: string[];
   };
 
-  // Initial deck name only — the field is then user-editable. `data` only
-  // changes on navigation (which remounts the page), so capturing the initial
-  // value is intentional.
-  let deckName = $state(
-    untrack(() => (data.mode === 'export' ? data.deckName : 'CIA Reader')),
-  );
+  const defaultDeckName = $derived(data.mode === 'export' ? data.deckName : 'CIA Reader');
+  let deckName = $derived(defaultDeckName);
   let sending = $state(false);
   let sendMsg = $state<string | null>(null);
   let sendErr = $state<string | null>(null);
@@ -71,7 +66,7 @@
 
   const downloadHref = $derived(
     data.mode === 'export'
-      ? `/api/v1/me/anki/export?textId=${encodeURIComponent(data.textId)}&deck=${encodeURIComponent(deckName)}`
+      ? `/api/v1/me/anki/export?textId=${encodeURIComponent(data.textId)}&deck=${encodeURIComponent(deckName)}${data.includeStudied ? '&includeStudied=1' : ''}`
       : '#',
   );
 </script>
@@ -83,7 +78,7 @@
   <a href="/words/anki/import">Import vocabulary from Anki Desktop</a>
 
   {#if data.mode === 'pick'}
-    <p class="muted">Pick a book to export the words you're learning from it.</p>
+    <p class="muted">Choose a book to export its vocabulary.</p>
     {#if data.texts.length === 0}
       <p class="muted">You haven't uploaded any texts yet.</p>
     {:else}
@@ -99,11 +94,16 @@
       </ul>
     {/if}
   {:else}
-    <p class="muted">
-      Learning words from <strong>{data.title}</strong> — {data.cards.length} card{data
-        .cards.length === 1
-        ? ''
-        : 's'}, most frequent first.
+    <form method="GET" data-sveltekit-keepfocus data-sveltekit-noscroll
+      onsubmit={() => { sendMsg = null; sendErr = null; }}>
+      <input type="hidden" name="textId" value={data.textId} />
+      <Button type="submit" variant="toggle" name="includeStudied" value={data.includeStudied ? '0' : '1'}
+        aria-pressed={data.includeStudied} disabled={sending}>Include known and learning words</Button>
+    </form>
+
+    <p class="muted" aria-live="polite">
+      <strong>{data.title}</strong> has {data.cards.length} {data.cards.length === 1 ? 'card' : 'cards'}
+      to export, most frequent first.
     </p>
 
     <label class="deck">
@@ -133,12 +133,11 @@
 
     {#if data.cards.length === 0}
       <p class="muted">
-        No learning words from this book yet. Mark words as Learning while reading, then
-        come back.
+        {data.includeStudied ? 'No words are available to export from this book.' : 'No unseen words are available to export from this book.'}
       </p>
     {:else}
       <ul class="cards">
-        {#each data.cards as c (c.word + c.pos)}
+        {#each data.cards as c (c.id)}
           <li class="card">
             <div class="card-head">
               <span class="word">{c.word}</span>

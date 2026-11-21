@@ -1,5 +1,5 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, waitFor } from '@testing-library/svelte';
+import { cleanup, render, screen, waitFor } from '@testing-library/svelte';
 
 import WordPopup from './WordPopup.svelte';
 import type { ServerToken, ServerNumberForms } from './types.js';
@@ -123,7 +123,7 @@ describe('WordPopup number-only token block', () => {
     expect(document.body.querySelector('.sp-status')).toBeNull();
     expect(document.body.querySelector('.translations')).toBeNull();
     expect(document.body.querySelector('.add-toggle')).toBeNull();
-    expect(document.body.querySelector('.fix-toggle')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Fix this word' })).toBeNull();
   });
 
   it('renders the existing lemma popup when numberForms is null', () => {
@@ -238,7 +238,7 @@ describe('WordPopup number-only token block', () => {
     expect(document.body.querySelector('.sp-row')).toBeNull();
     expect(document.body.querySelector('.sp-status')).toBeNull();
     expect(document.body.querySelector('.translations')).toBeNull();
-    expect(document.body.querySelector('.fix-toggle')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Fix this word' })).toBeNull();
   });
 });
 

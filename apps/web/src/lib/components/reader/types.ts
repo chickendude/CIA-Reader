@@ -1,3 +1,4 @@
+import type { HindiMerge } from '$lib/dictionary/hindi-merge';
 /** One alternate-meaning entry the popup expands when
  *  isAmbiguous=true. The reader pulls these from the
  *  worker's `lemma_candidates` jsonb column and joins them against
@@ -77,6 +78,11 @@ export type ServerNumberForms = {
  *  component renders these spans directly; when null, it falls back
  *  to client-side whitespace tokenization. */
 export type ServerToken = {
+  mergeOptions?: HindiMerge[];
+  confirmedMerge?: HindiMerge;
+  /** Exclusive source-token end for each multiword dictionary reading starting here. */
+  dictionarySpanEnds?: Record<string, number>;
+  lastTokenIdx?: number;
   bookFrequency?: number;
   correctedByViewer?: boolean;
   canVerifyContext?: boolean;

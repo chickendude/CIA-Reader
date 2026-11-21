@@ -5,6 +5,7 @@
  * per-text and per-collection comprehension breakdowns.
  */
 import { error, redirect } from '@sveltejs/kit';
+import { isCuratorOrAdmin } from '$lib/server/dictionary/permissions.js';
 
 import {
   STATS_DEFAULT_PAGE_SIZE,
@@ -53,6 +54,7 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
 
   return {
     language,
+    isStaff: isCuratorOrAdmin(locals.user),
     languageDescriptor: {
       code: LANGUAGES[language].code,
       displayName: LANGUAGES[language].displayName,

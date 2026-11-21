@@ -161,6 +161,11 @@ describe.skipIf(!url)('HindiDB PostgreSQL integration (always rolls back)', () =
           });
           expect(await attention()).toMatchObject({ total: 1, attentionCounts: { needs_review: 1 } });
           await tx.update(schema.textChapters).set({ body: chapter!.body }).where(eq(schema.textChapters.id, chapter!.id));
+          const { getAnkiCards } = await import('./anki.js');
+          const exportIds = async (includeStudied = false) =>
+            (await getAnkiCards(user!.id, { textId: text!.id, includeStudied })).cards.map(card => card.id);
+          expect(await exportIds()).toEqual([]);
+          expect(await exportIds(true)).toEqual([entries[1]!.id]);
           const [stats] = await listTextStats(user!.id, 'hi');
           expect(stats).toMatchObject({
             totalWords: 2,
@@ -178,10 +183,18 @@ describe.skipIf(!url)('HindiDB PostgreSQL integration (always rolls back)', () =
             learningCoveragePct: 50,
           });
           expect(await lemmaBookFrequency(text!.id, entries[1]!.id)).toEqual({ book: 1, text: 1 });
+          await tx.delete(schema.userKnownLemmas).where(eq(schema.userKnownLemmas.lemmaId, entries[1]!.id));
+          expect(await exportIds()).toEqual([entries[1]!.id]);
+          await tx.insert(schema.userKnownLemmas).values({
+            userId: user!.id, lemmaId: entries[1]!.id, status: 'ignored',
+          });
+          expect(await exportIds(true)).toEqual([]);
           await tx
             .update(schema.userKnownLemmas)
             .set({ status: 'known' })
             .where(eq(schema.userKnownLemmas.userId, user!.id));
+          expect(await exportIds()).toEqual([]);
+          expect(await exportIds(true)).toEqual([entries[1]!.id]);
           expect((await listTextStats(user!.id, 'hi'))[0]!.estimatedComprehensionPct).toBe(50);
           await tx
             .update(schema.lemmas)
@@ -214,7 +227,6 @@ describe.skipIf(!url)('HindiDB PostgreSQL integration (always rolls back)', () =
           // Catalog visibility never grants access to the full source text.
           const { canReadText, canReadChapter } = await import('./auth/can-read.js');
           const { getOfficialBook, getOfficialBookCards, importOfficialBook } = await import('./texts/official.js');
-          const { getAnkiCards } = await import('./anki.js');
           const [official] = await tx.update(schema.texts).set({ visibility: 'official', staffOnly: true, status: 'ready' })
             .where(eq(schema.texts.id, text!.id)).returning();
           expect(await canReadText(null, official!)).toBe(false);
@@ -388,6 +400,72 @@ describe.skipIf(!url)('HindiDB PostgreSQL integration (always rolls back)', () =
       await client.end();
     }
   });
+  it('compares ambiguous Hindi words and compound spans against a book with ordinary token counts', async () => {
+    if (!url || !['localhost', '127.0.0.1', '[::1]'].includes(new URL(url).hostname)) {
+      throw new Error('Use a local test database');
+    }
+    const client = postgres(url, { max: 1 });
+    const rollback = new Error('rollback book comparison fixture');
+    try {
+      await expect(drizzle(client, { schema }).transaction(async tx => {
+        state.db = tx as unknown as DB;
+        const { compareBooks } = await import('./texts/book-comparison.js');
+        const [source, target] = await tx.insert(schema.texts).values(['Source', 'Target'].map(title => ({
+          title, language: 'hi' as const, visibility: 'official' as const, status: 'ready' as const,
+          sourceType: 'paste' as const,
+        }))).returning();
+        const [chapter, other] = await tx.insert(schema.textChapters).values([
+          { textId: source!.id, idx: 0, body: 'एक दो तीन' },
+          { textId: target!.id, idx: 0, body: 'एक' },
+        ]).returning();
+        const [first, second, compound] = await tx.insert(schema.lemmas).values([0, 1, 2].map(() => ({
+          headword: randomUUID(), language: 'hi' as const, source: 'curator' as const, script: 'Deva', pos: 'NOUN',
+        }))).returning();
+        await tx.insert(schema.textTokens).values([
+          ...['एक', ' ', 'दो', ' ', 'तीन'].map((surface, idx) => ({
+            chapterId: chapter!.id, idx, surface, isWord: surface !== ' ',
+          })),
+          { chapterId: other!.id, idx: 0, surface: 'एक', lemmaId: compound!.id, isWord: true },
+        ]);
+        await tx.insert(schema.hindiChapterAnalyses).values({
+          chapterId: chapter!.id, revision: 1, parserVersion: 'test', sourceWords: 3, unresolvedWords: 1, stats: {},
+        });
+        await tx.insert(schema.hindiOccurrences).values([
+          ...[first!, second!].map(lemma => ({ chapterId: chapter!.id, startIdx: 0, endIdx: 1,
+            sourceStart: 0, sourceEnd: 2, lemmaId: lemma.id, rules: [] })),
+          { chapterId: chapter!.id, startIdx: 0, endIdx: 3, sourceStart: 0, sourceEnd: 5, lemmaId: compound!.id, rules: [] },
+        ]);
+        await tx.execute(sql`SET CONSTRAINTS ALL IMMEDIATE`);
+        // The first word splits its weight between two readings. The second is matched only by the phrase.
+        expect(await compareBooks(target!, source!.id, 33, 100)).toMatchObject({ kind: 'estimate', coverage: 100 });
+        const limit = await compareBooks(target!, source!.id, 67, 100);
+        expect(limit.kind).toBe('source-limit');
+        if (limit.kind === 'source-limit') expect(limit.maximum).toBeCloseTo(200 / 3);
+        const { officialDeckRows, studyBands } = await import('./texts/study-deck.js');
+        const { studyDeckPlan } = await import('$lib/library/study-deck.js');
+        const { getOfficialBookCards } = await import('./texts/official.js');
+        const settings = { target: 50, ignoreProper: false, ignoreLoans: false };
+        const rows = await officialDeckRows(source!);
+        expect(studyDeckPlan(studyBands(rows), { ...settings, scope: 'target' }))
+          .toEqual({ count: 2, total: 3, covered: 1.5, reached: true });
+        const cards = await getOfficialBookCards(source!.id, randomUUID(), 'target', settings);
+        expect(cards.map(c => c.id)).toEqual(rows.filter(r => r.id).slice(0, 2).map(r => r.id));
+        expect(cards.map(c => c.frequency)).toEqual([1, 1]);
+        const choice = { chapterId: chapter!.id, sourceOccurrenceId: 'word', sourceStart: 0, sourceEnd: 2,
+          selectedLemmaIds: [second!.id], candidateLemmaIds: [first!.id, second!.id], origin: 'human', status: 'confirmed' };
+        await tx.insert(schema.hindiContextChoices).values({ ...choice, metadata: { chapter_hash: createHash('md5').update(chapter!.body).digest('hex') } });
+        // As a target, the source book has two matched words and one parser gap.
+        expect(await compareBooks(source!, target!.id, 100, 60)).toMatchObject({ coverage: expect.closeTo(100 / 3), additionalWords: 1 });
+        await tx.update(schema.hindiContextChoices).set({ metadata: { chapter_hash: 'stale' } })
+          .where(eq(schema.hindiContextChoices.chapterId, chapter!.id));
+        expect(await compareBooks(source!, target!.id, 100, 60)).toMatchObject({ coverage: expect.closeTo(100 / 3), additionalWords: 2 });
+        throw rollback;
+      })).rejects.toBe(rollback);
+    } finally {
+      await client.end();
+    }
+  });
+
   it('prefers the Parhiba ID and imports every exact Hindi headword match as a fallback', async () => {
     if (!url || !['localhost', '127.0.0.1', '[::1]'].includes(new URL(url).hostname)) {
       throw new Error('Use a local test database');

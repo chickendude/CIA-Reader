@@ -44,11 +44,13 @@
     class={cssClass}
     data-token-id={token.id}
     data-token-idx={token.idx}
+    data-token-last={token.lastTokenIdx}
     data-lemma-id={token.lemmaId ?? ''}
     data-s={dataS}>{token.surface}<rt>{token.romanization}</rt></ruby>{:else}<span
     class={cssClass}
     data-token-id={token.id}
     data-token-idx={token.idx}
+    data-token-last={token.lastTokenIdx}
     data-lemma-id={token.lemmaId ?? ''}
     data-s={dataS}>{token.surface}</span>{/if}
 

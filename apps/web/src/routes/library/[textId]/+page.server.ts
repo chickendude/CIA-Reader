@@ -26,8 +26,8 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
   const known = readPercent(url.searchParams.get('known'));
   const goal = readPercent(url.searchParams.get('goal'));
   const [result, deckBands] = await Promise.all([
-    source ? compareBooks(book, source.id, known, goal) : null,
-    officialDeckRows(book.id, locals.user?.id).then(studyBands),
+    source && url.searchParams.has('from') ? compareBooks(book, source.id, known, goal) : null,
+    officialDeckRows(book, locals.user?.id).then(studyBands),
   ]);
   return { book, isStaff: isCuratorOrAdmin(locals.user), isAuthenticated: Boolean(locals.user),
     deckBands, comparison: { books, source, known, goal, result } };

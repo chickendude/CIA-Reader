@@ -303,6 +303,11 @@
       writePersistedImmersive(false);
     };
     window.addEventListener('keydown', onKey);
+    const refreshMerge = async () => {
+      await invalidateAll();
+      continuousRevision++;
+    };
+    window.addEventListener('reader-words-merged', refreshMerge);
 
     // Status polling — owners only.
     let cleanupPoll: (() => void) | null = null;
@@ -343,6 +348,7 @@
 
     return () => {
       cleanupPoll?.();
+      window.removeEventListener('reader-words-merged', refreshMerge);
       window.removeEventListener('keydown', onKey);
       topRO?.disconnect();
       document.documentElement.style.removeProperty('--reader-top-h');

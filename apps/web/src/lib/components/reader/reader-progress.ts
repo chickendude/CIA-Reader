@@ -352,7 +352,7 @@ export function pageBoundaryAnchor(args: {
   return { chapterIdx: currentAnchor.chapterIdx, tokenIdx: currentAnchor.tokenIdx, completed: false };
 }
 
-export function firstTokenPage<T extends { idx: number; isWord: boolean }>(
+export function firstTokenPage<T extends { idx: number; isWord: boolean; lastTokenIdx?: number }>(
   pages: T[][][] | null,
   tokenIdx: number,
 ): number {
@@ -361,7 +361,8 @@ export function firstTokenPage<T extends { idx: number; isWord: boolean }>(
   for (let i = 0; i < pages.length; i += 1) {
     const words = pages[i]!.flat().filter((t) => t.isWord);
     if (words.length === 0) continue;
-    const last = words[words.length - 1]!.idx;
+    const lastWord = words[words.length - 1]!;
+    const last = lastWord.lastTokenIdx ?? lastWord.idx;
     if (target <= last) return i;
   }
   return pages.length - 1;
@@ -374,7 +375,9 @@ export function findTokenElementAtOrAfter(root: ParentNode, tokenIdx: number): H
     const raw = el.dataset.tokenIdx;
     if (raw == null) continue;
     const idx = Number.parseInt(raw, 10);
-    if (!Number.isFinite(idx) || idx < target) continue;
+    if (!Number.isFinite(idx)) continue;
+    if (idx < target && Number(el.dataset.tokenLast) >= target) return el;
+    if (idx < target) continue;
     if (!best || idx < best.idx) best = { el, idx };
   }
   return best?.el ?? null;

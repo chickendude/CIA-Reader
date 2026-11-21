@@ -3,6 +3,7 @@
   import Button from '$lib/components/input/Button.svelte';
   import ReaderDictionaryEditor from './ReaderDictionaryEditor.svelte';
   import type { WorkshopWord } from '$lib/dictionary/workshop';
+  import HindiMergeButtons from './HindiMergeButtons.svelte';
   import Sheet from '../overlay/Sheet.svelte';
   import CorrectionModal from './CorrectionModal.svelte';
   import FeaturePill from './FeaturePill.svelte';
@@ -154,6 +155,11 @@
     if (editor && editor.tokenId !== selectedTokenId) editor = null;
     if (savedTokenId !== selectedTokenId) savedTokenId = undefined;
   });
+  function mergeSaved() {
+    window.dispatchEvent(new Event('reader-words-merged'));
+    onClose();
+  }
+
   function dictionarySaved(word: WorkshopWord) {
     const { id, lemma, meaning, pos } = word.draft;
     if (!id) return;
@@ -1829,6 +1835,11 @@
       {/if}
     </header>
 
+    {#if token.chapterId && token.mergeOptions?.length && !pendingSelection}
+      {#key token.id}
+        <HindiMergeButtons chapterId={token.chapterId} options={token.mergeOptions} onSaved={mergeSaved} />
+      {/key}
+    {/if}
     {#if dictionaryEditor && token.isWord && !isNumberToken && !pendingSelection}
       <Button aria-haspopup="dialog" disabled={loadingLookup} onclick={() => {
         if (token) editor = {
@@ -2288,18 +2299,6 @@
       </section>
     {/if}
 
-    <!-- Readers can correct a word even when the parser gave it only one possible meaning. -->
-    {#if isOwner}
-      <button
-        type="button"
-        class="fix-toggle"
-        onclick={() => (showCorrectionModal = true)}
-        title="Search the dictionary or mark this surface"
-      >
-        Fix this word
-      </button>
-    {/if}
-
     {#if isDesktop && language === 'hi' && token.candidates.length > 0}
       <button class="alt-toggle" type="button" aria-expanded={showAlternates}
         onclick={() => showAlternates = !showAlternates}>Other dictionary entries ({token.candidates.length})</button>
@@ -2346,6 +2345,19 @@
           <p class="err small" role="alert">{pickError}</p>
         {/if}
       {/if}
+    {/if}
+    {#if isOwner || (token.confirmedMerge && !pendingSelection)}
+      <div class="sp-correction-actions">
+        {#if isOwner}
+          <Button aria-haspopup="dialog" onclick={() => (showCorrectionModal = true)}
+            title="Search the dictionary or mark this surface">Fix this word</Button>
+        {/if}
+        {#if token.chapterId && token.confirmedMerge && !pendingSelection}
+          {#key token.id}
+            <HindiMergeButtons chapterId={token.chapterId} confirmed={token.confirmedMerge} onSaved={mergeSaved} />
+          {/key}
+        {/if}
+      </div>
     {/if}
     {/if}
     </div>
@@ -2545,13 +2557,15 @@
   .sp-word:has(.sp-entry-name) { flex-wrap: wrap; }
   .sp-entry-name {
     display: inline-flex;
+    flex-wrap: wrap;
     align-items: baseline;
-    gap: 0.45rem;
+    gap: 0.15rem 0.45rem;
     max-width: 100%;
     min-width: 0;
   }
   .sp-headword-field {
     display: inline-grid;
+    grid-template-columns: minmax(0, 1fr);
     min-width: 1ch;
     max-width: 100%;
   }
@@ -3342,20 +3356,12 @@
     align-items: baseline;
     gap: 0.3rem;
   }
-  .fix-toggle {
+  .sp-correction-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
     margin-top: 0.85rem;
-    margin-right: 0.4rem;
-    background: transparent;
-    border: 1px solid var(--rule, var(--color-border));
-    border-radius: 999px;
-    padding: 0.4rem 0.85rem;
-    font: inherit;
-    font-size: 0.78rem;
-    color: var(--ink-2, var(--color-fg));
-    cursor: pointer;
-  }
-  .fix-toggle:hover {
-    background: color-mix(in oklch, var(--ink, var(--color-fg)) 5%, transparent);
   }
   .alt-toggle {
     margin-top: 0.85rem;
