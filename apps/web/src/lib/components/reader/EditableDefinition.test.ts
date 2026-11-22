@@ -20,10 +20,14 @@ it('lets staff click, edit, and save one canonical semicolon-separated definitio
   });
   await fireEvent.click(getByRole('button', { name: 'Edit definition' }));
   await waitFor(() => expect(document.activeElement).toBe(getByRole('textbox')));
-  expect(queryByRole('button', { name: 'Save' })).toBeNull();
+  const field = getByRole('textbox') as HTMLTextAreaElement;
+  expect(field.value).toBe('who, which\nwhoever');
+  expect(await fireEvent.keyDown(field, { key: 'Enter', shiftKey: true })).toBe(true);
+  expect(fetchMock).not.toHaveBeenCalled();
+  expect(queryByRole('button', { name: 'Save definition' })).toBeNull();
   expect(queryByRole('button', { name: 'Cancel' })).toBeNull();
   await fireEvent.input(getByRole('textbox', { name: 'Edit definition' }), {
-    target: { value: 'who, which; whoever, whichever, whatever' },
+    target: { value: ' who, which\n\nwhoever, whichever, whatever ' },
   });
   await fireEvent.keyDown(getByRole('textbox'), { key: 'Enter' });
   await waitFor(() =>
@@ -35,7 +39,7 @@ it('lets staff click, edit, and save one canonical semicolon-separated definitio
 });
 
 it('keeps definitions read-only for normal users', () => {
-  const { queryByRole, getByText } = render(EditableDefinition, {
+  const { queryByRole, getAllByRole } = render(EditableDefinition, {
     text: 'who, which; whoever',
     translationId: 'definition',
     lemmaId: 'pronoun',
@@ -43,8 +47,7 @@ it('keeps definitions read-only for normal users', () => {
   });
   expect(queryByRole('button')).toBeNull();
   expect(queryByRole('textbox')).toBeNull();
-  expect(getByText('who, which; whoever')).toBeTruthy();
-  expect(queryByRole('list')).toBeNull();
+  expect(getAllByRole('listitem').map((item) => item.textContent)).toEqual(['who, which', 'whoever']);
 });
 
 it('keeps the editor and entered text when the server rejects permission', async () => {
@@ -78,6 +81,48 @@ it('saves on blur and cancels on Escape without writing', async () => {
   await fireEvent.input(getByRole('textbox'), { target: { value: 'first; second' } });
   await fireEvent.blur(getByRole('textbox'));
   await waitFor(() => expect(queryByRole('textbox')).toBeNull());
-  expect(getByText('first; second')).toBeTruthy();
+  expect(getByText('first')).toBeTruthy();
+  expect(getByText('second')).toBeTruthy();
   expect(fetchMock).toHaveBeenCalledTimes(1);
+});
+
+it('adds a meaning with Enter in the bottom sheet and saves once with the check mark', async () => {
+  const request = vi.fn().mockResolvedValue(new Response('{}'));
+  vi.stubGlobal('fetch', request);
+  const view = render(EditableDefinition, {
+    text: 'first', translationId: 'definition', lemmaId: 'noun', canEdit: true, sheet: true,
+  });
+  await fireEvent.click(view.getByRole('button', { name: 'Edit definition' }));
+  const field = view.getByRole('textbox');
+  expect(await fireEvent.keyDown(field, { key: 'Enter' })).toBe(true);
+  await fireEvent.input(field, { target: { value: 'first\nsecond' } });
+  await fireEvent.blur(field);
+  expect(request).not.toHaveBeenCalled();
+  await fireEvent.click(view.getByRole('button', { name: 'Save definition' }));
+  await waitFor(() => expect(view.queryByRole('textbox')).toBeNull());
+  expect(request).toHaveBeenCalledTimes(1);
+  expect(JSON.parse(request.mock.calls[0]![1].body).body).toBe('first; second');
+  expect(view.getAllByRole('listitem').map((item) => item.textContent)).toEqual(['first', 'second']);
+});
+
+it('discards a sheet edit with the X and saves a subsequent edit on an outside click', async () => {
+  const request = vi.fn().mockResolvedValue(new Response('{}'));
+  vi.stubGlobal('fetch', request);
+  const view = render(EditableDefinition, {
+    text: 'original', translationId: 'definition', lemmaId: 'noun', canEdit: true, sheet: true,
+  });
+  const edit = () => fireEvent.click(view.getByRole('button', { name: 'Edit definition' }));
+  await edit();
+  await fireEvent.input(view.getByRole('textbox'), { target: { value: 'discard' } });
+  await fireEvent.click(view.getByRole('button', { name: 'Cancel definition changes' }));
+  expect(view.queryByRole('textbox')).toBeNull();
+  expect(view.getByText('original')).toBeTruthy();
+  expect(request).not.toHaveBeenCalled();
+
+  await edit();
+  await fireEvent.input(view.getByRole('textbox'), { target: { value: 'first\nsecond' } });
+  await fireEvent.click(document.body);
+  await waitFor(() => expect(view.queryByRole('textbox')).toBeNull());
+  expect(request).toHaveBeenCalledTimes(1);
+  expect(JSON.parse(request.mock.calls[0]![1].body).body).toBe('first; second');
 });

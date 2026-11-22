@@ -6,6 +6,7 @@
   import { looksLikeNumberToken, withLemmaCorrection } from './types.js';
   import { seekAudioForToken } from './audio-bus.js';
   import TokenSpan from './TokenSpan.svelte';
+  import { wordReturnOutline } from './word-return-outline';
   import { isIgnoredHere, readerOccurrenceIgnores } from './ignored-occurrences';
   import WordPopup from './WordPopup.svelte';
   import WordTooltip from './WordTooltip.svelte';
@@ -564,6 +565,7 @@
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
   dir={textDirection}
+  use:wordReturnOutline={activeToken?.id}
   onmousedown={onChapterMousedown}
   onclick={onChapterClick}
   onpointerdown={(event) => { longPressOpened = false; preview.rememberPointer(event); }}

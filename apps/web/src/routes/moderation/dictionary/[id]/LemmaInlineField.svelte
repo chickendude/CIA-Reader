@@ -1,19 +1,5 @@
-<!--
-  Click-to-edit field for the lemma identity strip.
-
-  The element is ALWAYS an `<input>` or `<textarea>` — there's no
-  swap into a `<button>` for the read state. Visual state is driven
-  purely by CSS `:focus` / `:hover` so dimensions are guaranteed
-  identical: clicking can't reflow because the same element handles
-  both states. Auto-width on single-line inputs comes from
-  `field-sizing: content`; the multiline textarea uses normal
-  `flex: 1` so the gloss fills the rest of the inline lemma row.
-
-  Each field POSTs `{field, value}` to `?/patchLemmaField` on commit
-  via SvelteKit's `enhance`, so a single character change doesn't
-  resubmit the whole lemma row.
--->
 <script lang="ts">
+  import MeaningInput from '$lib/components/input/MeaningInput.svelte';
   import { enhance } from '$app/forms';
 
   interface Props {
@@ -56,14 +42,14 @@
   // svelte-ignore state_referenced_locally
   let draft = $state(value);
   let formEl = $state<HTMLFormElement | null>(null);
-  let inputEl = $state<HTMLInputElement | HTMLTextAreaElement | null>(null);
+  let inputEl = $state<HTMLInputElement | null>(null);
 
   // Re-sync draft from the server-side prop whenever it changes AND
   // the user isn't currently focused inside this input. Prevents
   // overwriting the user's in-progress typing when the parent
   // re-renders for unrelated reasons.
   $effect(() => {
-    if (inputEl && document.activeElement === inputEl) return;
+    if (formEl?.contains(document.activeElement)) return;
     draft = value;
   });
 
@@ -83,14 +69,6 @@
       cancel();
       return;
     }
-    if (multiline) {
-      // Plain Enter inserts a newline; ⌘/Ctrl+Enter commits.
-      if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
-        e.preventDefault();
-        inputEl?.blur();
-      }
-      return;
-    }
     if (e.key === 'Enter') {
       e.preventDefault();
       inputEl?.blur();
@@ -108,20 +86,9 @@
 >
   <input type="hidden" name="field" value={field} />
   {#if multiline}
-    <textarea
-      bind:this={inputEl}
-      bind:value={draft}
-      name="value"
-      rows="1"
-      {placeholder}
-      onblur={commit}
-      onkeydown={onKey}
-      class="lif-input lif-multi {extraClass}"
-      class:lif-script={script}
-      class:lif-empty={draft.length === 0}
-      {lang}
-      title="Click to edit"
-    ></textarea>
+    <MeaningInput bind:value={draft} label="Gloss" name="value" {placeholder} maxlength={500}
+      onsave={() => formEl?.querySelector('textarea')?.blur()} onblur={commit}
+      oncancel={() => { draft = value; formEl?.querySelector('textarea')?.blur(); }} />
   {:else}
     <input
       bind:this={inputEl}
@@ -210,19 +177,6 @@
   .lif-input:placeholder-shown {
     font-style: italic;
     color: color-mix(in srgb, currentColor 65%, transparent);
-  }
-  /* Multiline textarea fills the available width inside the form;
-     the form itself fills the row when it carries `mli-gloss`.
-     Extra vertical breathing room on the gloss specifically — its
-     wrapped lines need space to not feel cramped (single-line
-     inputs don't need it). */
-  textarea.lif-multi {
-    flex: 1 1 auto;
-    width: 100%;
-    padding: 0.3em 0.4em;
-    resize: none;
-    overflow: hidden;
-    white-space: pre-wrap;
   }
   .lif-script {
     font-family: var(--font-script, var(--font-serif, serif));

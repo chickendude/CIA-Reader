@@ -1,4 +1,5 @@
 <script lang="ts">
+  import MeaningInput from '$lib/components/input/MeaningInput.svelte';
   import { numberedMeanings } from '$lib/dictionary/meanings';
   import { untrack } from 'svelte';
   import { workshop as send } from '$lib/dictionary/workshop-client';
@@ -20,6 +21,7 @@
     observed,
     context,
     review,
+    sheet = false,
     onsaved,
     onopen,
     ondeleted,
@@ -31,10 +33,12 @@
     observed: string;
     context?: ReviewItem['samples'][number]['context'];
     review: boolean;
+    sheet?: boolean;
     onsaved: (w: Word, advance?: boolean) => void;
     onopen: (id: string | null, lemma: string, pos: string, attach?: string) => void;
     ondeleted?: () => void;
   } = $props();
+  const meaningId = $props.id();
   const profile = $derived(dictionaryProfile(language));
   const languageName = $derived(getLanguage(language).displayName);
   const partsOfSpeech = $derived(Object.hasOwn(profile.partsOfSpeech, draft.pos)
@@ -157,6 +161,14 @@
       onsaved(w, advance);
     });
   }
+  function saveMeaning() {
+    if (draft.lemma.trim()) void save();
+  }
+
+  function saveChangedMeaning() {
+    if (draft.meaning !== word.draft.meaning) saveMeaning();
+  }
+
   function keyboard(e: KeyboardEvent) {
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
       e.preventDefault();
@@ -324,13 +336,12 @@
         >
       </div>
     </div>{/if}
-  <label class="meaning"
-    >English meaning<textarea
-      rows="3"
-      bind:value={draft.meaning}
-      placeholder="synonym, synonym; another meaning"
-    ></textarea></label
-  >
+  <div class="meaning">
+    <label for={meaningId}>English meaning</label>
+    <MeaningInput id={meaningId} bind:value={draft.meaning} label="English meaning" {sheet}
+      oncancel={sheet ? () => { draft.meaning = word.draft.meaning; } : undefined}
+      onsave={saveMeaning} onblur={sheet ? saveChangedMeaning : undefined} />
+  </div>
   <fieldset id="inflection">
     <legend>Inflection pattern</legend>
     <nav>
@@ -482,6 +493,8 @@
     accent-color: var(--accent);
   }
   .meaning {
+    display: grid;
+    gap: 0.3rem;
     margin: 1rem 0;
   }
   .editor fieldset {

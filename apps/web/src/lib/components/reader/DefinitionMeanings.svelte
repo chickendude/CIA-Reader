@@ -5,7 +5,7 @@
   const meanings = $derived(splitMeanings(text));
 </script>
 
-<ol class="definition-meanings" aria-label="Meanings">
+<ol class="definition-meanings">
   {#each meanings as meaning}
     <li>{meaning}</li>
   {/each}
@@ -16,6 +16,7 @@
     margin: 0;
     padding-inline-start: 1.4em;
     list-style: decimal;
+    overflow-wrap: anywhere;
   }
   li + li {
     margin-top: 0.3em;

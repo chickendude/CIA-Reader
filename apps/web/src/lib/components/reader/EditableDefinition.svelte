@@ -1,17 +1,22 @@
 <script lang="ts">
-  import { tick, untrack } from 'svelte';
+  import { serializeMeanings } from '$lib/dictionary/meanings';
+  import { untrack } from 'svelte';
+  import MeaningInput from '$lib/components/input/MeaningInput.svelte';
+  import DefinitionMeanings from './DefinitionMeanings.svelte';
 
   let {
     text,
     translationId,
     lemmaId,
     canEdit = false,
+    sheet = false,
     onSave,
   }: {
     text: string;
     translationId: string;
     lemmaId: string;
     canEdit?: boolean;
+    sheet?: boolean;
     onSave?: (body: string) => void;
   } = $props();
   let body = $state(untrack(() => text));
@@ -23,24 +28,16 @@
     body = text;
     editing = false;
   });
-  let textarea: HTMLTextAreaElement | null = $state(null);
-  async function edit() {
+  function edit() {
     if (editing || saving) return;
     draft = body;
     error = null;
     editing = true;
-    await tick();
-    textarea?.focus();
-    textarea?.setSelectionRange(textarea.value.length, textarea.value.length);
   }
   function cancel() { editing = false; error = null; }
   async function save() {
     if (!editing || saving) return;
-    const value = draft
-      .split(';')
-      .map((part) => part.trim())
-      .filter(Boolean)
-      .join('; ');
+    const value = serializeMeanings(draft);
     if (!value) {
       error = 'Enter at least one meaning.';
       return;
@@ -75,48 +72,26 @@
 </script>
 
 <div class="definition-editor">
-  {#if canEdit}
-    <div class="editor-box">
-      <div class="editable" class:concealed={editing} role="button" tabindex="0"
-        aria-label="Edit definition" title="Click to edit definition"
-        onclick={() => void edit()}
-        onkeydown={(event) => {
-          if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); void edit(); }
-        }}>{body}</div>
-      {#if editing}
-        <textarea bind:this={textarea} bind:value={draft} aria-label="Edit definition"
-          readonly={saving} onblur={() => void save()}
-          onkeydown={(event) => {
-            if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); cancel(); }
-            else if (event.key === 'Enter') { event.preventDefault(); event.stopPropagation(); void save(); }
-          }}></textarea>
-      {/if}
+  {#if editing}
+    <MeaningInput bind:value={draft} label="Edit definition" {sheet} focusOnMount
+      disabled={saving} onsave={save} onblur={save} oncancel={cancel} />
+  {:else if canEdit}
+    <div class="editable" role="button" tabindex="0" aria-label="Edit definition"
+      title="Click to edit definition" onclick={edit}
+      onkeydown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); edit(); }
+      }}>
+      <DefinitionMeanings text={body} />
     </div>
-  {:else}<div class="definition-text">{body}</div>{/if}
+  {:else}
+    <DefinitionMeanings text={body} />
+  {/if}
   {#if error}<p class="error" role="alert">{error}</p>{/if}
 </div>
 
 <style>
-  .definition-editor { width: 100%; }
-  .editor-box { position: relative; }
-  .editable, textarea {
-    box-sizing: border-box;
-    width: 100%;
-    min-height: 2em;
-    padding: 0.2rem;
-    border: 1px solid transparent;
-    border-radius: 5px;
-    font: inherit;
-    line-height: inherit;
-    color: inherit;
-  }
-  .editable { cursor: text; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .definition-editor { width: 100%; min-width: 0; }
+  .editable { cursor: text; padding: 0.2rem; border: 1px solid transparent; border-radius: 5px; }
   .editable:hover, .editable:focus-visible { border-color: var(--rule, var(--color-border)); border-style: dashed; outline: none; }
-  .concealed { visibility: hidden; }
-  textarea {
-    position: absolute; inset: 0; height: 100%; resize: none; margin: 0;
-    background: var(--card, var(--color-bg)); border-color: var(--rule, var(--color-border));
-    outline: none; overflow: auto;
-  }
   .error { color: var(--color-danger, #c33); font-size: 0.8rem; }
 </style>

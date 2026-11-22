@@ -1,3 +1,4 @@
+import { serializeMeanings } from '$lib/dictionary/meanings';
 import { error, fail, redirect } from '@sveltejs/kit';
 import { z } from 'zod';
 
@@ -167,7 +168,7 @@ const lockSchema = z.object({
 
 const translationPatchSchema = z.object({
   translationId: z.string().regex(UUID_RE),
-  body: z.string().min(1).max(50_000),
+  body: z.string().transform(serializeMeanings).pipe(z.string().min(1).max(50_000)),
   promoteToCurator: z
     .enum(['true', 'false'])
     .optional()
@@ -264,8 +265,9 @@ const splitSchema = z.object({
   newPos: z.string().min(1).max(32),
   newGloss: z
     .string()
-    .max(500)
-    .transform((s) => (s.trim().length === 0 ? null : s))
+    .transform(serializeMeanings)
+    .pipe(z.string().max(500))
+    .transform((s) => s || null)
     .nullable(),
   translationIds: z.string().optional(),
   reason: z.string().max(500).optional().default(''),
@@ -331,6 +333,8 @@ export const actions: Actions = {
   patchLemmaField: async ({ params, request, locals }) => {
     const editor = editorFromLocals(locals);
     const form = Object.fromEntries(await request.formData());
+    if (form.field === 'glossDefault' && typeof form.value === 'string')
+      form.value = serializeMeanings(form.value);
     const parsed = fieldPatchSchema.safeParse(form);
     if (!parsed.success) {
       return fail(400, {

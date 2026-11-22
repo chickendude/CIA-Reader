@@ -16,6 +16,8 @@ import androidx.compose.foundation.gestures.calculatePan
 import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.input.rememberTextFieldState
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.focus.FocusRequester
@@ -84,6 +86,7 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.ContentDrawScope
@@ -1168,7 +1171,7 @@ internal fun WordDetails(
             Spacer(Modifier.height(12.dp))
         }
 
-        // Your own definition first — tap to edit inline, Enter to save.
+        // Personal definitions appear above dictionary definitions.
         if (token.lemmaId != null) {
             PersonalDefinitionEditor(
                 notes = translations?.personal.orEmpty(),
@@ -1524,8 +1527,7 @@ private fun SentenceTranslationSection(
 
 /**
  * The viewer's own definition, shown first and edited in place: tap the note (or
- * the "Add your own definition" placeholder) to open an inline field, Enter to
- * save. [onEditingChange] lets the host make the popup focusable while a field is
+ * the "Add your own definition" placeholder) to open the numbered editor. [onEditingChange] lets the host make the popup focusable while a field is
  * open (a focusable=false popup can't raise the keyboard).
  */
 @Composable
@@ -1554,7 +1556,7 @@ private fun PersonalDefinitionEditor(
     notes.forEach { note ->
         val id = note.id
         if (id != null && editingKey == id) {
-            // Enter with text → save; Enter with the field cleared → delete it.
+            // Saving a cleared personal definition removes it.
             Column {
                 NoteEditField(
                     initial = note.body,
@@ -1574,7 +1576,7 @@ private fun PersonalDefinitionEditor(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    note.body,
+                    numberedMeanings(note.body),
                     style = MaterialTheme.typography.bodyLarge,
                     modifier = Modifier.weight(1f),
                 )
@@ -1620,7 +1622,7 @@ private const val GLOSS_KEY = "::gloss"
  * The dictionary definitions for a word — official (internal) first, then any
  * community suggestions (labelled), else the inline gloss. Each entry is tappable:
  * tapping opens an inline editor seeded with that entry's text so the reader can
- * tweak it and press Enter to save it as their OWN personal definition. Official /
+ * tweak it and save it as their own personal definition. Official /
  * community entries pass their id as the parent so the server tracks the fork; the
  * gloss has no stored row, so it forks from null. [canSave] is false for OOV tokens
  * (no lemma to attach a personal definition to) — then entries are plain, read-only.
@@ -1670,9 +1672,7 @@ private fun DictionaryDefinitions(
         hideId: String? = null,
     ) {
         if (canSave && editingKey == key) {
-            // Seed the editor with the dictionary text; Enter saves it as the
-            // viewer's own. A cleared field just cancels (we never delete a
-            // dictionary entry — only personal notes can be deleted).
+            // A cleared dictionary field cancels the personal copy.
             NoteEditField(
                 initial = body,
                 onCommit = { t ->
@@ -1686,7 +1686,7 @@ private fun DictionaryDefinitions(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    body,
+                    numberedMeanings(body),
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier
@@ -1792,7 +1792,7 @@ private fun HiddenTranslations(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    t.body,
+                    numberedMeanings(t.body),
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textDecoration = TextDecoration.LineThrough,
@@ -1816,25 +1816,47 @@ private fun HiddenTranslations(
     }
 }
 
-/** Single-line inline editor: autofocuses; Enter (Done) commits the trimmed value
- *  (the caller treats a blank value as a delete). */
+private fun definitionMeanings(text: String) =
+    text.split(';', '\n', '\r').map { it.trim() }.filter { it.isNotEmpty() }
+
+private fun numberedMeanings(text: String) =
+    definitionMeanings(text).mapIndexed { index, meaning -> "${index + 1}. $meaning" }.joinToString("\n")
+
 @Composable
 private fun NoteEditField(initial: String, onCommit: (String) -> Unit) {
-    // Seed the cursor at the END of the existing text so editing a dictionary entry
-    // or note lands ready to tweak the tail, not at character 0.
-    var value by remember { mutableStateOf(TextFieldValue(initial, selection = TextRange(initial.length))) }
+    val state = rememberTextFieldState(initialText = definitionMeanings(initial).joinToString("\n"))
     val focusRequester = remember { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current
-    OutlinedTextField(
-        value = value,
-        onValueChange = { value = it },
-        singleLine = true,
-        modifier = Modifier
-            .fillMaxWidth()
-            .focusRequester(focusRequester),
-        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-        keyboardActions = KeyboardActions(onDone = { onCommit(value.text.trim()) }),
-    )
+    Box(
+        modifier = Modifier.fillMaxWidth()
+            .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(4.dp)),
+    ) {
+        BasicTextField(
+            state = state,
+            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                .padding(start = 12.dp, end = 48.dp, top = 12.dp, bottom = 12.dp)
+                .focusRequester(focusRequester)
+                .semantics { contentDescription = "Edit definition" },
+            textStyle = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurface),
+            cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+            outputTransformation = {
+                // Insert the numbers only for display so selection and deletion operate on the meanings.
+                val lines = asCharSequence().toString().split('\n')
+                var offset = 0
+                lines.forEachIndexed { index, line ->
+                    val prefix = "${index + 1}. "
+                    replace(offset, offset, prefix)
+                    offset += prefix.length + line.length + 1
+                }
+            },
+        )
+        IconButton(
+            onClick = { onCommit(definitionMeanings(state.text.toString()).joinToString("; ")) },
+            modifier = Modifier.align(Alignment.TopEnd),
+        ) {
+            Icon(painterResource(R.drawable.ic_check), contentDescription = "Save definition")
+        }
+    }
     LaunchedEffect(Unit) {
         // The popup has just turned focusable (onEditingChange) — focus the field
         // and explicitly raise the keyboard, which a freshly-focusable popup window
@@ -2125,7 +2147,6 @@ private fun BasqueRefEntry(
         Text(entry.pos, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
     if (editing) {
-        // Seed the editor with the reference text; Enter saves it as the viewer's own.
         NoteEditField(initial = entry.definition, onCommit = onSave)
         return
     }
@@ -2136,7 +2157,7 @@ private fun BasqueRefEntry(
         if (entry.definition.isNotBlank()) {
             // Tap the definition to edit + save it as your own; the +/- toggles examples.
             Text(
-                entry.definition,
+                numberedMeanings(entry.definition),
                 style = MaterialTheme.typography.bodyLarge,
                 modifier = Modifier
                     .weight(1f)

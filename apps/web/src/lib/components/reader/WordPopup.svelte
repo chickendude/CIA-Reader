@@ -13,6 +13,9 @@
   import ReportTranslationModal from './ReportTranslationModal.svelte';
   import { getFeaturePills } from './feature-labels.js';
   import HindiCandidateCard from './HindiCandidateCard.svelte';
+  import { numberedMeanings, serializeMeanings } from '$lib/dictionary/meanings';
+  import MeaningInput from '$lib/components/input/MeaningInput.svelte';
+  import DefinitionMeanings from './DefinitionMeanings.svelte';
   import EditableDefinition from './EditableDefinition.svelte';
   import DefinitionPicker from './DefinitionPicker.svelte';
   import {
@@ -887,18 +890,10 @@
   // inline editor — PATCH if a personal row already exists, POST a
   // new one if not. Multiple personal rows still render in the
   // translations list below; this is just the prominent "yours" slot.
-  let editingPrimary = $state(false);
+  let primaryLemmaId = $state<string | null>(null);
   let primaryBody = $state('');
   let savingPrimary = $state(false);
   let primaryError = $state<string | null>(null);
-  let primaryTextareaEl = $state<HTMLTextAreaElement | null>(null);
-
-  $effect(() => {
-    if (editingPrimary && primaryTextareaEl) {
-      primaryTextareaEl.focus();
-    }
-  });
-
   // ---- Edit / delete personal translation -------------------------
   // The viewer can revise or remove their own translations inline.
   // The edit textarea reuses the same Enter-to-save / Esc-to-cancel
@@ -910,15 +905,8 @@
   let editBody = $state('');
   let savingEdit = $state(false);
   let editError = $state<string | null>(null);
-  let editTextareaEl = $state<HTMLTextAreaElement | null>(null);
   let deletingId = $state<string | null>(null);
   let deleteError = $state<string | null>(null);
-
-  $effect(() => {
-    if (editingId !== null && editTextareaEl) {
-      editTextareaEl.focus();
-    }
-  });
 
   let votingTranslationId = $state<string | null>(null);
   let voteError = $state<string | null>(null);
@@ -947,11 +935,12 @@
 
   const canChooseDefinition = $derived(isAdmin && !!token?.lemmaId && token.candidates.length > 0 &&
     (language === 'hi' ? !!(token.canVerifyContext && token.contextVersion) : isOwner));
+  const canEditEntry = $derived(dictionaryEditor && token?.isWord && !isNumberToken && !pendingSelection);
   const canIgnoreOccurrence = $derived(token?.ignoredHere !== undefined && token.isWord && !isNumberToken && !pendingSelection);
   const compactOfficial = $derived(payload?.translations.official.find(
     (row) => !row.hidden && isDefLangVisible(row.targetLanguage),
   ));
-  const compactFallback = $derived(payload?.lemma.glossDefault ?? token?.glossDefault ??
+  const compactFallback = $derived(payload?.lemma.glossDefault ?? (displayedLemmaId === token?.lemmaId ? token?.glossDefault : null) ??
     payload?.translations.community.find((row) => !row.hidden && isDefLangVisible(row.targetLanguage))?.body);
 
   const numberDisplay = $derived((): NumberDisplay | null => {
@@ -1086,19 +1075,20 @@
   }
 
   function startEditPrimary() {
-    primaryBody = payload?.translations.personal[0]?.body ?? '';
+    if (!payload || savingPrimary) return;
+    primaryBody = serializeMeanings(payload.translations.personal[0]?.body ?? '');
     primaryError = null;
-    editingPrimary = true;
+    primaryLemmaId = payload.lemma.id;
   }
 
   function cancelEditPrimary() {
-    editingPrimary = false;
+    primaryLemmaId = null;
     primaryBody = '';
     primaryError = null;
   }
 
   async function submitPrimary() {
-    if (!displayedLemmaId) return;
+    if (savingPrimary || !displayedLemmaId || primaryLemmaId !== displayedLemmaId) return;
     const trimmed = primaryBody.trim();
     if (trimmed.length === 0) {
       cancelEditPrimary();
@@ -1124,26 +1114,13 @@
         await postTranslation(trimmed);
       }
       await refreshPersonalGloss(lemmaId);
-      editingPrimary = false;
+      primaryLemmaId = null;
       primaryBody = '';
     } catch (e) {
       const err = e as Partial<PostError> & Error;
       primaryError = err.message ?? `Network error: ${(e as Error).message}`;
     } finally {
       savingPrimary = false;
-    }
-  }
-
-  function onPrimaryKeydown(e: KeyboardEvent) {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      void submitPrimary();
-      return;
-    }
-    if (e.key === 'Escape') {
-      e.stopPropagation();
-      e.preventDefault();
-      cancelEditPrimary();
     }
   }
 
@@ -1210,7 +1187,7 @@
 
   function startEditPersonal(t: PublicTranslation) {
     editingId = t.id;
-    editBody = t.body;
+    editBody = serializeMeanings(t.body);
     editError = null;
   }
 
@@ -1221,7 +1198,7 @@
   }
 
   async function submitEditPersonal() {
-    if (!editingId || !displayedLemmaId) return;
+    if (savingEdit || !editingId || !displayedLemmaId) return;
     const trimmed = editBody.trim();
     if (trimmed.length === 0) {
       editError = 'Translation cannot be empty.';
@@ -1249,19 +1226,6 @@
       editError = `Network error: ${(e as Error).message}`;
     } finally {
       savingEdit = false;
-    }
-  }
-
-  function onEditPersonalKeydown(e: KeyboardEvent) {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      void submitEditPersonal();
-      return;
-    }
-    if (e.key === 'Escape') {
-      e.stopPropagation();
-      e.preventDefault();
-      cancelEditPersonal();
     }
   }
 
@@ -1497,8 +1461,8 @@
 {#snippet personalEditor(entry: LemmaPayload)}
   <section class="sp-primary" data-testid="primary-translation">
     {#if !entry.canEdit}
-      <div>{entry.translations.personal[0]?.body ?? ''}</div>
-    {:else if editingPrimary}
+      <DefinitionMeanings text={entry.translations.personal[0]?.body ?? ''} />
+    {:else if primaryLemmaId === entry.lemma.id}
       <form
         class="sp-primary-form"
         onsubmit={(e) => {
@@ -1506,18 +1470,9 @@
           void submitPrimary();
         }}
       >
-        <textarea
-          bind:this={primaryTextareaEl}
-          bind:value={primaryBody}
-          rows="1"
-          maxlength="500"
-          disabled={savingPrimary}
-          aria-label="Your translation"
-          placeholder="Type your translation"
-          title={'Enter to save\nShift+Enter for a newline\nEsc to cancel'}
-          onkeydown={onPrimaryKeydown}
-          onblur={onPrimaryBlur}
-        ></textarea>
+        <MeaningInput bind:value={primaryBody} label="Your translation" maxlength={500}
+          placeholder="Type your translation" sheet={!isDesktop} focusOnMount disabled={savingPrimary}
+          onsave={submitPrimary} oncancel={cancelEditPrimary} onblur={onPrimaryBlur} />
         {#if primaryError}
           <p class="err small">{primaryError}</p>
         {/if}
@@ -1528,13 +1483,11 @@
         class="sp-primary-display"
         data-testid="primary-translation-edit"
         data-empty={entry.translations.personal[0] ? '0' : '1'}
-        title={'Enter to save\nShift+Enter for a newline\nEsc to cancel'}
+        title="Edit your translation"
         onclick={startEditPrimary}
       >
         {#if entry.translations.personal[0]}
-          <span class="sp-primary-body">
-            {entry.translations.personal[0].body}
-          </span>
+          <DefinitionMeanings text={entry.translations.personal[0].body} />
         {:else}
           <span class="sp-primary-empty">+ Add your translation</span>
         {/if}
@@ -1688,7 +1641,7 @@
                   >
                     <span class="sp-word-result-hw">{r.headword}</span>
                     {#if r.pos}<span class="sp-word-result-pos">{r.pos.toLowerCase()}</span>{/if}
-                    {#if r.glossDefault}<span class="sp-word-result-gloss">{r.glossDefault}</span
+                    {#if r.glossDefault}<span class="sp-word-result-gloss">{numberedMeanings(r.glossDefault)}</span
                       >{/if}
                   </button>
                 </li>
@@ -1703,44 +1656,46 @@
 
 <Sheet open={sheetOpen} onClose={onClose} header={token && !isDesktop ? wordHeader : undefined} dimmed={false}>
   {#snippet footer()}
-    {#if phrase && isOwner && !token?.lemmaId}
+    {@const phraseStatus = phrase && isOwner && !token?.lemmaId}
+    {@const wordStatus = token?.lemmaId && !isNumberToken && (isOwner || isAdmin)}
+    {#if token && (phraseStatus || wordStatus)}
       <footer class="word-actions">
-        {@render phraseStudyStatus()}
-      </footer>
-    {:else if token?.lemmaId && !isNumberToken && (isOwner || isAdmin)}
-      <footer class="word-actions">
-        {#if canChooseDefinition}
+        {#if wordStatus && canChooseDefinition}
           {#key token.id}
             <DefinitionPicker {token} {language} onPick={pickCandidate} />
           {/key}
         {/if}
-        <div class="sp-status" role="group" aria-label="Mark status">
-          <button
-            type="button"
-            disabled={loadingLookup}
-            data-active={optimisticStatus === 'learning' ? '1' : '0'}
-            onclick={() => markStatus('learning')}
-          >
-            Learning
-          </button>
-          <button
-            type="button"
-            disabled={loadingLookup}
-            data-active={optimisticStatus === 'known' ? '1' : '0'}
-            onclick={() => markStatus('known')}
-          >
-            Known
-          </button>
-          <button
-            type="button"
-            disabled={loadingLookup}
-            data-active={optimisticStatus === 'ignored' ? '1' : '0'}
-            onclick={() => markStatus('ignored')}
-          >
-            Ignored
-          </button>
-        </div>
-        {#if writeError}
+        {#if phraseStatus}
+          {@render phraseStudyStatus()}
+        {:else if wordStatus}
+          <div class="sp-status" role="group" aria-label="Mark status">
+            <button
+              type="button"
+              disabled={loadingLookup}
+              data-active={optimisticStatus === 'learning' ? '1' : '0'}
+              onclick={() => markStatus('learning')}
+            >
+              Learning
+            </button>
+            <button
+              type="button"
+              disabled={loadingLookup}
+              data-active={optimisticStatus === 'known' ? '1' : '0'}
+              onclick={() => markStatus('known')}
+            >
+              Known
+            </button>
+            <button
+              type="button"
+              disabled={loadingLookup}
+              data-active={optimisticStatus === 'ignored' ? '1' : '0'}
+              onclick={() => markStatus('ignored')}
+            >
+              Ignored
+            </button>
+          </div>
+        {/if}
+        {#if wordStatus && writeError}
           <p class="err small">Could not save: {writeError}</p>
         {/if}
       </footer>
@@ -1849,23 +1804,21 @@
           Reprocess this text to see written-out number forms in each language.
         </p>
       {:else}
-        {#if !isDesktop && displayedLemmaId}
+        {#if !isDesktop && displayedLemmaId && !(isOwner && payload?.translations.personal[0])}
           <div class="compact-definition" data-testid="selected-definition">
             {#if payload?.translations.personal[0]}
-              {#if isOwner}
-                {@render personalEditor(payload)}
-              {:else}
-                {payload.translations.personal[0].body}
-              {/if}
+              <DefinitionMeanings text={payload.translations.personal[0].body} />
             {:else if !payload && token.personalGloss}
-              {token.personalGloss}
+              <DefinitionMeanings text={token.personalGloss} />
             {:else if compactOfficial && payload}
               {@const row = compactOfficial}
-              <EditableDefinition text={row.body} translationId={row.id}
-                lemmaId={payload.lemma.id} canEdit={payload.canEdit ?? false}
-                onSave={(body) => { row.body = body; }} />
+              {#key row.id}
+                <EditableDefinition text={row.body} translationId={row.id}
+                  lemmaId={payload.lemma.id} canEdit={payload.canEdit ?? false} sheet
+                  onSave={(body) => { row.body = body; }} />
+              {/key}
             {:else if compactFallback}
-              {compactFallback}
+              <DefinitionMeanings text={compactFallback} />
             {:else if payload}
               No definition yet.
             {/if}
@@ -1902,21 +1855,8 @@
         <HindiMergeButtons chapterId={token.chapterId} options={token.mergeOptions} onSaved={mergeSaved} />
       {/key}
     {/if}
-    {#if dictionaryEditor && token.isWord && !isNumberToken && !pendingSelection}
-      <Button aria-haspopup="dialog" disabled={loadingLookup} onclick={() => {
-        if (token) editor = {
-          tokenId: token.id,
-          lemmaId: displayedLemmaId ?? null,
-          headword: headwordInput.trim() || token.surface,
-        };
-      }}>{displayedLemmaId ? 'Edit entry' : 'Add entry'}</Button>
-      {#if savedTokenId === token.id}<p role="status">Dictionary entry saved.</p>{/if}
-    {/if}
+    {#if savedTokenId === token.id}<p role="status">Dictionary entry saved.</p>{/if}
     {#if !isNumberToken}
-    {#if isOwner && token.lemmaId && payload && (payload.canEdit || payload.translations.personal.length > 0)
-      && (isDesktop || !payload.translations.personal.length)}
-      {@render personalEditor(payload)}
-    {/if}
     {#if token.chapterId && token.isWord && !isNumberToken}
       <!-- OpenAI sentence-level translation for the sentence this word sits
            in. Lazy: only fetched when the reader asks. -->
@@ -1940,6 +1880,14 @@
           <p class="err small" data-testid="translate-error">{translateError}</p>
         {/if}
       </div>
+    {/if}
+
+    {#if isOwner && displayedLemmaId && payload && (payload.canEdit || payload.translations.personal.length > 0)}
+      {#if !isDesktop && payload.translations.personal.length}
+        <div class="compact-definition" data-testid="selected-definition">{@render personalEditor(payload)}</div>
+      {:else}
+        {@render personalEditor(payload)}
+      {/if}
     {/if}
 
     {#if isDesktop && payload}
@@ -2022,23 +1970,16 @@
                   void submitEditPersonal();
                 }}
               >
-                <textarea
-                  bind:this={editTextareaEl}
-                  bind:value={editBody}
-                  rows="2"
-                  maxlength="500"
-                  disabled={savingEdit}
-                  aria-label="Edit your translation"
-                  onkeydown={onEditPersonalKeydown}
-                  onblur={onEditPersonalBlur}
-                ></textarea>
+                <MeaningInput bind:value={editBody} label="Edit your translation" maxlength={500}
+                  focusOnMount disabled={savingEdit} onsave={submitEditPersonal}
+                  oncancel={cancelEditPersonal} onblur={onEditPersonalBlur} />
                 {#if editError}
                   <p class="err small">{editError}</p>
                 {/if}
               </form>
             {:else}
               <div class="personal-body">
-                <span class="personal-text">{t.body}</span>
+                <div class="personal-text"><DefinitionMeanings text={t.body} /></div>
                 {#if showDefLangFilter}
                   <span class="def-lang-badge">
                     {definitionLanguageName(t.targetLanguage)}
@@ -2091,7 +2032,7 @@
         {#each payload.translations.community.filter((t) => isDefLangVisible(t.targetLanguage) && !t.hidden) as t (t.id)}
           <li class="community-row">
             <div class="community-body">
-              <span class="community-text">{t.body}</span>
+              <div class="community-text"><DefinitionMeanings text={t.body} /></div>
               {#if showDefLangFilter}
                 <span class="def-lang-badge">
                   {definitionLanguageName(t.targetLanguage)}
@@ -2178,7 +2119,7 @@
                   {#each hiddenRows as t (t.id)}
                     <li class="community-row hidden-row">
                       <div class="community-body">
-                        <span class="community-text">{t.body}</span>
+                        <div class="community-text"><DefinitionMeanings text={t.body} /></div>
                         <button
                           type="button"
                           class="icon-button unhide-button"
@@ -2199,7 +2140,11 @@
           {/if}
         {/if}
         {#if allTranslations().length === 0}
-          <li class="muted">No translations yet.</li>
+          {#if compactFallback}
+            <li><DefinitionMeanings text={compactFallback} /></li>
+          {:else}
+            <li class="muted">No translations yet.</li>
+          {/if}
         {:else if showDefLangFilter && totalListCount() > 0 && visibleListTranslations().length === 0}
           <li class="muted" data-testid="def-lang-all-hidden">
             All definitions are hidden by the language filter above.
@@ -2330,7 +2275,7 @@
               <li class="ext-row">
                 <div class="ext-def">
                   {#if r.pos && (i === 0 || shownRefResults[i - 1]?.pos !== r.pos)}<span class="ext-pos">{r.pos}</span>{/if}
-                  <span>{r.definition}</span>
+                  <DefinitionMeanings text={r.definition} />
                   {#if r.examples.length > 0}
                     <button
                       type="button"
@@ -2389,7 +2334,7 @@
                 <PosPill pos={cand.pos} class="alt-pos-pill" />
               </div>
               {#if cand.glossDefault}
-                <p class="alt-gloss">{cand.glossDefault}</p>
+                <div class="alt-gloss"><DefinitionMeanings text={cand.glossDefault} /></div>
               {/if}
               <button
                 type="button"
@@ -2407,7 +2352,7 @@
         {/if}
       {/if}
     {/if}
-    {#if isOwner || canIgnoreOccurrence || (token.confirmedMerge && !pendingSelection)}
+    {#if isOwner || canIgnoreOccurrence || canEditEntry || (token.confirmedMerge && !pendingSelection)}
       <div class="sp-correction-actions">
         {#if isOwner}
           <Button aria-haspopup="dialog" onclick={() => (showCorrectionModal = true)}
@@ -2418,6 +2363,15 @@
             title={ignoredHere ? 'Restore this occurrence' : "Don't treat this word (just this instance) as a real word so it's not used for vocabulary counts"}>
             {ignoredHere ? 'Unignore' : 'Ignore'}
           </Button>
+        {/if}
+        {#if canEditEntry}
+          <Button aria-haspopup="dialog" disabled={loadingLookup} onclick={() => {
+            if (token) editor = {
+              tokenId: token.id,
+              lemmaId: displayedLemmaId ?? null,
+              headword: headwordInput.trim() || token.surface,
+            };
+          }}>{displayedLemmaId ? 'Edit entry' : 'Add entry'}</Button>
         {/if}
         {#if token.chapterId && token.confirmedMerge && !pendingSelection}
           {#key token.id}
@@ -2432,7 +2386,7 @@
 </Sheet>
 
 {#if dictionaryEditor && editor && token && token.id === editor.tokenId}
-  <ReaderDictionaryEditor {language} {token} {chapterTokens} lemmaId={editor.lemmaId} headword={editor.headword}
+  <ReaderDictionaryEditor sheet={!isDesktop} {language} {token} {chapterTokens} lemmaId={editor.lemmaId} headword={editor.headword}
     onSaved={dictionarySaved} onClose={() => (editor = null)} />
 {/if}
 
@@ -2861,34 +2815,6 @@
   .sp-primary-empty {
     display: inline-block;
   }
-  .sp-primary-form textarea {
-    /* Match the dashed empty-state button's footprint exactly so
-     * clicking "+ Add your translation" swaps the placeholder for
-     * an editor of the same size — no jump in height or font.
-     * The user can still drag the resize handle if they need more
-     * room for a long body. */
-    box-sizing: border-box;
-    display: block;
-    width: 100%;
-    padding: 0.6rem 0.75rem;
-    font: inherit;
-    font-size: 0.82rem;
-    line-height: 1.35;
-    border: 1px solid color-mix(
-      in oklch,
-      var(--accent, var(--color-accent)) 35%,
-      var(--rule, var(--color-border))
-    );
-    border-radius: 8px;
-    background: var(--card, var(--color-bg));
-    color: var(--ink, var(--color-fg));
-    resize: vertical;
-  }
-  .sp-primary-form textarea:focus-visible {
-    outline: 2px solid var(--accent, var(--color-accent));
-    outline-offset: 1px;
-  }
-
   .sp-status {
     display: grid;
     grid-template-columns: repeat(3, 1fr);

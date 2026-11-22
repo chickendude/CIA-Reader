@@ -8,12 +8,12 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-it('marks the alternate entry independently and keeps its semicolon-separated meanings', async () => {
+it('marks the alternate entry independently and numbers its meanings', async () => {
   const fetchMock = vi.fn().mockResolvedValue(new Response('{}', { status: 200 }));
   vi.stubGlobal('fetch', fetchMock);
   const onStatusChange = vi.fn();
   const token = { id: 'token', idx: 3, chapterId: 'chapter', lemmaId: 'adjective' } as ServerToken;
-  const { getByRole, getByText, queryByRole } = render(HindiCandidateCard, {
+  const { getByRole, getAllByRole } = render(HindiCandidateCard, {
     candidate: {
       lemmaId: 'noun',
       headword: 'हिंदी',
@@ -27,8 +27,7 @@ it('marks the alternate entry independently and keeps its semicolon-separated me
     isOwner: true,
     onStatusChange,
   });
-  expect(getByText('an Indian; a person of India')).toBeTruthy();
-  expect(queryByRole('list')).toBeNull();
+  expect(getAllByRole('listitem').map((item) => item.textContent)).toEqual(['an Indian', 'a person of India']);
   await fireEvent.click(getByRole('button', { name: 'Known' }));
   await waitFor(() => expect(onStatusChange).toHaveBeenCalledWith('noun', 'known'));
   expect(fetchMock.mock.calls.some(([url]) => url === '/api/v1/me/known-lemmas/noun')).toBe(true);

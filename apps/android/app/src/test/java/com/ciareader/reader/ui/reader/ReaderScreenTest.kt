@@ -14,7 +14,6 @@ import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.click
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.performClick
-import androidx.compose.ui.test.performImeAction
 import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTouchInput
@@ -256,7 +255,7 @@ class ReaderScreenTest {
         }
         // The headword/status/translate live in the popup header now; the body
         // shows the dictionary translations.
-        compose.onNodeWithText("greeting").assertIsDisplayed()
+        compose.onNodeWithText("1. greeting").assertIsDisplayed()
         // Attribution is intentionally not surfaced in the reader (web parity).
         compose.onNodeWithText("Platts").assertDoesNotExist()
     }
@@ -382,7 +381,7 @@ class ReaderScreenTest {
                 )
             }
         }
-        compose.onNodeWithText("hello").assertIsDisplayed()
+        compose.onNodeWithText("1. hello").assertIsDisplayed()
     }
 
     /**
@@ -484,17 +483,17 @@ class ReaderScreenTest {
                 )
             }
         }
-        // Tap the definition → inline field; edit + Enter saves.
-        compose.onNodeWithText("my note").performClick()
+        // Each line becomes a separate meaning when saved.
+        compose.onNodeWithText("1. my note").performClick()
         compose.onNode(hasSetTextAction()).performTextClearance()
-        compose.onNode(hasSetTextAction()).performTextInput("changed")
-        compose.onNode(hasSetTextAction()).performImeAction()
-        assertEquals("p1" to "changed", edited)
+        compose.onNode(hasSetTextAction()).performTextInput("changed, revised\na second meaning")
+        compose.onNodeWithContentDescription("Save definition").performClick()
+        assertEquals("p1" to "changed, revised; a second meaning", edited)
 
-        // Reopen, clear it, and Enter on the empty field deletes the note.
-        compose.onNodeWithText("my note").performClick()
+        // Saving the empty field deletes the note.
+        compose.onNodeWithText("1. my note").performClick()
         compose.onNode(hasSetTextAction()).performTextClearance()
-        compose.onNode(hasSetTextAction()).performImeAction()
+        compose.onNodeWithContentDescription("Save definition").performClick()
         assertEquals("p1", deleted)
     }
 
@@ -518,11 +517,10 @@ class ReaderScreenTest {
                 )
             }
         }
-        // Open the add field, type a note, flip Private, then Enter to save.
         compose.onNodeWithText("Add your own definition").performClick()
         compose.onNode(hasSetTextAction()).performTextInput("my private note")
         compose.onNodeWithText("Private (only you)").performClick()
-        compose.onNode(hasSetTextAction()).performImeAction()
+        compose.onNodeWithContentDescription("Save definition").performClick()
         assertEquals(true, addedPrivate)
     }
 
@@ -570,7 +568,7 @@ class ReaderScreenTest {
                 )
             }
         }
-        compose.onNodeWithText("bad gloss").assertIsDisplayed()
+        compose.onNodeWithText("1. bad gloss").assertIsDisplayed()
         compose.onNodeWithContentDescription("Hide translation from readers").assertDoesNotExist()
     }
 
@@ -596,9 +594,9 @@ class ReaderScreenTest {
             }
         }
         // Hidden row stays out of the list until the reveal is expanded.
-        compose.onNodeWithText("bad gloss").assertDoesNotExist()
+        compose.onNodeWithText("1. bad gloss").assertDoesNotExist()
         compose.onNodeWithText("Show 1 hidden").performClick()
-        compose.onNodeWithText("bad gloss").assertIsDisplayed()
+        compose.onNodeWithText("1. bad gloss").assertIsDisplayed()
         compose.onNodeWithContentDescription("Show translation to readers").performClick()
         assertEquals("c1" to false, hidden)
     }
@@ -623,12 +621,11 @@ class ReaderScreenTest {
                 )
             }
         }
-        // Tap the official "house" entry → inline editor seeded with it; edit + Enter
-        // saves it as a personal definition forked from the official's id.
-        compose.onNodeWithText("house").performClick()
+        // A personal copy keeps the original dictionary entry as its parent.
+        compose.onNodeWithText("1. house").performClick()
         compose.onNode(hasSetTextAction()).performTextClearance()
         compose.onNode(hasSetTextAction()).performTextInput("house (home)")
-        compose.onNode(hasSetTextAction()).performImeAction()
+        compose.onNodeWithContentDescription("Save definition").performClick()
         assertEquals("o1" to "house (home)", saved)
     }
 

@@ -1815,7 +1815,7 @@ describe('WordPopup — primary translation editor (above status buttons)', () =
     expect(personalRows.length).toBe(0);
   });
 
-  it('opens the editor at the same single-row size as the empty placeholder (no growth on click)', async () => {
+  it('opens the empty editor with one numbered line', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValue(jsonResponse(payloadOf([]))),
@@ -1833,9 +1833,6 @@ describe('WordPopup — primary translation editor (above status buttons)', () =
     const textarea = await awaitElement<HTMLTextAreaElement>(
       '.sp-primary-form textarea',
     );
-    // rows=1 keeps the textarea the same height as the dashed
-    // placeholder it replaced; the user can drag-resize if they
-    // need more vertical room.
     expect(textarea.rows).toBe(1);
   });
 
@@ -2294,7 +2291,7 @@ describe('Mobile word definitions', () => {
   it('keeps the word header and study status on either side of the scrolling definition', async () => {
     const view = openMobile(false);
     const definition = view.getByTestId('selected-definition');
-    expect(definition.textContent).toContain('one; a');
+    expect(Array.from(definition.querySelectorAll('ol li'), (item) => item.textContent)).toEqual(['one', 'a']);
     const body = definition.closest('.sheet-body');
     const header = view.getByTestId('headword-input').closest('header');
     expect(body?.previousElementSibling).toBe(header);

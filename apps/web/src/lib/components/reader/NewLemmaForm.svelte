@@ -16,6 +16,7 @@
   the per-user token_corrections row + the parse_report.
 -->
 <script lang="ts">
+  import MeaningInput from '$lib/components/input/MeaningInput.svelte';
   import Modal from '$lib/components/overlay/Modal.svelte';
   import ScriptAwareInput from '$lib/components/input/ScriptAwareInput.svelte';
   import type { LanguageCode } from '@ciareader/shared-types';
@@ -146,16 +147,11 @@
       </select>
     </label>
 
-    <label class="nlf-row">
-      <span class="nlf-l">Short gloss</span>
-      <input
-        id="nlf-gloss"
-        type="text"
-        placeholder="A short English translation"
-        bind:value={gloss}
-        maxlength="280"
-      />
-    </label>
+    <div class="nlf-row">
+      <label class="nlf-l" for="nlf-gloss">Short gloss</label>
+      <MeaningInput id="nlf-gloss" label="Short gloss" placeholder="A short English translation"
+        bind:value={gloss} maxlength={280} disabled={saving} />
+    </div>
 
     <label class="nlf-row">
       <span class="nlf-l">Notes (optional)</span>
@@ -215,7 +211,6 @@
     color: var(--ink-3, var(--color-fg-muted));
     font-weight: 500;
   }
-  .nlf-row input[type='text'],
   .nlf-row textarea,
   .nlf-row select {
     padding: 0.4rem 0.55rem;

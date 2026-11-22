@@ -1,5 +1,9 @@
 export function splitMeanings(text: string) {
-  return text.split(';').map((part) => part.trim()).filter(Boolean);
+  return text.split(/[;\r\n]/u).map((part) => part.trim()).filter(Boolean);
+}
+
+export function serializeMeanings(text: string) {
+  return splitMeanings(text).join('; ');
 }
 
 export function numberedMeanings(text: string) {

@@ -14,6 +14,7 @@
     chapterTokens,
     lemmaId,
     headword,
+    sheet = false,
     onClose,
     onSaved,
   }: {
@@ -22,6 +23,7 @@
     chapterTokens?: ServerToken[] | null;
     lemmaId: string | null;
     headword: string;
+    sheet?: boolean;
     onClose: () => void;
     onSaved: (word: WorkshopWord) => void;
   } = $props();
@@ -80,6 +82,7 @@
     {#key word}
       <WorkshopEditor
         {language}
+        {sheet}
         {word}
         bind:draft
         bind:working

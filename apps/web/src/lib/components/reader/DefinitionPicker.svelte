@@ -1,4 +1,5 @@
 <script lang="ts">
+  import DefinitionMeanings from './DefinitionMeanings.svelte';
   import Sheet from '../overlay/Sheet.svelte';
   import type { ServerToken } from './types.js';
 
@@ -48,7 +49,8 @@
     <button class="choice" type="button" aria-pressed={option.lemmaId === token.lemmaId}
       disabled={saving} onclick={() => option.lemmaId && select(option.lemmaId)}>
       <strong>{option.headword}</strong> <small>{option.pos?.toLowerCase()}</small>
-      <span>{option.glossDefault ?? 'No definition yet.'}</span>
+      {#if option.glossDefault}<DefinitionMeanings text={option.glossDefault} />
+      {:else}<span>No definition yet.</span>{/if}
     </button>
   {/each}
   {#if error}<p role="alert">{error}</p>{/if}

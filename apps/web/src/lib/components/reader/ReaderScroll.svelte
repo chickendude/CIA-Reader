@@ -6,6 +6,7 @@
 
   import { seekAudioForToken } from './audio-bus.js';
   import TokenSpan from './TokenSpan.svelte';
+  import { wordReturnOutline } from './word-return-outline';
   import type { ProgressAnchor } from './progress-client.js';
   import {
     computePctRead,
@@ -450,6 +451,7 @@
     <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
     <article
       bind:this={articleEl}
+      use:wordReturnOutline={activeToken?.id}
       onclick={onArticleClick}
       onpointerdown={preview.rememberPointer}
       onpointerover={showHoverTooltip}

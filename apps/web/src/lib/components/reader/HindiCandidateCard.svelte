@@ -1,6 +1,7 @@
 <script lang="ts">
   import { untrack } from 'svelte';
   import { isIgnoredHere, readerOccurrenceIgnores } from './ignored-occurrences';
+  import DefinitionMeanings from './DefinitionMeanings.svelte';
   import EditableDefinition from './EditableDefinition.svelte';
   import PosPill from './PosPill.svelte';
   import type { ServerCandidate, ServerToken } from './types.js';
@@ -114,7 +115,7 @@
       }}
     />
   {:else if candidate.personalGloss || canonical?.body || candidate.glossDefault}
-    <div>{candidate.personalGloss || canonical?.body || candidate.glossDefault || ''}</div>
+    <DefinitionMeanings text={candidate.personalGloss || canonical?.body || candidate.glossDefault || ''} />
   {:else}<p class="empty">No translations</p>{/if}
   {#if isOwner}
     <div

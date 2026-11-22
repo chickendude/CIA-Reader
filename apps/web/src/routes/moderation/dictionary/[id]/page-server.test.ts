@@ -159,6 +159,14 @@ describe('moderation lemma editor loader', () => {
 });
 
 describe('moderation lemma editor actions', () => {
+  it('saves meaning lines from a submitted translation form in dictionary format', async () => {
+    const id = 'cccccccc-cccc-cccc-cccc-cccccccccccc';
+    await callAction('updateTranslation', { translationId: id, body: 'to speak, talk\r\n\r\nto say' });
+    expect(updateTranslation).toHaveBeenCalledWith(
+      USER, id, { body: 'to speak, talk; to say', promoteToCurator: false }, '',
+    );
+  });
+
   it('updateLemma happy path returns section=lemma, ok=true', async () => {
     updateLemma.mockResolvedValueOnce({ id: LEMMA_ID });
     const res = await callAction('updateLemma', {

@@ -2,6 +2,7 @@
   import PageLayout from '$lib/components/shell/PageLayout.svelte';
   import PageTitle from '$lib/components/shell/PageTitle.svelte';
   import { enhance } from '$app/forms';
+  import MeaningInput from '$lib/components/input/MeaningInput.svelte';
   import EditableDefinition from '$lib/components/reader/EditableDefinition.svelte';
   import { invalidateAll } from '$app/navigation';
   import ProvenanceBadge from '$lib/components/dictionary/ProvenanceBadge.svelte';
@@ -507,7 +508,7 @@
         <div class="row">
           <input name="newHeadword" required placeholder="new headword" />
           <input name="newPos" required placeholder="POS" />
-          <input name="newGloss" placeholder="new gloss (optional)" />
+          <MeaningInput name="newGloss" label="New gloss" placeholder="New gloss (optional)" maxlength={500} />
         </div>
         <textarea
           name="translationIds"
@@ -619,12 +620,10 @@
               {@const tm = translationMsg(t.id)!}
               <p class:ok={tm.ok} class:err={!tm.ok}>{tm.message}</p>
             {/if}
-            <form method="post" action="?/updateTranslation" use:enhance class="stack">
+            <form method="post" action="?/updateTranslation" use:enhance={() => ({ update }) => update({ reset: false })} class="stack">
               <input type="hidden" name="translationId" value={t.id} />
-              <label>
-                Body
-                <textarea name="body" rows="2" required>{t.body}</textarea>
-              </label>
+              <label for={'meaning-' + t.id}>Body</label>
+              <MeaningInput id={'meaning-' + t.id} name="body" label="Body" value={t.body} required />
               {#if t.source === 'user'}
                 <label class="checkbox">
                   <input type="checkbox" name="promoteToCurator" value="true" />
@@ -1507,16 +1506,6 @@
     font-size: 12.5px;
   }
   .translations .arrow[disabled] { opacity: 0.35; cursor: not-allowed; }
-  .translations textarea {
-    background: var(--card, var(--color-bg));
-    border: 1px solid var(--card-edge, var(--color-border));
-    border-radius: 5px;
-    padding: 5px 8px;
-    font-size: 14.5px;
-    color: var(--ink, var(--color-fg));
-    font-family: inherit;
-    width: 100%;
-  }
   .translations .stack {
     display: flex;
     flex-direction: column;

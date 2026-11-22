@@ -35,7 +35,7 @@ it('keeps the observed form and context when attaching it to an existing headwor
   Object.assign(existing.draft, {
     id: 'existing',
     version: 'v1',
-    meaning: 'seeker',
+    meaning: 'seeker; investigator',
     excerpts: [{ url: '', original: 'खोजी', english: 'seeker' }],
     paradigm: 'noun_m_ii',
   });
@@ -77,8 +77,11 @@ it('keeps the observed form and context when attaching it to an existing headwor
   expect(prompt.searchParams.get('q')).toContain('इन खोजियों ने कहा।');
   await fireEvent.click(await screen.findByRole('button', { name: 'खोजी NOUN 1. seeker' }));
   await waitFor(() =>
-    expect(screen.getByLabelText<HTMLTextAreaElement>('English meaning').value).toBe('seeker'),
+    expect(screen.getByLabelText<HTMLTextAreaElement>('English meaning').value).toBe('seeker\ninvestigator'),
   );
+  await fireEvent.input(screen.getByLabelText('English meaning'), {
+    target: { value: 'seeker, searcher\ninvestigator' },
+  });
   expect(screen.getByRole<HTMLInputElement>('radio', { name: 'Masculine ई' }).checked).toBe(true);
   const other = screen.getByRole<HTMLTextAreaElement>('textbox', { name: 'Other forms' });
   expect(other.value).toBe('खोजियों');
@@ -94,7 +97,7 @@ it('keeps the observed form and context when attaching it to an existing headwor
       id: 'existing',
       version: 'v1',
       other: ['खोजियों', 'खोजी लोग', 'खोजिए'],
-      meaning: 'seeker',
+      meaning: 'seeker, searcher; investigator',
       excerpts: existing.draft.excerpts,
     }),
   }, undefined, 'hi');
