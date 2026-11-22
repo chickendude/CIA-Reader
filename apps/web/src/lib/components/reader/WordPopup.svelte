@@ -1576,7 +1576,132 @@
   {/if}
 {/snippet}
 
-<Sheet open={sheetOpen} onClose={onClose} title="" dimmed={false}>
+{#snippet wordHeader()}
+  {#if token}
+    <header class="sp-head">
+      <div class="sp-title-actions">
+        {#if bookFrequency !== null && bookFrequency > 0}
+          <span
+            class="sp-freq-badge"
+            data-testid="book-frequency"
+            aria-label={`this word appears ${bookFrequency} ${
+              bookFrequency === 1 ? 'time' : 'times'
+            } in the book`}
+          >
+            <span class="sp-freq-count" aria-hidden="true">x{bookFrequency}</span>
+            <!-- prettier-ignore -->
+            <span class="sp-freq-tip" role="tooltip">this word appears {bookFrequency}{bookFrequency === 1 ? ' time' : ' times'} in the book</span>
+          </span>
+        {/if}
+        {#if sentenceContext}
+          <button type="button" class="sp-header-button" aria-label="Copy sentence" title="Copy sentence" onclick={copySentence}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+              <rect x="8" y="8" width="12" height="13" rx="2" />
+              <path d="M15 5V4a1 1 0 0 0-1-1H5a2 2 0 0 0-2 2v10a1 1 0 0 0 1 1h1" />
+            </svg>
+          </button>
+        {/if}
+        <button
+          type="button"
+          class="sp-header-button"
+          aria-label="Close"
+          title="Close"
+          onclick={onClose}
+        >
+          ×
+        </button>
+      </div>
+      {#if wordCropStyle}
+        <!-- PDF reader: crop of the word from the page image, so a
+             misread OCR surface can be checked against the real glyphs
+             and corrected via the headword search. -->
+        <div
+          class="sp-word-crop"
+          data-testid="word-crop"
+          style={wordCropStyle}
+          role="img"
+          aria-label="Word as it appears on the page"
+        ></div>
+      {/if}
+      {#if token.numberForms && numberDisplay()}
+        <h2 class="sp-word num-title">
+          <span>{token.numberForms.digitsLatin}</span>
+          {#if numberDisplay()?.nativeDigits !== token.numberForms.digitsLatin}
+            <!-- Latin-script languages (Basque) repeat the Latin digits;
+                 only show a second copy for non-Latin scripts. -->
+            <span class="num-native">{numberDisplay()?.nativeDigits}</span>
+          {/if}
+        </h2>
+      {:else}
+        <h2 class="sp-word">
+          <!-- Editable headword: type over it to search the internal
+               dictionary as you go (results below). An exact headword match
+               — or Enter / clicking a result — loads that lemma into the
+               Translations section. After a pause it also re-runs the admin
+               reference lookup for the typed word. Lets you recover when the
+               NLP parsed the wrong lemma. -->
+          <span class="sp-entry-name">
+            <span class="sp-headword-field">
+              <span class="sp-headword-measure" aria-hidden="true">{headwordInput}</span>
+              <input
+                class="sp-word-input"
+                data-testid="headword-input"
+                size="1"
+                type="text"
+                autocomplete="off"
+                spellcheck="false"
+                aria-label="Headword, edit to search the dictionary"
+                value={headwordInput}
+                oninput={(e) => onHeadwordInput((e.currentTarget as HTMLInputElement).value)}
+                onkeydown={(e) => {
+                  if (e.key === 'Escape') {
+                    internalResults = [];
+                  } else if (e.key === 'Enter' && internalResults[0]) {
+                    // Load the top suggestion without forcing a click.
+                    e.preventDefault();
+                    void selectInternalLemma(internalResults[0]);
+                  }
+                }}
+              />
+            </span>
+            {#if payload?.lemma.romanization && headwordInput === payload.lemma.headword}
+              <span class="sp-roman">{payload.lemma.romanization}</span>
+            {/if}
+            {#if payload && headwordInput === payload.lemma.headword && payload.lemma.alternativeHeadwords?.length}
+              <span class="sp-alternative-headwords" lang={language} dir="auto">{payload.lemma.alternativeHeadwords.join(', ')}</span>
+            {/if}
+          </span>
+          {#if payload}
+            <PosPill pos={payload.lemma.pos} class="sp-pos-pill" />
+            {#if token.selectionStatus === 'needs_review'}<small>Selection needs review</small>{/if}
+          {/if}
+          {#if internalResults.length > 0}
+            <ul class="sp-word-results" role="listbox" data-testid="headword-results">
+              {#each internalResults as r (r.id)}
+                <li>
+                  <button
+                    type="button"
+                    class="sp-word-result"
+                    role="option"
+                    aria-selected="false"
+                    onclick={() => void selectInternalLemma(r)}
+                  >
+                    <span class="sp-word-result-hw">{r.headword}</span>
+                    {#if r.pos}<span class="sp-word-result-pos">{r.pos.toLowerCase()}</span>{/if}
+                    {#if r.glossDefault}<span class="sp-word-result-gloss">{r.glossDefault}</span
+                      >{/if}
+                  </button>
+                </li>
+              {/each}
+            </ul>
+          {/if}
+        </h2>
+      {/if}
+    </header>
+  {/if}
+{/snippet}
+
+<Sheet open={sheetOpen} onClose={onClose} header={token && !isDesktop ? wordHeader : undefined} dimmed={false}>
   {#snippet footer()}
     {#if phrase && isOwner && !token?.lemmaId}
       <footer class="word-actions">
@@ -1699,125 +1824,8 @@
     </div>
   {:else}
     <div data-testid="word-popup">
-      <header class="sp-head">
-        <div class="sp-title-actions">
-          {#if bookFrequency !== null && bookFrequency > 0}
-            <span
-              class="sp-freq-badge"
-              data-testid="book-frequency"
-              aria-label={`this word appears ${bookFrequency} ${
-                bookFrequency === 1 ? 'time' : 'times'
-              } in the book`}
-            >
-              <span class="sp-freq-count" aria-hidden="true">x{bookFrequency}</span>
-              <!-- prettier-ignore -->
-              <span class="sp-freq-tip" role="tooltip">this word appears {bookFrequency}{bookFrequency === 1 ? ' time' : ' times'} in the book</span>
-            </span>
-          {/if}
-          {#if sentenceContext}
-            <button type="button" class="sp-header-button" aria-label="Copy sentence" title="Copy sentence" onclick={copySentence}>
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
-                <rect x="8" y="8" width="12" height="13" rx="2" />
-                <path d="M15 5V4a1 1 0 0 0-1-1H5a2 2 0 0 0-2 2v10a1 1 0 0 0 1 1h1" />
-              </svg>
-            </button>
-          {/if}
-          <button
-            type="button"
-            class="sp-header-button"
-            aria-label="Close"
-            title="Close"
-            onclick={onClose}
-          >
-            ×
-          </button>
-        </div>
-        {#if wordCropStyle}
-          <!-- PDF reader: crop of the word from the page image, so a
-               misread OCR surface can be checked against the real glyphs
-               and corrected via the headword search. -->
-          <div
-            class="sp-word-crop"
-            data-testid="word-crop"
-            style={wordCropStyle}
-            role="img"
-            aria-label="Word as it appears on the page"
-          ></div>
-        {/if}
-        {#if token.numberForms && numberDisplay()}
-          <h2 class="sp-word num-title">
-            <span>{token.numberForms.digitsLatin}</span>
-            {#if numberDisplay()?.nativeDigits !== token.numberForms.digitsLatin}
-              <!-- Latin-script languages (Basque) repeat the Latin digits;
-                   only show a second copy for non-Latin scripts. -->
-              <span class="num-native">{numberDisplay()?.nativeDigits}</span>
-            {/if}
-          </h2>
-        {:else}
-          <h2 class="sp-word">
-            <!-- Editable headword: type over it to search the internal
-                 dictionary as you go (results below). An exact headword match
-                 — or Enter / clicking a result — loads that lemma into the
-                 Translations section. After a pause it also re-runs the admin
-                 reference lookup for the typed word. Lets you recover when the
-                 NLP parsed the wrong lemma. -->
-            <span class="sp-entry-name">
-              <span class="sp-headword-field">
-                <span class="sp-headword-measure" aria-hidden="true">{headwordInput}</span>
-                <input
-                  class="sp-word-input"
-                  data-testid="headword-input"
-                  size="1"
-                  type="text"
-                  autocomplete="off"
-                  spellcheck="false"
-                  aria-label="Headword, edit to search the dictionary"
-                  value={headwordInput}
-                  oninput={(e) => onHeadwordInput((e.currentTarget as HTMLInputElement).value)}
-                  onkeydown={(e) => {
-                    if (e.key === 'Escape') {
-                      internalResults = [];
-                    } else if (e.key === 'Enter' && internalResults[0]) {
-                      // Load the top suggestion without forcing a click.
-                      e.preventDefault();
-                      void selectInternalLemma(internalResults[0]);
-                    }
-                  }}
-                />
-              </span>
-              {#if payload?.lemma.romanization && headwordInput === payload.lemma.headword}
-                <span class="sp-roman">{payload.lemma.romanization}</span>
-              {/if}
-              {#if payload && headwordInput === payload.lemma.headword && payload.lemma.alternativeHeadwords?.length}
-                <span class="sp-alternative-headwords" lang={language} dir="auto">{payload.lemma.alternativeHeadwords.join(', ')}</span>
-              {/if}
-            </span>
-            {#if payload}
-              <PosPill pos={payload.lemma.pos} class="sp-pos-pill" />
-              {#if token.selectionStatus === 'needs_review'}<small>Selection needs review</small>{/if}
-            {/if}
-            {#if internalResults.length > 0}
-              <ul class="sp-word-results" role="listbox" data-testid="headword-results">
-                {#each internalResults as r (r.id)}
-                  <li>
-                    <button
-                      type="button"
-                      class="sp-word-result"
-                      role="option"
-                      aria-selected="false"
-                      onclick={() => void selectInternalLemma(r)}
-                    >
-                      <span class="sp-word-result-hw">{r.headword}</span>
-                      {#if r.pos}<span class="sp-word-result-pos">{r.pos.toLowerCase()}</span>{/if}
-                      {#if r.glossDefault}<span class="sp-word-result-gloss">{r.glossDefault}</span
-                        >{/if}
-                    </button>
-                  </li>
-                {/each}
-              </ul>
-            {/if}
-          </h2>
-        {/if}
+    {#if isDesktop}{@render wordHeader()}{/if}
+    <div class="sp-details">
       {#if token.numberForms}
         <!-- digit-only NUM token. Show the Latin digits beside
              the text language's native-script digits, then the
@@ -1887,7 +1895,7 @@
           <p class="muted">Loading…</p>
         {/if}
       {/if}
-    </header>
+    </div>
 
     {#if token.chapterId && token.mergeOptions?.length && !pendingSelection}
       {#key token.id}
@@ -2553,14 +2561,21 @@
   }
   .sp-head {
     position: relative;
-    margin-bottom: 0.85rem;
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
     align-items: start;
     column-gap: 0.5rem;
   }
-  .sp-head > * {
-    grid-column: 1 / -1;
+  @media (max-width: 959.98px) {
+    .sp-head {
+      flex: none;
+      z-index: 1;
+      padding: 1.25rem 1.1rem 0;
+    }
+  }
+  .sp-details {
+    display: grid;
+    margin-bottom: 0.85rem;
   }
   /* PDF reader: cropped word image. Fixed height; width follows the
      word's pixel aspect via the inline aspect-ratio. A light frame +

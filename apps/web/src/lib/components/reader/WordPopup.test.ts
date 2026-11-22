@@ -2291,12 +2291,17 @@ describe('Mobile word definitions', () => {
     return { ...view, request };
   }
 
-  it('shows the active definition and keeps study status outside the scrolling body', async () => {
+  it('keeps the word header and study status on either side of the scrolling definition', async () => {
     const view = openMobile(false);
-    expect(view.getByTestId('selected-definition').textContent).toContain('one; a');
+    const definition = view.getByTestId('selected-definition');
+    expect(definition.textContent).toContain('one; a');
+    const body = definition.closest('.sheet-body');
+    const header = view.getByTestId('headword-input').closest('header');
+    expect(body?.previousElementSibling).toBe(header);
+    expect(header?.contains(view.getByRole('button', { name: 'Close' }))).toBe(true);
     expect(view.queryByText('only')).toBeNull();
     const controls = view.getByRole('group', { name: 'Mark status' });
-    expect(controls.closest('footer')?.previousElementSibling?.classList.contains('sheet-body')).toBe(true);
+    expect(body?.nextElementSibling).toBe(controls.closest('footer'));
     expect(view.queryByRole('button', { name: 'Choose definition' })).toBeNull();
   });
 

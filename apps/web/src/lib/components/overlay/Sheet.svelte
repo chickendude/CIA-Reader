@@ -30,6 +30,7 @@
      *  blur. The reader's word side-panel uses this so the surrounding
      *  paragraph remains readable while a word is locked. */
     dimmed?: boolean;
+    header?: Snippet;
     children?: Snippet;
     footer?: Snippet;
   }
@@ -41,6 +42,7 @@
     width = 380,
     maxHeight = '85dvh',
     dimmed = true,
+    header,
     children,
     footer,
   }: Props = $props();
@@ -124,7 +126,8 @@
           </button>
         </header>
       {/if}
-      <div class="sheet-body">
+      {@render header?.()}
+      <div class="sheet-body" class:has-header={!!header}>
         {#if children}{@render children()}{/if}
       </div>
       {@render footer?.()}
@@ -248,6 +251,10 @@
     flex: 1;
     overflow-y: auto;
     padding: 1.25rem 1.1rem 1.5rem;
+  }
+
+  .sheet-body.has-header {
+    padding-top: 0;
   }
 
   /* Respect reduced-motion users — no slide animations. */
