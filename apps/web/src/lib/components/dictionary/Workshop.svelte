@@ -23,7 +23,7 @@
   const toastStore = getToastStore();
   import { dictionaryProfile } from '$lib/dictionary/profiles';
   type PageData = Awaited<ReturnType<typeof loadWorkshop>>;
-  let { data, reviewOnly = false }: { data: PageData; reviewOnly?: boolean } = $props();
+  let { data }: { data: PageData } = $props();
   const language = $derived(data.language.code);
   const scriptLetters = $derived(new RegExp('\\p{Script=' + data.language.script + '}', 'u'));
   const profile = $derived(dictionaryProfile(language));
@@ -36,7 +36,7 @@
     untrack(() => data.initial || data.observed ? 'editor' : 'none'),
   );
   let tab = $state<'dictionary' | 'review'>(
-    untrack(() => ((data.initial || data.browse) && !reviewOnly ? 'dictionary' : 'review')),
+    untrack(() => (data.initial || data.browse ? 'dictionary' : 'review')),
   );
   let query = $state(''),
     offset = $state(0),
@@ -69,7 +69,7 @@
 
   const kind = $derived.by(() => {
     const requested = page.url.searchParams.get('kind') ?? rememberedKind;
-    return reviewTypes.find(type => type.value === requested)?.value ?? (reviewOnly ? 'unresolved' : '');
+    return reviewTypes.find(type => type.value === requested)?.value ?? '';
   });
 
   function selectFilter(param: 'textId' | 'kind', selected: string) {
@@ -297,7 +297,7 @@
 </script>
 
 {#snippet heading()}
-  <PageTitle>{reviewOnly ? data.language.displayName + ' dictionary' : 'Dictionary workshop'}</PageTitle>
+  <PageTitle>Dictionary workshop</PageTitle>
 {/snippet}
 
 <PageLayout {heading}>
@@ -311,7 +311,7 @@
       {#if profile.reviewHref}<Button href={profile.reviewHref(page.url, book)}>Review book context</Button>{/if}
     </div>
   </header>
-  {#if !reviewOnly && data.reports.length}<WorkshopReports {language}
+  {#if data.reports.length}<WorkshopReports {language}
       reports={data.reports}
       open={(id) => open(id)}
       changed={() => {
@@ -320,22 +320,18 @@
     />{/if}
   <div class="panes">
     <aside>
-      {#if reviewOnly}
-        <h2>Book review <small>{total.toLocaleString()}</small></h2>
-      {:else}
-        <nav aria-label="Workshop views">
-          {#each ['dictionary', 'review'] as const as name}<button
-              class:current={tab === name}
-              onclick={() => {
-                tab = name;
-                query = '';
-                offset = 0;
-              }}
-              >{name === 'dictionary' ? 'Dictionary' : 'Review'}{#if name === 'review' && total}
-                <small>{total.toLocaleString()}</small>{/if}</button
-            >{/each}
-        </nav>
-      {/if}
+      <nav aria-label="Workshop views">
+        {#each ['dictionary', 'review'] as const as name}<button
+            class:current={tab === name}
+            onclick={() => {
+              tab = name;
+              query = '';
+              offset = 0;
+            }}
+            >{name === 'dictionary' ? 'Dictionary' : 'Review'}{#if name === 'review' && total}
+              <small>{total.toLocaleString()}</small>{/if}</button
+          >{/each}
+      </nav>
       {#if tab === 'review'}
         <select
           aria-label="Review book"
@@ -483,10 +479,6 @@
     margin-bottom: 1.2rem;
   }
 
-  h2 {
-    font-size: 1rem;
-    margin: 0;
-  }
   header {
     flex-wrap: wrap;
   }

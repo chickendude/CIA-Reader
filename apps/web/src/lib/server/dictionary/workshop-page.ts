@@ -18,14 +18,13 @@ export async function loadWorkshop(
   language: LanguageCode,
   user: Pick<User, 'id' | 'role'> | null,
   url: URL,
-  reviewOnly = false,
 ) {
   if (!user || !(await canEditDictionary(user, language)))
     error(403, 'Dictionary curator access required for this language');
-  const id = reviewOnly ? null : url.searchParams.get('id');
+  const id = url.searchParams.get('id');
   if (id && !z.string().uuid().safeParse(id).success) error(404, 'Entry not found');
   const adapter = workshopAdapter(language);
-  const reports = !reviewOnly && adapter.listReports ? await adapter.listReports() : [];
+  const reports = adapter.listReports ? await adapter.listReports() : [];
   return {
     language: getLanguage(language),
     browse:

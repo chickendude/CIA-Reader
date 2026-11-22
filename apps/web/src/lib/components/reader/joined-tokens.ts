@@ -2,61 +2,59 @@ import { withReaderCandidate, type ServerToken } from './types.js';
 
 const hyphen = /^[-‐‑]$/u;
 
-function hyphenatedReading(tokens: ServerToken[], i: number) {
+function dictionaryReading(tokens: ServerToken[], i: number) {
   const token = tokens[i]!;
   const ends = token.dictionarySpanEnds;
-  if (!ends || !token.isWord || token.lastTokenIdx !== undefined) return;
+  if (!ends || !token.isWord || token.ignoredHere || token.lastTokenIdx !== undefined) return;
   if (tokens[i - 2]?.isWord && hyphen.test(tokens[i - 1]!.surface)) return;
-  let last = i;
-  while (hyphen.test(tokens[last + 1]?.surface ?? '') && tokens[last + 2]?.isWord) last += 2;
-  if (last === i) return;
 
-  // Only offer readings that cover the entire printed word in the joined popup.
-  const end = tokens[last]!.idx + 1;
-  let reading = token;
-  if (!token.lemmaId || ends[token.lemmaId] !== end) {
-    if (token.correctedByViewer || token.selectedBy === 'human') return;
-    const match = token.candidates.find((c) => ends[c.lemmaId] === end);
-    if (!match) return;
-    reading = withReaderCandidate(token, match);
+  const primaryEnd = token.lemmaId ? ends[token.lemmaId] : undefined;
+  const fixed = token.correctedByViewer || token.selectedBy === 'human';
+  if (fixed && !primaryEnd) return;
+
+  // Prefer a selected phrase, then the longest complete dictionary match.
+  const possibleEnds = new Set<number>();
+  if (primaryEnd && (fixed || token.selectedBy)) possibleEnds.add(primaryEnd);
+  if (!fixed) {
+    const alternatives = token.candidates.map(c => ends[c.lemmaId]);
+    if (primaryEnd) alternatives.push(primaryEnd);
+    for (const end of alternatives.filter((n): n is number => n !== undefined).sort((a, b) => b - a))
+      possibleEnds.add(end);
   }
-  const candidates = reading.candidates.filter((c) => ends[c.lemmaId] === end);
-  if (reading.candidates.some((c) => ends[c.lemmaId] !== end && c.selectedBy === 'human')) return;
-  return { ...reading, candidates, isAmbiguous: candidates.length > 0 };
+  for (const end of possibleEnds) {
+    const last = i + end - token.idx - 1;
+    const lastWord = tokens[last];
+    if (last <= i || lastWord?.idx !== end - 1 || !lastWord.isWord) continue;
+    if (hyphen.test(tokens[last + 1]?.surface ?? '') && tokens[last + 2]?.isWord) continue;
+    const parts = tokens.slice(i + 1, last + 1);
+    const blocked = parts.some(t => {
+      if (t.lastTokenIdx !== undefined || t.correctedByViewer || t.ignoredHere) return true;
+      if (t.selectedBy === 'human' || t.candidates.some(c => c.selectedBy === 'human')) return true;
+      return !t.isWord && (t.status === 'ignored' || !/^(?:\s+|[-‐‑])$/u.test(t.surface));
+    });
+    if (blocked) continue;
+
+    let reading = token;
+    if (end !== primaryEnd) {
+      const chosen = token.candidates.find(c => ends[c.lemmaId] === end);
+      if (!chosen) continue;
+      reading = withReaderCandidate(token, chosen);
+    }
+    // A joined token represents the whole phrase. Its word-level readings belong to other spans.
+    if (reading.candidates.some(c => c.selectedBy === 'human' && ends[c.lemmaId] !== end)) continue;
+    const candidates = reading.candidates.filter(c => ends[c.lemmaId] === end);
+    return { end, reading: { ...reading, candidates, isAmbiguous: candidates.length > 0 } };
+  }
 }
 
 export function joinDictionaryEntries(tokens: ServerToken[]) {
   const spans = [];
   const readings = tokens.slice();
   for (const [i, token] of tokens.entries()) {
-    const whole = hyphenatedReading(tokens, i);
-    const reading = whole ?? token;
-    const end = reading.lemmaId && reading.dictionarySpanEnds?.[reading.lemmaId];
-    if (
-      !end ||
-      !token.isWord ||
-      (!whole && token.features.Compound !== 'Yes') ||
-      token.lastTokenIdx !== undefined
-    )
-      continue;
-    const parts = tokens.slice(i + 1, i + end - token.idx);
-    // A reader's choice for the phrase takes priority over AI suggestions on its words.
-    const keepAiSelections = !whole && !reading.correctedByViewer && reading.selectedBy !== 'human';
-    if (
-      parts.at(-1)?.idx !== end - 1 ||
-      parts.some(
-        (t) =>
-          t.lastTokenIdx !== undefined ||
-          t.correctedByViewer ||
-          t.selectedBy === 'human' ||
-          (keepAiSelections && t.selectedBy === 'ai') ||
-          t.ignoredHere ||
-          (t.status === 'ignored' && !t.isWord),
-      )
-    )
-      continue;
-    readings[i] = reading;
-    spans.push({ first: token.idx, last: end - 1, anchor: token.idx });
+    const match = dictionaryReading(tokens, i);
+    if (!match) continue;
+    readings[i] = match.reading;
+    spans.push({ first: token.idx, last: match.end - 1, anchor: token.idx });
   }
   return spans.length ? joinReaderSpans(readings, spans) : tokens;
 }

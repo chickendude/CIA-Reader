@@ -95,6 +95,33 @@ describe('multiword Hindi dictionary entries in the reader', () => {
     expect(result[1]).toBe(spell[3]);
   });
 
+  it('joins कहीं के under कहीं का when both words have separate AI suggestions', () => {
+    const phrase = {
+      lemmaId: 'idiom', headword: 'कहीं का', pos: 'ADJ', glossDefault: 'you utter ...',
+      features: { Compound: 'Yes' }, score: 1, bookFrequency: 1,
+    };
+    const words = [
+      token(0, 'कहीं', {
+        lemmaId: 'somewhere', selectedBy: 'ai', glossDefault: 'somewhere', bookFrequency: 76,
+        candidates: [phrase], dictionarySpanEnds: { idiom: 3 },
+      }),
+      token(1, ' ', { isWord: false }),
+      token(2, 'के', { lemmaId: 'of', selectedBy: 'ai' }),
+      token(3, '!', { isWord: false }),
+    ];
+    expect(joinDictionaryEntries(words)).toEqual([
+      expect.objectContaining({
+        surface: 'कहीं के', headword: 'कहीं का', lemmaId: 'idiom', glossDefault: 'you utter ...',
+        lastTokenIdx: 2, bookFrequency: 1, candidates: [], isAmbiguous: false,
+      }),
+      words[3],
+    ]);
+    for (const index of [0, 2]) {
+      const reviewed = words.map((t, i) => i === index ? { ...t, selectedBy: 'human' as const } : t);
+      expect(joinDictionaryEntries(reviewed)).toEqual(reviewed);
+    }
+  });
+
   it('shows the confirmed idiom across an AI suggestion on से', () => {
     const idiom = [
       token(0, 'टस', {

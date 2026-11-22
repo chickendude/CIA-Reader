@@ -89,9 +89,6 @@
         {#if data.language.code !== 'hi'}
           <Button href={`/moderation/dictionary?language=${data.language.code}`}>Manage entries</Button>
         {/if}
-        {#if data.language.code === 'hi'}
-          <Button variant="primary" href="/dictionary/hi/review">Review unparsed words</Button>
-        {/if}
       {:else if data.language.code === 'hi' && data.user?.role === 'curator'}
         <Button href={hindiReviewHref(page.url)}>Review book context</Button>
       {/if}
