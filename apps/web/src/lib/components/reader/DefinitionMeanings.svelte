@@ -1,11 +1,8 @@
 <script lang="ts">
+  import { splitMeanings } from '$lib/dictionary/meanings';
+
   let { text }: { text: string } = $props();
-  const meanings = $derived(
-    text
-      .split(';')
-      .map((part) => part.trim())
-      .filter(Boolean),
-  );
+  const meanings = $derived(splitMeanings(text));
 </script>
 
 <ol class="definition-meanings" aria-label="Meanings">

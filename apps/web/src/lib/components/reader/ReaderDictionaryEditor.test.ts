@@ -75,7 +75,7 @@ it('keeps the observed form and context when attaching it to an existing headwor
   );
   expect(prompt.searchParams.get('q')).toContain('【खोजियों】');
   expect(prompt.searchParams.get('q')).toContain('इन खोजियों ने कहा।');
-  await fireEvent.click(await screen.findByRole('button', { name: 'खोजी NOUN seeker' }));
+  await fireEvent.click(await screen.findByRole('button', { name: 'खोजी NOUN 1. seeker' }));
   await waitFor(() =>
     expect(screen.getByLabelText<HTMLTextAreaElement>('English meaning').value).toBe('seeker'),
   );

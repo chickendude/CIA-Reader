@@ -2,6 +2,7 @@
   import { afterNavigate, beforeNavigate, goto } from '$app/navigation';
   import { page } from '$app/state';
   import { onDestroy, untrack } from 'svelte';
+  import { numberedMeanings } from '$lib/dictionary/meanings';
   import Pagination from '$lib/components/input/Pagination.svelte';
   import { dictionaryProfile } from '$lib/dictionary/profiles';
   import { patternLabel } from '$lib/dictionary/hindi-patterns';
@@ -65,7 +66,7 @@
         <a href={resultUrl(row.id, data.offset)} class:chosen={entry?.id === row.id}
           aria-current={entry?.id === row.id ? 'true' : undefined} data-sveltekit-noscroll>
           <strong lang={language} dir="auto">{row.headword}</strong> <small>{row.pos.toLowerCase()}</small>
-          {#if row.glossDefault}<span>{row.glossDefault}</span>{/if}
+          {#if row.glossDefault}<span>{numberedMeanings(row.glossDefault)}</span>{/if}
         </a>
       {:else}
         <p role="status">No matching entries.</p>
@@ -82,16 +83,24 @@
       {#if entry.alternativeHeadwords.length}
         <p lang={language} dir="auto">{entry.alternativeHeadwords.join(', ')}</p>
       {/if}
-      {#each entry.definitions as definition}
-        <p lang={definition.targetLanguage} dir="auto">{definition.body}{#if definition.sourceAttribution}
-          <small class="source">{definition.sourceAttribution}</small>{/if}</p>
+      {#if entry.meanings.length}
+        <ol aria-label="Meanings">
+          {#each entry.meanings as meaning}
+            <li lang={meaning.targetLanguage} dir="auto">{meaning.text}
+              {#if meaning.sourceAttribution}<small class="source">{meaning.sourceAttribution}</small>{/if}
+            </li>
+          {/each}
+        </ol>
       {:else}
-        <p>{entry.glossDefault || 'No definition available.'}</p>
-      {/each}
-      {#if entry.wiktionary}<a class="source-link" href={entry.wiktionary}>Wiktionary</a>{/if}
+        <p>No definition available.</p>
+      {/if}
       {#if entry.forms.length}
-        <h3>Forms</h3>
-        <p lang={language} dir="auto">{entry.forms.join(', ')}</p>
+        {#key entry.id}
+          <details>
+            <summary>Forms</summary>
+            <p lang={language} dir="auto">{entry.forms.join(', ')}</p>
+          </details>
+        {/key}
       {/if}
     </article>
   {/if}
@@ -117,10 +126,11 @@
   .results a:hover { background: var(--surface-2); }
   .results a:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
   h2 { margin: 0; font-size: 1.65rem; }
-  h3 { margin-bottom: 0.25rem; font-size: 1rem; }
+  summary { cursor: pointer; font-weight: 600; }
   article { overflow-wrap: anywhere; }
   .part-of-speech, .source { color: var(--ink-2); }
   .part-of-speech { margin-top: 0.25rem; }
   .source { display: block; }
-  .source-link { font-size: 0.85rem; }
+  ol { padding-inline-start: 1.6em; list-style: decimal; }
+  li + li { margin-top: 0.3em; }
 </style>

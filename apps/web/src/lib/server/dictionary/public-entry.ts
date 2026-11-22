@@ -1,6 +1,7 @@
 import { error } from '@sveltejs/kit';
 import type { LanguageCode } from '@ciareader/shared-types';
 import { sql } from 'drizzle-orm';
+import { splitMeanings } from '$lib/dictionary/meanings';
 import { db } from '../db/index.js';
 import { getLemmaTranslations, LemmaNotFoundError } from './lookups.js';
 
@@ -10,13 +11,8 @@ export async function publicDictionaryEntry(language: LanguageCode, id: string) 
     throw cause;
   });
   if (result.lemma.language !== language) error(404, 'Dictionary entry not found');
-  const [details] = await db.execute<{ paradigm: string | null; wiktionary: string | null; forms: string[] }>(sql`
-    SELECT e.entry->>'paradigm' AS paradigm,
-      (SELECT url FROM (
-        SELECT e.entry->>'source' AS url
-        UNION ALL SELECT d->>'source_url' FROM jsonb_array_elements(e.entry->'definitions') d
-      ) sources WHERE url LIKE 'https://en.wiktionary.org/wiki/%' LIMIT 1) AS wiktionary,
-      ARRAY(
+  const [details] = await db.execute<{ paradigm: string | null; forms: string[] }>(sql`
+    SELECT e.entry->>'paradigm' AS paradigm, ARRAY(
       SELECT surface FROM (
         SELECT f.surface FROM lemma_forms f WHERE f.lemma_id=l.id AND f.quarantined_at IS NULL
         UNION SELECT f.surface FROM dictionary_pattern_forms f WHERE f.lemma_id=l.id
@@ -34,6 +30,10 @@ export async function publicDictionaryEntry(language: LanguageCode, id: string) 
   }
   return {
     ...result.lemma, forms: details?.forms ?? [], paradigm: details?.paradigm ?? null,
-    definitions, wiktionary: details?.wiktionary ?? null,
+    meanings: definitions.flatMap(({ body, targetLanguage, sourceAttribution }) =>
+      splitMeanings(body).map((text, index, senses) => ({
+        text, targetLanguage, sourceAttribution: index === senses.length - 1 ? sourceAttribution : null,
+      })),
+    ),
   };
 }

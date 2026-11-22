@@ -52,6 +52,7 @@ it.skipIf(!url)(
             .insert(schema.textChapters)
             .values({ textId: book!.id, idx: 0, body })
             .returning();
+          await tx.insert(schema.hindiDictionaryState).values({ id: 1 }).onConflictDoNothing();
           const [entry] = await tx
             .insert(schema.lemmas)
             .values({

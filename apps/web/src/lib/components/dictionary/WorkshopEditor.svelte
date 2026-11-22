@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { numberedMeanings } from '$lib/dictionary/meanings';
   import { untrack } from 'svelte';
   import { workshop as send } from '$lib/dictionary/workshop-client';
   import {
@@ -282,7 +283,7 @@
       >
       {#each matches.filter((m) => m.id !== draft.id) as m}<button
           class="result"
-          onclick={() => choose(m)}>{m.lemma} <small>{m.pos}</small> {m.meaning}</button
+          onclick={() => choose(m)}>{m.lemma} <small>{m.pos}</small> {numberedMeanings(m.meaning)}</button
         >{/each}
     </div>
   {/if}

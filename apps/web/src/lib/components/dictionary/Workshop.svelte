@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { numberedMeanings } from '$lib/dictionary/meanings';
   import Pagination from '$lib/components/input/Pagination.svelte';
   import { getToastStore } from '$lib/components/toast/toast-store.js';
   import { afterNavigate, replaceState } from '$app/navigation';
@@ -411,7 +412,7 @@
               disabled={working || pending}
               onclick={() => { updateListUrl(row.id); void openResult(row); }}
               ><strong lang={language} dir="auto">{row.lemma}</strong> <small>{row.pos}</small><span
-                >{row.meaning}</span
+                >{numberedMeanings(row.meaning)}</span
               ></button
             >{/each}
           {#if !rows.length && !pending}<p>No matching entries.</p>{/if}
