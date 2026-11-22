@@ -1,0 +1,67 @@
+.dictionary-workspace {
+  .panes {
+    display: grid;
+    grid-template-columns: minmax(15rem, 27%) minmax(0, 1fr);
+    gap: 1rem;
+    align-items: start;
+  }
+  .panes > aside,
+  .panes > article {
+    background: var(--card);
+    border: 1px solid var(--rule);
+    border-radius: 0.65rem;
+    padding: 1.1rem;
+    min-width: 0;
+  }
+  .panes > aside {
+    position: sticky;
+    top: 0.5rem;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.65rem;
+  }
+  aside > select,
+  aside > input {
+    width: 100%;
+    min-width: 0;
+  }
+  .results {
+    max-height: 62vh;
+    overflow: auto;
+  }
+  .results :is(button, a) {
+    display: block;
+    border: 0;
+    border-bottom: 1px solid var(--rule);
+    border-radius: 0;
+    text-align: start;
+    width: 100%;
+    background: transparent;
+  }
+  .results :is(button, a).chosen {
+    background: var(--surface-2, var(--paper));
+    box-shadow: inset 3px 0 var(--accent);
+  }
+  .results span {
+    display: block;
+    font-size: 0.84rem;
+    color: var(--ink-3);
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    overflow: hidden;
+  }
+  @media (max-width: 760px) {
+    .panes {
+      grid-template-columns: 1fr;
+    }
+    .panes > aside {
+      position: static;
+    }
+    .results {
+      max-height: 11rem;
+    }
+    .panes > article {
+      padding: 0.85rem;
+    }
+  }
+}

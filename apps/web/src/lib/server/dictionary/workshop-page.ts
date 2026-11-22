@@ -1,4 +1,4 @@
-import { error } from '@sveltejs/kit';
+import { error, redirect } from '@sveltejs/kit';
 import { canEditDictionary } from '$lib/server/dictionary/permissions';
 import { reviewBooks } from '$lib/server/texts/hindi-review';
 import { getWorkshopWord } from './workshop';
@@ -6,12 +6,18 @@ import { z } from 'zod';
 import type { User } from '$lib/server/db/schema';
 
 import { getLanguage, isSupportedLanguage, type LanguageCode } from '@ciareader/shared-types';
-import { dictionaryProfile } from '$lib/dictionary/profiles';
+import { workshopPath } from '$lib/dictionary/profiles';
 import { workshopAdapter } from './workshop-adapters';
 
 export function workshopLanguage(code: string): LanguageCode {
   if (!isSupportedLanguage(code)) error(404, 'Unknown dictionary');
   return code;
+}
+
+export function redirectWorkshop(language: LanguageCode, url: URL) {
+  const query = new URLSearchParams(url.searchParams);
+  if (language === 'hi' && !query.has('view') && !query.has('id')) query.set('view', 'review');
+  redirect(308, workshopPath(language) + (query.size ? '?' + query : ''));
 }
 
 export async function loadWorkshop(
@@ -27,9 +33,9 @@ export async function loadWorkshop(
   const reports = adapter.listReports ? await adapter.listReports() : [];
   return {
     language: getLanguage(language),
-    browse:
-      dictionaryProfile(language).initialView !== 'review' ||
-      url.searchParams.get('view') === 'entries',
+    browse: url.searchParams.get('view') !== 'review',
+    query: url.searchParams.get('q') ?? '',
+    offset: Math.max(0, Number.parseInt(url.searchParams.get('offset') ?? '', 10) || 0),
     stutterReview: Boolean(adapter.reviewStutter),
     reports,
     books: await reviewBooks(user, language),

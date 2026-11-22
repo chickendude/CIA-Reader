@@ -2,7 +2,7 @@
  * The dictionary page and correction editor use the same search. Readers can enter a word in its
  * own script or type a romanized spelling.
  */
-import { and, asc, count, eq, gte, ilike, inArray, lte, sql } from 'drizzle-orm';
+import { and, asc, count, eq, gte, ilike, inArray, lte, or, sql } from 'drizzle-orm';
 
 import { db, schema } from '../db/index.js';
 import type { Lemma } from '../db/schema.js';
@@ -21,6 +21,7 @@ export const DEFAULT_PAGE_SIZE = 50;
 export const MAX_PAGE_SIZE = 200;
 
 export type BrowseQuery = {
+  matchEntryText?: boolean;
   q?: string | null;
   pos?: readonly string[] | null;
   /** Inclusive lower bound on frequency rank (1 = most frequent). */
@@ -165,11 +166,15 @@ async function runSearchTier(
     .from(schema.lemmas)
     .where(where)
     .orderBy(
+      ...(query.matchEntryText && query.q?.trim()
+        ? [sql`(${schema.lemmas.headword}=ANY(ARRAY[${query.q.trim()},${transliterateLatinQuery(query.q.trim(), language).value}])) DESC`]
+        : []),
       // Most-frequent first. NULL ranks fall to the end; Postgres default
       // NULLS LAST for ASC is what we want, but we spell it to avoid
       // surprise if the collation ever changes.
       sql`${schema.lemmas.frequencyRank} ASC NULLS LAST`,
       asc(schema.lemmas.headword),
+      asc(schema.lemmas.id),
     )
     .limit(limit)
     .offset(offset);
@@ -221,7 +226,17 @@ export async function listDictionaryLemmas(
   const strictClause: SearchClause = q
     ? ilike(schema.lemmas.headword, `${escapeLikePrefix(q)}%`)
     : null;
-  const strict = await runSearchTier(language, query, strictClause, limit, offset);
+  let search = strictClause;
+  if (query.matchEntryText && rawQ && strictClause) {
+    const spellings = sql`ARRAY[${rawQ},${q}]`;
+    search = or(strictClause, ilike(schema.lemmas.glossDefault, `%${escapeLikePrefix(rawQ)}%`),
+      sql`${schema.lemmas.id} IN (
+        SELECT lemma_id FROM lemma_forms WHERE surface=ANY(${spellings}) AND quarantined_at IS NULL
+        UNION ALL SELECT lemma_id FROM dictionary_pattern_forms WHERE surface=ANY(${spellings})
+        UNION ALL SELECT lemma_id FROM dictionary_entries WHERE entry->'alternative_headwords' ?| ${spellings}
+      )`) ?? strictClause;
+  }
+  const strict = await runSearchTier(language, query, search, limit, offset);
 
   if (!q || strict.rows.length > 0) {
     return {
@@ -230,7 +245,8 @@ export async function listDictionaryLemmas(
       limit,
       offset,
       usedNuktaFallback: false,
-      usedRomanizationTransliteration: transliterated,
+      usedRomanizationTransliteration: transliterated && (!query.matchEntryText ||
+        strict.rows.some((row) => row.headword.startsWith(q))),
       effectiveQuery: q,
     };
   }

@@ -3,7 +3,7 @@
 HindiDB is Parhiba’s dictionary format. Each entry has a root word, its accepted forms,
 and any saved spelling rules or exceptions. The reader matches passages against the
 editable PostgreSQL dictionary. To set up entries for another supported language, open
-**Dictionary > Edit dictionary**, choose **New entry**, and enter the headword, part of
+**Dictionary** with **Staff** enabled, choose **New entry**, and enter the headword, part of
 speech, and meaning. Enter additional spellings in **Other forms**, separated by commas. Alternative headwords and exclusions also affect
 reader matching. Reprocess an existing book to refresh its saved matches.
 

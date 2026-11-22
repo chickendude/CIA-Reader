@@ -1,77 +1,41 @@
-/**
- * Public dictionary browse page loader.
- *
- * Renders server-side — no auth required — so each language's lemma
- * index is crawlable. Search, filters, and pagination are driven by
- * URL query params so deep links and back-button work without JS.
- */
-import { canEditDictionary } from '$lib/server/dictionary/permissions.js';
-import { listHindiPatterns, singleHindiDefinitions } from '$lib/server/dictionary/hindidb.js';
+import { getLanguage } from '@ciareader/shared-types';
 import { error } from '@sveltejs/kit';
-
-import {
-  DEFAULT_PAGE_SIZE,
-  listDictionaryLemmas,
-  MAX_PAGE_SIZE,
-  publicLemma,
-} from '$lib/server/dictionary/browse.js';
-import {
-  getLanguage,
-  isSupportedLanguage,
-  type LanguageCode,
-} from '@ciareader/shared-types';
+import { z } from 'zod';
+import { canEditDictionary } from '$lib/server/dictionary/permissions.js';
+import { loadWorkshop, workshopLanguage } from '$lib/server/dictionary/workshop-page';
+import { DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE, listDictionaryLemmas, publicLemma } from '$lib/server/dictionary/browse.js';
+import { publicDictionaryEntry } from '$lib/server/dictionary/public-entry';
 import type { PageServerLoad } from './$types';
 
-function readInt(url: URL, key: string, fallback: number): number {
-  const raw = url.searchParams.get(key);
-  if (raw == null || raw === '') return fallback;
-  const n = Number.parseInt(raw, 10);
+function readInt(url: URL, key: string, fallback: number) {
+  const n = Number.parseInt(url.searchParams.get(key) ?? '', 10);
   return Number.isFinite(n) ? n : fallback;
 }
 
 export const load: PageServerLoad = async ({ params, url, locals }) => {
-  if (!isSupportedLanguage(params.language)) {
-    throw error(404, `Unknown language: ${params.language}`);
+  const code = workshopLanguage(params.language);
+  const language = getLanguage(code);
+  const user = locals?.user ?? null;
+  const canEdit = await canEditDictionary(user, code);
+  if (canEdit && url.searchParams.get('mode') !== 'public') {
+    return { language, canEdit, staff: await loadWorkshop(code, user, url) };
   }
-  const language = params.language as LanguageCode;
-  const descriptor = getLanguage(language);
 
-  const limit = Math.min(
-    Math.max(readInt(url, 'limit', DEFAULT_PAGE_SIZE), 1),
-    MAX_PAGE_SIZE,
-  );
+  const id = url.searchParams.get('id');
+  if (id && !z.string().uuid().safeParse(id).success) error(404, 'Entry not found');
+  const limit = Math.min(Math.max(readInt(url, 'limit', DEFAULT_PAGE_SIZE), 1), MAX_PAGE_SIZE);
   const offset = Math.max(readInt(url, 'offset', 0), 0);
   const q = url.searchParams.get('q');
   const pos = url.searchParams.getAll('pos');
-
-  const result = await listDictionaryLemmas(language, {
-    q,
-    pos,
-    limit,
-    offset,
-  });
-
-  const canEdit = await canEditDictionary(locals?.user, language);
-  const hindiIds = language === 'hi' ? result.lemmas.map(row => row.id) : [];
-  const [patterns, definitionIds] = await Promise.all([
-    listHindiPatterns(hindiIds),
-    singleHindiDefinitions(canEdit ? hindiIds : []),
-  ]);
+  const result = await listDictionaryLemmas(code, { q, pos, limit, offset, matchEntryText: true });
+  const selected = id || result.lemmas[0]?.id;
   return {
-    canEdit, patterns, definitionIds,
-    language: descriptor,
+    language, canEdit, staff: null,
+    entry: selected ? await publicDictionaryEntry(code, selected) : null,
     lemmas: result.lemmas.map(publicLemma),
-    totalCount: result.totalCount,
-    limit: result.limit,
-    offset: result.offset,
-    usedNuktaFallback: result.usedNuktaFallback,
-    // Surface the romanization-transliteration tier so the
-    // page can render "showing matches for किताब (from kitaab)".
+    totalCount: result.totalCount, limit: result.limit, offset: result.offset,
     usedRomanizationTransliteration: result.usedRomanizationTransliteration,
-    effectiveQuery: result.effectiveQuery,
-    query: {
-      q: q ?? '',
-      pos,
-    },
+    usedNuktaFallback: result.usedNuktaFallback, effectiveQuery: result.effectiveQuery,
+    query: { q: q ?? '', pos },
   };
 };

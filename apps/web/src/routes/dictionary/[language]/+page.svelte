@@ -1,67 +1,58 @@
 <script lang="ts">
+  import { goto } from '$app/navigation';
+  import { page } from '$app/state';
+  import { tick } from 'svelte';
+  import Button from '$lib/components/input/Button.svelte';
+  import { dictionaryProfile } from '$lib/dictionary/profiles';
   import PageLayout from '$lib/components/shell/PageLayout.svelte';
   import PageTitle from '$lib/components/shell/PageTitle.svelte';
-  import { hindiReviewHref } from '$lib/dictionary/hindi-review-link';
-  import { page } from '$app/state';
-  import Pagination from '$lib/components/input/Pagination.svelte';
-  import '$lib/styles/entry-table.css';
-  import { afterNavigate, beforeNavigate, goto } from '$app/navigation';
-  import { onDestroy } from 'svelte';
-  import Button from '$lib/components/input/Button.svelte';
-  import { workshopPath } from '$lib/dictionary/profiles';
-  import { patternLabel } from '$lib/dictionary/hindi-patterns.js';
-  import EditableDefinition from '$lib/components/reader/EditableDefinition.svelte';
-  import ScriptAwareInput from '$lib/components/input/ScriptAwareInput.svelte';
+  import Workshop from '$lib/components/dictionary/Workshop.svelte';
+  import PublicDictionary from './PublicDictionary.svelte';
+  import '$lib/styles/dictionary-workshop.css';
   import type { PageProps } from './$types';
+
   let { data }: PageProps = $props();
+  let workshop: Workshop | undefined = $state();
+  let retained = $state.raw<NonNullable<PageProps['data']['staff']> | null>(null);
+  const editor = $derived(data.staff ?? (data.canEdit && retained?.language.code === data.language.code ? retained : null));
+  const reviewHref = $derived(data.staff && dictionaryProfile(data.language.code).reviewHref?.(
+    page.url, workshop?.selectedReviewBook() ?? page.url.searchParams.get('textId') ?? undefined,
+  ));
 
-
-  let searchForm: HTMLFormElement;
-  let timer: ReturnType<typeof setTimeout>;
-  let inputKey = $state(0);
-  beforeNavigate(({ type }) => {
-    if (type === 'popstate' || type === 'link') clearTimeout(timer);
-  });
-  afterNavigate(({ type }) => {
-    if (type === 'popstate' || type === 'link') inputKey++;
-  });
-  onDestroy(() => clearTimeout(timer));
-
-  function search() {
-    clearTimeout(timer);
-    const params = new URLSearchParams();
-    for (const [name, value] of new FormData(searchForm)) {
-      if (typeof value === 'string' && value.trim()) params.append(name, value.trim());
+  async function toggleStaff() {
+    const url = new URL(page.url);
+    let openAfterSwitch: { id: string; query: string } | undefined;
+    if (data.staff) {
+      // Keep the editor mounted so a preview round trip preserves unsaved drafts.
+      retained = data.staff;
+      const selection = workshop?.previewSelection();
+      if (selection?.id) url.searchParams.set('id', selection.id);
+      else url.searchParams.delete('id');
+      if (selection?.query) url.searchParams.set('q', selection.query);
+      else url.searchParams.delete('q');
+      url.searchParams.set('mode', 'public');
+    } else {
+      url.searchParams.delete('mode');
+      const selection = data.entry;
+      const previous = workshop?.previewSelection();
+      const browsingChanged = url.searchParams.has('id') || data.query?.q !== previous?.query;
+      if (selection && browsingChanged && selection.id !== previous?.id) {
+        url.searchParams.set('id', selection.id);
+        url.searchParams.set('view', 'entries');
+        openAfterSwitch = { id: selection.id, query: data.query?.q ?? '' };
+      }
     }
-    void goto(`/dictionary/${data.language.code}?${params}`, {
-      replaceState: true,
-      keepFocus: true,
-      noScroll: true,
-    });
-  }
-
-  function queueSearch() {
-    clearTimeout(timer);
-    timer = setTimeout(search, 200);
-  }
-
-  function hrefWith(offset: number): string {
-    const params = new URLSearchParams();
-    if (data.query.q) params.set('q', data.query.q);
-    for (const p of data.query.pos) params.append('pos', p);
-    if (offset > 0) params.set('offset', String(offset));
-    if (data.limit !== 50) params.set('limit', String(data.limit));
-    const qs = params.toString();
-    return qs ? `?${qs}` : `/dictionary/${data.language.code}`;
+    await goto(url, { keepFocus: true, noScroll: true });
+    if (openAfterSwitch) {
+      await tick();
+      await workshop?.showEntry(openAfterSwitch.id, openAfterSwitch.query);
+    }
   }
 </script>
 
 <svelte:head>
   <title>{data.language.nativeDictionaryTitle} | {data.language.displayName} Dictionary | Parhiba</title>
-  <meta
-    name="description"
-    content="Browse {data.language.displayName} lemmas, glosses, and translations in Parhiba."
-  />
+  <meta name="description" content="Browse {data.language.displayName} dictionary entries and definitions in Parhiba." />
 </svelte:head>
 
 {#snippet heading()}
@@ -73,224 +64,40 @@
 {/snippet}
 
 <PageLayout {heading}>
-<div class="page" dir={data.language.textDirection}>
-  <header class="toolbar">
-    <div>
+  <div class="dictionary-workspace">
+    <header>
       {@render heading()}
-      <p class="entry-count muted" lang="en" dir="ltr">
-        {data.totalCount.toLocaleString('en-US')} {data.totalCount === 1 ? 'entry' : 'entries'}
-      </p>
-    </div>
-    <nav class="actions" aria-label="Dictionary tools">
       {#if data.canEdit}
-        <Button
-          href={workshopPath(data.language.code) + '?view=entries'}>Edit dictionary</Button
-        >
-        {#if data.language.code !== 'hi'}
-          <Button href={`/moderation/dictionary?language=${data.language.code}`}>Manage entries</Button>
-        {/if}
-      {:else if data.language.code === 'hi' && data.user?.role === 'curator'}
-        <Button href={hindiReviewHref(page.url)}>Review book context</Button>
+        <div class="actions">
+          {#if reviewHref}<Button href={reviewHref}>Book review</Button>{/if}
+          {#if data.staff && data.language.code !== 'hi'}
+            <Button href={`/moderation/dictionary?language=${data.language.code}`}>Manage entries</Button>
+          {/if}
+          <Button variant="toggle" aria-pressed={!!data.staff} onclick={toggleStaff}>Staff</Button>
+        </div>
       {/if}
-    </nav>
-  </header>
-  <form
-    method="get"
-    class="toolbar"
-    role="search"
-    data-testid="dictionary-search-form"
-    bind:this={searchForm}
-    onsubmit={(event) => {
-      event.preventDefault();
-      search();
-    }}
-  >
-    {#each data.query.pos as pos}<input type="hidden" name="pos" value={pos} />{/each}
-    {#if data.limit !== 50}<input type="hidden" name="limit" value={data.limit} />{/if}
-    <div class="search-fields">
-      {#key data.language.code + inputKey}
-        <ScriptAwareInput
-          language={data.language.code}
-          name="q"
-          value={data.query.q}
-          placeholder={`Search ${data.language.displayName} words`}
-          onNativeChange={queueSearch}
-        />
-      {/key}
-      <Button type="submit">Search</Button>
-    </div>
-  </form>
-
-  {#if data.usedRomanizationTransliteration}
-    <!--
-      the user typed Latin and we transliterated to native
-      before searching. Show what we actually queried so an unexpected
-      ITRANS mapping (e.g. `S` vs `Sh`) is debuggable from the UI.
-    -->
-    <p class="transliteration-hint" role="status" data-testid="transliteration-hint">
-      Showing matches for <strong>{data.effectiveQuery}</strong>
-      <span class="muted">(transliterated from {data.query.q})</span>.
-    </p>
-  {/if}
-
-  {#if data.usedNuktaFallback}
-    <!--
-      Removing a nukta can change a word's meaning. Tell the reader when the search used this
-      fallback.
-    -->
-    <p class="nukta-fallback" role="status">
-      No exact matches for <strong>{data.query.q}</strong>. Showing nukta-agnostic results.
-    </p>
-  {/if}
-
-  {#if data.lemmas.length === 0}
-    <p class="empty">No entries match.</p>
-  {:else}
-    <div class="entry-table-wrap">
-      <table class="entry-table" aria-label="Dictionary entries">
-        <thead
-          ><tr
-            ><th>Word</th><th>POS</th><th>Definition</th><th
-              >{data.language.code === 'hi' ? 'Inflection' : 'Source'}</th
-            >
-            {#if data.canEdit}<th>Edit</th>{/if}
-          </tr></thead
-        >
-        <tbody>
-          {#each data.lemmas as lemma (lemma.id)}
-            {@const definitionId = data.definitionIds[lemma.id]}
-            <tr>
-              <td class="word" lang={data.language.code}
-                >{lemma.headword}
-                {#if lemma.frequencyRank != null}<small title="Frequency rank"
-                    >#{lemma.frequencyRank}</small
-                  >{/if}
-              </td>
-              <td class="pos">{lemma.pos.toLowerCase()}</td>
-              <td class="definition">
-                {#if data.canEdit && definitionId}
-                  <EditableDefinition
-                    text={lemma.glossDefault ?? ''}
-                    translationId={definitionId}
-                    lemmaId={lemma.id}
-                    canEdit
-                  />
-                {:else}{lemma.glossDefault ?? ''}{/if}
-              </td>
-              <td class="detail"
-                >{data.language.code === 'hi'
-                  ? patternLabel(data.patterns[lemma.id] ?? 'invariant')
-                  : (lemma.sourceAttribution ?? '')}</td
-              >
-              {#if data.canEdit}
-                <td class="edit"
-                  ><a
-                    href={`${workshopPath(data.language.code)}?id=${lemma.id}`}>Edit entry</a
-                  >
-                  {#if data.language.code === 'hi'}<a
-                      href={`/moderation/hindi/workshop?id=${lemma.id}#inflection`}
-                      >Edit inflection</a
-                    >{/if}
-                </td>
-              {/if}
-            </tr>
-          {/each}
-        </tbody>
-      </table>
-    </div>
-
-  {/if}
-  <Pagination offset={data.offset} limit={data.limit} total={data.totalCount} hrefFor={hrefWith} />
-</div>
+    </header>
+    {#if editor}
+      {#key editor.language.code}<Workshop data={editor} visible={!!data.staff} bind:this={workshop} />{/key}
+    {/if}
+    {#if !data.staff}
+      {#key data.language.code}<PublicDictionary {data} />{/key}
+    {/if}
+  </div>
 </PageLayout>
 
 <style>
-  .entry-count {
-    margin: 0.25rem 0 0;
-    font-size: 0.85rem;
-  }
-  .toolbar,
-  .actions,
-  .search-fields {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.5rem;
-    align-items: center;
-  }
-  .toolbar {
-    justify-content: space-between;
-    margin-bottom: 1rem;
+  header {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: start;
     gap: 0.75rem;
+    margin-bottom: 1rem;
   }
-  .detail,
-  .pos,
-  .muted,
-  small {
-    color: var(--ink-2);
-  }
-  .word {
-    font: 1.1rem var(--font-serif-dev, var(--font-serif));
-    width: 22%;
-  }
-  small {
-    font: 0.75rem var(--font-ui);
-  }
-  .pos {
-    width: 8%;
-  }
-  .detail {
-    width: 16%;
-  }
-  .edit {
-    width: 12%;
-  }
-  .edit a {
-    display: block;
-  }
-  @media (max-width: 639px) {
-    .entry-table thead {
-      position: absolute;
-      clip-path: inset(50%);
-      width: 1px;
-      height: 1px;
-      overflow: hidden;
-    }
-    .entry-table tbody tr {
-      display: grid;
-      grid-template-columns: 1fr auto;
-      gap: 0.25rem 0.75rem;
-      padding: 0.75rem;
-    }
-    .entry-table tbody tr + tr {
-      border-top: 1px solid var(--rule);
-    }
-    .entry-table tbody td {
-      width: auto;
-      border: 0;
-      padding: 0;
-    }
-    .definition,
-    .detail,
-    .edit {
-      grid-column: 1 / -1;
-    }
-    .edit a {
-      display: inline-block;
-      margin-inline-end: 0.75rem;
-    }
-  }
-  .empty {
-    margin: 2rem 0;
-    color: var(--color-fg-muted);
-  }
-  .nukta-fallback,
-  .transliteration-hint {
-    margin: 0 0 1rem;
-    padding: 0.6rem 0.85rem;
-    border-radius: 6px;
-    background: var(--color-info-bg, #eef5ff);
-    color: var(--color-info-fg, var(--color-fg));
-    border-left: 3px solid var(--color-accent);
-    font-size: 0.9rem;
+  .actions {
+    grid-column: 2;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
   }
 </style>

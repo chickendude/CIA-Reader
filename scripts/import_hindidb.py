@@ -112,7 +112,7 @@ def main():
             for entry in entries:
                 for form in sorted(set(entry.get('forms', []))):
                     copy.write_row((ids[entry['id']], form, Jsonb({}), 'curator'))
-        with conn.cursor().copy('COPY translations(target_type,target_id,source,body,target_language,source_attribution,source_id) FROM STDIN') as copy:
+        with conn.cursor().copy('COPY translations(target_type,target_id,source,body,target_language,source_id) FROM STDIN') as copy:
             for entry in entries:
                 # Match HindiDB's reader: reviewed translation, falling back
                 # to English original; join all senses into one editable row.
@@ -120,7 +120,7 @@ def main():
                             for d in entry.get('definitions', [])]
                 body = '; '.join(value for value in meanings if value).strip()
                 if body:
-                    copy.write_row(('lemma',ids[entry['id']],'curator',body,'en','HindiDB',f"hindidb:{entry['id']}:meaning:en"))
+                    copy.write_row(('lemma',ids[entry['id']],'curator',body,'en',f"hindidb:{entry['id']}:meaning:en"))
         conn.execute("""UPDATE lemmas l SET gloss_default=(SELECT body FROM translations t WHERE t.target_type='lemma'
           AND t.target_id=l.id AND t.target_language='en' ORDER BY t.source_id LIMIT 1) WHERE l.language='hi'""")
         metadata = {'fingerprint': fingerprint, 'source_archive': str(snapshot), 'backup': str(backup),

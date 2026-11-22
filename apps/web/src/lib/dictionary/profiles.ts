@@ -25,7 +25,6 @@ interface DictionaryProfile {
   negativeVariants?: readonly string[];
   reviewHref?: typeof hindiReviewHref;
   preferenceKey?: string;
-  initialView?: 'review' | 'entries';
   inventory: (lemma: string, pos: string, paradigm: string) => Inventory;
   generate: (lemma: string, pos: string, paradigm: string) => string[];
 }
@@ -86,7 +85,6 @@ const profiles: Partial<Record<LanguageCode, DictionaryProfile>> = {
     negativeVariants: ['न', 'नहीं'],
     reviewHref: hindiReviewHref,
     preferenceKey: 'hindi',
-    initialView: 'review',
     normalize: normalizeHindiForm,
     partsOfSpeech,
     patterns: hindiPatterns,
@@ -98,5 +96,5 @@ export function dictionaryProfile(language: LanguageCode) {
 }
 
 export function workshopPath(language: LanguageCode) {
-  return `/dictionary/${language}/workshop`;
+  return `/dictionary/${language}`;
 }

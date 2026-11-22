@@ -93,7 +93,6 @@
 <div class="review-page">
   <div class="heading">
     {@render heading()}
-    <Button href={`/moderation/hindi/workshop${data.result ? '?textId=' + data.result.book.id : ''}`}>Open dictionary workshop</Button>
   </div>
 
   {#if data.result}
@@ -140,7 +139,7 @@
         </header>
         <p class="sentence" lang="hi">{context.before}<mark>{context.match}</mark>{context.after}</p>
         {#if status === 'unparsed' || candidates.length === 0}
-          <Button href={`/moderation/hindi/workshop?word=${encodeURIComponent(surface)}`}>Find dictionary entry</Button>
+          <Button href={`/dictionary/hi?view=review&word=${encodeURIComponent(surface)}`}>Find dictionary entry</Button>
         {:else}
         {#each candidates as candidate}
           {#if candidate.lemmaId}<div class="candidate">

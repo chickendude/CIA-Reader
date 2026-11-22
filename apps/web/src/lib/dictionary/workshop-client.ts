@@ -7,7 +7,7 @@ export async function workshop<T>(
   signal: AbortSignal | undefined,
   language: LanguageCode,
 ): Promise<T> {
-  const r = await fetch(workshopPath(language) + '/actions', {
+  const r = await fetch(workshopPath(language) + '/workshop/actions', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ action, ...fields }),

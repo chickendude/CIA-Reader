@@ -512,6 +512,13 @@
       "when": 1795500000000,
       "tag": "0072_book_study_frequencies",
       "breakpoints": true
+    },
+    {
+      "idx": 73,
+      "version": "7",
+      "when": 1795600000000,
+      "tag": "0073_hindi_definition_credits",
+      "breakpoints": true
     }
   ]
 }

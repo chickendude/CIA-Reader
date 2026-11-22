@@ -1,9 +1,7 @@
 <script lang="ts">
-  import PageLayout from '$lib/components/shell/PageLayout.svelte';
-  import PageTitle from '$lib/components/shell/PageTitle.svelte';
   import Pagination from '$lib/components/input/Pagination.svelte';
   import { getToastStore } from '$lib/components/toast/toast-store.js';
-  import { goto } from '$app/navigation';
+  import { afterNavigate, replaceState } from '$app/navigation';
   import { page } from '$app/state';
   import { onMount, untrack } from 'svelte';
   import {
@@ -23,7 +21,7 @@
   const toastStore = getToastStore();
   import { dictionaryProfile } from '$lib/dictionary/profiles';
   type PageData = Awaited<ReturnType<typeof loadWorkshop>>;
-  let { data }: { data: PageData } = $props();
+  let { data, visible = true }: { data: PageData; visible?: boolean } = $props();
   const language = $derived(data.language.code);
   const scriptLetters = $derived(new RegExp('\\p{Script=' + data.language.script + '}', 'u'));
   const profile = $derived(dictionaryProfile(language));
@@ -38,8 +36,8 @@
   let tab = $state<'dictionary' | 'review'>(
     untrack(() => (data.initial || data.browse ? 'dictionary' : 'review')),
   );
-  let query = $state(''),
-    offset = $state(0),
+  let query = $state(untrack(() => data.query)),
+    offset = $state(untrack(() => data.offset)),
     refresh = $state(0);
   const limit = 40;
   const bookPreference = $derived(`parhiba.${profile.preferenceKey ?? language}.reviewBook.${page.data.user?.id}`);
@@ -72,10 +70,39 @@
     return reviewTypes.find(type => type.value === requested)?.value ?? '';
   });
 
+  function updateListUrl(id?: string) {
+    const url = new URL(page.url);
+    if (tab === 'review') url.searchParams.set('view', 'review');
+    else url.searchParams.delete('view');
+    if (query) url.searchParams.set('q', query);
+    else url.searchParams.delete('q');
+    if (offset) url.searchParams.set('offset', String(offset));
+    else url.searchParams.delete('offset');
+    if (id) url.searchParams.set('id', id);
+    else url.searchParams.delete('id');
+    url.searchParams.delete('word');
+    replaceState(url, page.state);
+  }
+
+  afterNavigate(({ type, from }) => {
+    if (!visible || (type !== 'link' && type !== 'popstate') || from?.url.searchParams.get('mode') === 'public') return;
+    tab = data.initial || data.browse ? 'dictionary' : 'review';
+    query = data.query;
+    offset = data.offset;
+    if (data.initial && data.initial.draft.id !== word.draft.id) {
+      remember();
+      display(data.initial, null);
+      selectionSource = 'editor';
+    }
+  });
+
   function selectFilter(param: 'textId' | 'kind', selected: string) {
     const url = new URL(page.url);
     url.searchParams.set(param, selected);
-    void goto(url, { replaceState: true, keepFocus: true, noScroll: true });
+    url.searchParams.set('view', 'review');
+    url.searchParams.delete('offset');
+    url.searchParams.delete('id');
+    replaceState(url, page.state);
     offset = 0;
     if (active) {
       remember();
@@ -169,6 +196,21 @@
       if (ticket === selection) openingManually = false;
     }
   }
+  export function selectedReviewBook() {
+    return book;
+  }
+
+  export function previewSelection() {
+    return { id: word.draft.id, query: tab === 'dictionary' ? query : '' };
+  }
+
+  export async function showEntry(id: string, search: string) {
+    tab = 'dictionary';
+    query = search;
+    offset = 0;
+    if (word.draft.id !== id) await open(id);
+  }
+
   function openResult(result: Match | ReviewItem, signal?: AbortSignal) {
     const row = 'word' in result ? result : null;
     return open(result.id, { lemma: row?.word, row, fromList: true, signal });
@@ -254,6 +296,7 @@
     }
   }
   $effect(() => {
+    if (!visible) return;
     const view = tab,
       q = query,
       b = book,
@@ -296,21 +339,7 @@
   });
 </script>
 
-{#snippet heading()}
-  <PageTitle>Dictionary workshop</PageTitle>
-{/snippet}
-
-<PageLayout {heading}>
-<div class="workshop">
-  <header>
-    <div>
-      {@render heading()}
-    </div>
-    <div class="controls">
-      <Button href={'/dictionary/' + language}>Browse entries</Button>
-      {#if profile.reviewHref}<Button href={profile.reviewHref(page.url, book)}>Review book context</Button>{/if}
-    </div>
-  </header>
+{#if visible}
   {#if data.reports.length}<WorkshopReports {language}
       reports={data.reports}
       open={(id) => open(id)}
@@ -327,6 +356,7 @@
               tab = name;
               query = '';
               offset = 0;
+              updateListUrl();
             }}
             >{name === 'dictionary' ? 'Dictionary' : 'Review'}{#if name === 'review' && total}
               <small>{total.toLocaleString()}</small>{/if}</button
@@ -355,9 +385,11 @@
         type="search"
         aria-label="Search words"
         placeholder={tab === 'dictionary' ? 'Search ' + data.language.displayName + ' or English' : 'Find a word'}
-        bind:value={query}
-        oninput={() => {
+        value={query}
+        oninput={(event) => {
+          query = event.currentTarget.value;
           offset = 0;
+          updateListUrl();
         }}
       />
       <div class="controls">
@@ -377,7 +409,7 @@
           {#each rows.slice(0, limit) as row}<button
               class:chosen={isSelected(row)}
               disabled={working || pending}
-              onclick={() => openResult(row)}
+              onclick={() => { updateListUrl(row.id); void openResult(row); }}
               ><strong lang={language} dir="auto">{row.lemma}</strong> <small>{row.pos}</small><span
                 >{row.meaning}</span
               ></button
@@ -403,7 +435,7 @@
       </div>
       {#if (tab === 'review' ? total : rows.length) || offset}
         <Pagination {offset} {limit} total={tab === 'review' ? total : undefined}
-          hasNext={rows.length > limit} disabled={pending || working} onPage={(next) => (offset = next)} />
+          hasNext={rows.length > limit} disabled={pending || working} onPage={(next) => { offset = next; updateListUrl(); }} />
       {/if}
     </aside>
     {#if selectionSource !== 'none' || message}<article>
@@ -460,11 +492,9 @@
       {#if message}<p role="status">{message}</p>{/if}
     </article>{/if}
   </div>
-</div>
-</PageLayout>
+{/if}
 
 <style>
-  header,
   nav,
   .controls {
     display: flex;
@@ -474,39 +504,6 @@
   }
   .controls {
     flex-wrap: wrap;
-  }
-  header {
-    margin-bottom: 1.2rem;
-  }
-
-  header {
-    flex-wrap: wrap;
-  }
-  .panes {
-    display: grid;
-    grid-template-columns: minmax(15rem, 27%) minmax(0, 1fr);
-    gap: 1rem;
-    align-items: start;
-  }
-  aside,
-  article {
-    background: var(--card);
-    border: 1px solid var(--rule);
-    border-radius: 0.65rem;
-    padding: 1.1rem;
-    min-width: 0;
-  }
-  aside {
-    position: sticky;
-    top: 0.5rem;
-    display: grid;
-    grid-template-columns: minmax(0, 1fr);
-    gap: 0.65rem;
-  }
-  aside > select,
-  aside > input {
-    width: 100%;
-    min-width: 0;
   }
   .context-heading select {
     max-width: 100%;
@@ -532,30 +529,6 @@
     border-color: var(--accent);
     background: var(--surface-2, var(--paper));
   }
-  .results {
-    max-height: 62vh;
-    overflow: auto;
-  }
-  .results button {
-    display: block;
-    border: 0;
-    border-bottom: 1px solid var(--rule);
-    border-radius: 0;
-    text-align: start;
-    width: 100%;
-    background: transparent;
-  }
-  .results button.chosen {
-    box-shadow: inset 3px 0 var(--accent);
-  }
-  .results span {
-    display: block;
-    font-size: 0.84rem;
-    color: var(--ink-3);
-    white-space: nowrap;
-    text-overflow: ellipsis;
-    overflow: hidden;
-  }
   .context {
     padding: 0.6rem;
     border-bottom: 1px solid var(--rule);
@@ -577,22 +550,5 @@
   .context-links {
     margin-inline-start: auto;
     justify-content: flex-end;
-  }
-  @media (max-width: 760px) {
-    .panes {
-      grid-template-columns: 1fr;
-    }
-    aside {
-      position: static;
-    }
-    .results {
-      max-height: 11rem;
-    }
-    article {
-      padding: 0.85rem;
-    }
-    header {
-      align-items: end;
-    }
   }
 </style>

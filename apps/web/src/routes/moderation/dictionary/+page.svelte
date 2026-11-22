@@ -41,7 +41,7 @@
       <p class="sub">No language grants. Ask an admin for curator rights.</p>
     {/if}
     <nav class="mod-nav" aria-label="Moderation sections">
-      <a href="/moderation/hindi/workshop">Hindi dictionary workshop</a>
+      <a href="/dictionary/hi?view=review">Hindi dictionary workshop</a>
       <a href={hindiReviewHref(page.url)}>Hindi unparsed words and context review →</a>
       <a href="/moderation/translations">Translation reports →</a>
       <a href="/moderation/parses">Parse reports →</a>
