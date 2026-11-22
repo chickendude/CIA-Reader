@@ -483,6 +483,7 @@
     />
   {:else if data.mode === 'page'}
     <ReaderPage
+      {settingsOpen}
       chapterPicker={toc.entries.length > 1 ? mobileChapterPicker : undefined}
       chapters={data.chapters}
       chapterIdx={data.anchor.chapterIdx}

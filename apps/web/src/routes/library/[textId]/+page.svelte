@@ -25,7 +25,7 @@
 <div class="book-page">
   <div class="book-header">
     {@render heading()}
-    <BookComparison comparison={data.comparison} title={book.title} />
+    <BookComparison books={data.books} comparison={data.comparison} title={book.title} />
   </div>
   <div class="book-layout">
     <div class={`book-cover cover-${coverForId(book.id)}`}><span>{book.title}</span></div>
@@ -36,7 +36,7 @@
         {#if data.isStaff && book.analysisStale}<ReanalysisNotice />{/if}
       </section>
       {#key book.id}
-        <BookStudyDeck {book} bands={data.deckBands} signedIn={data.isAuthenticated} />
+        <BookStudyDeck {book} books={data.books} bands={data.deckBands} signedIn={data.isAuthenticated} />
       {/key}
       <div class="reading">
         {#if data.isStaff}
@@ -59,6 +59,7 @@
 <style>
   .book-header { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: .75rem; margin-bottom: 1rem; }
   .book-header :global(.subpage-heading) { margin-bottom: 0; }
+  .book-header :global(button[aria-haspopup="dialog"]) { grid-column: 2; }
   .book-layout { display: grid; grid-template-columns: 240px minmax(0, 1fr); gap: 2.5rem; }
   .book-cover { min-height: 330px; align-self: start; padding: 2rem; border-radius: 10px; background: var(--accent); color: var(--accent-ink,white); display: flex; flex-direction: column; justify-content: space-between; box-shadow: 0 8px 24px #0002; }
   .book-cover span { font-family: var(--font-serif); font-size: 2rem; line-height: 1.3; }

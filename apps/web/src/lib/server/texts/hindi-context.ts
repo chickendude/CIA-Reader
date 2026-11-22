@@ -204,14 +204,14 @@ export async function loadHindiContextChoices(
   if (sourceStarts?.length === 0) return new Map();
   const rows = await db.execute(sql`
     SELECT c.source_start,c.selected_lemma_ids,c.candidate_lemma_ids,c.origin,c.status,
-      md5(ch.body)=c.metadata->>'chapter_hash' AS text_matches,
+      (SELECT md5(body) FROM text_chapters WHERE id=${chapterId})=c.metadata->>'chapter_hash' AS text_matches,
       COALESCE(array_agg(o.lemma_id::text) FILTER (WHERE o.lemma_id IS NOT NULL), ARRAY[]::text[]) AS supported
-    FROM hindi_context_choices c JOIN text_chapters ch ON ch.id=c.chapter_id
+    FROM hindi_context_choices c
     LEFT JOIN hindi_occurrences o ON o.chapter_id=c.chapter_id
       AND o.source_start=c.source_start AND o.source_end=c.source_end
     WHERE c.chapter_id=${chapterId}
       ${sourceStarts ? sql`AND ${inArray(sql`c.source_start`, sourceStarts)}` : sql``}
-    GROUP BY c.chapter_id,c.source_occurrence_id,ch.body
+    GROUP BY c.chapter_id,c.source_occurrence_id
     ORDER BY c.source_start,c.source_end
   `);
   const out = new Map<number, HindiContextChoice>();

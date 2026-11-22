@@ -1,4 +1,5 @@
 import type { LanguageCode } from '@ciareader/shared-types';
+import { assumedKnownWords } from './book-comparison.js';
 import { studyFrequencies } from './study-frequencies.js';
 import { sql } from 'drizzle-orm';
 import { db } from '../db/index.js';
@@ -6,9 +7,11 @@ import type { StudyBand, StudyEntry } from '$lib/library/study-deck.js';
 
 type DeckRow = StudyEntry & { matches: number; id: string | null; word: string | null; pos: string | null; definition: string | null };
 
-export function officialDeckRows(book: { id: string; language: LanguageCode }, userId?: string) {
+export type KnownBook = { id: string; coverage: number };
+
+export async function officialDeckRows(book: { id: string; language: LanguageCode }, userId?: string, knownBook?: KnownBook) {
   const books = sql`SELECT id FROM texts WHERE id = ${book.id} AND visibility = 'official' AND language = ${book.language}`;
-  return db.execute<DeckRow>(sql`
+  const deckRows = db.execute<DeckRow>(sql`
     WITH matches AS (${studyFrequencies(books, book.language, userId)}), frequencies AS (
       SELECT lemma_id, sum(occurrences)::float8 AS frequency, sum(matches)::int AS matches
       FROM matches GROUP BY lemma_id
@@ -24,6 +27,12 @@ export function officialDeckRows(book: { id: string; language: LanguageCode }, u
     LEFT JOIN hindi_entries h ON h.lemma_id = l.id
     ORDER BY f.frequency DESC, l.headword, l.pos, l.id
   `);
+  if (!knownBook) return deckRows;
+  const [rows, known] = await Promise.all([deckRows, assumedKnownWords(book, knownBook.id, knownBook.coverage, userId)]);
+  for (const row of rows) {
+    if (row.id && known.has(row.id) && row.status !== 'ignored') row.status = 'known';
+  }
+  return rows;
 }
 
 export function studyBands(rows: StudyEntry[]): StudyBand[] {

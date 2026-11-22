@@ -505,6 +505,13 @@
       "when": 1795400000000,
       "tag": "0071_reader_ignored_tokens",
       "breakpoints": true
+    },
+    {
+      "idx": 72,
+      "version": "7",
+      "when": 1795500000000,
+      "tag": "0072_book_study_frequencies",
+      "breakpoints": true
     }
   ]
 }

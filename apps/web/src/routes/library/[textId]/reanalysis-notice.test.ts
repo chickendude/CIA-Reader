@@ -3,7 +3,7 @@ import { afterEach, expect, it, vi } from 'vitest';
 import BookPage from './+page.svelte';
 import type { PageData } from './$types';
 
-vi.mock('$app/state', () => ({ page: { url: new URL('http://localhost/library/book') } }));
+vi.mock('$app/state', () => ({ navigating: { to: null }, page: { url: new URL('http://localhost/library/book') } }));
 afterEach(cleanup);
 
 it('shows the reanalysis notice only to staff viewing an outdated analysis', async () => {
@@ -15,8 +15,8 @@ it('shows the reanalysis notice only to staff viewing an outdated analysis', asy
       knownWords: 0, learningWords: 0, knownHeadwords: 0, learningHeadwords: 0,
       knownPct: null, learningPct: null, uniquePct: null, personalTextId: null, analysisStale: true,
     },
-    isStaff: false, isAuthenticated: false, deckBands: [],
-    comparison: { books: [], source: undefined, known: 98, goal: 98, result: null },
+    isStaff: false, isAuthenticated: false, deckBands: [], books: [],
+    comparison: { source: undefined, known: 98, goal: 98, result: null },
   };
   const view = render(BookPage, { data, params: { textId: 'book' }, form: null });
   const notice = () => screen.queryByText(/Reanalyze to update coverage/);

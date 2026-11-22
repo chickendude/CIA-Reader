@@ -3,7 +3,7 @@
   words on other pages.
 -->
 <script lang="ts">
-  import { goto } from '$app/navigation';
+  import { goto, preloadData } from '$app/navigation';
   import { onMount, untrack } from 'svelte';
 
   import ChapterBody from './ChapterBody.svelte';
@@ -44,6 +44,7 @@
     bookWordsBefore = 0,
     bookWordsTotal = 0,
     startAtEndOfChapter = false,
+    settingsOpen = false,
   }: {
     chapterPicker?: import('svelte').Snippet;
     chapters: ChapterView[];
@@ -59,6 +60,7 @@
     lineSpacing?: number;
     fontFamily?: string | null;
     readingWidth?: string;
+    settingsOpen?: boolean;
     /** When true, mount on the LAST page of the chapter rather than
      *  page 0. Used by the cross-text "prev" handoff so a reader
      *  stepping back off page 1 of chapter N lands at the end of
@@ -167,6 +169,14 @@
   const prevLeavesChapter = $derived(
     !hasPrevPage && (hasPrevChapter || hasPrevText),
   );
+  const nextChapterHref = $derived(
+    hasNextChapter
+      ? `/reader/${textId}?mode=page&chapter=${chapterIdx + 1}&token=0`
+      : nextTextId && `/reader/${nextTextId}?mode=page&chapter=0&token=0`,
+  );
+  let lookupOpen = $state(false);
+  let preloadedHref: string | null = null;
+  let refreshOnTurn = false;
 
   // Overall progress — fraction of the whole text in *words*, not pages.
   // A page with 10 words must advance the bar less than a page with 500.
@@ -198,12 +208,8 @@
   function nextPage() {
     if (hasNextPage) {
       turnTo(pageInChapter + 1);
-    } else if (hasNextChapter) {
-      void goto(`/reader/${textId}?mode=page&chapter=${chapterIdx + 1}`, { keepFocus: true });
-    } else if (nextTextId) {
-      // Walk off the end of this text — advance into the next text
-      // in the containing collection. Keeps page mode active.
-      void goto(`/reader/${nextTextId}?mode=page&chapter=0`, { keepFocus: true });
+    } else if (nextChapterHref) {
+      void goto(nextChapterHref, { keepFocus: true, invalidateAll: refreshOnTurn });
     }
   }
   function prevPage() {
@@ -313,6 +319,8 @@
   $effect(() => {
     void textId;
     void chapterIdx;
+    preloadedHref = null;
+    refreshOnTurn = false;
     positionToken = initialTokenIdx;
     alignToEnd = startAtEndOfChapter;
     pageInChapter = 0;
@@ -340,6 +348,22 @@
     void fontFamily;
     void readingWidth;
     untrack(measure);
+  });
+
+  $effect(() => {
+    const href = nextChapterHref;
+    if (!href || !pageStride) return;
+    if (settingsOpen || lookupOpen) {
+      // A word edit or a settings change can affect the next chapter's saved data.
+      if (preloadedHref === href || nextLeavesChapter) refreshOnTurn = true;
+      return;
+    }
+    if (!nextLeavesChapter || refreshOnTurn || preloadedHref === href) return;
+    const { connection } = navigator as typeof navigator & { connection?: { saveData?: boolean } };
+    if (connection?.saveData) return;
+    preloadedHref = href;
+    // The page turn can reuse this request even while it is still in flight.
+    void preloadData(href).catch(() => {});
   });
 
   function reportProgress() {
@@ -515,7 +539,8 @@
               </header>
             {/if}
             <article class:title-in-body={titleInBody}>
-              <ChapterBody chapter={current} {language} {showRomanization} {isOwner} {isAdmin} {textId} />
+              <ChapterBody chapter={current} {language} {showRomanization} {isOwner} {isAdmin} {textId}
+                onLookupChange={(open) => (lookupOpen = open)} />
             </article>
           {/if}
         </div>

@@ -2,16 +2,41 @@
   import Button from '$lib/components/input/Button.svelte';
   import { studyDeckPlan, type DeckScope, type StudyBand } from '$lib/library/study-deck.js';
 
-  let { book, bands, signedIn }: {
-    book: { id: string; language: string }; bands: StudyBand[]; signedIn: boolean;
+  let { book, books, bands, signedIn }: {
+    book: { id: string; language: string }; books: { id: string; title: string }[]; bands: StudyBand[]; signedIn: boolean;
   } = $props();
   let scope = $state<DeckScope>('target');
   let target = $state<number | undefined>(98);
   let includeStudied = $state(false);
   let ignoreProper = $state(false);
   let ignoreLoans = $state(false);
+  let sourceId = $state('');
+  let knownCoverage = $state<number | undefined>(98);
+  const canUseSource = $derived((scope === 'target' || scope === 'unknown') && !includeStudied);
+  const useSource = $derived(canUseSource && Boolean(sourceId));
+  const sourceValid = $derived(knownCoverage !== undefined && knownCoverage >= 0 && knownCoverage <= 100 && Number.isInteger(knownCoverage * 10));
+  const previewUrl = $derived(useSource && sourceValid
+    ? `/api/v1/texts/${book.id}/study-preview?knownBook=${sourceId}&knownCoverage=${knownCoverage}` : '');
+  let preview = $state<{ url: string; bands?: StudyBand[]; error?: string } | null>(null);
+  $effect(() => {
+    const url = previewUrl;
+    if (!url) return;
+    const controller = new AbortController();
+    const timer = setTimeout(async () => {
+      try {
+        const response = await fetch(url, { signal: controller.signal, headers: { accept: 'application/json' } });
+        const result = await response.json();
+        if (!controller.signal.aborted) preview = response.ok ? { url, bands: result } : { url, error: result.message || 'Could not load vocabulary.' };
+      } catch {
+        if (!controller.signal.aborted) preview = { url, error: 'Could not load vocabulary.' };
+      }
+    }, 100);
+    return () => { clearTimeout(timer); controller.abort(); };
+  });
+  const sourcePreview = $derived(preview?.url === previewUrl ? preview : null);
+  const ready = $derived(!useSource || (sourceValid && Boolean(sourcePreview?.bands)));
   const valid = $derived(scope !== 'target' || (target !== undefined && target > 0 && target <= 100 && Number.isInteger(target * 10)));
-  const plan = $derived(studyDeckPlan(bands, { scope, target: target ?? 98, ignoreProper, ignoreLoans, includeStudied }));
+  const plan = $derived(studyDeckPlan(sourcePreview?.bands ?? bands, { scope, target: target ?? 98, ignoreProper, ignoreLoans, includeStudied }));
 </script>
 
 <section aria-labelledby="study-title">
@@ -31,6 +56,21 @@
           <input type="number" name="target" min="0.1" max="100" step="0.1" required bind:value={target} />
         </label>
       {/if}
+      {#if canUseSource && books.length}
+        <label>Count another book as known for this deck
+          <select name="knownBook" bind:value={sourceId}>
+            <option value="">None</option>
+            {#each books as source (source.id)}
+              <option value={source.id}>{source.title}</option>
+            {/each}
+          </select>
+        </label>
+        {#if sourceId}
+          <label>Known coverage of that book (%)
+            <input name="knownCoverage" type="number" min="0" max="100" step="0.1" required bind:value={knownCoverage} />
+          </label>
+        {/if}
+      {/if}
     </div>
     <div class="filters">
       {#if scope === 'target' || scope === 'unknown'}
@@ -47,7 +87,13 @@
         : 'Known and learning words count toward the target. The deck adds the most frequent unseen words first.'}</p>
     {/if}
     <div aria-live="polite">
-      {#if valid}
+      {#if useSource && !sourceValid}
+        Enter a known coverage from 0% to 100% in steps of 0.1%.
+      {:else if sourcePreview?.error}
+        {sourcePreview.error}
+      {:else if !ready}
+        Updating deck preview…
+      {:else if valid}
         <strong>{plan.count.toLocaleString()} {plan.count === 1 ? 'card' : 'cards'}</strong>
         {#if scope === 'target' && plan.total}
           <span> for {Number((plan.covered / plan.total * 100).toFixed(2))}% {includeStudied ? 'deck coverage' : 'projected coverage'}.</span>
@@ -58,7 +104,7 @@
       {/if}
     </div>
     {#if signedIn}
-      <Button type="submit" disabled={!valid || !plan.count}>Download Anki deck</Button>
+      <Button type="submit" disabled={!ready || !valid || !plan.count}>Download Anki deck</Button>
     {:else}
       <p><a href={`/login?next=${encodeURIComponent('/library/' + book.id)}`}>Sign in</a> to use your saved vocabulary and download the deck.</p>
     {/if}

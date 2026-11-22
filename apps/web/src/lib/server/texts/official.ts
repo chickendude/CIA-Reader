@@ -5,17 +5,22 @@ import { libraryBookStats } from './book-stats.js';
 import { isStaffMember } from '../auth/staff.js';
 import type { AnkiCard } from '../anki.js';
 import { eligibleForDeck, studyDeckPlan, type DeckOptions, type DeckScope } from '$lib/library/study-deck.js';
-import { officialDeckRows, studyBands } from './study-deck.js';
+import { officialDeckRows, studyBands, type KnownBook } from './study-deck.js';
 
 export class OfficialBookError extends Error {
   constructor(message: string, public status: 400 | 403 | 404) { super(message); }
 }
 
 /** Public metadata only. Source bodies and occurrence contexts never leave this service. */
-export async function getOfficialBook(textId: string, userId?: string) {
+export async function getOfficialBookMetadata(textId: string) {
   const [text] = await db.select({ id: schema.texts.id, title: schema.texts.title, ownerId: schema.texts.ownerId,
     language: schema.texts.language, staffOnly: schema.texts.staffOnly, status: schema.texts.status })
     .from(schema.texts).where(and(eq(schema.texts.id, textId), eq(schema.texts.visibility, 'official'))).limit(1);
+  return text ?? null;
+}
+
+export async function getOfficialBook(textId: string, userId?: string) {
+  const text = await getOfficialBookMetadata(textId);
   if (!text) return null;
   const stats = (await libraryBookStats([textId], [], userId))[textId];
   const [chapters] = await db.execute(sql`
@@ -42,11 +47,12 @@ export type OfficialDeckScope = DeckScope;
 export async function getOfficialBookCards(
   textId: string, userId: string, scope: DeckScope,
   settings: Omit<DeckOptions, 'scope'> = { target: 98, ignoreProper: false, ignoreLoans: false },
+  knownBook?: KnownBook,
 ): Promise<AnkiCard[]> {
-  const book = await getOfficialBook(textId);
+  const book = await getOfficialBookMetadata(textId);
   if (!book) throw new OfficialBookError('Book not found', 404);
   const options = { ...settings, scope };
-  const rows = await officialDeckRows(book, userId);
+  const rows = await officialDeckRows(book, userId, knownBook);
   const plan = studyDeckPlan(studyBands(rows), options);
   return rows.filter(row => eligibleForDeck(row, options)).slice(0, plan.count).map(row => ({
     id: row.id!, word: row.word!, pos: row.pos!, definition: row.definition ?? '',

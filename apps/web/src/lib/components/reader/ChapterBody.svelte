@@ -37,6 +37,7 @@
     isAdmin = false,
     textId,
     pageImage = null,
+    onLookupChange,
   }: {
     chapter: ChapterView;
     /** drives the CorrectionModal's dictionary-search
@@ -53,6 +54,7 @@
      *  reused — the hotspots carry `data-token-id` so `onChapterClick`
      *  and the hover tooltip work unchanged. */
     pageImage?: { url: string; width: number | null; height: number | null } | null;
+    onLookupChange?: (open: boolean) => void;
   } = $props();
 
   // Text direction comes from the shared registry (rtl for Yiddish's
@@ -263,6 +265,9 @@
       };
     }
     return activeToken;
+  });
+  $effect(() => {
+    onLookupChange?.(!!popupToken);
   });
 
   function findPhrase(target: HTMLElement | null): ChapterPhraseSpan | null {

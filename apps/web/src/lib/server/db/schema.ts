@@ -5,6 +5,7 @@ import {
   index,
   integer,
   jsonb,
+  numeric,
   pgEnum,
   pgTable,
   primaryKey,
@@ -2144,6 +2145,20 @@ export const chapterWordFrequencies = pgTable('chapter_word_frequencies', {
 }, t => ({
   entry: unique().on(t.chapterId, t.lemmaId).nullsNotDistinct(),
 }));
+
+export const hindiChapterStudyFrequencies = pgTable('hindi_chapter_study_frequencies', {
+  chapterId: uuid('chapter_id').notNull().references(() => textChapters.id, { onDelete: 'cascade' }),
+  lemmaId: uuid('lemma_id'),
+  occurrences: numeric('occurrences').notNull(),
+  matches: integer('matches').notNull(),
+}, t => ({ entry: unique().on(t.chapterId, t.lemmaId).nullsNotDistinct() }));
+
+export const hindiBookStudyFrequencies = pgTable('hindi_book_study_frequencies', {
+  textId: uuid('text_id').notNull().references(() => texts.id, { onDelete: 'cascade' }),
+  lemmaId: uuid('lemma_id'),
+  occurrences: numeric('occurrences').notNull(),
+  matches: integer('matches').notNull(),
+}, t => ({ entry: unique().on(t.textId, t.lemmaId).nullsNotDistinct() }));
 
 export const pendingFrequencyChapters = pgTable('pending_frequency_chapters', {
   chapterId: uuid('chapter_id').primaryKey(),

@@ -1,22 +1,23 @@
 <script lang="ts">
-  import { page } from '$app/state';
+  import { navigating, page } from '$app/state';
   import Button from '$lib/components/input/Button.svelte';
   import Modal from '$lib/components/overlay/Modal.svelte';
   import type { PageData } from './$types';
 
-  let { comparison, title }: { comparison: PageData['comparison']; title: string } = $props();
+  let { comparison, books, title }: { books: PageData['books']; comparison: PageData['comparison']; title: string } = $props();
   let open = $derived(page.url.searchParams.has('from'));
+  const comparing = $derived(navigating.to?.url.pathname === page.url.pathname && navigating.to.url.searchParams.has('from'));
   const percent = new Intl.NumberFormat('en', { maximumFractionDigits: 2 });
 </script>
 
 <Button aria-haspopup="dialog" onclick={() => open = true}>Compare books</Button>
 <Modal {open} onClose={() => open = false} title="Compare books">
-  {#if comparison.books.length}
-    <form method="GET" data-sveltekit-noscroll data-sveltekit-keepfocus>
+  {#if books.length}
+    <form onsubmit={(event) => { if (comparing) event.preventDefault(); }} method="GET" data-sveltekit-noscroll data-sveltekit-keepfocus>
       <label class="source">Book you know
         <select name="from" required value={comparison.source?.id ?? ''}>
           <option value="" disabled>Choose a book</option>
-          {#each comparison.books as book (book.id)}
+          {#each books as book (book.id)}
             <option value={book.id}>{book.title}</option>
           {/each}
         </select>
@@ -27,10 +28,12 @@
       <label>Target coverage (%)
         <input name="goal" type="number" min="0" max="100" step="0.1" required value={comparison.goal} />
       </label>
-      <div class="submit"><Button type="submit" variant="primary">Compare</Button></div>
+      <div class="submit"><Button type="submit" variant="primary" aria-disabled={comparing}>{comparing ? 'Comparing…' : 'Compare'}</Button></div>
     </form>
     <div aria-live="polite">
-      {#if comparison.result && comparison.source}
+      {#if comparing}
+        <p>Calculating coverage…</p>
+      {:else if comparison.result && comparison.source}
         {@const result = comparison.result}
         {#if result.kind === 'estimate'}
           <p>Knowing {comparison.known}% of {comparison.source.title} covers an estimated

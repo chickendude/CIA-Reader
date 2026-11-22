@@ -1,7 +1,8 @@
 import { error } from '@sveltejs/kit';
+import { readBookPercent } from '$lib/server/texts/book-comparison.js';
 import { requireUser } from '$lib/server/auth/require-user.js';
 import { buildApkg } from '$lib/server/anki.js';
-import { getOfficialBook, getOfficialBookCards, type OfficialDeckScope } from '$lib/server/texts/official.js';
+import { getOfficialBookMetadata, getOfficialBookCards, type OfficialDeckScope } from '$lib/server/texts/official.js';
 import type { RequestHandler } from './$types';
 
 export const GET: RequestHandler = async (event) => {
@@ -15,12 +16,14 @@ export const GET: RequestHandler = async (event) => {
   if (target <= 0 || target > 100 || !Number.isInteger(target * 10)) {
     throw error(400, 'Enter a target from 0.1 to 100 with up to one decimal place.');
   }
-  const book = await getOfficialBook(id);
+  const book = await getOfficialBookMetadata(id);
   if (!book) throw error(404, 'Book not found');
+  const sourceId = params.get('knownBook');
+  const knownBook = sourceId ? { id: sourceId, coverage: readBookPercent(params.get('knownCoverage')) } : undefined;
   const cards = await getOfficialBookCards(id, user.id, scope as OfficialDeckScope, {
     includeStudied: params.get('includeStudied') === '1',
     target, ignoreProper: params.get('ignoreProper') === '1', ignoreLoans: params.get('ignoreLoans') === '1',
-  });
+  }, knownBook);
   if (!cards.length) throw error(404, 'No words match this selection');
   const deck = await buildApkg(`Parhiba::${book.title}`, cards);
   const filename = `${book.title.replace(/[^\p{L}\p{N}\-_. ]/gu,'').trim() || 'Vocabulary'}.apkg`;

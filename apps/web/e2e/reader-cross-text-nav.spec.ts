@@ -152,6 +152,11 @@ test.describe('Reader cross-text prev navigation', () => {
     page,
   }) => {
     const { prevChapter, currentChapter } = await findChapterPair();
+    const destinationPath = `/reader/${currentChapter.id}/__data.json`;
+    const chapterRequests: string[] = [];
+    page.on('request', (request) => {
+      if (new URL(request.url()).pathname === destinationPath) chapterRequests.push(request.url());
+    });
 
     // Land at the end of the previous chapter. The reader measures
     // the column flow in waves (initial paint, then again after
@@ -177,6 +182,7 @@ test.describe('Reader cross-text prev navigation', () => {
     // Click next — should walk into the next text at its first page.
     const nextButton = page.getByRole('button', { name: /^Next (chapter|page)$/ });
     await expect(nextButton).toBeEnabled();
+    await expect.poll(() => chapterRequests.length).toBe(1);
     await nextButton.click();
 
     await page.waitForURL(
@@ -186,6 +192,7 @@ test.describe('Reader cross-text prev navigation', () => {
     await expect(page.locator('.pager-pages').first()).toBeVisible({ timeout: 10_000 });
     const end = await readPageState(page);
     expect(end.current).toBe(1);
+    expect(chapterRequests).toHaveLength(1);
   });
 });
 

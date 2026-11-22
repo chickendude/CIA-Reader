@@ -451,6 +451,23 @@ describe.skipIf(!url)('HindiDB PostgreSQL integration (always rolls back)', () =
         const cards = await getOfficialBookCards(source!.id, randomUUID(), 'target', settings);
         expect(cards.map(c => c.id)).toEqual(rows.filter(r => r.id).slice(0, 2).map(r => r.id));
         expect(cards.map(c => c.frequency)).toEqual([1, 1]);
+        const [reader] = await tx.insert(schema.users).values({ email: `${randomUUID()}@example.invalid` }).returning();
+        const knownBook = { id: target!.id, coverage: 100 };
+        const adjusted = await officialDeckRows(source!, reader!.id, knownBook);
+        expect(adjusted.find(row => row.id === compound!.id)?.status).toBe('known');
+        const plan = studyDeckPlan(studyBands(adjusted), { ...settings, scope: 'target' });
+        expect(plan).toEqual({ count: 1, total: 3, covered: 1.5, reached: true });
+        const adjustedCards = await getOfficialBookCards(source!.id, reader!.id, 'target', settings, knownBook);
+        expect(adjustedCards.map(card => card.id)).toEqual(adjusted.filter(row => row.status === 'unknown').slice(0, plan.count).map(row => row.id));
+        expect((await officialDeckRows(source!, reader!.id)).find(row => row.id === compound!.id)?.status).toBe('unknown');
+        await expect(officialDeckRows(target!, reader!.id, { id: source!.id, coverage: 100 })).rejects.toMatchObject({ status: 400 });
+
+        // Ignoring an ambiguous word removes both weighted readings for this reader.
+        await tx.execute(sql`INSERT INTO reader_ignored_tokens (user_id,token_id)
+          SELECT ${reader!.id},id FROM text_tokens WHERE chapter_id=${chapter!.id} AND idx IN (0,4)`);
+        const personal = await officialDeckRows(source!, reader!.id);
+        expect(personal.map(row => [row.id,row.frequency,row.matches])).toEqual([[compound!.id,1,1]]);
+        expect(await compareBooks(source!, target!.id, 100, 100, reader!.id)).toMatchObject({ coverage: 100, additionalWords: 0 });
         const choice = { chapterId: chapter!.id, sourceOccurrenceId: 'word', sourceStart: 0, sourceEnd: 2,
           selectedLemmaIds: [second!.id], candidateLemmaIds: [first!.id, second!.id], origin: 'human', status: 'confirmed' };
         await tx.insert(schema.hindiContextChoices).values({ ...choice, metadata: { chapter_hash: createHash('md5').update(chapter!.body).digest('hex') } });
