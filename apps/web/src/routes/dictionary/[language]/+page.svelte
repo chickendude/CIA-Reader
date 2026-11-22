@@ -67,6 +67,7 @@
 {#snippet heading()}
   <PageTitle dir="ltr">
     <bdi lang={data.language.code} dir={data.language.textDirection}>{data.language.nativeDictionaryTitle}</bdi>
+    <span aria-hidden="true">|</span>
     <span lang="en">{data.language.displayName} Dictionary</span>
   </PageTitle>
 {/snippet}
