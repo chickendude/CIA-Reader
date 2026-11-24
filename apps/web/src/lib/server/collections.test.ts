@@ -765,18 +765,16 @@ describe('listCollectionsForUser', () => {
   it('openTextId resumes the most-recently-read chapter', async () => {
     queue.push([{ collection: baseCollection, textCount: 2 }]); // collections + count
     queue.push([
-      { collectionId: baseCollection.id, textId: 'text-b', updatedAt: new Date('2026-05-02') },
-      { collectionId: baseCollection.id, textId: 'text-a', updatedAt: new Date('2026-05-01') },
-    ]); // progress
-    queue.push([{ collectionId: baseCollection.id, textId: 'text-a' }]); // first chapter
+      { collectionId: baseCollection.id, textId: 'text-a', position: 0, tokens: 100, pctRead: 100, updatedAt: new Date('2026-05-01') },
+      { collectionId: baseCollection.id, textId: 'text-b', position: 1, tokens: 300, pctRead: 50, updatedAt: new Date('2026-05-02') },
+    ]);
     const out = await listCollectionsForUser(OWNER.id);
-    expect(out[0]?.openTextId).toBe('text-b');
+    expect(out[0]).toMatchObject({ openTextId: 'text-b', progressPct: 63 });
   });
 
   it('openTextId falls back to the first chapter when not started', async () => {
     queue.push([{ collection: baseCollection, textCount: 2 }]);
-    queue.push([]); // no progress
-    queue.push([{ collectionId: baseCollection.id, textId: 'text-a' }]); // first chapter
+    queue.push([{ collectionId: baseCollection.id, textId: 'text-a', position: 0, tokens: 100, pctRead: 0, updatedAt: null }]);
     const out = await listCollectionsForUser(OWNER.id);
     expect(out[0]?.openTextId).toBe('text-a');
   });

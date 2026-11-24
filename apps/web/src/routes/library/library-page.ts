@@ -7,9 +7,10 @@ import {
   catalogSort,
   listPersonalLibrary,
   listSharedTexts,
+  progressByText,
   type LibraryGridCard,
 } from '$lib/server/texts/library.js';
-import { listCollectionsForUser, listOfficialCollections } from '$lib/server/collections.js';
+import { listOwnedCollectionSummaries, listOfficialCollections, collectionReadingPositions } from '$lib/server/collections.js';
 import { libraryBookStats, type BookWordStats } from '$lib/server/texts/book-stats.js';
 import type { LanguageCode } from '@ciareader/shared-types';
 import type { PageServerLoad } from './$types';
@@ -98,7 +99,7 @@ export async function loadLibrary(
   } else if (tab === 'collections') {
     // collections tab. Signed-in users see their own + the
     // official catalog; anonymous see only the official catalog.
-    const ownItems = locals.user ? await listCollectionsForUser(locals.user.id) : [];
+    const ownItems = locals.user ? await listOwnedCollectionSummaries(locals.user.id) : [];
     const officialItems = await listOfficialCollections(language ?? undefined);
     // Merge by id so a collection that's both owned and official
     // doesn't appear twice. Owner-side row wins because it carries
@@ -135,10 +136,19 @@ export async function loadLibrary(
     stats = Object.fromEntries(catalog.cards.map(card => [card.id, card.stats]));
   }
 
-  if (tab !== 'official') {
-    const textIds = page.cards.filter(card => card.chapterCount == null).map(card => card.id);
-    const collectionIds = [...page.cards.filter(card => card.chapterCount != null), ...collections].map(card => card.id);
-    stats = await libraryBookStats(textIds, collectionIds, locals.user?.id);
+  const textCards = page.cards.filter(card => card.chapterCount == null);
+  const collectionIds = [...page.cards.filter(card => card.chapterCount != null), ...collections].map(card => card.id);
+  const userId = locals.user?.id;
+  const [bookStats, positions, textProgress] = await Promise.all([
+    tab === 'official' ? stats : libraryBookStats(textCards.map(card => card.id), collectionIds, userId),
+    userId ? collectionReadingPositions(userId, collectionIds) : undefined,
+    userId && tab === 'official' ? progressByText(userId, textCards.map(card => card.id)) : undefined,
+  ]);
+  const progress: Record<string, number> = {};
+  for (const card of textCards) progress[card.id] = Math.round(card.progressPct ?? textProgress?.get(card.id) ?? 0);
+  for (const [id, position] of positions ?? []) progress[id] = position.progressPct;
+  for (const col of collections) {
+    if (col.kind !== 'chapter_book') progress[col.id] = positions?.get(col.id)?.averagePct ?? 0;
   }
 
   return {
@@ -146,7 +156,8 @@ export async function loadLibrary(
     query,
     tab,
     page,
-    stats,
+    stats: bookStats,
+    progress,
     collections,
     sort,
     collectionsPage,

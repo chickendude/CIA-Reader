@@ -21,6 +21,12 @@ describe('FEATURE_LABELS catalog', () => {
 });
 
 describe('getFeaturePills', () => {
+  it('shows only grammatical forms for multiword dictionary entries', () => {
+    expect(getFeaturePills('ADV', { Compound: 'Yes' })).toEqual([]);
+    expect(getFeaturePills('VERB', { Compound: 'Yes', Tense: 'Past' }))
+      .toEqual(getFeaturePills('VERB', { Tense: 'Past' }));
+  });
+
   it('returns pills sorted by sortOrder', () => {
     const pills = getFeaturePills('VERB', {
       Number: 'Sing',

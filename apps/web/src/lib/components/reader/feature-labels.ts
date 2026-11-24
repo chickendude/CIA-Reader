@@ -132,6 +132,8 @@ export function getFeaturePills(
   type Sortable = FeaturePill & { sortOrder: number };
   const out: Sortable[] = [];
   for (const [key, value] of Object.entries(features)) {
+    // The parser uses Compound to join the words of a dictionary entry in the reader.
+    if (key === 'Compound') continue;
     if (value === undefined || value === '') continue;
     const entry = INDEX.get(`${key}::${value}`);
     if (entry) {

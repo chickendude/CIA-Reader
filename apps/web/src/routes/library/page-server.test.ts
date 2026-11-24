@@ -4,8 +4,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const listPersonalLibrary = vi.fn();
 const listSharedTexts = vi.fn();
 const listOfficialBooks = vi.fn();
-const listCollectionsForUser = vi.fn();
+const listOwnedCollectionSummaries = vi.fn();
 const listOfficialCollections = vi.fn();
+const collectionReadingPositions = vi.fn();
+const progressByText = vi.fn();
 const libraryBookStats = vi.fn();
 
 vi.mock('$lib/server/texts/library.js', async () => {
@@ -14,6 +16,7 @@ vi.mock('$lib/server/texts/library.js', async () => {
   );
   return {
     ...actual,
+    progressByText: (...a: unknown[]) => progressByText(...a),
     listPersonalLibrary: (...a: unknown[]) => listPersonalLibrary(...a),
     listSharedTexts: (...a: unknown[]) => listSharedTexts(...a),
     listOfficialBooks: (...a: unknown[]) => listOfficialBooks(...a),
@@ -26,7 +29,8 @@ vi.mock('$lib/server/texts/book-stats.js', () => ({
 
 // collections tab calls into collections.js; mock to empty.
 vi.mock('$lib/server/collections.js', () => ({
-  listCollectionsForUser: (...a: unknown[]) => listCollectionsForUser(...a),
+  collectionReadingPositions: (...a: unknown[]) => collectionReadingPositions(...a),
+  listOwnedCollectionSummaries: (...a: unknown[]) => listOwnedCollectionSummaries(...a),
   listOfficialCollections: (...a: unknown[]) => listOfficialCollections(...a),
 }));
 
@@ -58,10 +62,12 @@ beforeEach(() => {
   listPersonalLibrary.mockReset();
   listSharedTexts.mockReset();
   listOfficialBooks.mockReset();
-  listCollectionsForUser.mockReset();
+  listOwnedCollectionSummaries.mockReset();
   listOfficialCollections.mockReset();
+  collectionReadingPositions.mockReset().mockResolvedValue(new Map());
+  progressByText.mockReset().mockResolvedValue(new Map());
   libraryBookStats.mockReset();
-  listCollectionsForUser.mockResolvedValue([]);
+  listOwnedCollectionSummaries.mockResolvedValue([]);
   listOfficialCollections.mockResolvedValue([]);
   libraryBookStats.mockResolvedValue({});
 });
@@ -116,11 +122,14 @@ describe('/library loader', () => {
   });
 
   it('counts official chapter books and standalone texts in the same page', async () => {
+    collectionReadingPositions.mockResolvedValueOnce(new Map([['book', { progressPct: 63 }]]));
+    progressByText.mockResolvedValueOnce(new Map([['text', 45.7]]));
     listOfficialBooks.mockResolvedValueOnce({ cards: [
       { id: 'book', chapterCount: 2, stats: { words: 250, uniqueWords: 20, unresolved: 4, knownPct: 80, uniquePct: 40 } },
       { id: 'text', stats: { words: 100, uniqueWords: 10, unresolved: 0, knownPct: 50, uniquePct: 30 } },
     ], totalCount: 4, offset: 0, limit: 2 });
     expect(await callLoad('http://x/library?tab=official&limit=2&sort=unique')).toMatchObject({
+      progress: { book: 63, text: 46 },
       stats: { book: { knownPct: 80, uniquePct: 40 }, text: { knownPct: 50, uniquePct: 30 } },
       page: { cards: [{ id: 'book' }, { id: 'text' }], totalCount: 4 },
     });
@@ -194,7 +203,7 @@ describe('/library loader', () => {
       },
       textCount: i + 1,
     }));
-    listCollectionsForUser.mockResolvedValueOnce(collectionRows);
+    listOwnedCollectionSummaries.mockResolvedValueOnce(collectionRows);
     const data = (await callLoad(
       'http://x/library?tab=collections&limit=2&offset=2',
     )) as {

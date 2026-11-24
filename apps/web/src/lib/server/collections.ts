@@ -513,10 +513,10 @@ export type CollectionListItem = {
   progressPct: number;
 };
 
-export async function listCollectionsForUser(
+export async function listOwnedCollectionSummaries(
   userId: string,
-): Promise<CollectionListItem[]> {
-  const rows = (await db
+) {
+  return (await db
     .select({
       collection: schema.collections,
       textCount: sql<number>`COUNT(${schema.collectionItems.textId})::int`,
@@ -532,99 +532,63 @@ export async function listCollectionsForUser(
     collection: Collection;
     textCount: number;
   }>;
+}
 
-  // Most-recently-read chapter-text per collection, so opening a book resumes.
-  const progress = (await db
-    .select({
-      collectionId: schema.collectionItems.collectionId,
-      textId: schema.collectionItems.textId,
-      position: schema.collectionItems.position,
-      updatedAt: schema.userTextProgress.updatedAt,
-      pctRead: schema.userTextProgress.pctRead,
-    })
-    .from(schema.userTextProgress)
-    .innerJoin(
-      schema.collectionItems,
-      eq(schema.collectionItems.textId, schema.userTextProgress.textId),
-    )
-    .where(eq(schema.userTextProgress.userId, userId))) as Array<{
-    collectionId: string;
-    textId: string;
-    position: number;
-    updatedAt: Date;
-    pctRead: number;
-  }>;
-  // The resume point per book: the most-recently-read chapter, with its
-  // position + within-chapter pct. Book progress is position-based below
-  // (chapters before the current count as done), matching the reader's
-  // whole-book bar — averaging pct_read barely moves across many chapters.
-  const lastRead = new Map<
-    string,
-    { textId: string; position: number; pctRead: number; updatedAt: Date }
-  >();
-  for (const p of progress) {
-    const cur = lastRead.get(p.collectionId);
-    if (!cur || p.updatedAt > cur.updatedAt) {
-      lastRead.set(p.collectionId, {
-        textId: p.textId,
-        position: p.position,
-        pctRead: p.pctRead,
-        updatedAt: p.updatedAt,
-      });
+export async function collectionReadingPositions(userId: string, collectionIds: string[]) {
+  type Chapter = { textId: string; position: number; tokens: number; updatedAt: Date | null; pctRead: number };
+  const positions = new Map<string, { openTextId: string; progressPct: number; averagePct: number }>();
+  if (!collectionIds.length) return positions;
+
+  const items = await db.select({
+    collectionId: schema.collectionItems.collectionId,
+    textId: schema.collectionItems.textId,
+    position: schema.collectionItems.position,
+    tokens: sql<number>`COALESCE((SELECT SUM(${schema.textChapters.tokenCount}) FROM ${schema.textChapters}
+      WHERE ${schema.textChapters.textId} = ${schema.collectionItems.textId}), 0)::int`,
+    updatedAt: schema.userTextProgress.updatedAt,
+    pctRead: sql<number>`COALESCE(${schema.userTextProgress.pctRead}, 0)`,
+  }).from(schema.collectionItems)
+    .leftJoin(schema.userTextProgress, and(
+      eq(schema.userTextProgress.textId, schema.collectionItems.textId),
+      eq(schema.userTextProgress.userId, userId),
+    ))
+    .where(inArray(schema.collectionItems.collectionId, collectionIds))
+    .orderBy(asc(schema.collectionItems.position));
+
+  const byCollection = new Map<string, Chapter[]>();
+  for (const item of items) {
+    const chapters = byCollection.get(item.collectionId);
+    if (chapters) chapters.push(item);
+    else byCollection.set(item.collectionId, [item]);
+  }
+  for (const [id, chapters] of byCollection) {
+    let resume: Chapter | undefined;
+    for (const chapter of chapters) {
+      if (chapter.updatedAt && (!resume?.updatedAt || chapter.updatedAt > resume.updatedAt)) resume = chapter;
     }
+    positions.set(id, {
+      openTextId: (resume ?? chapters[0]!).textId,
+      progressPct: bookProgressPct(chapters, resume),
+      // Courses and anthologies track completion of each text independently.
+      averagePct: Math.round(chapters.reduce((sum, chapter) => sum + chapter.pctRead, 0) / chapters.length),
+    });
   }
+  return positions;
+}
 
-  // Every chapter per collection (ordered): the first is the not-started
-  // fallback, and the token counts drive the same weighted whole-book progress
-  // the reader shows. Token count = sum of the chapter-text's chapter rows.
-  const items = (await db
-    .select({
-      collectionId: schema.collectionItems.collectionId,
-      textId: schema.collectionItems.textId,
-      position: schema.collectionItems.position,
-      tokens: sql<number>`COALESCE((SELECT SUM(${schema.textChapters.tokenCount}) FROM ${schema.textChapters} WHERE ${schema.textChapters.textId} = ${schema.collectionItems.textId}), 0)::int`,
-    })
-    .from(schema.collectionItems)
-    .innerJoin(
-      schema.collections,
-      eq(schema.collections.id, schema.collectionItems.collectionId),
-    )
-    .where(eq(schema.collections.ownerId, userId))
-    .orderBy(asc(schema.collectionItems.position))) as Array<{
-    collectionId: string;
-    textId: string;
-    position: number;
-    tokens: number;
-  }>;
-  const firstText = new Map<string, string>();
-  const chaptersByCollection = new Map<string, Array<{ position: number; tokens: number }>>();
-  for (const it of items) {
-    if (!firstText.has(it.collectionId)) firstText.set(it.collectionId, it.textId);
-    const arr = chaptersByCollection.get(it.collectionId) ?? [];
-    arr.push({ position: it.position, tokens: it.tokens });
-    chaptersByCollection.set(it.collectionId, arr);
-  }
-
-  // Bulk comprehension for every collection in one round trip — the
-  // library card badge (web + Android) reads this directly so the grid
-  // stays cheap regardless of collection count.
-  const comprehension = await estimatedComprehensionForCollections(
-    userId,
-    rows.map((r) => r.collection.id),
-  );
-
-  return rows.map((r) => {
-    const lr = lastRead.get(r.collection.id);
-    return {
-      ...r,
-      openTextId: lr?.textId ?? firstText.get(r.collection.id) ?? null,
-      estimatedComprehensionPct: comprehension.get(r.collection.id) ?? null,
-      // Whole-book progress weighted by chapter token counts, matching the
-      // reader's bar (chapters before the current count fully + the current
-      // chapter's fraction). Even weighting when token counts aren't known.
-      progressPct: bookProgressPct(chaptersByCollection.get(r.collection.id) ?? [], lr),
-    };
-  });
+export async function listCollectionsForUser(userId: string): Promise<CollectionListItem[]> {
+  const rows = await listOwnedCollectionSummaries(userId);
+  const ids = rows.map(row => row.collection.id);
+  const [positions, comprehension] = await Promise.all([
+    collectionReadingPositions(userId, ids),
+    estimatedComprehensionForCollections(userId, ids),
+  ]);
+  return rows.map(row => ({
+    ...row,
+    openTextId: positions.get(row.collection.id)?.openTextId ?? null,
+    estimatedComprehensionPct: comprehension.get(row.collection.id) ?? null,
+    progressPct: positions.get(row.collection.id)?.progressPct ?? 0,
+  }));
 }
 
 /** Token-weighted whole-book progress (0–100), mirroring the reader's bar.

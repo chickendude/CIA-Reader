@@ -58,7 +58,7 @@ function projectCard(
 }
 
 /** The viewer's reading progress (pct_read, 0–100) for the given text ids. */
-async function progressByText(
+export async function progressByText(
   userId: string,
   textIds: string[],
 ): Promise<Map<string, number>> {
@@ -94,7 +94,7 @@ function clampPage(opts: { limit?: number; offset?: number }): {
 
 export type LibraryGridCard = Pick<LibraryCard,
   'id' | 'title' | 'language' | 'sourceType' | 'status' | 'visibility'
-> & { chapterCount?: number | null };
+> & { chapterCount?: number | null; progressPct?: number };
 
 /** Rank books and standalone texts together before taking a page. */
 export async function listPersonalLibrary(
@@ -106,13 +106,13 @@ export async function listPersonalLibrary(
   const rows = await db.execute<{ total: number; cards: LibraryGridCard[] }>(sql`
     WITH items AS (
       SELECT texts.id, texts.title, texts.language, texts.visibility::text, texts.source_type::text AS "sourceType",
-             texts.status::text, NULL::int AS "chapterCount", texts.created_at,
+             texts.status::text, NULL::int AS "chapterCount", coalesce(p.pct_read, 0) AS "progressPct", texts.created_at,
              coalesce(p.last_opened_at, p.updated_at) AS opened
       FROM texts LEFT JOIN user_text_progress p ON p.text_id = texts.id AND p.user_id = ${viewer.id}
       WHERE texts.owner_id = ${viewer.id} AND ${NOT_A_CHAPTER_BOOK_MEMBER}
         ${language ? sql`AND texts.language = ${language}` : sql``}
       UNION ALL
-      SELECT c.id, c.title, c.language, c.visibility::text, 'book', '', count(ci.text_id)::int,
+      SELECT c.id, c.title, c.language, c.visibility::text, 'book', '', count(ci.text_id)::int, NULL,
              c.created_at, max(coalesce(p.last_opened_at, p.updated_at))
       FROM collections c LEFT JOIN collection_items ci ON ci.collection_id = c.id
       LEFT JOIN user_text_progress p ON p.text_id = ci.text_id AND p.user_id = ${viewer.id}

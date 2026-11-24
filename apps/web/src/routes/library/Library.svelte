@@ -11,6 +11,7 @@
   import BookMetrics from '$lib/components/library/BookMetrics.svelte';
   import BookActions from '$lib/components/library/BookActions.svelte';
   import Modal from '$lib/components/overlay/Modal.svelte';
+  import type { Snippet } from 'svelte';
   import type { PageData } from './$types';
 
   let { data }: { data: PageData } = $props();
@@ -119,6 +120,44 @@
     <BookMetrics stats={data.stats[id]} signedIn={data.isAuthenticated} showUniqueCoverage={data.tab === 'official' && data.sort === 'unique'} />
   {/snippet}
 
+  {#snippet readingProgress(id: string)}
+    {#if data.isAuthenticated}
+      {@const percent = data.progress[id] ?? 0}
+      <div class="reading-progress" role="progressbar" aria-label="Reading progress"
+        aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent} style:--read={percent + '%'}>
+        {percent}% read
+      </div>
+    {/if}
+  {/snippet}
+
+  {#snippet cover(id: string, title: string, href: string, visibility: string, actions: Snippet, tag?: string)}
+    <div class={`lib-cover cover-${coverForId(id)}`}>
+      <div class="cover-row">
+        <a class="cover-title" {href} aria-label={title}
+          aria-describedby={visibility === 'official' ? `official-${id}` : undefined}>
+          <span class="title-text" {title}>{title}</span>
+          {#if visibility === 'official'}
+            <span class="official-icon">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                <path d="m12 1 3 2 3.6.4 1.3 3.4 2.5 2.6-.9 3.6.2 3.6-3.1 1.9-2.3 2.8-3.6-.7-3.6.7-2.3-2.8-3.1-1.9.2-3.6L2 9.4l2.5-2.6 1.3-3.4 3.6-.4z" />
+                <path d="m8 11.5 2.8 2.8 5.2-5.6" fill="none" stroke="var(--paper)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+              <span class="official-tooltip" role="tooltip" id={`official-${id}`}>official</span>
+            </span>
+          {/if}
+        </a>
+        {@render actions()}
+      </div>
+      {#if tag || (visibility !== 'official' && visibility !== 'private')}
+        <div class="cover-chips">
+          {#if tag}<span class="chip status-{tag}">{tag}</span>{/if}
+          {#if visibility !== 'official' && visibility !== 'private'}<span class="chip">{visibility}</span>{/if}
+        </div>
+      {/if}
+      {@render readingProgress(id)}
+    </div>
+  {/snippet}
+
   {#snippet personalActions(card: PageData['page']['cards'][number])}
     <BookActions
       id={card.id}
@@ -158,6 +197,7 @@
                   <a class="row-link" href={card.chapterCount != null ? `/collections/${card.id}` : `/reader/${card.id}`}>
                     {card.title}
                   </a>
+                  {@render readingProgress(card.id)}
                   <BookMetrics stats={data.stats[card.id]} signedIn={data.isAuthenticated} />
                 </td>
                 <td class="action-cell">{@render personalActions(card)}</td>
@@ -189,17 +229,12 @@
         {#each data.collections as col (col.id)}
           <div class="lib-card-wrap">
             <div class="card lib-card">
-              <div class={`lib-cover cover-${coverForId(col.id)}`}>
-                <a class="cover-title" href={`/collections/${col.id}`}>{col.title}</a>
-                <div class="cover-chips">
-                  {#if col.kind !== 'chapter_book'}
-                    <span class="chip">{col.kind}</span>
-                  {/if}
-                  {#if col.visibility !== 'private'}
-                    <span class="chip">{col.visibility}</span>
-                  {/if}
-                </div>
-              </div>
+              {#snippet actions()}
+                <BookActions id={col.id} title={col.title} collection canRename={col.canRename}
+                  catalogAction={data.user?.role === 'admin' && col.visibility === 'official' ? 'remove' : undefined} />
+              {/snippet}
+              {@render cover(col.id, col.title, `/collections/${col.id}`, col.visibility, actions,
+                col.kind !== 'chapter_book' ? col.kind : undefined)}
               <div class="body">
                 <div class="kind-row">
                   <span class="kind-tag">collection</span>
@@ -210,31 +245,20 @@
                 {@render bookMetrics(col.id)}
               </div>
             </div>
-            <BookActions id={col.id} title={col.title} collection canRename={col.canRename}
-              catalogAction={data.user?.role === 'admin' && col.visibility === 'official' ? 'remove' : undefined} />
           </div>
         {/each}
       {:else}
         {#each data.page.cards as card (card.id)}
           <div class="lib-card-wrap">
             <div class="card lib-card">
-              <div class={`lib-cover cover-${coverForId(card.id)}`}>
-                <a class="cover-title" href={card.chapterCount != null ? `/collections/${card.id}`
-                  : data.tab === 'official' ? `/library/${card.id}` : `/reader/${card.id}`}>{card.title}</a>
-                <div class="cover-chips">
-                  {#if card.chapterCount == null && card.status !== 'ready'}
-                    <span class="chip status-{card.status}">{card.status}</span>
-                  {/if}
-                  {#if card.visibility !== 'private' && data.tab !== 'official'}
-                    <span class="chip">{card.visibility}</span>
-                  {/if}
-                </div>
-              </div>
+              {#snippet actions()}{@render personalActions(card)}{/snippet}
+              {@render cover(card.id, card.title, card.chapterCount != null ? `/collections/${card.id}`
+                : data.tab === 'official' ? `/library/${card.id}` : `/reader/${card.id}`, card.visibility, actions,
+                card.chapterCount == null && card.status !== 'ready' ? card.status : undefined)}
               <div class="body">
                 {@render bookMetrics(card.id)}
               </div>
             </div>
-            {@render personalActions(card)}
           </div>
         {/each}
       {/if}
@@ -393,9 +417,17 @@
     position: relative;
     isolation: isolate;
     flex: 1;
+    overflow: visible;
   }
-  .lib-card-wrap:has(:global(.book-actions)) .cover-chips {
-    right: 3.3rem;
+  .lib-card-wrap:has(:global(.book-actions.open)) {
+    z-index: 3;
+  }
+  .cover-row :global(.book-actions) {
+    position: relative;
+    inset: auto;
+    z-index: 3;
+    flex: none;
+    margin-inline-start: auto;
   }
 
   .del-body {
@@ -458,34 +490,87 @@
   }
 
   .lib-cover {
-    min-height: 92px;
-    box-sizing: border-box;
     display: grid;
-    align-items: center;
+    grid-template-columns: minmax(0, 1fr);
+    border-radius: 13px 13px 0 0;
     border-bottom: 1px solid var(--card-edge, var(--color-border));
   }
-  .lib-cover:has(.chip),
-  .lib-card-wrap:has(:global(.book-actions)) .lib-cover {
-    padding-top: 2.25rem;
+  .cover-row {
+    display: flex;
+    align-items: center;
+    gap: .4rem;
+    min-height: 2.5rem;
+    padding: .4rem .4rem .4rem .8rem;
+    box-sizing: content-box;
   }
   .cover-title {
+    min-width: 0;
+    display: flex;
+    gap: .4rem;
+    align-items: center;
     text-decoration: none;
-    overflow-wrap: anywhere;
-    text-align: center;
     font-family: var(--font-serif-dev, var(--font-serif));
     font-size: 1.6rem;
-    line-height: 1.05;
-    padding: 0.75rem;
+    line-height: 1.3;
     color: var(--ink, var(--color-fg));
   }
-  .cover-chips {
+  .title-text {
+    position: relative;
+    z-index: 2;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .official-icon {
+    position: relative;
+    z-index: 2;
+    display: inline-flex;
+    flex: none;
+    color: var(--ink);
+  }
+  .official-tooltip {
+    display: none;
     position: absolute;
-    top: 0.6rem;
-    right: 0.6rem;
+    inset: calc(100% + .2rem) 0 auto auto;
+    padding: .2rem .4rem;
+    border-radius: .25rem;
+    background: var(--ink);
+    color: var(--paper);
+    font: .75rem/1.4 var(--font-sans);
+  }
+  .official-icon:hover .official-tooltip,
+  .cover-title:focus-visible .official-tooltip {
+    display: block;
+  }
+  .reading-progress {
+    position: relative;
+    isolation: isolate;
+    background: var(--paper-2);
+    color: var(--ink);
+    text-align: center;
+    font-size: .75rem;
+    line-height: 1.5rem;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+  .reading-progress::before {
+    content: '';
+    position: absolute;
+    z-index: -1;
+    inset: 0 auto 0 0;
+    width: var(--read);
+    background: color-mix(in srgb, var(--accent) 42%, var(--paper-2));
+  }
+  .book-table .reading-progress {
+    margin-top: .4rem;
+    border-radius: .25rem;
+    overflow: hidden;
+  }
+  .cover-chips {
     display: flex;
-    gap: 0.3rem;
+    gap: .3rem;
     flex-wrap: wrap;
-    justify-content: flex-end;
+    padding: 0 .8rem .4rem;
   }
   .chip {
     display: inline-flex;
