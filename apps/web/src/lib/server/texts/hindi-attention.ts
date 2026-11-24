@@ -1,5 +1,6 @@
 import { sql } from 'drizzle-orm';
 import { db, type DB } from '../db/index.js';
+import { currentHindiChoiceStatus } from './hindi-context.js';
 
 import type { ReviewFilter, ReviewStatus } from '$lib/dictionary/review-status';
 
@@ -36,15 +37,11 @@ async function loadReviewIndex(connection: Pick<DB, 'execute'>, textId: string) 
       GROUP BY r.chapter_id,r.start,r.stop
     ), saved AS (
       SELECT c.chapter_id,c.source_start AS start,c.source_end AS stop,
-        CASE WHEN (c.metadata->>'chapter_hash') IS DISTINCT FROM ch.body_hash
-            OR NOT (c.candidate_lemma_ids @> coalesce(s.ids,'[]') AND coalesce(s.ids,'[]') @> c.candidate_lemma_ids)
-            OR (c.status IN ('ai_suggested','confirmed') AND
-              (c.selected_lemma_ids='[]' OR NOT coalesce(s.ids,'[]') @> c.selected_lemma_ids))
-          THEN 'needs_review' ELSE c.status END AS status
+        ${currentHindiChoiceStatus(sql`coalesce(s.ids,'[]')`, sql`ch.body_hash`)} AS status
       FROM chapters ch JOIN hindi_context_choices c ON c.chapter_id=ch.id
       LEFT JOIN spans s ON s.chapter_id=c.chapter_id AND s.start=c.source_start AND s.stop=c.source_end
     ), decisions AS MATERIALIZED (
-      SELECT DISTINCT ON (chapter_id,start,stop) chapter_id,start,stop,status FROM saved
+      SELECT DISTINCT ON (chapter_id,start,stop) chapter_id,start,stop,status FROM saved WHERE status IS NOT NULL
       ORDER BY chapter_id,start,stop,array_position(
         ARRAY['confirmed','ai_suggested','needs_review','uncertain','none_fit','unconfirmed'],status)
     ), merges AS (

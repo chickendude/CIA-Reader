@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { and, eq, inArray, sql, type SQL } from 'drizzle-orm';
 import { db, schema } from '../db/index.js';
 import { canReadText } from '../auth/can-read.js';
 import { isCuratorOrAdmin } from '../dictionary/permissions.js';
@@ -196,6 +196,26 @@ export async function saveHindiContextChoice(
   });
 }
 
+// Both the reader and the review list evaluate saved choices against the entries
+// at the same span. A null status drops an old ambiguity without confirming a choice.
+export function currentHindiChoiceStatus(supported: SQL, chapterHash: SQL) {
+  return sql`CASE
+    WHEN (c.metadata->>'chapter_hash') IS DISTINCT FROM ${chapterHash} THEN 'needs_review'
+    WHEN c.selected_lemma_ids='[]' AND jsonb_array_length(${supported})=1
+      AND c.candidate_lemma_ids @> ${supported}
+      AND ((c.status='uncertain' AND jsonb_array_length(c.candidate_lemma_ids)>1)
+        OR (c.status='needs_review' AND c.metadata->>'outcome'='uncertain'
+          AND c.metadata->'candidate_snapshot'->1 IS NOT NULL
+          AND c.metadata->>'surface'=c.metadata->>'current_surface'
+          AND c.metadata->>'sentence_text'=c.metadata->>'current_sentence'))
+      THEN NULL
+    WHEN NOT (c.candidate_lemma_ids @> ${supported} AND ${supported} @> c.candidate_lemma_ids)
+      OR (c.status IN ('ai_suggested','confirmed') AND
+        (c.selected_lemma_ids='[]' OR NOT ${supported} @> c.selected_lemma_ids))
+      THEN 'needs_review'
+    ELSE c.status END`;
+}
+
 /** Current source offsets keep imported decisions independent of token row IDs. */
 export async function loadHindiContextChoices(
   chapterId: string,
@@ -203,32 +223,30 @@ export async function loadHindiContextChoices(
 ): Promise<Map<number, HindiContextChoice>> {
   if (sourceStarts?.length === 0) return new Map();
   const rows = await db.execute(sql`
-    SELECT c.source_start,c.selected_lemma_ids,c.candidate_lemma_ids,c.origin,c.status,
-      (SELECT md5(body) FROM text_chapters WHERE id=${chapterId})=c.metadata->>'chapter_hash' AS text_matches,
-      COALESCE(array_agg(o.lemma_id::text) FILTER (WHERE o.lemma_id IS NOT NULL), ARRAY[]::text[]) AS supported
-    FROM hindi_context_choices c
-    LEFT JOIN hindi_occurrences o ON o.chapter_id=c.chapter_id
-      AND o.source_start=c.source_start AND o.source_end=c.source_end
-    WHERE c.chapter_id=${chapterId}
-      ${sourceStarts ? sql`AND ${inArray(sql`c.source_start`, sourceStarts)}` : sql``}
-    GROUP BY c.chapter_id,c.source_occurrence_id
+    WITH spans AS (
+      SELECT c.source_start,c.source_end,c.selected_lemma_ids,c.candidate_lemma_ids,c.origin,c.status,c.metadata,
+        coalesce(jsonb_agg(DISTINCT o.lemma_id) FILTER (WHERE o.lemma_id IS NOT NULL),'[]') AS supported
+      FROM hindi_context_choices c
+      LEFT JOIN hindi_occurrences o ON o.chapter_id=c.chapter_id
+        AND o.source_start=c.source_start AND o.source_end=c.source_end
+      WHERE c.chapter_id=${chapterId}
+        ${sourceStarts ? sql`AND ${inArray(sql`c.source_start`, sourceStarts)}` : sql``}
+      GROUP BY c.chapter_id,c.source_occurrence_id
+    )
+    SELECT c.source_start,c.selected_lemma_ids,c.origin,
+      ${currentHindiChoiceStatus(sql`c.supported`, sql`(SELECT md5(body) FROM text_chapters WHERE id=${chapterId})`)} AS status
+    FROM spans c
     ORDER BY c.source_start,c.source_end
   `);
   const out = new Map<number, HindiContextChoice>();
   for (const row of rows) {
-    const selected = row.selected_lemma_ids as string[];
-    const expected = new Set(row.candidate_lemma_ids as string[]);
-    const supported = new Set(row.supported as string[]);
-    const matches =
-      row.text_matches &&
-      expected.size === supported.size &&
-      [...expected].every((id) => supported.has(id));
-    const status = matches ? String(row.status) : 'needs_review';
+    if (row.status == null) continue;
+    const status = String(row.status);
     const valid = status === 'confirmed' || status === 'ai_suggested';
     const start = Number(row.source_start);
     const previous = out.get(start);
     // At overlapping spans retain every selected entry, including compounds.
-    const ids = valid ? selected.filter((id) => supported.has(id)) : [];
+    const ids = valid ? row.selected_lemma_ids as string[] : [];
     out.set(start, {
       selectedLemmaIds: [...new Set([...(previous?.selectedLemmaIds ?? []), ...ids])],
       selectedOrigins: {

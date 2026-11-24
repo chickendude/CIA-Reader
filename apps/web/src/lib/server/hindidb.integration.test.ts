@@ -115,6 +115,27 @@ describe.skipIf(!url)('HindiDB PostgreSQL integration (always rolls back)', () =
           ]);
           const { loadHindiContextChoices } = await import('./texts/hindi-context.js');
           const { loadChapterTokens } = await import('./texts/tokens.js');
+          const { reviewPage } = await import('./texts/hindi-review.js');
+          const attention = (status: 'attention' | 'ai_suggested' | 'confirmed' = 'attention') =>
+            reviewPage(text!.id, { ...user!, role: 'admin' }, 0, '', status);
+          // An imported review can remember two spellings even if only one entry survived.
+          const [removed] = await tx.delete(schema.hindiOccurrences)
+            .where(eq(schema.hindiOccurrences.lemmaId, entries[1]!.id)).returning();
+          await tx.insert(schema.hindiContextChoices).values({
+            chapterId: chapter!.id, sourceOccurrenceId: 'old-spellings', sourceStart: 0, sourceEnd: 4,
+            selectedLemmaIds: [], candidateLemmaIds: [entries[0]!.id], origin: 'ai', status: 'needs_review',
+            metadata: {
+              chapter_hash: createHash('md5').update(chapter!.body).digest('hex'),
+              candidate_snapshot: entries.map(e => ({ id: e.id })), outcome: 'uncertain',
+              surface: 'खाना', current_surface: 'खाना', sentence_text: chapter!.body, current_sentence: chapter!.body,
+            },
+          });
+          expect((await loadHindiContextChoices(chapter!.id)).has(0)).toBe(false);
+          expect(await attention()).toMatchObject({ total: 0, occurrences: [] });
+          await tx.insert(schema.hindiOccurrences).values(removed!);
+          expect((await loadHindiContextChoices(chapter!.id)).get(0)?.status).toBe('needs_review');
+          expect(await attention()).toMatchObject({ total: 1, attentionCounts: { needs_review: 1 } });
+          await tx.delete(schema.hindiContextChoices).where(eq(schema.hindiContextChoices.chapterId, chapter!.id));
           await tx.insert(schema.hindiContextChoices).values({
             chapterId: chapter!.id, sourceOccurrenceId: 'source-word', sourceStart: 0, sourceEnd: 4,
             selectedLemmaIds: [entries[1]!.id], candidateLemmaIds: entries.map((e) => e.id),
@@ -127,9 +148,6 @@ describe.skipIf(!url)('HindiDB PostgreSQL integration (always rolls back)', () =
           const [selectedToken] = (await loadChapterTokens(chapter!.id, user!.id, text!.id))!;
           expect(selectedToken).toMatchObject({ lemmaId: entries[1]!.id, selectedBy: 'ai', bookFrequency: 1 });
           expect(selectedToken!.candidates.map((c) => c.lemmaId)).toContain(entries[0]!.id);
-          const { reviewPage } = await import('./texts/hindi-review.js');
-          const attention = (status: 'attention' | 'ai_suggested' | 'confirmed' = 'attention') =>
-            reviewPage(text!.id, { ...user!, role: 'admin' }, 0, '', status);
           expect(await attention()).toMatchObject({ total: 0, occurrences: [], attentionCounts: { attention: 0, ai_suggested: 1 } });
           expect(await attention('ai_suggested')).toMatchObject({ total: 1, occurrences: [{ status: 'ai_suggested' }] });
           const { saveHindiContextChoice } = await import('./texts/hindi-context.js');
