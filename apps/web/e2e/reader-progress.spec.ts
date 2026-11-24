@@ -188,6 +188,71 @@ test.describe('Reader page counter + whole-book progress', () => {
     await expectOnPage(page, 3);
   });
 
+  test('a bookmark survives chapter changes and can be moved or removed with the keyboard', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 760 });
+    await page.goto(`/reader/${book.biggest.id}?mode=page&chapter=0&token=0`);
+    await waitForMeasureSettled(page);
+    await clickNext(page);
+    await expectOnPage(page, 2);
+
+    const add = page.getByRole('button', { name: 'Bookmark this position' });
+    const saved = page.getByRole('button', { name: 'Reading bookmark', exact: true });
+    await add.focus();
+    await page.keyboard.press('Enter');
+    await expect(saved).toBeVisible();
+    const sibling = book.biggest.id === book.first.id ? book.last : book.first;
+    await page.goto(`/reader/${sibling.id}?mode=page&chapter=0&token=0`);
+    await saved.focus();
+    await page.keyboard.press('Enter');
+    await page.keyboard.press('Tab');
+    const jump = page.getByRole('link', { name: 'Return to bookmark' });
+    await expect(jump).toBeFocused();
+    await expect(jump).toBeInViewport({ ratio: 1 });
+    await page.keyboard.press('Enter');
+    await expect(page).toHaveURL(new RegExp(`/reader/${book.biggest.id}\\?`));
+    await expectOnPage(page, 2);
+
+    await clickNext(page);
+    await expectOnPage(page, 3);
+    await saved.click();
+    await page.getByRole('button', { name: 'Move bookmark here' }).press('Enter');
+    await page.getByRole('button', { name: 'Previous page', exact: true }).click();
+    await expectOnPage(page, 2);
+    await saved.click();
+    await jump.click();
+    await expectOnPage(page, 3);
+    await saved.click();
+    await page.getByRole('button', { name: 'Remove bookmark' }).press('Enter');
+    await expect(add).toBeFocused();
+    await page.reload();
+    await expect(add).toBeEnabled();
+  });
+
+  for (const mode of ['continuous', 'paged_scroll']) {
+    test(`a bookmark survives scrolling away in ${mode} mode`, async ({ page }) => {
+      await page.setViewportSize({ width: 390, height: 600 });
+      await page.goto(`/reader/${book.biggest.id}?mode=${mode}&chapter=0&token=0`);
+      const add = page.getByRole('button', { name: 'Bookmark this position' });
+      await expect(add).toBeEnabled();
+      const token = () => Number(new URL(page.url()).searchParams.get('token'));
+      await page.evaluate(() => window.scrollBy(0, window.innerHeight));
+      await expect.poll(token).toBeGreaterThan(0);
+      const markedToken = token();
+      await add.click();
+      await page.evaluate(() => window.scrollTo(0, 0));
+      await expect.poll(token).toBeLessThan(markedToken);
+      await page.getByRole('button', { name: 'Reading bookmark', exact: true }).click();
+      await page.getByRole('link', { name: 'Return to bookmark' }).click();
+      const word = page.locator(`[data-token-idx="${markedToken}"]`).first();
+      await expect(word).toBeInViewport();
+      await expect.poll(async () => word.evaluate(el => {
+        const rect = el.getBoundingClientRect();
+        const header = document.querySelector('.reader-top')!.getBoundingClientRect();
+        return rect.bottom > header.bottom && rect.top < window.innerHeight;
+      })).toBe(true);
+    });
+  }
+
   test('whole-book progress is ~0% at the start of the first chapter', async ({ page }) => {
     await page.goto(`/reader/${book.first.id}?mode=page&chapter=0&token=0`);
     await expect(page.locator('.pager-pct').first()).toBeVisible({ timeout: 10_000 });

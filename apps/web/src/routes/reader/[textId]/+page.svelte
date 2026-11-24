@@ -32,6 +32,7 @@
   } from '$lib/components/reader/reader-settings.js';
   import { LANGUAGES, type LanguageCode } from '@ciareader/shared-types';
   import type { PageProps } from './$types';
+  import ReadingBookmark from './ReadingBookmark.svelte';
 
   const toastStore = getToastStore();
   readerOccurrenceIgnores();
@@ -156,6 +157,9 @@
   }
 
   let currentProgressAnchor = $derived(anchorFromData());
+  const bookmarkBookId = $derived(data.collectionContext?.collectionKind === 'chapter_book'
+    ? data.collectionContext.collectionId : data.text.id);
+  const bookmarkKey = $derived(`reader.bookmark:${data.user?.id ?? 'guest'}:${bookmarkBookId}`);
 
   const reviewReaderUrl = $derived(new URL(buildReaderAnchorUrl(page.url.href, {
     mode: data.mode,
@@ -436,6 +440,13 @@
       {/if}
 
       <span class="desktop-tools">{@render processButton()}</span>
+
+      {#if data.chapters.length > 0}
+        {#key bookmarkKey}
+          <ReadingBookmark storageKey={bookmarkKey} mode={data.mode} {showRomanization}
+            position={{ textId: data.text.id, chapterIdx: currentProgressAnchor.chapterIdx, tokenIdx: currentProgressAnchor.tokenIdx }} />
+        {/key}
+      {/if}
 
       <button
         type="button"

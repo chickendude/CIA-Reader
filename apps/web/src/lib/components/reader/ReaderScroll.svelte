@@ -11,8 +11,10 @@
   import {
     computePctRead,
     findFirstVisibleWordAnchor,
+    findTokenElementAtOrAfter,
     firstTokenPage,
     readableRect,
+    readerTopInset,
   } from './reader-progress.js';
   import {
     paragraphsOfServerTokens,
@@ -198,7 +200,11 @@
     if (initialTokenIdx > 0) {
       void tick().then(() => {
         window.requestAnimationFrame(() => {
+          // A paragraph group can be taller than the screen. Restore the word within it.
+          const word = articleEl && findTokenElementAtOrAfter(articleEl, initialTokenIdx);
+          if (word) window.scrollBy(0, word.getBoundingClientRect().top - readerTopInset());
           restorePaintReady = true;
+          queueProgressReport();
         });
       });
     }
