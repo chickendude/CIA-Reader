@@ -582,7 +582,6 @@
     {#if data.isAdmin || (data.isOwner && liveStatus === 'failed')}
       <section class="mobile-processing">
         <h3>Text processing</h3>
-        <p>Run the parser on every chapter to refresh word forms and dictionary matches.</p>
         {@render processButton()}
       </section>
     {/if}
@@ -800,7 +799,6 @@
     .reader-top-center, .reader-top-center :global(.chapter-nav), .roman-toggle, .desktop-tools { display: none; }
     .reader-top-center.has-status { display: flex; grid-column: 1 / -1; grid-row: 2; justify-content: start; }
     .mobile-picker, .mobile-processing { display: block; }
-    .mobile-processing p { font-size: .875rem; }
     .mobile-chapter-footer {
       position: sticky; bottom: 0; z-index: 9; display: flex; justify-content: flex-end;
       padding: 0 .75rem env(safe-area-inset-bottom, 0px); background: var(--paper); border-top: 1px solid var(--rule);
