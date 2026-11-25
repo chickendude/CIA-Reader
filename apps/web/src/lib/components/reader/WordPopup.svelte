@@ -154,7 +154,6 @@
   const readerDictionary = getContext<(() => boolean) | undefined>('readerDictionary');
   const dictionaryEditor = $derived(readerDictionary?.());
   let editor = $state<{ tokenId: string; lemmaId: string | null; headword: string } | null>(null);
-  let savedTokenId = $state<string>();
 
   const selectedTokenId = $derived(token?.id);
   const { pushToast } = getToastStore();
@@ -197,7 +196,6 @@
   $effect(() => {
     // A chapter refresh can replace the token object while the same word is open.
     if (editor && editor.tokenId !== selectedTokenId) editor = null;
-    if (savedTokenId !== selectedTokenId) savedTokenId = undefined;
   });
   function mergeSaved() {
     window.dispatchEvent(new Event('reader-words-merged'));
@@ -208,7 +206,7 @@
     const { id, lemma, meaning, pos } = word.draft;
     if (!id) return;
     editor = null;
-    savedTokenId = token?.id;
+    pushToast({ kind: 'success', message: 'Dictionary entry saved.' });
     window.dispatchEvent(new CustomEvent('reader-dictionary-saved', { detail: word.draft }));
     window.dispatchEvent(new CustomEvent('dictionary-definition-changed', {
       detail: { lemmaId: id, body: meaning },
@@ -1855,7 +1853,6 @@
         <HindiMergeButtons chapterId={token.chapterId} options={token.mergeOptions} onSaved={mergeSaved} />
       {/key}
     {/if}
-    {#if savedTokenId === token.id}<p role="status">Dictionary entry saved.</p>{/if}
     {#if !isNumberToken}
     {#if token.chapterId && token.isWord && !isNumberToken}
       <!-- OpenAI sentence-level translation for the sentence this word sits

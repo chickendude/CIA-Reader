@@ -29,6 +29,34 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+it('keeps a new entry open when marking it as an English loan after editing its meaning', async () => {
+  vi.spyOn(window, 'scrollTo').mockImplementation(() => {});
+  const word = blankWorkshopWord(token.surface);
+  const onSaved = vi.fn();
+  vi.mocked(workshop).mockImplementation(async (action) => {
+    if (action === 'patterns') return [];
+    if (action === 'preview') return { forms: {} };
+    return word;
+  });
+  render(ReaderDictionaryEditor, {
+    language: 'hi', token, lemmaId: null, headword: token.surface, sheet: true,
+    onClose: vi.fn(), onSaved,
+  });
+
+  const meaning = await screen.findByRole('textbox', { name: 'English meaning' });
+  await fireEvent.input(meaning, { target: { value: 'seeker' } });
+  const loan = screen.getByRole<HTMLInputElement>('checkbox', { name: 'English loan' });
+  await fireEvent.click(loan);
+  expect(loan.checked).toBe(true);
+  expect(onSaved).not.toHaveBeenCalled();
+
+  await fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+  expect(onSaved).toHaveBeenCalledTimes(1);
+  expect(workshop).toHaveBeenCalledWith('save', {
+    draft: expect.objectContaining({ meaning: 'seeker', loan: true }),
+  }, undefined, 'hi');
+});
+
 it('keeps the observed form and context when attaching it to an existing headword', async () => {
   vi.spyOn(window, 'scrollTo').mockImplementation(() => {});
   const existing = blankWorkshopWord('खोजी');

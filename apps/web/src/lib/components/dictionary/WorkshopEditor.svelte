@@ -165,10 +165,6 @@
     if (draft.lemma.trim()) void save();
   }
 
-  function saveChangedMeaning() {
-    if (draft.meaning !== word.draft.meaning) saveMeaning();
-  }
-
   function keyboard(e: KeyboardEvent) {
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
       e.preventDefault();
@@ -340,7 +336,7 @@
     <label for={meaningId}>English meaning</label>
     <MeaningInput id={meaningId} bind:value={draft.meaning} label="English meaning" {sheet}
       oncancel={sheet ? () => { draft.meaning = word.draft.meaning; } : undefined}
-      onsave={saveMeaning} onblur={sheet ? saveChangedMeaning : undefined} />
+      onsave={saveMeaning} />
   </div>
   <fieldset id="inflection">
     <legend>Inflection pattern</legend>
