@@ -2,6 +2,8 @@
   import PageLayout from '$lib/components/shell/PageLayout.svelte';
   import PageTitle from '$lib/components/shell/PageTitle.svelte';
   import { enhance } from '$app/forms';
+  import ActionConfirmation from '$lib/components/toast/ActionConfirmation.svelte';
+  import type { SubmitFunction } from '@sveltejs/kit';
   import MeaningInput from '$lib/components/input/MeaningInput.svelte';
   import EditableDefinition from '$lib/components/reader/EditableDefinition.svelte';
   import { invalidateAll } from '$app/navigation';
@@ -20,11 +22,8 @@
   const formsList = $derived(data.forms ?? []);
   const availableParadigms = $derived(data.availableParadigms ?? []);
 
-  function msgFor(section: string): string | null {
-    if (!form) return null;
-    if (form.section !== section) return null;
-    if (form.ok) return 'Saved.';
-    return form.message ?? null;
+  function errorFor(section: string): string | null {
+    return form && !form.ok && form.section === section ? form.message ?? null : null;
   }
 
   /** Render `Tense=Past, Person=1` from a features blob — same shape
@@ -238,17 +237,6 @@
     e.stopPropagation();
   }
 
-  function translationMsg(
-    translationId: string,
-  ): { ok: boolean; message: string } | null {
-    if (!form || form.section !== 'translation') return null;
-    if (form.translationId !== translationId) return null;
-    return {
-      ok: form.ok,
-      message: form.ok ? 'Saved.' : form.message,
-    };
-  }
-
   /**
    * Operations dropdown — Lock / Unlock, Merge, Split, Delete behind
    * a single button. Merge + Split need form data (loserId / new
@@ -261,6 +249,10 @@
   function closeOps(): void {
     opsMode = null;
   }
+  const submitOperation: SubmitFunction = () => async ({ result, update }) => {
+    await update({ reset: false });
+    if (result.type === 'success') closeOps();
+  };
   function openMenu(): void {
     opsMode = opsMode === 'menu' ? null : 'menu';
   }
@@ -343,9 +335,16 @@
     </div>
 
     <div class="mod-head-actions">
-      {#if msgFor('lemma')}
-        <span class:ok={form?.ok} class:err={!form?.ok} class="mod-flash">
-          {msgFor('lemma')}
+      {#if form?.ok}
+        <ActionConfirmation result={form} message="Dictionary entry updated." />
+      {/if}
+      {#if form?.ok && form.section === 'split'}
+        <a href={`/moderation/dictionary/${form.newLemmaId}`}>Open new lemma →</a>
+      {/if}
+      {#if errorFor('lock')}<span class="mod-flash err">{errorFor('lock')}</span>{/if}
+      {#if errorFor('lemma')}
+        <span class="mod-flash err">
+          {errorFor('lemma')}
         </span>
       {/if}
       <div class="mod-ops-wrap">
@@ -360,7 +359,7 @@
         </button>
         {#if opsMode === 'menu'}
           <div class="mod-ops-menu" role="menu">
-            <form method="post" action="?/setLock" use:enhance={() => closeOps}>
+            <form method="post" action="?/setLock" use:enhance={submitOperation}>
               <input
                 type="hidden"
                 name="locked"
@@ -459,8 +458,8 @@
   {#if opsMode === 'merge'}
     <div class="mod-ops-panel" data-mode="merge">
       <h2>Merge into this lemma</h2>
-      {#if msgFor('merge')}
-        <p class:ok={form?.ok} class:err={!form?.ok}>{msgFor('merge')}</p>
+      {#if errorFor('merge')}
+        <p class="err">{errorFor('merge')}</p>
       {/if}
       <p class="sub">
         Rewires translations + forms from the loser into this one, then deletes
@@ -469,7 +468,7 @@
       <form
         method="post"
         action="?/merge"
-        use:enhance={() => closeOps}
+        use:enhance={submitOperation}
         class="inline-form"
       >
         <input
@@ -487,12 +486,9 @@
   {#if opsMode === 'split'}
     <div class="mod-ops-panel" data-mode="split">
       <h2>Split off a new lemma</h2>
-      {#if msgFor('split')}
-        <p class:ok={form?.ok} class:err={!form?.ok}>
-          {msgFor('split')}
-          {#if form?.ok && form.section === 'split'}
-            <a href={`/moderation/dictionary/${form.newLemmaId}`}>Open new lemma →</a>
-          {/if}
+      {#if errorFor('split')}
+        <p class="err">
+          {errorFor('split')}
         </p>
       {/if}
       <p class="sub">
@@ -502,7 +498,7 @@
       <form
         method="post"
         action="?/split"
-        use:enhance={() => closeOps}
+        use:enhance={submitOperation}
         class="stack"
       >
         <div class="row">
@@ -526,15 +522,15 @@
   {#if opsMode === 'delete'}
     <div class="mod-ops-panel" data-mode="delete">
       <h2>Delete this lemma?</h2>
-      {#if msgFor('delete')}
-        <p class:err={true}>{msgFor('delete')}</p>
+      {#if errorFor('delete')}
+        <p class="err">{errorFor('delete')}</p>
       {/if}
       <p class="sub">
         Permanently removes the lemma row. Cascades to its forms and
         translations. Audit history for this lemma is also dropped. There's no
         undo.
       </p>
-      <form method="post" action="?/deleteLemma" use:enhance={() => closeOps}>
+      <form method="post" action="?/deleteLemma" use:enhance={submitOperation}>
         <button type="submit" class="danger">Yes, delete</button>
         <button type="button" onclick={closeOps}>Cancel</button>
       </form>
@@ -545,7 +541,7 @@
   {#if data.hindi}
     <section id="inflection">
       <h2>Hindi inflection</h2>
-      {#if msgFor('hindi')}<p role="status">{msgFor('hindi')}</p>{/if}
+      {#if errorFor('hindi')}<p role="status">{errorFor('hindi')}</p>{/if}
       <form method="post" action="?/hindiMorphology" use:enhance class="stack">
         {#key lemma.id + data.hindi.paradigm + lemma.pos + lemma.headword}
           <HindiPatternPicker patterns={data.hindiPatterns} current={data.hindi.paradigm} />
@@ -572,8 +568,8 @@
   {/if}
   <section id="translations">
     <h2>Translations ({data.translations.length})</h2>
-    {#if msgFor('reorder')}
-      <p class:ok={form?.ok} class:err={!form?.ok}>{msgFor('reorder')}</p>
+    {#if errorFor('reorder')}
+      <p class="err">{errorFor('reorder')}</p>
     {/if}
     {#if data.translations.length === 0}
       <p class="muted">No translations.</p>
@@ -616,9 +612,8 @@
                 </span>
               {/if}
             </div>
-            {#if translationMsg(t.id)}
-              {@const tm = translationMsg(t.id)!}
-              <p class:ok={tm.ok} class:err={!tm.ok}>{tm.message}</p>
+            {#if form && !form.ok && form.section === 'translation' && form.translationId === t.id}
+              <p class="err">{form.message}</p>
             {/if}
             <form method="post" action="?/updateTranslation" use:enhance={() => ({ update }) => update({ reset: false })} class="stack">
               <input type="hidden" name="translationId" value={t.id} />
@@ -702,9 +697,9 @@
         />
       </label>
       <button type="submit" class="mod-btn-ghost">Save</button>
-      {#if msgFor('paradigm')}
-        <span class:ok={form?.ok} class:err={!form?.ok} class="mod-flash">
-          {msgFor('paradigm')}
+      {#if errorFor('paradigm')}
+        <span class="mod-flash err">
+          {errorFor('paradigm')}
         </span>
       {/if}
     </form>
@@ -907,8 +902,8 @@
       </form>
     </details>
 
-    {#if msgFor('form')}
-      <p class={form?.ok ? 'ok' : 'err'}>{msgFor('form')}</p>
+    {#if errorFor('form')}
+      <p class="err">{errorFor('form')}</p>
     {/if}
   </section>
 
@@ -926,7 +921,6 @@
     background: var(--paper, var(--color-bg));
     font-family: var(--font-serif, ui-serif, Georgia, serif);
   }
-  .ok { color: #197a2f; }
   .err { color: #b03131; }
   .muted { color: var(--ink, var(--color-fg, #111)); }
   .small { font-size: 0.78rem; }
@@ -997,10 +991,6 @@
     padding: 2px 8px;
     border-radius: 4px;
     background: color-mix(in srgb, var(--ink, var(--color-fg)) 4%, transparent);
-  }
-  .mod-flash.ok {
-    background: color-mix(in srgb, #197a2f 14%, transparent);
-    color: #197a2f;
   }
   .mod-flash.err {
     background: color-mix(in srgb, #b03131 14%, transparent);

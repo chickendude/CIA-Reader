@@ -6,14 +6,17 @@
   import Modal from '$lib/components/overlay/Modal.svelte';
   import { portal } from '$lib/components/overlay/portal.js';
   import { getToastStore } from '$lib/components/toast/toast-store.js';
+  import { reprocessWithToast } from '$lib/text/reprocess.js';
 
-  const { pushToast } = getToastStore();
+  const toastStore = getToastStore();
+  const { pushToast } = toastStore;
 
-  let { id, title, collection = false, canRename = false, catalogAction, onDelete }: {
+  let { id, title, collection = false, canRename = false, reparseSource, catalogAction, onDelete }: {
     id: string;
     title: string;
     collection?: boolean;
     canRename?: boolean;
+    reparseSource?: string;
     catalogAction?: 'publish' | 'remove';
     onDelete?: () => void;
   } = $props();
@@ -84,6 +87,34 @@
     };
   });
 
+  async function reparse() {
+    if (busy || !reparseSource) return;
+    close();
+    busy = true;
+    try {
+      if (collection) {
+        const response = await fetch(`/api/v1/collections/${id}/reprocess`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ all: true }),
+        });
+        if (!response.ok) {
+          const error = await response.json().catch(() => null);
+          throw new Error(error?.message || 'Could not queue the chapters.');
+        }
+        const { dispatched } = await response.json();
+        pushToast({ kind: 'success', message: `Queued ${dispatched} ${dispatched === 1 ? 'chapter' : 'chapters'} of “${title}” for parsing.` });
+      } else if (!(await reprocessWithToast({ id, title, sourceType: reparseSource }, toastStore))) {
+        return;
+      }
+      await invalidateAll();
+    } catch (error) {
+      pushToast({ kind: 'error', message: error instanceof Error ? error.message : 'Could not reparse the book.' });
+    } finally {
+      busy = false;
+    }
+  }
+
   async function updateCatalog() {
     if (busy || !catalogAction) return;
     const publishing = catalogAction === 'publish';
@@ -107,7 +138,7 @@
   }
 </script>
 
-{#if canRename || catalogAction || onDelete}
+{#if canRename || reparseSource || catalogAction || onDelete}
   <div class="book-actions" class:open bind:this={container}>
     <button type="button" class="trigger" bind:this={trigger} aria-label={`Actions for ${title}`}
       aria-expanded={open} disabled={busy} onclick={() => open = !open}>
@@ -121,6 +152,9 @@
       <div class="choices">
         {#if canRename}
           <button type="button" onclick={openRename}>Rename</button>
+        {/if}
+        {#if reparseSource}
+          <button type="button" onclick={reparse}>Reparse book</button>
         {/if}
         {#if catalogAction}
           <button type="button" onclick={updateCatalog}>{catalogAction === 'publish' ? 'Publish to Official library' : 'Remove from Official library'}</button>

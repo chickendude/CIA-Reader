@@ -1,10 +1,13 @@
 <script lang="ts">
+  import { getToastStore } from '$lib/components/toast/toast-store.js';
   import PageLayout from '$lib/components/shell/PageLayout.svelte';
   import PageTitle from '$lib/components/shell/PageTitle.svelte';
   import Button from '$lib/components/input/Button.svelte';
   import TextField from '$lib/components/input/TextField.svelte';
   import { ankiConnect, rememberAnkiConnection } from '$lib/anki-connect';
   import type { PageProps } from './$types';
+
+  const { pushToast } = getToastStore();
 
   let { data }: PageProps = $props();
 
@@ -20,7 +23,6 @@
   const defaultDeckName = $derived(data.mode === 'export' ? data.deckName : 'CIA Reader');
   let deckName = $derived(defaultDeckName);
   let sending = $state(false);
-  let sendMsg = $state<string | null>(null);
   let sendErr = $state<string | null>(null);
 
   function escapeHtml(s: string): string {
@@ -41,7 +43,6 @@
   async function sendToAnki(): Promise<void> {
     if (data.mode !== 'export') return;
     sending = true;
-    sendMsg = null;
     sendErr = null;
     try {
       await ankiConnect('createDeck', { deck: deckName });
@@ -55,7 +56,7 @@
       }));
       const result = (await ankiConnect('addNotes', { notes })) as Array<number | null>;
       const added = Array.isArray(result) ? result.filter((x) => x != null).length : 0;
-      sendMsg = `Added ${added} of ${notes.length} cards to "${deckName}". Duplicates are skipped.`;
+      pushToast({ kind: 'success', message: `Added ${added} of ${notes.length} cards to "${deckName}". Duplicates are skipped.` });
     } catch (e) {
       sendErr =
         `Couldn't reach Anki (${(e as Error).message}). Make sure Anki is open with the ` +
@@ -102,7 +103,7 @@
     {/if}
   {:else}
     <form method="GET" data-sveltekit-keepfocus data-sveltekit-noscroll
-      onsubmit={() => { sendMsg = null; sendErr = null; }}>
+      onsubmit={() => { sendErr = null; }}>
       <input type="hidden" name="textId" value={data.textId} />
       <Button type="submit" variant="toggle" name="includeStudied" value={data.includeStudied ? '0' : '1'}
         aria-pressed={data.includeStudied} disabled={sending}>Include known and learning words</Button>
@@ -135,7 +136,6 @@
       </Button>
     </div>
 
-    {#if sendMsg}<p class="ok" role="status">{sendMsg}</p>{/if}
     {#if sendErr}<p class="err" role="alert">{sendErr}</p>{/if}
 
     {#if data.cards.length === 0}
@@ -190,9 +190,6 @@
     gap: 0.6rem;
     margin-bottom: 0.75rem;
     flex-wrap: wrap;
-  }
-  .ok {
-    color: var(--color-fg);
   }
   .err {
     color: #b91c1c;

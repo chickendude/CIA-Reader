@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { getToastStore } from '$lib/components/toast/toast-store.js';
   import PageLayout from '$lib/components/shell/PageLayout.svelte';
   import FilterDropdown from '$lib/components/input/FilterDropdown.svelte';
   import TextField from '$lib/components/input/TextField.svelte';
@@ -10,6 +11,8 @@
   import SubpageHeading from '$lib/components/shell/SubpageHeading.svelte';
   import ContextChoiceButton from '$lib/components/reader/ContextChoiceButton.svelte';
   import type { PageProps } from './$types';
+
+  const { pushToast } = getToastStore();
 
   let { data }: PageProps = $props();
   let busy = $state(false);
@@ -73,7 +76,8 @@
         if (!res.ok) throw new Error((await res.json()).message ?? 'AI verification failed');
         saved++;
       }
-      message = `Saved ${saved} AI suggestions.`;
+      message = '';
+      pushToast({ kind: 'success', message: `Saved ${saved} AI ${saved === 1 ? 'suggestion' : 'suggestions'}.` });
     } catch (e) {
       message = `${saved} saved. ${(e as Error).message}`;
     } finally {

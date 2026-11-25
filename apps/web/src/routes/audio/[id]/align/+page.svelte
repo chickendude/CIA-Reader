@@ -1,7 +1,10 @@
 <script lang="ts">
+  import { getToastStore } from '$lib/components/toast/toast-store.js';
   import PageLayout from '$lib/components/shell/PageLayout.svelte';
   import PageTitle from '$lib/components/shell/PageTitle.svelte';
   import type { PageProps } from './$types';
+
+  const { pushToast } = getToastStore();
 
   let { data }: PageProps = $props();
 
@@ -14,7 +17,6 @@
 
   let saving = $state(false);
   let saveError = $state<string | null>(null);
-  let saveOk = $state(false);
 
   function nowMs(): number {
     return audioEl ? Math.round(audioEl.currentTime * 1000) : 0;
@@ -65,7 +67,6 @@
   async function save() {
     saving = true;
     saveError = null;
-    saveOk = false;
     try {
       const { interpolateSentenceMarks } = await import(
         '$lib/audio/sentence-tokens.js'
@@ -88,7 +89,7 @@
         saveError = (await res.text().catch(() => '')) || `HTTP ${res.status}`;
         return;
       }
-      saveOk = true;
+      pushToast({ kind: 'success', message: 'Audio alignment saved.' });
     } finally {
       saving = false;
     }
@@ -155,9 +156,6 @@
     <button type="button" class="ae-save" disabled={saving || marks.size === 0} onclick={save}>
       {saving ? 'Saving…' : `Save ${marks.size} sentence${marks.size === 1 ? '' : 's'}`}
     </button>
-    {#if saveOk}
-      <span class="ae-ok">Saved.</span>
-    {/if}
     {#if saveError}
       <span class="ae-err" role="alert">{saveError}</span>
     {/if}
@@ -250,10 +248,6 @@
   .ae-foot button:disabled {
     opacity: 0.55;
     cursor: not-allowed;
-  }
-  .ae-ok {
-    color: var(--accent, var(--color-accent));
-    font-size: 0.85rem;
   }
   .ae-err {
     color: var(--err, #b94545);

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import ActionConfirmation from '$lib/components/toast/ActionConfirmation.svelte';
   import PageLayout from '$lib/components/shell/PageLayout.svelte';
   import PageTitle from '$lib/components/shell/PageTitle.svelte';
   import { enhance } from '$app/forms';
@@ -116,9 +117,9 @@
     <p class="tr-err" role="alert" data-testid="action-error">{form.error}</p>
   {/if}
   {#if form && 'ok' in form && form.ok && form.action === 'promoteReporter' && form.promoted}
-    <p class="tr-ok" role="status">
-      Promoted <strong>{form.promoted.email}</strong> to curator. Remember to
-      <a href="/moderation/dictionary">grant a language</a>.
+    <ActionConfirmation result={form} message={`Promoted ${form.promoted.email} to curator.`} />
+    <p>
+      <a href="/moderation/dictionary">Grant a language</a> to {form.promoted.email}.
     </p>
   {/if}
 
@@ -318,14 +319,6 @@
     border: 1px solid #c2410c;
     background: #fef3c7;
     color: #7c2d12;
-    padding: 0.6rem 0.85rem;
-    border-radius: 8px;
-    font-size: 0.85rem;
-  }
-  .tr-ok {
-    border: 1px solid #15803d;
-    background: #dcfce7;
-    color: #14532d;
     padding: 0.6rem 0.85rem;
     border-radius: 8px;
     font-size: 0.85rem;

@@ -1,8 +1,11 @@
 <script lang="ts">
+  import { getToastStore } from '$lib/components/toast/toast-store.js';
   import { workshop } from '$lib/dictionary/workshop-client';
   import type { ReportOption, WorkshopReport } from '$lib/dictionary/workshop';
   import type { LanguageCode } from '@ciareader/shared-types';
   import { untrack } from 'svelte';
+
+  const { pushToast } = getToastStore();
   let {
     language,
     reports,
@@ -58,8 +61,8 @@
         language,
       );
       changed();
+      pushToast({ kind: 'success', message: count + (count === 1 ? ' entry updated.' : ' entries updated.') });
       await preview();
-      message = count + ' entries updated.';
     } catch (e) {
       message = (e as Error).message;
     } finally {

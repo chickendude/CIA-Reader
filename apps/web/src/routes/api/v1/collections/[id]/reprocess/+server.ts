@@ -24,7 +24,7 @@ import { requireUser } from '$lib/server/auth/require-user.js';
 import { isAdmin } from '$lib/server/dictionary/permissions.js';
 import { db, schema } from '$lib/server/db/index.js';
 import { loadCollectionDetail } from '$lib/server/collections.js';
-import { processTextNow } from '$lib/server/texts/in-process-dispatcher.js';
+import { queueReprocessTexts } from '$lib/server/texts/bulk-reprocess.js';
 import type { Text } from '$lib/server/db/schema.js';
 import type { RequestHandler } from './$types';
 
@@ -68,23 +68,10 @@ export const POST: RequestHandler = async (event) => {
   const memberIds = detail.items.map((i) => i.text.id);
   const conditions = [inArray(schema.texts.id, memberIds)];
   if (!all) conditions.push(inArray(schema.texts.status, STUCK_STATUSES));
-  const rows = (await db
-    .select({ id: schema.texts.id })
+  const rows = await db
+    .select({ id: schema.texts.id, sourceType: schema.texts.sourceType })
     .from(schema.texts)
-    .where(and(...conditions))) as Array<{ id: string }>;
-
-  const textIds = rows.map((r) => r.id);
-  // Fire-and-forget per text — same pattern as bulkReprocessTexts.
-  // The dispatcher writes status flips back to the texts row, which
-  // the polling endpoint surfaces to the UI.
-  for (const tid of textIds) {
-    void processTextNow(tid).catch((err) => {
-      console.error(
-        `collection ${id} reprocess: text ${tid} failed:`,
-        err,
-      );
-    });
-  }
-
-  return json({ matched: textIds.length, dispatched: textIds.length, textIds });
+    .where(and(...conditions));
+  const textIds = queueReprocessTexts(rows);
+  return json({ matched: rows.length, dispatched: textIds.length, textIds });
 };

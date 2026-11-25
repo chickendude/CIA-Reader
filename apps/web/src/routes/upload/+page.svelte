@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { getToastStore } from '$lib/components/toast/toast-store.js';
   import PageLayout from '$lib/components/shell/PageLayout.svelte';
   import PageTitle from '$lib/components/shell/PageTitle.svelte';
   import { enhance } from '$app/forms';
@@ -10,6 +11,8 @@
     type LoadedPdf,
   } from '$lib/pdf/render-client';
   import type { PageProps } from './$types';
+
+  const { pushToast } = getToastStore();
 
   let {
     data,
@@ -148,7 +151,8 @@
         pickedFileName = null;
         pickedFileSize = 0;
         if (!title) title = file.name.replace(/\.txt$/i, '');
-        dropMessage = `Loaded ${file.name} (${(file.size / 1000).toFixed(1)} KB).`;
+        dropMessage = null;
+        pushToast({ kind: 'success', message: `Loaded ${file.name} (${(file.size / 1000).toFixed(1)} KB).` });
       } catch {
         dropMessage = `Failed to read ${file.name}.`;
       }

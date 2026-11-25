@@ -1,4 +1,5 @@
 <script lang="ts">
+  import ActionConfirmation from '$lib/components/toast/ActionConfirmation.svelte';
   import PageLayout from '$lib/components/shell/PageLayout.svelte';
   import PageTitle from '$lib/components/shell/PageTitle.svelte';
   import { enhance } from '$app/forms';
@@ -10,8 +11,6 @@
   let email = $state(untrack(() => form?.values?.email ?? ''));
   let password = $state('');
 
-  // Discriminate the two action results by `section` so each form
-  // can show its own inline message.
   const passwordError = $derived(
     form && !form.ok && 'section' in form && form.section === 'signin'
       ? form.message
@@ -93,8 +92,10 @@
       We'll email you a link that signs you in instantly — no password needed.
     </p>
 
-    {#if magicResult}
-      <p class="ok">{magicResult.message}</p>
+    {#if magicResult?.ok}
+      <ActionConfirmation result={magicResult} message={magicResult.message} />
+    {:else if magicResult}
+      <p class="err" role="alert">{magicResult.message}</p>
     {/if}
 
     <form method="post" action="?/magic" use:enhance class="stack">
@@ -168,15 +169,6 @@
   .magic h2 {
     font-size: 1.05rem;
     margin: 0 0 0.4rem;
-  }
-  .ok {
-    color: #197a2f;
-    background: color-mix(in srgb, #197a2f 8%, transparent);
-    border: 1px solid color-mix(in srgb, #197a2f 30%, transparent);
-    border-radius: 8px;
-    padding: 0.65rem 0.85rem;
-    margin: 0 0 0.75rem;
-    font-size: 0.9rem;
   }
   .err {
     color: #b03131;

@@ -9,32 +9,36 @@
   hits the rate-limited /api/v1/auth/verify-email/resend endpoint.
 -->
 <script lang="ts">
+  import { getToastStore } from '$lib/components/toast/toast-store.js';
+
+  const { pushToast } = getToastStore();
+
   interface Props {
     user: { emailVerified: boolean } | null;
   }
 
   let { user }: Props = $props();
   let sending = $state(false);
-  let status = $state<{ kind: 'info' | 'error'; text: string } | null>(null);
+  let error = $state('');
 
   async function resend() {
     sending = true;
-    status = null;
+    error = '';
     try {
       const res = await fetch('/api/v1/auth/verify-email/resend', { method: 'POST' });
       if (res.status === 202) {
-        status = { kind: 'info', text: 'Sent — check your inbox.' };
+        pushToast({ kind: 'success', message: 'Verification email sent. Check your inbox.' });
       } else if (res.status === 204) {
         // Server says we're already verified — reload to refresh the
         // banner-driving page data, banner disappears.
         location.reload();
       } else if (res.status === 429) {
-        status = { kind: 'error', text: 'Slow down — try again in a minute.' };
+        error = 'Please try again in a minute.';
       } else {
-        status = { kind: 'error', text: 'Could not resend. Try again later.' };
+        error = 'Could not resend. Try again later.';
       }
     } catch {
-      status = { kind: 'error', text: 'Could not resend. Try again later.' };
+      error = 'Could not resend. Try again later.';
     } finally {
       sending = false;
     }
@@ -45,8 +49,8 @@
   <div class="verify-banner" role="status" aria-live="polite">
     <p class="msg">
       <strong>Verify your email</strong> to publish translations.
-      {#if status}
-        <span class="status" data-kind={status.kind}>{status.text}</span>
+      {#if error}
+        <span class="status">{error}</span>
       {/if}
     </p>
     <button class="btn" type="button" onclick={resend} disabled={sending}>
@@ -81,12 +85,10 @@
   .status {
     margin-left: 0.5rem;
     opacity: 0.85;
-  }
-  .status[data-kind='error'] {
     color: #991b1b;
   }
   @media (prefers-color-scheme: dark) {
-    .status[data-kind='error'] {
+    .status {
       color: #fca5a5;
     }
   }

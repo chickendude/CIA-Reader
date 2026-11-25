@@ -71,8 +71,9 @@
           </p>
           <BookMetrics stats={card.stats} signedIn={Boolean(data.user)} showUniqueCoverage={data.sort === 'unique'} />
         </div>
-        {#if data.user?.role === 'admin'}
-          <BookActions collection={card.chapterCount != null} id={card.id} title={card.title} canRename catalogAction="remove" />
+        {#if data.user?.role === 'admin' || card.isOwner}
+          <BookActions collection={card.chapterCount != null} id={card.id} title={card.title} reparseSource={card.status !== 'processing' ? card.sourceType : undefined}
+            canRename={data.user?.role === 'admin'} catalogAction={data.user?.role === 'admin' ? 'remove' : undefined} />
         {/if}
       </li>
     {:else}

@@ -44,6 +44,19 @@ def test_saved_form_and_unknown_word(monkeypatch, language, form, root):
     assert number.number_forms.digits_latin == "12"
 
 
+def test_generated_reading_cache_respects_dictionary_edits(monkeypatch):
+    pipeline = get_pipeline("mr")
+    form = "घर"
+    rows = []
+    monkeypatch.setattr(dictionary, "saved_matches", lambda language, words: rows)
+    reading = pipeline.process(form).tokens[0].romanization
+    assert reading
+    rows.append((form, "id", form, "noun", {}, "edited reading", 1))
+    assert pipeline.process(form).tokens[0].romanization == "edited reading"
+    rows.clear()
+    assert pipeline.process(form).tokens[0].romanization == reading
+
+
 @pytest.mark.skipif(
     not os.getenv("DICTIONARY_TEST_DATABASE_URL"), reason="requires migrated test DB"
 )

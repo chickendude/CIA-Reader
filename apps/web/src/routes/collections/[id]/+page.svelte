@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { getToastStore } from '$lib/components/toast/toast-store.js';
   import PageLayout from '$lib/components/shell/PageLayout.svelte';
   import PageTitle from '$lib/components/shell/PageTitle.svelte';
   import { invalidateAll, goto } from '$app/navigation';
@@ -9,6 +10,8 @@
   let { data }: PageProps = $props();
 
   import { untrack } from 'svelte';
+
+  const { pushToast } = getToastStore();
 
   // Single shared confirmation modal — used in place of the native
   // `window.confirm()` so the dialog matches the rest of the app's
@@ -186,9 +189,10 @@
             return;
           }
           const body = (await res.json()) as { dispatched: number };
-          reprocessMessage = `Dispatched ${body.dispatched} ${
-            body.dispatched === 1 ? 'chapter' : 'chapters'
-          } — refresh in a few seconds to see status updates.`;
+          pushToast({
+            kind: 'success',
+            message: `Dispatched ${body.dispatched} ${body.dispatched === 1 ? 'chapter' : 'chapters'}. Refresh in a few seconds to see status updates.`,
+          });
           await invalidateAll();
         } finally {
           reprocessing = false;

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import ActionConfirmation from '$lib/components/toast/ActionConfirmation.svelte';
   import PageLayout from '$lib/components/shell/PageLayout.svelte';
   import PageTitle from '$lib/components/shell/PageTitle.svelte';
   import { enhance } from '$app/forms';
@@ -55,13 +56,9 @@
 
     {#if importResult}
       {#if importResult.ok}
-        <p class="ok">
-          Inserted {importResult.inserted}.
-          {#if importResult.skipped.length > 0}
-            Skipped {importResult.skipped.length}:
-          {/if}
-        </p>
+        <ActionConfirmation result={importResult} message={`Inserted ${importResult.inserted} ${importResult.inserted === 1 ? 'translation' : 'translations'}.`} />
         {#if importResult.skipped.length > 0}
+          <p>Skipped {importResult.skipped.length}:</p>
           <ul class="skip-list">
             {#each importResult.skipped as s (s.row)}
               <li>row {s.row}: {s.reason}</li>
@@ -102,13 +99,9 @@
 
     {#if promoteResult}
       {#if promoteResult.ok}
-        <p class="ok">
-          Promoted {promoteResult.promoted}.
-          {#if promoteResult.skipped.length > 0}
-            Skipped {promoteResult.skipped.length}:
-          {/if}
-        </p>
+        <ActionConfirmation result={promoteResult} message={`Promoted ${promoteResult.promoted} ${promoteResult.promoted === 1 ? 'translation' : 'translations'}.`} />
         {#if promoteResult.skipped.length > 0}
+          <p>Skipped {promoteResult.skipped.length}:</p>
           <ul class="skip-list">
             {#each promoteResult.skipped as s (s.id)}
               <li><code>{s.id}</code>: {s.reason}</li>
@@ -146,7 +139,7 @@ bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
 
     {#if attributionResult}
       {#if attributionResult.ok}
-        <p class="ok">Updated {attributionResult.updated} row(s).</p>
+        <ActionConfirmation result={attributionResult} message={`Updated attribution for ${attributionResult.updated} ${attributionResult.updated === 1 ? 'row' : 'rows'}.`} />
       {:else}
         <p class="err">{attributionResult.message}</p>
       {/if}
@@ -268,9 +261,6 @@ bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
     padding: 0;
     font-size: 0.85rem;
     color: var(--color-fg-muted);
-  }
-  .ok {
-    color: #197a2f;
   }
   .err {
     color: #b03131;

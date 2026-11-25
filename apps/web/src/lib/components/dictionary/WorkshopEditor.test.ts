@@ -8,7 +8,7 @@ vi.mock('$lib/dictionary/workshop-client', () => ({ workshop: vi.fn() }));
 afterEach(cleanup);
 
 it('keeps a hidden headword editable and saves the spelling without its marker', async () => {
-  const draft = { ...emptyDraft('क़ब्ज़ा'), alternatives: ['कब्जा'], hiddenAlternatives: ['कब्जा'] };
+  const draft = { ...emptyDraft('अलग-अलग', 'ADJ'), alternatives: ['अलग अलग'], hiddenAlternatives: ['अलग अलग'] };
   vi.mocked(workshop).mockImplementation(async (action) =>
     action === 'patterns' ? [] : { forms: {}, draft });
   render(WorkshopEditor, {
@@ -16,11 +16,13 @@ it('keeps a hidden headword editable and saves the spelling without its marker',
     draft, working: false, observed: '', review: false, onsaved: vi.fn(), onopen: vi.fn(),
   });
   const input = screen.getByRole('textbox', { name: 'Alternative headwords' }) as HTMLInputElement;
-  expect(input.value).toBe('.कब्जा');
-  await fireEvent.change(input, { target: { value: 'कब्जा, .कब्ज़ा' } });
+  expect(input.value).toBe('.अलग अलग');
+  await fireEvent.input(input, { target: { value: 'अलग अलग, .alag ' } });
+  expect(input.value).toBe('अलग अलग, .alag ');
+  await fireEvent.input(input, { target: { value: 'अलग अलग, .alag alag' } });
   await fireEvent.click(screen.getByRole('button', { name: 'Save' }));
   expect(workshop).toHaveBeenCalledWith('save', { draft: expect.objectContaining({
-    alternatives: ['कब्जा', 'कब्ज़ा'], hiddenAlternatives: ['कब्ज़ा'],
+    alternatives: ['अलग अलग', 'alag alag'], hiddenAlternatives: ['alag alag'],
   }) }, undefined, 'hi');
 });
 

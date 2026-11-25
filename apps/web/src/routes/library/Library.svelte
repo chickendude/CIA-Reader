@@ -163,6 +163,8 @@
       id={card.id}
       title={card.title}
       collection={card.chapterCount != null}
+      reparseSource={(data.user?.role === 'admin' || data.tab === 'your' || card.isOwner) && card.status !== 'processing'
+        ? card.sourceType : undefined}
       canRename={data.user?.role === 'admin' || (data.tab === 'your' &&
         (card.chapterCount == null || card.visibility !== 'official'))}
       catalogAction={data.user?.role !== 'admin'
@@ -231,6 +233,7 @@
             <div class="card lib-card">
               {#snippet actions()}
                 <BookActions id={col.id} title={col.title} collection canRename={col.canRename}
+                  reparseSource={col.kind === 'chapter_book' && col.canReprocess ? 'book' : undefined}
                   catalogAction={data.user?.role === 'admin' && col.visibility === 'official' ? 'remove' : undefined} />
               {/snippet}
               {@render cover(col.id, col.title, `/collections/${col.id}`, col.visibility, actions,

@@ -56,6 +56,7 @@
   let savedPatterns = $state<{ id: string; label: string }[]>([]);
   let savedPattern = $state('');
   let stem = $state('');
+  let alternativeHeadwordsText = $state<string | null>(null);
   let otherFormsText = $state<string | null>(null);
   let addPOS = $state('VERB');
   const patterns = $derived(profile.patterns(draft.lemma, draft.pos, word.draft.paradigm));
@@ -255,8 +256,12 @@
     <label
       >Alternative headwords<input
         lang={language} dir="auto"
-        value={formatAlternativeHeadwords(draft.alternatives, draft.hiddenAlternatives).join(', ')}
-        onchange={(e) => Object.assign(draft, parseAlternativeHeadwords(split(e.currentTarget.value, /[,;\n]/)))}
+        value={alternativeHeadwordsText ?? formatAlternativeHeadwords(draft.alternatives, draft.hiddenAlternatives).join(', ')}
+        oninput={(e) => {
+          alternativeHeadwordsText = e.currentTarget.value;
+          Object.assign(draft, parseAlternativeHeadwords(split(alternativeHeadwordsText, /[,;\n]/)));
+        }}
+        onblur={() => (alternativeHeadwordsText = null)}
         title="Prefix a spelling with a period to hide it from the headword list."
         placeholder="Separate with commas. Prefix hidden spellings with a period."
       /></label

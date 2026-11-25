@@ -3,6 +3,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const processTextNow = vi.fn();
 
+const reprocessPdfText = vi.fn();
+vi.mock('./pdf-page.js', () => ({ reprocessPdfText: (...args: unknown[]) => reprocessPdfText(...args) }));
+
 const rows: Array<Record<string, unknown>> = [];
 type ChainShape = {
   from: ReturnType<typeof vi.fn>;
@@ -36,7 +39,7 @@ vi.mock('./in-process-dispatcher.js', () => ({
   processTextNow: (...a: unknown[]) => processTextNow(...a),
 }));
 
-const { bulkReprocessTexts } = await import('./bulk-reprocess.js');
+const { bulkReprocessTexts, queueReprocessTexts } = await import('./bulk-reprocess.js');
 
 beforeEach(() => {
   rows.length = 0;
@@ -54,6 +57,21 @@ describe('bulkReprocessTexts', () => {
     expect(r.dispatched).toBe(2);
     expect(r.textIds).toEqual(['tx-1', 'tx-2']);
     expect(processTextNow).toHaveBeenCalledTimes(2);
+  });
+
+  it('limits overlapping batches, skips duplicates and continues after a failure', async () => {
+    const first = Promise.withResolvers<number>();
+    const second = Promise.withResolvers<number>();
+    processTextNow.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
+    const batch = ['a', 'b', 'c'].map((id) => ({ id, sourceType: 'txt' as const }));
+    expect(queueReprocessTexts(batch)).toEqual(['a', 'b', 'c']);
+    expect(queueReprocessTexts([...batch, { id: 'd', sourceType: 'pdf' }])).toEqual(['d']);
+    expect(processTextNow.mock.calls).toEqual([['a'], ['b']]);
+    first.reject(new Error('Chapter failed'));
+    await vi.waitFor(() => expect(reprocessPdfText).toHaveBeenCalledWith('d'));
+    expect(processTextNow.mock.calls).toEqual([['a'], ['b'], ['c']]);
+    second.resolve(0);
+    await second.promise;
   });
 
   it('returns 0 when no texts match', async () => {

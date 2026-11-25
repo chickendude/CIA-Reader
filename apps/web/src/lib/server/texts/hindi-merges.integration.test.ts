@@ -129,6 +129,12 @@ it.skipIf(!url)(
           };
           await tx.execute(sql`SET CONSTRAINTS ALL IMMEDIATE`);
           expect(await frequency()).toEqual({ book: 1, text: 1 });
+          // An identical parse keeps the chapter's cached review and token-linked annotations valid.
+          const reviewRevision = async () => (await tx.select({ value: schema.textChapters.hindiReviewRevision })
+            .from(schema.textChapters).where(eq(schema.textChapters.id, ch!.id)))[0]!.value;
+          const revision = await reviewRevision();
+          await parse();
+          expect(await reviewRevision()).toBe(revision);
           await setOccurrenceIgnored(user!.id, before[2]!.id, true);
           expect(await stats()).toMatchObject({ words: 11, uniqueWords: 0, unparsedWords: 11 });
           expect(await studyCount()).toBe(11);

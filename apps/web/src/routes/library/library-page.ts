@@ -72,6 +72,7 @@ export async function loadLibrary(
     coverUrl: string | null;
     textCount: number;
     canRename: boolean;
+    canReprocess: boolean;
   };
   let collections: CollectionCard[] = [];
   const sort = catalogSort(url.searchParams.get('sort'), locals.user?.id);
@@ -125,6 +126,7 @@ export async function loadLibrary(
       visibility: row.collection.visibility,
       coverUrl: row.collection.coverUrl,
       textCount: row.textCount,
+      canReprocess: locals.user?.role === 'admin' || Boolean(locals.user && row.collection.ownerId === locals.user.id),
       canRename: locals.user?.role === 'admin' || Boolean(locals.user &&
         row.collection.ownerId === locals.user.id && row.collection.visibility !== 'official'),
     }));

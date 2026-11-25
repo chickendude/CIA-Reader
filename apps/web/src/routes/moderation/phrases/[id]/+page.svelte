@@ -5,9 +5,12 @@
   phrase's gloss / pos / frequency / source attribution.
 -->
 <script lang="ts">
+  import { getToastStore } from '$lib/components/toast/toast-store.js';
   import PageLayout from '$lib/components/shell/PageLayout.svelte';
   import PageTitle from '$lib/components/shell/PageTitle.svelte';
   import type { PageProps } from './$types';
+
+  const { pushToast } = getToastStore();
 
   let { data }: PageProps = $props();
 
@@ -28,7 +31,6 @@
   let reasonDraft = $state('');
   let saving = $state(false);
   let saveError = $state<string | null>(null);
-  let savedFlash = $state(false);
 
   async function save(event: Event) {
     event.preventDefault();
@@ -38,7 +40,6 @@
     }
     saving = true;
     saveError = null;
-    savedFlash = false;
     try {
       const res = await fetch(`/api/v1/admin/phrases/${data.phrase.id}`, {
         method: 'PATCH',
@@ -55,7 +56,7 @@
         }),
       });
       if (res.ok) {
-        savedFlash = true;
+        pushToast({ kind: 'success', message: 'Phrase saved.' });
         reasonDraft = '';
         // The page-server loader is the source of truth — let the user
         // refresh to see audit + translation changes. Inline state
@@ -138,7 +139,6 @@
       <div class="actions">
         <button type="submit" disabled={saving}>{saving ? 'Saving…' : 'Save'}</button>
         {#if saveError}<span class="err small">{saveError}</span>{/if}
-        {#if savedFlash}<span class="ok small">Saved.</span>{/if}
       </div>
     </form>
   </section>
@@ -259,9 +259,6 @@
   .actions button:disabled {
     opacity: 0.5;
     cursor: not-allowed;
-  }
-  .ok {
-    color: oklch(45% 0.18 145);
   }
   .err {
     color: oklch(45% 0.18 25);

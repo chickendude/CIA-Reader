@@ -223,18 +223,20 @@ export async function listDictionaryLemmas(
     ? transliterateLatinQuery(rawQ, language)
     : { value: '', transliterated: false };
 
-  const strictClause: SearchClause = q
-    ? ilike(schema.lemmas.headword, `${escapeLikePrefix(q)}%`)
-    : null;
-  let search = strictClause;
-  if (query.matchEntryText && rawQ && strictClause) {
+  let search: SearchClause = null;
+  if (rawQ) {
     const spellings = sql`ARRAY[${rawQ},${q}]`;
-    search = or(strictClause, ilike(schema.lemmas.glossDefault, `%${escapeLikePrefix(rawQ)}%`),
+    search = or(
+      ilike(schema.lemmas.headword, `${escapeLikePrefix(q)}%`),
       sql`${schema.lemmas.id} IN (
+        SELECT lemma_id FROM dictionary_entries WHERE entry->'alternative_headwords' ?| ${spellings}
+      )`,
+      query.matchEntryText ? ilike(schema.lemmas.glossDefault, `%${escapeLikePrefix(rawQ)}%`) : undefined,
+      query.matchEntryText ? sql`${schema.lemmas.id} IN (
         SELECT lemma_id FROM lemma_forms WHERE surface=ANY(${spellings}) AND quarantined_at IS NULL
         UNION ALL SELECT lemma_id FROM dictionary_pattern_forms WHERE surface=ANY(${spellings})
-        UNION ALL SELECT lemma_id FROM dictionary_entries WHERE entry->'alternative_headwords' ?| ${spellings}
-      )`) ?? strictClause;
+      )` : undefined,
+    ) ?? null;
   }
   const strict = await runSearchTier(language, query, search, limit, offset);
 

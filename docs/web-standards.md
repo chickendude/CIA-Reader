@@ -15,6 +15,7 @@
 
 | Interaction | Standard |
 | --- | --- |
+| Action confirmations | Show brief confirmations for successful saves and other completed actions through the shared toast store. Keep the page layout stable and show field validation next to the input that needs attention. |
 | Page layout | Pass the route’s heading snippet to `PageLayout` for the mobile bar and render that snippet in the desktop content. Use `PageTitle` for the main heading. The reader owns its full-screen layout. |
 | Return to a parent page | Put the X before the title using `SubpageHeading`. Supply the parent URL and an accessible label naming the destination. A direct link to a subpage should close to the same parent as a visit from within the app. Custom headers such as the reader can use `PageCloseLink` directly. |
 | Buttons and choices | Use `Button` with an `href` for navigation and a button for actions. Use `SegmentedControl` for mutually exclusive settings and pressed toggle buttons for independent filters. |

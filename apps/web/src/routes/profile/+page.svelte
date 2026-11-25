@@ -26,7 +26,7 @@
     itrans: 'ITRANS',
   };
 
-  type SaveStatus = { state: 'saving' | 'saved' } | { state: 'error'; message: string };
+  type SaveStatus = { state: 'saving' } | { state: 'error'; message: string };
   let languageSaves = $state<Record<string, SaveStatus>>({});
 
   let accountSave = $state<SaveStatus>();
@@ -71,7 +71,8 @@
         return;
       }
     }
-    accountSave = { state: 'saved' };
+    accountSave = undefined;
+    pushToast({ kind: 'success', message: 'Account settings saved.' });
   }
 
   const generateKey: SubmitFunction = ({ cancel }) => {
@@ -107,7 +108,8 @@
       if (result.type === 'success') {
         try {
           await invalidateAll();
-          languageSaves[code] = { state: 'saved' };
+          delete languageSaves[code];
+          pushToast({ kind: 'success', message: 'Language preferences saved.' });
         } catch {
           languageSaves[code] = { state: 'error', message: 'Preferences saved. Could not refresh settings.' };
         }
@@ -181,8 +183,6 @@
         </fieldset>
         {#if accountSave?.state === 'saving'}
           <span class="muted small" role="status">Saving…</span>
-        {:else if accountSave?.state === 'saved'}
-          <span class="ok" role="status">Saved.</span>
         {:else if accountSave?.state === 'error'}
           <div class="form-actions">
             <span class="err" role="alert">{accountSave.message}</span>
@@ -267,8 +267,6 @@
               </div>
               {#if save?.state === 'saving'}
                 <span class="muted small" role="status">Saving…</span>
-              {:else if save?.state === 'saved'}
-                <span class="ok" role="status">Saved.</span>
               {/if}
             </header>
             <input type="hidden" name="code" value={lang.code} />

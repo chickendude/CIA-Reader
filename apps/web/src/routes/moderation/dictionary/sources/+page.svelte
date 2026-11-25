@@ -1,4 +1,5 @@
 <script lang="ts">
+  import ActionConfirmation from '$lib/components/toast/ActionConfirmation.svelte';
   import PageLayout from '$lib/components/shell/PageLayout.svelte';
   import PageTitle from '$lib/components/shell/PageTitle.svelte';
   import { onDestroy } from 'svelte';
@@ -114,8 +115,10 @@
     </nav>
   </header>
 
-  {#if form?.message}
-    <p class:error={form.ok === false} class:success={form.ok === true} class="flash" role="status">
+  {#if form?.ok && form.message}
+    <ActionConfirmation result={form} message={form.message} />
+  {:else if form?.message}
+    <p class="flash error" role="alert">
       {form.message}
     </p>
   {/if}

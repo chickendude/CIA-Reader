@@ -10,15 +10,17 @@ export const NOT_A_CHAPTER_BOOK_MEMBER = sql`NOT EXISTS (
     AND c.kind = 'chapter_book'
 )`;
 
-export function officialCatalog(language?: LanguageCode) {
+export function officialCatalog(language?: LanguageCode, userId?: string) {
   return sql`
       SELECT texts.id, texts.title, texts.language, texts.source_type::text AS "sourceType",
-        texts.status::text, texts.visibility, texts.created_at, NULL::int AS "chapterCount"
+        texts.status::text, texts.visibility, texts.created_at, NULL::int AS "chapterCount",
+        coalesce(texts.owner_id = ${userId ?? null}, false) AS "isOwner"
       FROM texts WHERE visibility='official' AND ${NOT_A_CHAPTER_BOOK_MEMBER}
         ${language ? sql`AND language=${language}` : sql``}
       UNION ALL
       SELECT c.id,c.title,c.language,'book','','official',c.created_at,
-        (SELECT count(*)::int FROM collection_items ci WHERE ci.collection_id=c.id)
+        (SELECT count(*)::int FROM collection_items ci WHERE ci.collection_id=c.id),
+        coalesce(c.owner_id = ${userId ?? null}, false)
       FROM collections c WHERE visibility='official' AND kind='chapter_book'
         ${language ? sql`AND language=${language}` : sql``}
   `;

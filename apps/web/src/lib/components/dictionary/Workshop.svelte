@@ -243,7 +243,7 @@
   async function saved(w: Word, advance = false) {
     drafts.delete(key());
     display(w, active, false);
-    message = 'Saved';
+    toastStore.pushToast({ kind: 'success', message: 'Dictionary entry saved.' });
     refresh++;
     if (advance && active) {
       await openFollowing(active, active.kind === 'missing-definition' && !!w.draft.meaning.trim());
@@ -269,8 +269,7 @@
         surface: active.word, hash: sample.hash, confirm });
       await openFollowing(active, true);
       refresh++;
-      if (confirm) toastStore.pushToast({ kind: 'success', message: 'Stutter confirmed' });
-      else message = 'Kept as separate words';
+      toastStore.pushToast({ kind: 'success', message: confirm ? 'Stutter confirmed' : 'Kept as separate words' });
     } catch (e) {
       message = (e as Error).message;
     } finally {
@@ -289,7 +288,7 @@
       });
       await openFollowing(row, row.samples.length === 1);
       refresh++;
-      message = row.kind === 'ignored' ? 'Restored to review' : 'Ignored in this book';
+      toastStore.pushToast({ kind: 'success', message: row.kind === 'ignored' ? 'Restored to review' : 'Ignored in this book' });
     } catch (e) {
       message = (e as Error).message;
     } finally {
@@ -486,7 +485,7 @@
             drafts.delete(key());
             clearSelection();
             refresh++;
-            message = 'Entry deleted';
+            toastStore.pushToast({ kind: 'success', message: 'Dictionary entry deleted.' });
           }}
         />
       {/key}{/if}

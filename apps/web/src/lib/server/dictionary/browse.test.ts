@@ -142,6 +142,19 @@ describe('listDictionaryLemmas', () => {
     ).resolves.toMatchObject({ totalCount: 1 });
   });
 
+  it('includes exact alternative headwords in reader searches', async () => {
+    stage([lemmaRow({ headword: 'अलग-अलग' })]);
+    stage([{ n: 1 }]);
+    await listDictionaryLemmas('hi', { q: 'अलग अलग' });
+    const dialect = new PgDialect();
+    for (const [condition] of whereClause.mock.calls) {
+      const query = dialect.sqlToQuery(condition);
+      expect(query.sql).toContain("entry->'alternative_headwords' ?| ARRAY[");
+      expect(query.params).toContain('अलग अलग');
+    }
+    expect(whereClause).toHaveBeenCalledTimes(2);
+  });
+
   it('accepts filter combinations (pos + rank range + hasOfficial)', async () => {
     stage([lemmaRow()]);
     stage([{ n: 1 }]);

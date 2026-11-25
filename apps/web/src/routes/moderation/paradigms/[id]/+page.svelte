@@ -1,4 +1,5 @@
 <script lang="ts">
+  import ActionConfirmation from '$lib/components/toast/ActionConfirmation.svelte';
   import PageLayout from '$lib/components/shell/PageLayout.svelte';
   import PageTitle from '$lib/components/shell/PageTitle.svelte';
   import { enhance } from '$app/forms';
@@ -449,11 +450,7 @@
 
     {#if slotResult}
       {#if slotResult.ok}
-        <p class="ok">
-          {#if slotResult.action === 'add'}Slot added.
-          {:else if slotResult.action === 'remove'}Slot removed.
-          {/if}
-        </p>
+        <ActionConfirmation result={slotResult} message={slotResult.action === 'add' ? 'Slot added.' : 'Slot removed.'} />
       {:else}
         <p class="err">{slotResult.message}</p>
       {/if}
@@ -649,15 +646,15 @@
   </section>
 </div>
 
-<!-- Sticky save bar — only visible / active when there are unsaved
-     edits or a post-save confirmation. Regen results land in the
-     toast host, so the bar doesn't have to stay open for them. -->
+{#if saveResult?.ok}
+  <ActionConfirmation result={saveResult} message="Paradigm saved." />
+{/if}
+
 <div
   class="save-bar"
-  class:hidden={!dirty && !saveResult}
+  class:hidden={!dirty && (!saveResult || saveResult.ok)}
 >
   <div class="save-bar-inner">
-    <!-- Top row: save action + post-save status -->
     <form
       method="post"
       action="?/saveAll"
@@ -665,12 +662,8 @@
       class="save-row"
     >
       <input type="hidden" name="payload" value={savePayload} />
-      {#if saveResult}
-        {#if saveResult.ok}
-          <span class="ok">Saved.</span>
-        {:else}
-          <span class="err">{saveResult.message}</span>
-        {/if}
+      {#if saveResult && !saveResult.ok}
+        <span class="err">{saveResult.message}</span>
       {/if}
       <span class="spacer"></span>
       <button type="submit" class="save" disabled={!dirty}>
@@ -1112,9 +1105,6 @@
   .empty {
     margin: 0.5rem 0;
     color: var(--color-fg-muted);
-  }
-  .ok {
-    color: #197a2f;
   }
   .err {
     color: #b03131;

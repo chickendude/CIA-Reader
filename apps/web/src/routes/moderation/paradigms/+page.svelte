@@ -1,4 +1,5 @@
 <script lang="ts">
+  import ActionConfirmation from '$lib/components/toast/ActionConfirmation.svelte';
   import PageLayout from '$lib/components/shell/PageLayout.svelte';
   import PageTitle from '$lib/components/shell/PageTitle.svelte';
   import { enhance } from '$app/forms';
@@ -106,8 +107,9 @@
 
     {#if createResult}
       {#if createResult.ok}
-        <p class="ok">
-          Created. <a href={`/moderation/paradigms/${createResult.paradigmId}`}
+        <ActionConfirmation result={createResult} message="Paradigm created." />
+        <p>
+          <a href={`/moderation/paradigms/${createResult.paradigmId}`}
             >Open editor →</a
           >
         </p>
@@ -287,9 +289,6 @@
     border: 0;
     border-radius: 6px;
     cursor: pointer;
-  }
-  .ok {
-    color: #197a2f;
   }
   .err {
     color: #b03131;

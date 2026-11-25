@@ -7,6 +7,7 @@ import unicodedata
 from collections import defaultdict
 from collections.abc import Collection, Iterable
 from dataclasses import dataclass, field
+from functools import lru_cache
 
 import psycopg
 import regex
@@ -24,6 +25,10 @@ _TOKENS = regex.compile(
     r"(?P<word>\p{L}[\p{L}\p{M}\u200c\u200d]*(?:[-'’־׳״]\p{L}[\p{L}\p{M}\u200c\u200d]*)*)"
     r"|(?P<number>[+−-]?\d+(?:[.,]\d+)*)|\s+|."
 )
+
+
+# Dictionary readings can change. Only reuse the transliterator's generated word readings.
+_generated_reading = lru_cache(maxsize=32_768)(to_roman)
 
 
 def saved_matches(language: str, spellings: list[str]):
@@ -115,7 +120,9 @@ class DictionaryPipeline(Pipeline):
             token.is_ambiguous = len(token.candidates) > 1
             key = unicodedata.normalize("NFC", token.surface).lower()
             if key not in passage.readings and self.descriptor.default_romanization:
-                passage.readings[key] = to_roman(
+                # A pasted run without spaces can be as long as the entire chapter.
+                convert = _generated_reading if len(token.surface) <= 128 else to_roman
+                passage.readings[key] = convert(
                     token.surface,
                     from_script=self.descriptor.script,
                     to_scheme=self.descriptor.default_romanization,

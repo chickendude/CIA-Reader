@@ -19,6 +19,7 @@ it('hides Rename when the viewer only has catalog actions', async () => {
   render(BookActions, { id: 'book', title: 'Book', catalogAction: 'remove' });
   await fireEvent.click(screen.getByRole('button', { name: 'Actions for Book' }));
   expect(screen.queryByRole('button', { name: 'Rename' })).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Reparse book' })).toBeNull();
 });
 
 it('retains the edited title after a failed save and retries a standalone text rename', async () => {
@@ -46,5 +47,31 @@ it('retains the edited title after a failed save and retries a standalone text r
     method: 'PATCH',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ title: 'नया नाम' }),
+  });
+});
+
+it('reparses a standalone book using the progress endpoint', async () => {
+  const request = vi.fn().mockResolvedValue(new Response(
+    '{"type":"complete","tokensWritten":3,"wordsParsed":2}\n',
+  ));
+  vi.stubGlobal('fetch', request);
+  render(BookActions, { id: 'text', title: 'Book', reparseSource: 'pdf' });
+  const trigger = screen.getByRole<HTMLButtonElement>('button', { name: 'Actions for Book' });
+  await fireEvent.click(trigger);
+  await fireEvent.click(screen.getByRole('button', { name: 'Reparse book' }));
+  expect(request).toHaveBeenCalledWith('/api/v1/admin/texts/text/reprocess', {
+    method: 'POST', headers: { accept: 'application/x-ndjson' },
+  });
+  await waitFor(() => expect(trigger.disabled).toBe(false));
+});
+
+it('requests all chapters for a chapter book', async () => {
+  const request = vi.fn().mockResolvedValue(Response.json({ dispatched: 2 }));
+  vi.stubGlobal('fetch', request);
+  render(BookActions, { id: 'collection', title: 'Book', collection: true, reparseSource: 'book' });
+  await fireEvent.click(screen.getByRole('button', { name: 'Actions for Book' }));
+  await fireEvent.click(screen.getByRole('button', { name: 'Reparse book' }));
+  expect(request).toHaveBeenCalledWith('/api/v1/collections/collection/reprocess', {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: '{"all":true}',
   });
 });

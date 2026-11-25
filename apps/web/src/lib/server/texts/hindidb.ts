@@ -447,50 +447,54 @@ async function writeHindiTokens(
         stale.slice(i, i + 1000).map((t) => t.id),
       ),
     );
-  await tx.delete(schema.hindiOccurrences).where(eq(schema.hindiOccurrences.chapterId, chapterId));
   await tx
     .delete(schema.phraseChapterSpans)
     .where(eq(schema.phraseChapterSpans.chapterId, chapterId));
-  const rows = tokens.map((t) => ({
-    chapterId,
-    ...fragmentReading(t),
-    sentenceIdx: t.sentence_idx ?? 0,
-    romanization: t.romanization,
-    numberForms: t.number_forms ?? null,
-    bbox: t.bbox ?? null,
-  }));
-  for (let start = 0; start < rows.length; start += 1000) {
-    await tx
-      .insert(schema.textTokens)
-      .values(rows.slice(start, start + 1000))
-      .onConflictDoUpdate({
-        target: [schema.textTokens.chapterId, schema.textTokens.idx],
-        set: {
-          lemmaId: sql`excluded.lemma_id`,
-          lemmaCandidates: sql`excluded.lemma_candidates`,
-          features: sql`excluded.features`,
-          isAmbiguous: sql`excluded.is_ambiguous`,
-          isOov: sql`excluded.is_oov`,
-          isWord: sql`excluded.is_word`,
-          sentenceIdx: sql`excluded.sentence_idx`,
-          romanization: sql`excluded.romanization`,
-          numberForms: sql`excluded.number_forms`,
-          bbox: sql`excluded.bbox`,
-        },
-      });
-  }
-  const occurrences = analysis.occurrences.map((o) => ({
-    chapterId,
-    startIdx: o.start_idx,
-    endIdx: o.end_idx,
-    lemmaId: o.lemma_id,
-    sourceStart: o.source_start,
-    sourceEnd: o.source_end,
-    rules: o.rules,
-  }));
-  for (let start = 0; start < occurrences.length; start += 1000) {
-    await tx.insert(schema.hindiOccurrences).values(occurrences.slice(start, start + 1000));
-  }
+
+  // Send one record set per chapter. Matching tokens keep their IDs and reader annotations.
+  const rows = tokens.map((token) => {
+    const reading = fragmentReading(token);
+    return {
+      idx: token.idx, surface: token.surface, lemma_id: reading.lemmaId,
+      lemma_candidates: reading.lemmaCandidates, features: reading.features,
+      is_ambiguous: reading.isAmbiguous, is_oov: reading.isOov, is_word: reading.isWord,
+      sentence_idx: token.sentence_idx ?? 0, romanization: token.romanization,
+      number_forms: token.number_forms ?? null, bbox: token.bbox ?? null,
+    };
+  });
+  await tx.execute(sql`
+    MERGE INTO text_tokens t
+    USING jsonb_populate_recordset(NULL::text_tokens, ${JSON.stringify(rows)}::jsonb) n
+    ON t.chapter_id = ${chapterId} AND t.idx = n.idx
+    WHEN MATCHED AND (t.lemma_id, t.lemma_candidates, t.features, t.is_ambiguous, t.is_oov,
+      t.is_word, t.sentence_idx, t.romanization, t.number_forms, t.bbox) IS DISTINCT FROM
+      (n.lemma_id, n.lemma_candidates, n.features, n.is_ambiguous, n.is_oov,
+      n.is_word, n.sentence_idx, n.romanization, n.number_forms, n.bbox)
+    THEN UPDATE SET lemma_id=n.lemma_id, lemma_candidates=n.lemma_candidates, features=n.features,
+      is_ambiguous=n.is_ambiguous, is_oov=n.is_oov, is_word=n.is_word, sentence_idx=n.sentence_idx,
+      romanization=n.romanization, number_forms=n.number_forms, bbox=n.bbox
+    WHEN NOT MATCHED THEN INSERT (chapter_id, idx, surface, lemma_id, lemma_candidates, features,
+      is_ambiguous, is_oov, is_word, sentence_idx, romanization, number_forms, bbox)
+    VALUES (${chapterId}, n.idx, n.surface, n.lemma_id, n.lemma_candidates, n.features,
+      n.is_ambiguous, n.is_oov, n.is_word, n.sentence_idx, n.romanization, n.number_forms, n.bbox)
+  `);
+  // Matches can disappear after dictionary edits, including when a chapter becomes empty.
+  await tx.execute(sql`
+    WITH incoming AS MATERIALIZED (
+      SELECT * FROM jsonb_populate_recordset(NULL::hindi_occurrences,
+        ${JSON.stringify(analysis.occurrences)}::jsonb)
+    ), removed AS (
+      DELETE FROM hindi_occurrences o WHERE o.chapter_id=${chapterId}
+        AND NOT EXISTS (SELECT FROM incoming n WHERE
+          (n.start_idx,n.end_idx,n.lemma_id)=(o.start_idx,o.end_idx,o.lemma_id))
+    )
+    INSERT INTO hindi_occurrences AS o (chapter_id,start_idx,end_idx,lemma_id,source_start,source_end,rules)
+      SELECT ${chapterId},start_idx,end_idx,lemma_id,source_start,source_end,rules FROM incoming
+    ON CONFLICT (chapter_id,start_idx,end_idx,lemma_id) DO UPDATE SET
+      source_start=excluded.source_start, source_end=excluded.source_end, rules=excluded.rules
+      WHERE (o.source_start,o.source_end,o.rules) IS DISTINCT FROM
+        (excluded.source_start,excluded.source_end,excluded.rules)
+  `);
   const record = {
     chapterId,
     revision: analysis.revision,
@@ -502,7 +506,14 @@ async function writeHindiTokens(
   await tx
     .insert(schema.hindiChapterAnalyses)
     .values(record)
-    .onConflictDoUpdate({ target: schema.hindiChapterAnalyses.chapterId, set: record });
+    .onConflictDoUpdate({
+      target: schema.hindiChapterAnalyses.chapterId,
+      set: record,
+      setWhere: sql`(hindi_chapter_analyses.revision, hindi_chapter_analyses.parser_version,
+        hindi_chapter_analyses.source_words, hindi_chapter_analyses.unresolved_words, hindi_chapter_analyses.stats)
+        IS DISTINCT FROM (excluded.revision, excluded.parser_version, excluded.source_words,
+        excluded.unresolved_words, excluded.stats)`,
+    });
   await tx
     .update(schema.textChapters)
     .set({ tokenCount: analysis.stats.source_words })

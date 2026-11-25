@@ -922,7 +922,7 @@
   // unique (reporter, translation) constraint either way.
   let reportingTranslationId = $state<string | null>(null);
   let reportedIds = $state<Set<string>>(new Set());
-  let reportToast = $state<string | null>(null);
+  let reportError = $state<string | null>(null);
 
   // Older chapters can have a dictionary entry for a numeral but no saved number forms. Check the
   // spelling too so the popup still recognizes the number.
@@ -1359,7 +1359,7 @@
 
   function openReport(translationId: string) {
     reportingTranslationId = translationId;
-    reportToast = null;
+    reportError = null;
   }
   function closeReport() {
     reportingTranslationId = null;
@@ -1373,15 +1373,15 @@
     if (!reportingTranslationId) return;
     if (outcome.kind === 'reported') {
       reportedIds = new Set([...reportedIds, reportingTranslationId]);
-      reportToast = 'Thanks — moderators will review.';
+      pushToast({ kind: 'success', message: 'Translation reported for moderator review.' });
     } else if (outcome.kind === 'duplicate') {
       reportedIds = new Set([...reportedIds, reportingTranslationId]);
-      reportToast = "You've already reported this translation.";
+      pushToast({ kind: 'info', message: "You've already reported this translation." });
     } else if (outcome.kind === 'rate_limited') {
       const mins = outcome.retryAfterSeconds
         ? Math.ceil(outcome.retryAfterSeconds / 60)
         : null;
-      reportToast = mins
+      reportError = mins
         ? `Too many reports submitted. Try again in ~${mins} min.`
         : 'Too many reports submitted. Try again later.';
     }
@@ -2148,10 +2148,8 @@
           </li>
         {/if}
       </ul>
-      {#if reportToast}
-        <p class="report-toast" data-testid="report-toast" role="status">
-          {reportToast}
-        </p>
+      {#if reportError}
+        <p class="err small" role="alert">{reportError}</p>
       {/if}
       {#if voteError}
         <p class="err small">Could not save vote: {voteError}</p>
@@ -3190,14 +3188,6 @@
     color: var(--ink-3, var(--color-fg-muted));
     background: color-mix(in oklch, var(--ink, var(--color-fg)) 6%, transparent);
     border-radius: 999px;
-  }
-  .report-toast {
-    margin: 0.4rem 0 0;
-    padding: 0.4rem 0.6rem;
-    font-size: 0.78rem;
-    color: var(--ink-2, var(--color-fg));
-    background: color-mix(in oklch, var(--ink, var(--color-fg)) 4%, transparent);
-    border-radius: 6px;
   }
   .vote-controls {
     flex: 0 0 auto;

@@ -94,7 +94,7 @@ function clampPage(opts: { limit?: number; offset?: number }): {
 
 export type LibraryGridCard = Pick<LibraryCard,
   'id' | 'title' | 'language' | 'sourceType' | 'status' | 'visibility'
-> & { chapterCount?: number | null; progressPct?: number };
+> & { chapterCount?: number | null; progressPct?: number; isOwner?: boolean };
 
 /** Rank books and standalone texts together before taking a page. */
 export async function listPersonalLibrary(
@@ -299,7 +299,7 @@ export async function listOfficialBooks(opts: {
     : sql`${opts.sort === 'unique' ? sql`unique_ratio` : sql`reading_ratio`} DESC NULLS LAST, title, id`;
   const hasIgnores = opts.userId ? await ensureReaderCoverage(opts.userId) : false;
   const rows = await db.execute<{ cards: Card[]; total: number }>(sql`
-    WITH catalog AS (${officialCatalog(opts.language)}), candidates AS (
+    WITH catalog AS (${officialCatalog(opts.language, opts.userId)}), candidates AS (
       SELECT * FROM catalog
       ${opts.sort === 'recent' ? sql`ORDER BY created_at DESC, id LIMIT ${limit} OFFSET ${offset}` : sql``}
     ), scores AS (
