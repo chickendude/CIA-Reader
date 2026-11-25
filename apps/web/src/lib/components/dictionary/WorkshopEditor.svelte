@@ -339,7 +339,7 @@
     </div>{/if}
   <div class="meaning">
     <label for={meaningId}>English meaning</label>
-    <MeaningInput id={meaningId} bind:value={draft.meaning} label="English meaning" {sheet}
+    <MeaningInput id={meaningId} bind:value={draft.meaning} label="English meaning" {sheet} newlineOnEnter
       oncancel={sheet ? () => { draft.meaning = word.draft.meaning; } : undefined}
       onsave={saveMeaning} />
   </div>

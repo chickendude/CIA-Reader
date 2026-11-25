@@ -126,7 +126,6 @@ def main():
         metadata = {'fingerprint': fingerprint, 'source_archive': str(snapshot), 'backup': str(backup),
                     'upstream_parser': '0.4.2', 'imported_at': stamp,
                     'history': {k:v for k,v in lexicon.documents[-1].items() if k!='entries'}}
-        conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS lemmas_hindi_identity_idx ON lemmas(headword,pos) WHERE language='hi'")
         conn.execute('INSERT INTO hindi_dictionary_state(id,revision,metadata) VALUES(1,1,%s)',(Jsonb(metadata),))
         # Text bodies, progress, and collections survive; token analyses are rebuilt separately.
     print('HindiDB dictionary imported. Reprocess Hindi chapters before restarting the app.', flush=True)

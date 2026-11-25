@@ -11,6 +11,7 @@
     placeholder,
     maxlength,
     sheet = false,
+    newlineOnEnter = false,
     focusOnMount = false,
     disabled = false,
     onsave = () => textarea.form?.requestSubmit(),
@@ -25,6 +26,7 @@
     placeholder?: string;
     maxlength?: number;
     sheet?: boolean;
+    newlineOnEnter?: boolean;
     focusOnMount?: boolean;
     disabled?: boolean;
     onsave?: () => void;
@@ -37,6 +39,7 @@
   let tabbing = false;
   let draft = $state(untrack(() => splitMeanings(value).join('\n')));
   const lines = $derived(draft.split('\n'));
+  const enterAddsLine = $derived(sheet || newlineOnEnter);
 
   // Keep blank lines and trailing spaces while typing. Only replace the draft
   // when the caller supplies a different definition.
@@ -85,7 +88,7 @@
     {/each}
   </div>
   <textarea bind:this={textarea} value={draft} rows="1" {name} {id} {maxlength} {placeholder} {required}
-    aria-label={label} readonly={disabled} enterkeyhint={sheet ? 'enter' : 'done'}
+    aria-label={label} readonly={disabled} enterkeyhint={enterAddsLine ? 'enter' : 'done'}
     oninput={(event) => {
       draft = event.currentTarget.value;
       value = serializeMeanings(draft);
@@ -93,7 +96,7 @@
     }}
     onkeydown={(event) => {
       if (disabled || event.isComposing || event.keyCode === 229) return;
-      if (event.key === 'Enter' && !event.shiftKey && !sheet) {
+      if (event.key === 'Enter' && !event.shiftKey && !enterAddsLine) {
         event.preventDefault();
         event.stopPropagation();
         commit(onsave);

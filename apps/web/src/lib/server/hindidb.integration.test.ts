@@ -349,6 +349,19 @@ describe.skipIf(!url)('HindiDB PostgreSQL integration (always rolls back)', () =
           expect(legacy?.[0]).toMatchObject({ lemmaId: savedId, isOov: false, glossDefault: 'test word' });
           expect(legacy?.[1]).toMatchObject({ lemmaId: null, isOov: true });
           const { getWorkshopWord, previewDraft, searchWorkshop } = await import('./dictionary/workshop.js');
+          const native = { ...emptyDraft('मिस' + suffix, 'NOUN'), meaning: 'pretext, pretence, excuse' };
+          const loan = { ...native, meaning: 'Miss (title)', loan: true };
+          const nativeId = await saveDraft(native, user!.id, 'hi');
+          const loanId = await saveDraft({ ...loan, pos: 'PROPN' }, user!.id, 'hi');
+          const workaround = await getWorkshopWord(loanId, 'hi');
+          expect(await saveDraft({ ...workaround.draft, pos: 'NOUN' }, user!.id, 'hi')).toBe(loanId);
+          expect((await searchWorkshop('hi', native.lemma, 10))).toEqual(expect.arrayContaining([
+            { id: nativeId, lemma: native.lemma, pos: 'NOUN', meaning: native.meaning },
+            { id: loanId, lemma: native.lemma, pos: 'NOUN', meaning: loan.meaning },
+          ]));
+          await expect(saveDraft(loan, user!.id, 'hi')).rejects.toMatchObject({ status: 409 });
+          const third = await saveDraft({ ...native, meaning: 'another meaning' }, user!.id, 'hi');
+          expect([nativeId, loanId]).not.toContain(third);
           const basque = { ...emptyDraft('etxe' + suffix), meaning: 'house',
             alternatives: ['etche' + suffix], other: ['etxe zaharra', 'etxeetan'], excluded: ['etxeetan'] };
           const revisionBefore = (await tx.select().from(schema.hindiDictionaryState))[0]!.revision;

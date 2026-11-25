@@ -1,8 +1,13 @@
-from uuid import NAMESPACE_URL, uuid5
+from unittest.mock import MagicMock
+from uuid import NAMESPACE_URL, uuid4, uuid5
+
+import psycopg
 
 from app.pipelines.hindidb import HindiDBPipeline
-from hindidb.lexicon import Lexicon
+from hindidb.lexicon import Lexicon, lexical_id
 from hindidb.parser import analyze
+from hindidb.review_reports import spelling_rows
+from parhiba_hindi.database import DatabaseLexicon
 
 
 class Provider:
@@ -16,6 +21,40 @@ class Provider:
 
 def entry(lemma, pos, **kwargs):
     return {"lemma": lemma, "pos": pos, "paradigm": "invariant", **kwargs}
+
+
+def test_stored_homographs_keep_their_own_ids_and_forms(monkeypatch):
+    native, loan = uuid4(), uuid4()
+    native_key = lexical_id("मिस", "NOUN")
+    loan_key = f"parhiba:{loan}"
+    conn = MagicMock()
+    conn.execute.return_value.fetchone.return_value = (7,)
+    conn.execute.return_value.fetchall.return_value = [
+        (native, native_key, "मिस", "NOUN", {}, []),
+        (loan, loan_key, "मिस", "NOUN", {"english_loan": True}, ["मिसें"]),
+    ]
+    monkeypatch.setenv("DATABASE_URL", "test")
+    monkeypatch.setattr(psycopg, "connect", lambda _: conn)
+    conn.__enter__.return_value = conn
+
+    result = HindiDBPipeline(DatabaseLexicon()).process("मिस ग्रेंजर मिसें")
+    shared, *_, inflected = result.tokens
+    assert shared.is_ambiguous
+    assert {c.dictionary_id for c in shared.candidates} == {str(native), str(loan)}
+    assert {c.pos for c in shared.candidates} == {"NOUN"}
+    assert [c.dictionary_id for c in inflected.candidates] == [str(loan)]
+    assert len(result.hindi_analysis["occurrences"]) == 3
+
+
+def test_spelling_redirect_with_two_same_pos_destinations_requires_review():
+    lexicon = Lexicon(documents=[{"entries": [
+        entry("राज", "NOUN", definitions=[{"original": "nuqtaless form of राज़"}]),
+        entry("राज़", "NOUN", dictionary_id="first", definitions=[{"original": "first"}]),
+        entry("राज़", "NOUN", dictionary_id="second", definitions=[{"original": "second"}]),
+    ]}])
+    report = spelling_rows(lexicon)
+    assert not report["ready"]
+    assert [row["lemma"] for row in report["skipped"]] == ["राज"]
 
 
 def test_all_candidates_and_compounds_match_hindidb_without_doubling_source_words():

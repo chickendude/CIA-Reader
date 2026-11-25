@@ -314,14 +314,17 @@ export async function saveDraft(d: Draft, actor: string, language: LanguageCode)
     const current = d.id ? await readEntry(language, id, tx) : null;
     if (current && current.draft.version !== d.version)
       error(409, 'This entry changed since you opened it. Reopen it before saving.');
-    const [duplicate] = await tx.execute(
-      sql`SELECT id FROM lemmas WHERE language=${language} AND headword=${d.lemma} AND pos=${d.pos} AND id<>${id}`,
-    );
-    if (duplicate && (!current || current.draft.lemma !== d.lemma || current.draft.pos !== d.pos))
-      error(
-        409,
-        'This dictionary form and part of speech already exist. Select the existing entry.',
+    if (
+      !current || current.draft.lemma !== d.lemma ||
+      current.draft.pos !== d.pos || current.draft.meaning !== d.meaning
+    ) {
+      const [duplicate] = await tx.execute(
+        sql`SELECT id FROM lemmas WHERE language=${language} AND headword=${d.lemma} AND pos=${d.pos}
+          AND coalesce(gloss_default,'')=${d.meaning} AND id<>${id} LIMIT 1`,
       );
+      if (duplicate)
+        error(409, 'An entry with this dictionary form, part of speech, and meaning already exists.');
+    }
     const entry = lexicalEntry(language, d, current?.entry ?? {});
     const preview = await previewEntry(language, entry, { validate_inventory: true });
     if (current?.entry.group_id && (d.lemma !== current.draft.lemma || d.pos !== current.draft.pos))

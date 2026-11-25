@@ -4,7 +4,7 @@ import os
 from collections import defaultdict
 from threading import RLock
 
-from hindidb.lexicon import Lexicon, lexical_id
+from hindidb.lexicon import Lexicon
 
 
 class DatabaseLexicon:
@@ -32,18 +32,21 @@ class DatabaseLexicon:
                 entries = []
                 ids = {}
                 rows = conn.execute("""
-                    SELECT l.id, l.headword, l.pos, h.entry,
+                    SELECT l.id, h.external_id, l.headword, l.pos, h.entry,
                       COALESCE((SELECT jsonb_agg(f.surface ORDER BY f.surface)
                         FROM lemma_forms f WHERE f.lemma_id = l.id
                         AND f.quarantined_at IS NULL), '[]'::jsonb)
                     FROM hindi_entries h JOIN lemmas l ON l.id = h.lemma_id
                     WHERE l.language = 'hi' ORDER BY h.external_id
                 """).fetchall()
-                for uid, headword, pos, entry, forms in rows:
-                    entry = {**entry, "lemma": headword, "pos": pos, "forms": forms}
-                    key = lexical_id(headword, pos)
-                    if key in ids:
-                        raise RuntimeError(f"Duplicate HindiDB identity: {headword}/{pos}")
+                for uid, key, headword, pos, entry, forms in rows:
+                    entry = {
+                        **entry,
+                        "dictionary_id": key,
+                        "lemma": headword,
+                        "pos": pos,
+                        "forms": forms,
+                    }
                     ids[key] = str(uid)
                     entries.append(entry)
                 if not entries:
@@ -61,7 +64,7 @@ class DatabaseLexicon:
                     return parser_keys.get(reference, reference)
 
                 def member_ids(members):
-                    live = [lexical_id(e["lemma"], e["pos"]) for e in members]
+                    live = [e["dictionary_id"] for e in members]
                     ordered = [
                         key
                         for use in members[0].get("group_uses", [])

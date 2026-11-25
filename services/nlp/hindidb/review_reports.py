@@ -2,8 +2,8 @@
 import hashlib
 import json
 import re
+from collections import defaultdict
 
-from .lexicon import lexical_id
 from .morphology import forms
 from .spelling import omitted_nukta_match
 from .text import normalize, tokenize
@@ -84,6 +84,9 @@ def redirect_target(text):
 def spelling_rows(lexicon):
     """Only unambiguous, pure redirects with an existing same-POS destination."""
     ready, skipped = [], []
+    by_headword = defaultdict(list)
+    for entry in lexicon.entries.values():
+        by_headword[entry['lemma'], entry['pos']].append(entry)
     for source in sorted(lexicon.entries.values(), key=lambda e: (e['lemma'], e['pos'])):
         definitions = source.get('definitions', [])
         if not any('nuqtaless form of' in d.get('original', '').lower() for d in definitions):
@@ -99,10 +102,13 @@ def spelling_rows(lexicon):
         else:
             headword = next(iter(targets))
             row['target_lemma'] = headword
-            target = lexicon.entries.get(lexical_id(headword, source['pos']))
+            candidates = by_headword[headword, source['pos']]
+            target = candidates[0] if len(candidates) == 1 else None
             if any(d.get('translation', '').strip() and redirect_target(d['translation']) != headword
                    for d in definitions):
                 reason = 'Has a separately edited translation'
+            elif len(candidates) > 1:
+                reason = 'Multiple main entries have this spelling and part of speech'
             elif target is None:
                 reason = 'Main entry with the same part of speech is missing'
             elif not omitted_nukta_match(source['lemma'], headword):

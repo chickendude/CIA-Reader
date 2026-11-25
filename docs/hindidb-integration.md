@@ -57,8 +57,9 @@ collections, and reading progress were retained.
 The two current HindiDB books are imported: Harry Potter 1 (98,795 words) and
 Harry Potter 2 (111,085 words). Superseded source versions are excluded. Their
 complete original texts were verified exactly against archived source snapshots.
-Books are divided into manageable reader parts without cutting sentences or
-lexical spans. Source snapshots and all current decision records are archived
+The reader follows the numbered headings and Hindi titles in the source text.
+HP1 has 17 chapters and HP2 has 18. The first chapter includes the opening
+material, including the dedication in HP2. Source snapshots and all current decision records are archived
 under `.local/hindidb-books/`; a PostgreSQL backup precedes the import.
 
 All 61,110 current decisions were preserved: 60,660 AI selections, 80 human
@@ -170,6 +171,11 @@ To import the current Harry Potter books from another HindiDB checkout:
 ```sh
 ./scripts/dev-local.sh import-hindidb-books /path/to/HindiDB LOCAL_USER_UUID
 ```
+
+For books already imported as numbered parts, run
+`scripts/repair_hindidb_chapters.py` with the NLP venv and local `DATABASE_URL`.
+The default run checks the repair and rolls it back. Back up the database and
+pass `--apply` to save the corrected chapters.
 
 The book importer backs up first and skips already-imported source versions,
 preserving subsequent Parhiba edits. For a read-only inventory, run

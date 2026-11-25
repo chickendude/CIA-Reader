@@ -83,6 +83,12 @@
     {#if !data.staff}
       {#key data.language.code}<PublicDictionary {data} />{/key}
     {/if}
+    <footer>
+      {#if data.language.code === 'hi'}
+        The Hindi dictionary includes entries from <a href="https://en.wiktionary.org/wiki/Category:Hindi_language">Wiktionary</a>.
+      {/if}
+      All dictionary data on Parhiba is released under <a href="https://creativecommons.org/licenses/by-sa/4.0/" rel="license">CC BY-SA 4.0</a>.
+    </footer>
   </div>
 </PageLayout>
 
@@ -100,4 +106,13 @@
     align-items: center;
     gap: 0.5rem;
   }
+  footer {
+    margin-top: 1.5rem;
+    border-top: 1px solid var(--rule);
+    padding-top: 0.75rem;
+    color: var(--ink-2);
+    font-size: 0.875rem;
+    line-height: 1.5;
+  }
+  footer a { color: inherit; }
 </style>

@@ -519,6 +519,13 @@
       "when": 1795600000000,
       "tag": "0073_hindi_definition_credits",
       "breakpoints": true
+    },
+    {
+      "idx": 74,
+      "version": "7",
+      "when": 1795700000000,
+      "tag": "0074_hindi_homographs",
+      "breakpoints": true
     }
   ]
 }

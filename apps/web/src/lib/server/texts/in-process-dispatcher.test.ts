@@ -210,6 +210,64 @@ describe('processTextNow', () => {
     expect(calls.filter((c) => c.kind === 'delete')).toHaveLength(2);
   });
 
+  it('finishes the current write before reporting a failed lookahead parse', async () => {
+    stage([{ id: 'text-1', language: 'hi' }]);
+    stage([
+      { id: 'chap-1', body: 'one' },
+      { id: 'chap-2', body: 'two' },
+      { id: 'chap-3', body: 'three' },
+    ]);
+    const saving = Promise.withResolvers<number>();
+    const writeStarted = Promise.withResolvers<void>();
+    rebuildChapterSpans.mockImplementationOnce(() => {
+      writeStarted.resolve();
+      return saving.promise;
+    });
+    nlpProcess.mockResolvedValueOnce({ tokens: [] }).mockRejectedValueOnce(new Error('Parse failed'));
+    const progress = vi.fn();
+    const run = processTextNow('text-1', progress);
+    await writeStarted.promise;
+    expect(nlpProcess.mock.calls).toEqual([['hi', 'one'], ['hi', 'two']]);
+    expect(progress.mock.calls).toEqual([[0, 3]]);
+    expect(calls).not.toContainEqual(expect.objectContaining({ set: expect.objectContaining({ status: 'failed' }) }));
+
+    saving.resolve(0);
+    await expect(run).rejects.toThrow('Parse failed');
+    expect(progress.mock.calls).toEqual([[0, 3], [1, 3]]);
+    expect(nlpProcess).toHaveBeenCalledTimes(2);
+  });
+
+  it('reports progress across image-only chapters and processes the chapters with text', async () => {
+    stage([{ id: 'text-1', language: 'hi' }]);
+    stage([
+      { id: 'image-1', body: '', pageImageKey: 'page-1' },
+      { id: 'chap-2', body: 'two', pageImageKey: 'page-2' },
+      { id: 'image-3', body: ' ', pageImageKey: 'page-3' },
+    ]);
+    nlpProcess.mockResolvedValue({ tokens: [] });
+    const progress = vi.fn();
+    await processTextNow('text-1', progress);
+    expect(nlpProcess.mock.calls).toEqual([['hi', 'two']]);
+    expect(rebuildChapterSpans.mock.calls).toEqual([[{ chapterId: 'chap-2', language: 'hi' }]]);
+    expect(progress.mock.calls).toEqual([[0, 3], [1, 3], [2, 3], [3, 3]]);
+  });
+
+  it('discards the prefetched chapter when the current write fails', async () => {
+    stage([{ id: 'text-1', language: 'hi' }]);
+    stage([
+      { id: 'chap-1', body: 'one' },
+      { id: 'chap-2', body: 'two' },
+      { id: 'chap-3', body: 'three' },
+    ]);
+    nlpProcess.mockResolvedValue({ tokens: [] });
+    rebuildChapterSpans.mockRejectedValueOnce(new Error('Write failed'));
+    const progress = vi.fn();
+    await expect(processTextNow('text-1', progress)).rejects.toThrow('Write failed');
+    expect(progress.mock.calls).toEqual([[0, 3]]);
+    expect(nlpProcess).toHaveBeenCalledTimes(2);
+    expect(rebuildChapterSpans).toHaveBeenCalledTimes(1);
+  });
+
   it('marks the text failed when the NLP service throws', async () => {
     stage([{ id: 'text-1', language: 'hi' }]);
     stage([{ id: 'chap-1', body: 'oops' }]);

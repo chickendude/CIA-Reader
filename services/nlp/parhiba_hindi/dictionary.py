@@ -66,7 +66,6 @@ def workshop_report(name, provider):
 
     import psycopg
 
-    from hindidb.lexicon import lexical_id
     from hindidb.review_reports import entry_hash, recommendation_rows, spelling_rows
 
     live, ids, revision = provider.load()
@@ -74,10 +73,10 @@ def workshop_report(name, provider):
     lexicon = copy(live)
     lexicon.entries = live.entries.copy()
     with psycopg.connect(os.environ["DATABASE_URL"]) as conn:
-        for headword, pos, gloss in conn.execute(
-            "SELECT headword,pos,gloss_default FROM lemmas WHERE language='hi'"
+        for key, gloss in conn.execute(
+            """SELECT h.external_id,l.gloss_default FROM hindi_entries h
+               JOIN lemmas l ON l.id=h.lemma_id WHERE l.language='hi'"""
         ):
-            key = lexical_id(headword, pos)
             entry = lexicon.entries.get(key)
             if entry is None:
                 continue

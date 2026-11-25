@@ -12,10 +12,12 @@ from datetime import datetime, timezone
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 import sqlite3
 import subprocess
 import sys
+from typing import NamedTuple
 from urllib.parse import urlparse
 from uuid import uuid4
 
@@ -25,6 +27,20 @@ from psycopg import connect
 from psycopg.types.json import Jsonb
 from app.pipelines.hindidb import HindiDBPipeline
 from hindi_storage import persist_chapter
+
+
+class Chapter(NamedTuple):
+    start: int
+    end: int
+    title: str
+
+
+# The first book prints पंद्र्रह for fifteen. Keep its spelling in the body.
+NUMBERS = (
+    "एक दो तीन चार पाँच छह सात आठ नौ दस ग्यारह बारह तेरह चौदह पंद्रह सोलह सत्रह अठारह"
+).split()
+CHAPTER_COUNTS = {"harry potter 1": 17, "harry potter 2": 18}
+HEADING = re.compile(r"^अध्याय[ \t]*-[ \t]*([^\s]+)[ \t\r]*$", re.MULTILINE)
 
 
 def partition(text, protected_spans, target=14000):
@@ -49,6 +65,28 @@ def partition(text, protected_spans, target=14000):
                 end = crossing_end
         yield start, end, text[start:end]
         start = end
+
+
+def source_chapters(title, text, protected_spans=()):
+    if title.lower() not in CHAPTER_COUNTS:
+        return [
+            Chapter(start, end, f"Part {i + 1}")
+            for i, (start, end, _) in enumerate(partition(text, protected_spans))
+        ]
+    expected = CHAPTER_COUNTS[title.lower()]
+    headings = list(HEADING.finditer(text))
+    numbers = [m[1].replace("पंद्र्रह", "पंद्रह") for m in headings]
+    if numbers != NUMBERS[:expected]:
+        raise ValueError(f"{title} must have all {expected} numbered headings in order")
+    chapters = []
+    for index, heading in enumerate(headings):
+        end = headings[index + 1].start() if index + 1 < expected else len(text)
+        lines = text[heading.end() : end].lstrip().splitlines()
+        if not lines:
+            raise ValueError(f"Missing chapter title after {heading[0]}")
+        # Keep the dedication and title page at the beginning of the first chapter.
+        chapters.append(Chapter(heading.start() if index else 0, end, lines[0].strip()))
+    return chapters
 
 
 def read_books(source):
@@ -145,6 +183,7 @@ def main():
     if not books:
         raise SystemExit("No current Harry Potter books found.")
     for book in books:
+        book["chapters"] = source_chapters(book["title"], book["text"], book["spans"])
         counts = Counter(f"{c['origin']}:{c['outcome']}" for c in book["choices"])
         print(
             json.dumps(
@@ -152,6 +191,7 @@ def main():
                     "title": book["title"],
                     "version": book["id"],
                     "characters": len(book["text"]),
+                    "chapters": len(book["chapters"]),
                     "choices": counts,
                 },
                 ensure_ascii=False,
@@ -232,13 +272,14 @@ def main():
                     VALUES(%s,%s,'hi',%s,'txt','processing','private')""",
                     (text_id, args.owner, book["title"]),
                 )
-                chunks = list(partition(book["text"], book["spans"]))
+                chapters = book["chapters"]
                 choice_index = 0
-                for index, (start, end, body) in enumerate(chunks):
+                for index, (start, end, title) in enumerate(chapters):
+                    body = book["text"][start:end]
                     chapter_id = uuid4()
                     conn.execute(
                         "INSERT INTO text_chapters(id,text_id,idx,title,body) VALUES(%s,%s,%s,%s,%s)",
-                        (chapter_id, text_id, index, f"Part {index + 1}", body),
+                        (chapter_id, text_id, index, title, body),
                     )
                     result = pipeline.process(body)
                     stats = persist_chapter(conn, chapter_id, body, result)
@@ -285,7 +326,7 @@ def main():
                             counts[status] += 1
                             choice_index += 1
                     print(
-                        f"{book['title']} {index + 1}/{len(chunks)}: {stats['source_words']} words",
+                        f"{book['title']} {index + 1}/{len(chapters)}: {stats['source_words']} words",
                         flush=True,
                     )
                 assert choice_index == len(book["choices"]), (
@@ -308,7 +349,7 @@ def main():
                                 "backup": str(backup),
                                 "imported_at": stamp,
                                 "choice_counts": dict(counts),
-                                "chapter_offsets": [[s, e] for s, e, _ in chunks],
+                                "chapter_offsets": [[s, e] for s, e, _ in chapters],
                             }
                         ),
                     ),

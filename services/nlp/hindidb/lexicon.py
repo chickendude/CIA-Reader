@@ -40,7 +40,9 @@ class Lexicon:
                     raise ValueError(f"Invalid lexical entry: {entry}")
                 entry.setdefault("source", document.get("source", "unspecified"))
                 entry.setdefault("review_status", "provisional")
-                entry["id"] = lexical_id(entry["lemma"], entry["pos"])
+                # Stored dictionary entries can share a spelling and part of speech.
+                # Source files use the spelling-based ID to apply their overrides.
+                entry["id"] = entry.pop("dictionary_id", None) or lexical_id(entry["lemma"], entry["pos"])
                 if 'alternative_headwords' in entry:
                     entry['alternative_headwords'] = alternative_headwords(entry)
                 # Additional files are complete, explicit overrides of matching entries.

@@ -79,7 +79,7 @@
   {#if entry}
     <article aria-labelledby="dictionary-headword">
       <h2 id="dictionary-headword" lang={language} dir="auto">{entry.headword}</h2>
-      <p class="part-of-speech">{partsOfSpeech[entry.pos] ?? entry.pos.toLowerCase()}{#if language === 'hi' && entry.paradigm && entry.paradigm !== 'invariant'}, {patternLabel(entry.paradigm)}{/if}</p>
+      <p class="part-of-speech">{partsOfSpeech[entry.pos] ?? entry.pos.toLowerCase()}{#if data.canEdit && language === 'hi' && entry.paradigm && entry.paradigm !== 'invariant'}, {patternLabel(entry.paradigm)}{/if}</p>
       {#if entry.alternativeHeadwords.length}
         <p lang={language} dir="auto">{entry.alternativeHeadwords.join(', ')}</p>
       {/if}

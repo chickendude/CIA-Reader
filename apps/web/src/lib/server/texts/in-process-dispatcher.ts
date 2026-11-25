@@ -63,19 +63,6 @@ export async function persistTokens(args: {
   return rows.length;
 }
 
-async function processChapter(
-  chapter: Pick<TextChapter, 'id' | 'body'>,
-  language: LanguageCode,
-): Promise<number> {
-  const result = await nlpClient.process(language, chapter.body);
-  return persistTokens({
-    chapterId: chapter.id,
-    language,
-    tokens: result.tokens,
-    hindiAnalysis: result.hindi_analysis,
-  });
-}
-
 /**
  * Run the full process flow for one text in the foreground. Returns
  * the count of tokens written, or throws if any chapter fails.
@@ -98,12 +85,36 @@ export async function processTextNow(textId: string, onProgress?: ReprocessProgr
   await markTextProcessing(text.id);
   try {
     onProgress?.(0, chapters.length);
+    const parseChapter = (chapter: (typeof chapters)[number] | undefined) =>
+      chapter && (!chapter.pageImageKey || chapter.body.trim())
+        ? nlpClient.process(text.language, chapter.body)
+        : null;
+
     let total = 0;
+    let parsed = await parseChapter(chapters[0]);
     for (const [idx, chapter] of chapters.entries()) {
-      if (!chapter.pageImageKey || chapter.body.trim()) {
-        total += await processChapter(chapter, text.language);
-      }
-      onProgress?.(idx + 1, chapters.length);
+      const save = parsed
+        ? persistTokens({
+            chapterId: chapter.id,
+            language: text.language,
+            tokens: parsed.tokens,
+            hindiAnalysis: parsed.hindi_analysis,
+          })
+        : Promise.resolve(0);
+
+      // While this chapter commits, parse the next one. Finish the current write even
+      // if the next parse fails so progress and the final status reflect committed chapters.
+      const [written, next] = await Promise.allSettled([
+        save.then((count) => {
+          onProgress?.(idx + 1, chapters.length);
+          return count;
+        }),
+        parseChapter(chapters[idx + 1]),
+      ]);
+      if (written.status === 'rejected') throw written.reason;
+      if (next.status === 'rejected') throw next.reason;
+      total += written.value;
+      parsed = next.value;
     }
     await markTextReady(text.id);
     return total;
