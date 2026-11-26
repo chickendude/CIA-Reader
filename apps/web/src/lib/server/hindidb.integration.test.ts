@@ -613,8 +613,8 @@ describe.skipIf(!url)('HindiDB PostgreSQL integration (always rolls back)', () =
         const page = { language: 'hi' as const, limit: 1, offset: 1, userId };
         expect(await listOfficialBooks({ ...page, sort: 'reading' })).toMatchObject({
           totalCount: 3,
-          cards: [{ title: 'Chapter book', stats: { words: 5, uniqueWords: 3, knownPct: 40, uniquePct: 33.3,
-            knownWords: 2, learningWords: 2, knownHeadwords: 1, learningHeadwords: 1 } }],
+          cards: [{ title: 'Standalone B', stats: { words: 6, uniqueWords: 3, knownPct: 33.3, learningPct: 100,
+            knownWords: 2, learningWords: 4, knownHeadwords: 2, learningHeadwords: 1 } }],
         });
         // Warm reads must still work with the source frequencies unavailable.
         await tx.execute(sql`ALTER TABLE book_word_frequencies RENAME COLUMN occurrences TO hidden_during_cached_read`);

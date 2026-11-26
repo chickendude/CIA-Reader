@@ -15,15 +15,15 @@
   <div class="coverage">
     <dt>Coverage</dt>
     <dd>
-      {#if stats?.knownPct != null}
-        <strong>{stats.knownPct}%</strong>
+      {#if stats?.learningPct != null}
+        <strong>{stats.learningPct}%</strong>
       {:else if !signedIn && loginHref}
         <a href={loginHref}>Sign in</a>
       {:else}
         {signedIn ? 'Unavailable' : 'Sign-in required'}
       {/if}
     </dd>
-    {#if stats?.knownPct != null}
+    {#if stats?.learningPct != null}
       <dd class="scale"><CoverageBar {stats} /></dd>
     {/if}
   </div>

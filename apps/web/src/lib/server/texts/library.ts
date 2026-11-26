@@ -296,7 +296,7 @@ export async function listOfficialBooks(opts: {
   type Card = LibraryGridCard & { stats: BookWordStats | null };
   const { limit, offset } = clampPage(opts);
   const order = opts.sort === 'recent' ? sql`created_at DESC, id`
-    : sql`${opts.sort === 'unique' ? sql`unique_ratio` : sql`reading_ratio`} DESC NULLS LAST, title, id`;
+    : sql`${opts.sort === 'unique' ? sql`unique_ratio` : sql`learning_ratio`} DESC NULLS LAST, title, id`;
   const hasIgnores = opts.userId ? await ensureReaderCoverage(opts.userId) : false;
   const rows = await db.execute<{ cards: Card[]; total: number }>(sql`
     WITH catalog AS (${officialCatalog(opts.language, opts.userId)}), candidates AS (
@@ -307,7 +307,7 @@ export async function listOfficialBooks(opts: {
         WITH entries AS (${catalogEntries()}) ${scoreBookEntries()}
       `}
     ), page AS (
-      SELECT c.*,s.reading_ratio,s.unique_ratio,
+      SELECT c.*,s.learning_ratio,s.unique_ratio,
         CASE WHEN s.id IS NOT NULL THEN jsonb_build_object(
           'words', s.words, 'uniqueWords', s."uniqueWords", 'unresolved', s.unresolved,
           'unparsedWords', ${unparsedWordCount(sql`
@@ -323,7 +323,7 @@ export async function listOfficialBooks(opts: {
       ORDER BY ${order} LIMIT ${limit} OFFSET ${opts.sort === 'recent' ? 0 : offset}
     )
     SELECT (SELECT count(*)::int FROM catalog) AS total,
-      coalesce(jsonb_agg(to_jsonb(page) - 'created_at' - 'reading_ratio' - 'unique_ratio' ORDER BY ${order}), '[]') AS cards
+      coalesce(jsonb_agg(to_jsonb(page) - 'created_at' - 'learning_ratio' - 'unique_ratio' ORDER BY ${order}), '[]') AS cards
     FROM page
   `);
   return { cards: rows[0]?.cards ?? [], totalCount: rows[0]?.total ?? 0, limit, offset };
