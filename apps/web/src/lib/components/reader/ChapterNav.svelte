@@ -36,6 +36,10 @@
   } = $props();
 
   const current = $derived(entries[currentIndex] ?? entries[0] ?? null);
+  function numberedTitle({ number, title }: ReaderTocEntry) {
+    if (title === `Chapter ${number}` || title.startsWith(`${number}. `)) return title;
+    return `${number}. ${title}`;
+  }
   const hasMultiple = $derived(entries.length > 1);
   const prev = $derived(currentIndex > 0 ? entries[currentIndex - 1] : null);
   const next = $derived(
@@ -130,7 +134,7 @@
 </script>
 
 <div class="chapter-nav" class:footer data-testid="chapter-nav">
-  {#if hasMultiple}
+  {#if hasMultiple && current}
     {#if prev}
       <a
         class="chapter-nav-arrow"
@@ -152,7 +156,7 @@
       aria-expanded={open}
       onclick={() => (open = !open)}
     >
-      <span class="chapter-nav-title" dir="auto">{footer ? `Ch. ${currentIndex + 1} / ${entries.length}` : current?.title ?? ''}</span>
+      <span class="chapter-nav-title" dir="auto">{footer ? `Ch. ${currentIndex + 1} / ${entries.length}` : numberedTitle(current)}</span>
       <span class="chapter-nav-caret" aria-hidden="true">▾</span>
     </button>
 

@@ -35,7 +35,7 @@ describe('ChapterNav', () => {
     const trigger = container.querySelector(
       '.chapter-nav-trigger',
     ) as HTMLButtonElement;
-    expect(trigger.textContent).toContain('Ch 2');
+    expect(trigger.querySelector('.chapter-nav-title')?.textContent).toBe('2. Ch 2');
     expect(container.querySelector('.chapter-nav-menu')).toBeNull();
 
     await fireEvent.click(trigger);
@@ -43,6 +43,13 @@ describe('ChapterNav', () => {
 
     await fireEvent.click(trigger);
     expect(container.querySelector('.chapter-nav-menu')).toBeNull();
+  });
+
+  it.each(['Chapter 11', '11. क्विडिच'])('keeps the existing chapter number in %s', (title) => {
+    const { getByRole } = render(ChapterNav, {
+      props: { entries: [entry(9), entry(10, { title })], currentIndex: 1 },
+    });
+    expect(getByRole('button', { name: title })).toBeTruthy();
   });
 
   it('lists every chapter with its word count and flags the current one', async () => {
