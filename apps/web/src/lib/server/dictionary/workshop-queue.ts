@@ -13,7 +13,7 @@ export async function workshopQueue(
   offset = 0,
   language: LanguageCode = 'hi',
 ) {
-  const pattern = '%' + query.replace(/[\\%_]/g, '\\$&') + '%';
+  const pattern = query.replace(/[\\%_]/g, '\\$&') + '%';
   const boundary = `${SENTENCE_END_RE.source}|\n[[:space:]]*\n`;
   const rows = await db.execute<ReviewItem & { total: number }>(sql`
     WITH books AS (SELECT id FROM texts WHERE language=${language} AND (owner_id=${actor} OR visibility='official')

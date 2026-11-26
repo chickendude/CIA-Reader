@@ -5,6 +5,7 @@
 import { and, asc, count, eq, gte, ilike, inArray, lte, or, sql } from 'drizzle-orm';
 
 import { db, schema } from '../db/index.js';
+import { definitionWordPrefix } from './definition-search.js';
 import type { Lemma } from '../db/schema.js';
 import {
   latinToNative,
@@ -231,7 +232,7 @@ export async function listDictionaryLemmas(
       sql`${schema.lemmas.id} IN (
         SELECT lemma_id FROM dictionary_entries WHERE entry->'alternative_headwords' ?| ${spellings}
       )`,
-      query.matchEntryText ? ilike(schema.lemmas.glossDefault, `%${escapeLikePrefix(rawQ)}%`) : undefined,
+      query.matchEntryText ? sql`${schema.lemmas.glossDefault} ~* ${definitionWordPrefix(rawQ)}` : undefined,
       query.matchEntryText ? sql`${schema.lemmas.id} IN (
         SELECT lemma_id FROM lemma_forms WHERE surface=ANY(${spellings}) AND quarantined_at IS NULL
         UNION ALL SELECT lemma_id FROM dictionary_pattern_forms WHERE surface=ANY(${spellings})

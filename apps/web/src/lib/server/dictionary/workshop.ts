@@ -3,6 +3,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { error } from '@sveltejs/kit';
 import { z } from 'zod';
 import { db, schema } from '../db/index.js';
+import { definitionWordPrefix } from './definition-search.js';
 import { archiveKey, workshopAdapter } from './workshop-adapters';
 import { replacePatternForms } from './pattern-forms.js';
 import { getLanguage, type LanguageCode } from '@ciareader/shared-types';
@@ -149,12 +150,12 @@ export async function searchWorkshop(
   limit: number,
   offset = 0,
 ) {
-  const term = '%' + query.replace(/[\\%_]/g, '\\$&') + '%';
+  const term = query.replace(/[\\%_]/g, '\\$&') + '%';
   return [
     ...(await db.execute<Match>(sql`SELECT l.id,l.headword lemma,l.pos,coalesce(l.gloss_default,'') meaning
     FROM lemmas l LEFT JOIN dictionary_entries h ON h.lemma_id=l.id WHERE l.language=${language}
       AND (NOT ${dictionaryProfile(language).requiresStoredEntry}::boolean OR h.lemma_id IS NOT NULL) AND
-    (l.headword ILIKE ${term} OR l.gloss_default ILIKE ${term} OR ${workshopAdapter(language).searchSpelling?.(term) ?? sql`FALSE`}
+    (l.headword ILIKE ${term} OR l.gloss_default ~* ${definitionWordPrefix(query)} OR ${workshopAdapter(language).searchSpelling?.(term) ?? sql`FALSE`}
       OR EXISTS(SELECT 1 FROM jsonb_array_elements_text(h.entry->'alternative_headwords') alt WHERE alt ILIKE ${term})
       OR EXISTS(SELECT 1 FROM dictionary_pattern_forms f WHERE f.lemma_id=l.id AND f.surface=${query})
       OR EXISTS(SELECT 1 FROM lemma_forms f WHERE f.lemma_id=l.id AND f.surface=${query} AND f.quarantined_at IS NULL))

@@ -17,6 +17,40 @@ vi.mock('./db/index.js', async () => ({
 
 const url = process.env.HINDIDB_TEST_DATABASE_URL;
 describe.skipIf(!url)('HindiDB PostgreSQL integration (always rolls back)', () => {
+  it('matches headword prefixes and the start of any English definition word in both dictionary views', async () => {
+    if (!url || !['localhost', '127.0.0.1', '[::1]'].includes(new URL(url).hostname)) {
+      throw new Error('Use a local database with the HindiDB migrations applied');
+    }
+    const client = postgres(url, { max: 1 });
+    const rollback = new Error('rollback dictionary search fixture');
+    try {
+      await expect(drizzle(client, { schema }).transaction(async (tx) => {
+        state.db = tx as unknown as DB;
+        const { listDictionaryLemmas } = await import('./dictionary/browse.js');
+        const { searchWorkshop } = await import('./dictionary/workshop.js');
+        const marker = randomUUID() + '.';
+        const words = [
+          { headword: marker + 'application', glossDefault: '' },
+          { headword: marker + 'fruit', glossDefault: 'a ripe ' + marker + 'Apple' },
+          { headword: marker + 'tree', glossDefault: 'fruit (' + marker + 'apple tree)' },
+          { headword: marker + 'decoy', glossDefault: marker.replace('.', 'x') + 'apple' },
+          { headword: 'pine' + marker + 'apple', glossDefault: 'pine' + marker + 'apple' },
+        ];
+        await tx.insert(schema.lemmas).values(words.map((word) => ({
+          ...word, language: 'eu' as const, script: 'Latn', pos: 'NOUN', source: 'curator' as const,
+        })));
+        const query = marker + 'appl';
+        const expected = [marker + 'application', marker + 'fruit', marker + 'tree'];
+        const publicMatches = await listDictionaryLemmas('eu', { q: query, matchEntryText: true });
+        expect(publicMatches.lemmas.map((row) => row.headword).sort()).toEqual(expected);
+        expect((await searchWorkshop('eu', query, 10)).map((row) => row.lemma).sort()).toEqual(expected);
+        throw rollback;
+      })).rejects.toBe(rollback);
+    } finally {
+      await client.end();
+    }
+  });
+
   it('counts each occurrence once and follows valid context choices and study state', async () => {
     if (!url || !['localhost', '127.0.0.1', '[::1]'].includes(new URL(url).hostname)) {
       throw new Error('Use a local database with the HindiDB migrations applied');
