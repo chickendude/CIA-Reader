@@ -21,14 +21,14 @@ describe('buildReaderToc — in-text multi-chapter', () => {
     currentChapterIdx: 1,
   };
 
-  it('builds one entry per chapter with ?chapter= hrefs preserving mode', () => {
+  it('builds one entry per chapter with ?chapterNumber= hrefs preserving mode', () => {
     const toc = buildReaderToc({ ...input, mode: 'continuous' });
     expect(toc.kind).toBe('in-text');
     expect(toc.total).toBe(3);
     expect(toc.entries.map((e) => e.href)).toEqual([
-      '/reader/text-1?mode=continuous&chapter=0',
-      '/reader/text-1?mode=continuous&chapter=1',
-      '/reader/text-1?mode=continuous&chapter=2',
+      '/reader/text-1?mode=continuous&chapterNumber=1',
+      '/reader/text-1?mode=continuous&chapterNumber=2',
+      '/reader/text-1?mode=continuous&chapterNumber=3',
     ]);
   });
 
@@ -76,9 +76,9 @@ describe('buildReaderToc — chapter-book collection', () => {
     expect(toc.kind).toBe('collection');
     expect(toc.total).toBe(3);
     expect(toc.entries.map((e) => e.href)).toEqual([
-      '/reader/text-a?mode=page&chapter=0',
-      '/reader/text-b?mode=page&chapter=0',
-      '/reader/text-c?mode=page&chapter=0',
+      '/reader/text-a?mode=page&token=0',
+      '/reader/text-b?mode=page&token=0',
+      '/reader/text-c?mode=page&token=0',
     ]);
   });
 

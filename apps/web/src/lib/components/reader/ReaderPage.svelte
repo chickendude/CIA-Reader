@@ -3,6 +3,7 @@
   words on other pages.
 -->
 <script lang="ts">
+  import { readerChapterHref } from './url-anchor.js';
   import { goto, preloadData } from '$app/navigation';
   import { onMount, untrack } from 'svelte';
 
@@ -171,8 +172,8 @@
   );
   const nextChapterHref = $derived(
     hasNextChapter
-      ? `/reader/${textId}?mode=page&chapter=${chapterIdx + 1}&token=0`
-      : nextTextId && `/reader/${nextTextId}?mode=page&chapter=0&token=0`,
+      ? readerChapterHref(textId, chapterIdx + 1, { mode: 'page', token: '0' })
+      : nextTextId && readerChapterHref(nextTextId, null, { mode: 'page', token: '0' }),
   );
   let lookupOpen = $state(false);
   let preloadedHref: string | null = null;
@@ -216,7 +217,7 @@
     if (hasPrevPage) {
       turnTo(pageInChapter - 1);
     } else if (hasPrevChapter) {
-      void goto(`/reader/${textId}?mode=page&chapter=${chapterIdx - 1}&endOfChapter=1`, {
+      void goto(readerChapterHref(textId, chapterIdx - 1, { mode: 'page', endOfChapter: '1' }), {
         keepFocus: true,
       });
     } else if (prevTextId) {

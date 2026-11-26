@@ -2,7 +2,7 @@
  * Load the active chapter for the current viewer. Other chapters can be loaded when the reader
  * opens them.
  */
-import { error } from '@sveltejs/kit';
+import { error, redirect } from '@sveltejs/kit';
 import { and, eq } from 'drizzle-orm';
 
 import { canEditDictionary, isCuratorOrAdmin } from '$lib/server/dictionary/permissions';
@@ -66,6 +66,18 @@ function packTokens(tokens: RenderedToken[]) {
 
 export const load: PageServerLoad = async ({ params, locals, url }) => {
   if (!UUID_RE.test(params.textId)) throw error(400, 'Invalid text id');
+  // Old shared links used the zero-based index. Redirect before loading the book so the
+  // same passage opens with its printed chapter number, including when JavaScript is off.
+  if (url.searchParams.has('chapter')) {
+    const query = new URLSearchParams(url.searchParams);
+    const oldIndex = readInt(url, 'chapter', NaN);
+    query.delete('chapter');
+    if (!query.has('chapterNumber')) {
+      if (Number.isFinite(oldIndex)) query.set('chapterNumber', String(Math.max(1, oldIndex + 1)));
+      else if (query.get('endOfChapter') !== '1') query.set('chapterNumber', '1');
+    }
+    redirect(307, `${url.pathname}?${query}`);
+  }
   const viewer = locals.user ? { id: locals.user.id } : null;
   const result = await getReadableText(viewer, params.textId);
   if (!result) throw error(404, 'Text not found');
@@ -82,16 +94,14 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
   // doesn't override it.
   const endOfChapter = url.searchParams.get('endOfChapter') === '1';
   const hasUrlAnchor =
-    url.searchParams.has('chapter') ||
+    url.searchParams.has('chapterNumber') ||
     url.searchParams.has('token') ||
     endOfChapter;
 
-  // Clamp anchor params to valid ranges. A bad `?chapter=999` URL
-  // shouldn't 500 — it should land on the first chapter.
   const defaultChapter = endOfChapter
     ? result.chapters.length - 1
     : !hasUrlAnchor && savedProgress ? savedProgress.lastChapterIdx : 0;
-  const requestedChapter = readInt(url, 'chapter', defaultChapter);
+  const requestedChapter = readInt(url, 'chapterNumber', defaultChapter + 1) - 1;
   const chapterIdx = Math.max(
     0,
     Math.min(requestedChapter, result.chapters.length - 1),

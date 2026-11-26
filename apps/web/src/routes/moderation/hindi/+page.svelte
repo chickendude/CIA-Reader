@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { readerChapterHref } from '$lib/components/reader/url-anchor.js';
   import { getToastStore } from '$lib/components/toast/toast-store.js';
   import PageLayout from '$lib/components/shell/PageLayout.svelte';
   import FilterDropdown from '$lib/components/input/FilterDropdown.svelte';
@@ -139,7 +140,7 @@
         <header>
           <h2 lang="hi">{surface}</h2>
           <span class="status">{reviewStatusLabels[status]}</span>
-          <a href={`/reader/${data.result.book.id}?chapter=${chapterIdx}&token=${token.idx}`}>Read context</a>
+          <a href={readerChapterHref(data.result.book.id, chapterIdx, { token: String(token.idx) })}>Read context</a>
         </header>
         <p class="sentence" lang="hi">{context.before}<mark>{context.match}</mark>{context.after}</p>
         {#if status === 'unparsed' || candidates.length === 0}

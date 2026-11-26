@@ -15,9 +15,26 @@ describe('buildReaderAnchorUrl', () => {
       }),
     );
     expect(out.searchParams.get('mode')).toBe('page');
-    expect(out.searchParams.get('chapter')).toBe('0');
+    expect(out.searchParams.get('chapterNumber')).toBe('1');
     expect(out.searchParams.get('token')).toBe('0');
     expect(out.searchParams.has('roman')).toBe(false);
+  });
+
+  it('rewrites an old chapter index when sharing the current passage', () => {
+    const url = new URL(buildReaderAnchorUrl(`${BASE}?chapter=10`, {
+      mode: 'page', chapterIdx: 10, tokenIdx: 4005, showRomanization: false,
+    }));
+    expect(url.searchParams.has('chapter')).toBe(false);
+    expect(url.searchParams.get('chapterNumber')).toBe('11');
+    expect(url.searchParams.get('token')).toBe('4005');
+  });
+
+  it('uses the text ID and token for a standalone collection chapter', () => {
+    const url = new URL(buildReaderAnchorUrl(`${BASE}?chapterNumber=1`, {
+      mode: 'page', chapterIdx: null, tokenIdx: 42, showRomanization: false,
+    }));
+    expect(url.searchParams.has('chapterNumber')).toBe(false);
+    expect(url.searchParams.get('token')).toBe('42');
   });
 
   it('strips the one-shot endOfChapter handoff so a refresh resumes by token', () => {

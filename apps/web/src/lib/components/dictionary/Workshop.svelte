@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { readerChapterHref } from '$lib/components/reader/url-anchor.js';
   import { numberedMeanings } from '$lib/dictionary/meanings';
   import Pagination from '$lib/components/input/Pagination.svelte';
   import { getToastStore } from '$lib/components/toast/toast-store.js';
@@ -457,7 +458,7 @@
                 target="_blank" rel="noreferrer">Ask ChatGPT ↗</Button>
             {/if}
             <Button title={reviewBook?.title}
-              href={`/reader/${sample.book}?chapter=${sample.chapter}&token=${sample.token}`}>View in text</Button>
+              href={readerChapterHref(sample.book, sample.chapter, { token: String(sample.token) })}>View in text</Button>
           </div>
           </div>
           <p lang={language} dir="auto">{sample.context.before}<mark>{sample.context.match}</mark>{sample.context.after}</p>

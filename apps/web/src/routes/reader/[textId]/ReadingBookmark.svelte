@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { readerChapterHref } from '$lib/components/reader/url-anchor.js';
   import { onMount } from 'svelte';
   import Button from '$lib/components/input/Button.svelte';
   import { getToastStore } from '$lib/components/toast/toast-store.js';
@@ -20,11 +21,10 @@
   const label = $derived(saved ? 'Reading bookmark' : 'Bookmark this position');
   const href = $derived.by(() => {
     if (!saved) return null;
-    const query = new URLSearchParams({
-      mode, chapter: String(saved.chapterIdx), token: String(saved.tokenIdx),
+    return readerChapterHref(saved.textId, saved.chapterIdx, {
+      mode, token: String(saved.tokenIdx),
       roman: showRomanization ? '1' : '0',
     });
-    return `/reader/${encodeURIComponent(saved.textId)}?${query}`;
   });
 
   function read() {

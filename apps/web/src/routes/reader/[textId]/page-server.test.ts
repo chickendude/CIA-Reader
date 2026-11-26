@@ -173,16 +173,25 @@ describe('/reader/[textId] loader', () => {
     expect(data.isOwner).toBe(true);
   });
 
-  it('honors the ?chapter= and ?token= URL params', async () => {
+  it('opens the displayed chapter number at the requested token', async () => {
     getReadableText.mockResolvedValueOnce(ownedTextWithChapters(5));
     const data = (await callLoad(
-      `http://x/reader/${VALID_ID}?chapter=2&token=10`,
+      `http://x/reader/${VALID_ID}?chapterNumber=3&token=10`,
     )) as { anchor: { chapterIdx: number; tokenIdx: number; endOfChapter: boolean } };
     expect(data.anchor).toEqual({
       chapterIdx: 2,
       tokenIdx: 10,
       endOfChapter: false,
     });
+  });
+
+  it.each([
+    ['chapter=10&token=4005&mode=page', 'token=4005&mode=page&chapterNumber=11'],
+    ['chapter=0&endOfChapter=1', 'endOfChapter=1&chapterNumber=1'],
+    ['chapter=2&chapterNumber=11', 'chapterNumber=11'],
+  ])('redirects an old reader link with %s', async (oldQuery, newQuery) => {
+    const result = await callLoad(`http://x/reader/${VALID_ID}?${oldQuery}`);
+    expect(result).toMatchObject({ status: 307, location: `/reader/${VALID_ID}?${newQuery}` });
   });
 
   it('honors ?endOfChapter=1 by landing on the last chapter', async () => {
@@ -199,14 +208,14 @@ describe('/reader/[textId] loader', () => {
 
   it('opens the end of a specific chapter when stepping back within a text', async () => {
     getReadableText.mockResolvedValueOnce(ownedTextWithChapters(5));
-    const data = await callLoad(`http://x/reader/${VALID_ID}?chapter=2&endOfChapter=1`);
+    const data = await callLoad(`http://x/reader/${VALID_ID}?chapterNumber=3&endOfChapter=1`);
     expect(data).toMatchObject({ anchor: { chapterIdx: 2, tokenIdx: 0, endOfChapter: true } });
   });
 
   it('clamps a chapter param above the chapter count to the last chapter', async () => {
     getReadableText.mockResolvedValueOnce(ownedTextWithChapters(3));
     const data = (await callLoad(
-      `http://x/reader/${VALID_ID}?chapter=999`,
+      `http://x/reader/${VALID_ID}?chapterNumber=1000`,
     )) as { anchor: { chapterIdx: number } };
     expect(data.anchor.chapterIdx).toBe(2);
   });
@@ -404,7 +413,7 @@ describe('/reader/[textId] loader', () => {
       updatedAt: new Date(),
     });
     const data = (await callLoad(
-      `http://x/reader/${VALID_ID}?chapter=1`,
+      `http://x/reader/${VALID_ID}?chapterNumber=2`,
     )) as { anchor: { chapterIdx: number } };
     expect(data.anchor.chapterIdx).toBe(1);
   });
@@ -485,11 +494,11 @@ describe('/reader/[textId] loader', () => {
     expect(result.chapters[1]!.tokens).toBeNull();
   });
 
-  it('lazy-loads only the requested chapter when ?chapter=N is set', async () => {
+  it('lazy-loads only the requested chapter when ?chapterNumber=N is set', async () => {
     getReadableText.mockResolvedValueOnce(ownedTextWithChapters(5));
     loadChapterTokens.mockResolvedValueOnce(null);
     const data = (await callLoad(
-      `http://x/reader/${VALID_ID}?chapter=3`,
+      `http://x/reader/${VALID_ID}?chapterNumber=4`,
     )) as { chapters: Array<{ tokens: unknown }> };
     // The loader is invoked exactly once, for the requested chapter's
     // chapter id ("c3").

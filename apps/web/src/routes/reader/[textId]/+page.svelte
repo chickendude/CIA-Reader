@@ -19,7 +19,7 @@
   import ReaderSettings from '$lib/components/reader/ReaderSettings.svelte';
   import { ProgressWriter, type ProgressAnchor } from '$lib/components/reader/progress-client.js';
   import { computePctRead } from '$lib/components/reader/reader-progress.js';
-  import { buildReaderAnchorUrl } from '$lib/components/reader/url-anchor.js';
+  import { buildReaderAnchorUrl, readerChapterHref } from '$lib/components/reader/url-anchor.js';
   import { buildReaderToc } from '$lib/components/reader/reader-toc.js';
   import {
     readPersistedFlagUndefined,
@@ -161,16 +161,21 @@
     ? data.collectionContext.collectionId : data.text.id);
   const bookmarkKey = $derived(`reader.bookmark:${data.user?.id ?? 'guest'}:${bookmarkBookId}`);
 
+  // When a collection stores a chapter as its own text, the path already identifies it.
+  function chapterIndexForUrl(index: number) {
+    return data.collectionContext && data.chapters.length === 1 ? null : index;
+  }
+
   const reviewReaderUrl = $derived(new URL(buildReaderAnchorUrl(page.url.href, {
     mode: data.mode,
-    chapterIdx: currentProgressAnchor.chapterIdx,
+    chapterIdx: chapterIndexForUrl(currentProgressAnchor.chapterIdx),
     tokenIdx: currentProgressAnchor.tokenIdx,
     showRomanization,
   })));
 
   // Chapter table-of-contents model — drives the shared chapter
   // selector dropdown + the page footer's whole-book progress. Handles
-  // both layouts uniformly: multi-chapter texts (jump via ?chapter=N)
+  // both layouts uniformly: multi-chapter texts (jump via ?chapterNumber=N)
   // and chapter-books (each chapter is its own text, jump via textId).
   const toc = $derived(
     buildReaderToc({
@@ -207,7 +212,7 @@
   function mirrorAnchorToUrl(anchor: ProgressAnchor) {
     const next = buildReaderAnchorUrl(window.location.href, {
       mode: data.mode,
-      chapterIdx: anchor.chapterIdx,
+      chapterIdx: chapterIndexForUrl(anchor.chapterIdx),
       tokenIdx: anchor.tokenIdx,
       showRomanization,
     });
@@ -231,12 +236,9 @@
       progressWriter.schedule(anchor);
       void progressWriter.flush();
     }
-    const params = new URLSearchParams();
-    params.set('mode', mode);
-    params.set('chapter', String(anchor.chapterIdx));
-    params.set('token', String(anchor.tokenIdx));
-    if (showRomanization) params.set('roman', '1');
-    void goto(`/reader/${data.text.id}?${params.toString()}`, {
+    void goto(readerChapterHref(data.text.id, chapterIndexForUrl(anchor.chapterIdx), {
+      mode, token: String(anchor.tokenIdx), ...(showRomanization ? { roman: '1' } : {}),
+    }), {
       keepFocus: true,
     });
   }

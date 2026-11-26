@@ -15,7 +15,7 @@ function entry(
     number: i + 1,
     title: `Chapter ${i + 1}`,
     words: (i + 1) * 100,
-    href: `/reader/t?mode=page&chapter=${i}`,
+    href: `/reader/t?mode=page&chapterNumber=${i + 1}`,
     isCurrent: false,
     ...overrides,
   };
@@ -110,7 +110,7 @@ describe('ChapterNav', () => {
     // prev is disabled (span), next is a link to chapter 1.
     expect(firstArrows[0]!.classList.contains('is-disabled')).toBe(true);
     expect((firstArrows[1] as HTMLAnchorElement).getAttribute('href')).toBe(
-      '/reader/t?mode=page&chapter=1',
+      '/reader/t?mode=page&chapterNumber=2',
     );
     first.unmount();
 
@@ -119,7 +119,7 @@ describe('ChapterNav', () => {
     });
     const lastArrows = last.container.querySelectorAll('.chapter-nav-arrow');
     expect((lastArrows[0] as HTMLAnchorElement).getAttribute('href')).toBe(
-      '/reader/t?mode=page&chapter=1',
+      '/reader/t?mode=page&chapterNumber=2',
     );
     expect(lastArrows[1]!.classList.contains('is-disabled')).toBe(true);
   });
@@ -129,7 +129,7 @@ describe('ChapterNav', () => {
       props: { entries: threeChapters(0), currentIndex: 0, nextLocked: true },
     });
     const next = container.querySelectorAll('.chapter-nav-arrow')[1] as HTMLAnchorElement;
-    expect(next.getAttribute('href')).toBe('/reader/t?mode=page&chapter=1&skipLock=1');
+    expect(next.getAttribute('href')).toBe('/reader/t?mode=page&chapterNumber=2&skipLock=1');
     expect(next.classList.contains('is-locked')).toBe(true);
   });
 

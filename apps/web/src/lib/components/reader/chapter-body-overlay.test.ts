@@ -78,7 +78,7 @@ it('pages through an illustrated EPUB section with no transcribed text', async (
   expect(screen.getByRole('img', { name: 'Page 1' }).getAttribute('src')).toBe(chapters[0]!.pageImageUrl);
   expect(screen.queryByRole('button', { name: 'Text' })).toBeNull();
   await fireEvent.click(screen.getByRole('button', { name: 'Next page' }));
-  expect(goto).toHaveBeenCalledWith('/reader/x?chapter=1', { keepFocus: true });
+  expect(goto).toHaveBeenCalledWith('/reader/x?chapterNumber=2', { keepFocus: true });
   await view.rerender({ ...props, chapterIdx: 1 });
   expect(screen.getByRole('img', { name: 'Page 2' }).getAttribute('src')).toBe(chapters[1]!.pageImageUrl);
   expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Next page' }).disabled).toBe(true);

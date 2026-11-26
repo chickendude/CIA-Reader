@@ -7,11 +7,12 @@
   translation machinery is identical to the text reader — the only
   difference is whether ChapterBody gets a `pageImage` prop.
 
-  Page navigation re-runs the loader via `?chapter=N` (same pattern the
+  Page navigation re-runs the loader via `?chapterNumber=N` (same pattern the
   text reader uses for cross-chapter moves), so each page ships its own
   image + tokens on demand.
 -->
 <script lang="ts">
+  import { readerChapterHref } from './url-anchor.js';
   import { pageSwipe } from './touch-gestures.js';
   import { goto } from '$app/navigation';
 
@@ -62,7 +63,7 @@
   function goToPage(idx: number) {
     const clamped = Math.max(0, Math.min(idx, pageCount - 1));
     if (clamped === chapterIdx) return;
-    void goto(`/reader/${textId}?chapter=${clamped}`, { keepFocus: true });
+    void goto(readerChapterHref(textId, clamped), { keepFocus: true });
   }
 
   // Report progress as the active page so the resume-anchor + whole-book

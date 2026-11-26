@@ -6,7 +6,7 @@
  *
  *   - **in-text**: a multi-chapter `texts` row (paste / .txt auto-split).
  *     All chapter titles + token counts ship in `data.chapters`;
- *     navigation flips `?chapter=N` on the same text.
+ *     navigation uses `?chapterNumber=N` on the same text.
  *   - **collection**: a chapter-book — each chapter is its own
  *     one-chapter `texts` row inside a collection. The sibling list
  *     (title + summed tokenCount) comes from `readerCollectionContext`;
@@ -21,6 +21,8 @@
  * Pure + framework-free so it carries unit coverage; the `.svelte`
  * component and `+page.*` route files are excluded from the gate.
  */
+
+import { readerChapterHref } from './url-anchor.js';
 
 export type ReaderLayoutMode = 'page' | 'paged_scroll' | 'continuous';
 
@@ -85,7 +87,7 @@ export function buildReaderToc(input: ReaderTocInput): ReaderToc {
       number: i + 1,
       title: c.title?.trim() || 'Untitled',
       words: clampInt(c.tokenCount),
-      href: `/reader/${c.textId}?mode=${mode}&chapter=0`,
+      href: readerChapterHref(c.textId, null, { mode, token: '0' }),
       isCurrent: c.position === input.collection!.position,
     }));
     let currentIndex = entries.findIndex((e) => e.isCurrent);
@@ -114,7 +116,7 @@ export function buildReaderToc(input: ReaderTocInput): ReaderToc {
     number: c.idx + 1,
     title: c.title?.trim() || `Chapter ${c.idx + 1}`,
     words: clampInt(c.tokenCount),
-    href: `/reader/${input.textId}?mode=${mode}&chapter=${c.idx}`,
+    href: readerChapterHref(input.textId, c.idx, { mode }),
     isCurrent: c.idx === input.currentChapterIdx,
   }));
   let currentIndex = entries.findIndex((e) => e.isCurrent);
