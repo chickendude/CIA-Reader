@@ -1,10 +1,13 @@
 import { createHmac } from 'node:crypto';
 import { isIP } from 'node:net';
-import { lt, sql } from 'drizzle-orm';
+import { desc, eq, lt, sql } from 'drizzle-orm';
 import { db, schema } from '../db/index.js';
 import { AUTH_SECRET } from '../env.js';
 
 export const networkCutoff = sql`now() - interval '48 hours'`;
+
+// Keep today and the preceding six UTC dates, matching the moderation counts.
+export const signupRetryCutoff = sql`(now() at time zone 'UTC')::date - 6`;
 
 export function networkKey(getClientAddress: () => string): string | null {
   let address: string;
@@ -38,6 +41,27 @@ export async function recordNetwork(userId: string, getClientAddress: () => stri
     });
 }
 
-export async function purgeExpiredNetworks() {
+export async function purgeExpiredAuthActivity() {
   await db.delete(schema.userNetworks).where(lt(schema.userNetworks.lastSeenAt, networkCutoff));
+  await db.delete(schema.signupRetries).where(lt(schema.signupRetries.day, signupRetryCutoff));
+  await db.delete(schema.signupWindows).where(lt(schema.signupWindows.expiresAt, sql`now()`));
+  await db.delete(schema.passwordFailures).where(lt(schema.passwordFailures.expiresAt, sql`now()`));
+}
+
+const { blockedNetworks } = schema;
+
+export async function isNetworkBlocked(network: string) {
+  return (await db.$count(blockedNetworks, eq(blockedNetworks.network, network))) > 0;
+}
+
+export function listBlockedNetworks() {
+  return db.select().from(blockedNetworks).orderBy(desc(blockedNetworks.blockedAt), blockedNetworks.network);
+}
+
+export function blockNetwork(network: string) {
+  return db.insert(blockedNetworks).values({ network }).onConflictDoNothing();
+}
+
+export function unblockNetwork(network: string) {
+  return db.delete(blockedNetworks).where(eq(blockedNetworks.network, network));
 }

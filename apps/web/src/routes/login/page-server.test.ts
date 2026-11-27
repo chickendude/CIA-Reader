@@ -7,7 +7,8 @@ const dbSelectChain = {
   where: () => dbSelectChain,
   limit: () => Promise.resolve(dbSelect()),
 };
-const verifyPassword = vi.fn();
+const checkPasswordLogin = vi.fn();
+const setHeaders = vi.fn();
 const createSession = vi.fn();
 const setSessionCookie = vi.fn();
 const createMagicLink = vi.fn();
@@ -24,8 +25,9 @@ vi.mock('$lib/server/db/index.js', () => ({
   },
 }));
 
-vi.mock('$lib/server/auth/password.js', () => ({
-  verifyPassword: (...a: unknown[]) => verifyPassword(...a),
+vi.mock('$lib/server/auth/password-access.js', async importOriginal => ({
+  ...await importOriginal<typeof import('$lib/server/auth/password-access.js')>(),
+  checkPasswordLogin: (...a: unknown[]) => checkPasswordLogin(...a),
 }));
 vi.mock('$lib/server/auth/sessions.js', () => ({
   createSession: (...a: unknown[]) => createSession(...a),
@@ -80,7 +82,7 @@ async function callDefault(fields: Record<string, string>, urlStr = 'http://x/lo
   for (const [k, v] of Object.entries(fields)) fd.append(k, v);
   const event = {
     request: { formData: () => Promise.resolve(fd) } as unknown as Request,
-    cookies: {} as unknown,
+    cookies: {} as unknown, setHeaders,
     url: new URL(urlStr),
   } as unknown as Parameters<Mod['actions']['signin']>[0];
   try {
@@ -102,7 +104,8 @@ async function callMagic(fields: Record<string, string>) {
 
 beforeEach(() => {
   dbSelect.mockReset();
-  verifyPassword.mockReset();
+  checkPasswordLogin.mockReset();
+  setHeaders.mockReset();
   createSession.mockReset();
   setSessionCookie.mockReset();
   createMagicLink.mockReset();
@@ -180,8 +183,7 @@ describe('/login loader', () => {
 
 describe('/login signin action', () => {
   it('signs the user in and redirects to ?next=', async () => {
-    dbSelect.mockReturnValueOnce([USER_ROW]);
-    verifyPassword.mockResolvedValueOnce(true);
+    checkPasswordLogin.mockResolvedValueOnce({ status: 'authenticated', user: USER_ROW });
     createSession.mockResolvedValueOnce({
       token: 'sess',
       expiresAt: new Date(Date.now() + 1000),
@@ -196,7 +198,7 @@ describe('/login signin action', () => {
   });
 
   it('returns 401 on invalid email', async () => {
-    dbSelect.mockReturnValueOnce([]); // no user
+    checkPasswordLogin.mockResolvedValueOnce({ status: 'invalid' });
     const res = (await callDefault({
       email: 'nobody@example.com',
       password: 'whatever',
@@ -207,13 +209,20 @@ describe('/login signin action', () => {
   });
 
   it('returns 401 on wrong password', async () => {
-    dbSelect.mockReturnValueOnce([USER_ROW]);
-    verifyPassword.mockResolvedValueOnce(false);
+    checkPasswordLogin.mockResolvedValueOnce({ status: 'invalid' });
     const res = (await callDefault({
       email: 'user@example.com',
       password: 'guess',
     })) as { status: number };
     expect(res.status).toBe(401);
+  });
+
+  it('returns the remaining wait and does not create a session during cooldown', async () => {
+    checkPasswordLogin.mockResolvedValueOnce({ status: 'limited', retryAfter: 65 });
+    const res = await callDefault({ email: 'user@example.com', password: 'guess' });
+    expect(res).toMatchObject({ status: 429, data: { message: 'Too many sign-in attempts. Try again in 2 minutes.' } });
+    expect(setHeaders).toHaveBeenCalledWith({ 'retry-after': '65' });
+    expect(createSession).not.toHaveBeenCalled();
   });
 
   it('rejects an empty email with 400', async () => {

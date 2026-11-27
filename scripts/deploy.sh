@@ -109,6 +109,16 @@ NEW_HEAD="$(git rev-parse HEAD)"
 compose=(docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE")
 built=false
 
+build_images() {
+  local build_status=0
+  "${compose[@]}" build "$@" || build_status=$?
+  # Failed builds can also leave large Python dependency layers on the database disk.
+  echo "[box] trimming the Docker build cache to 10 GB"
+  docker buildx prune --force --max-used-space 10GB >/dev/null
+  if (( build_status != 0 )); then return "$build_status"; fi
+  built=true
+}
+
 # git diff returns 1 for changes and a higher status for errors.
 changed() {
   local result=0
@@ -119,8 +129,7 @@ changed() {
 
 case "$BUILD_MODE" in
   force)
-    "${compose[@]}" build
-    built=true
+    build_images
     ;;
   auto)
     services=()
@@ -135,8 +144,7 @@ case "$BUILD_MODE" in
     fi
     if (( ${#services[@]} )); then
       echo "[box] Building ${services[*]}"
-      "${compose[@]}" build "${services[@]}"
-      built=true
+      build_images "${services[@]}"
     else
       echo "[box] No image inputs changed"
     fi

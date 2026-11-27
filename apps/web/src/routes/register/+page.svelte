@@ -1,6 +1,7 @@
 <script lang="ts">
   import PageLayout from '$lib/components/shell/PageLayout.svelte';
   import PageTitle from '$lib/components/shell/PageTitle.svelte';
+  import Button from '$lib/components/input/Button.svelte';
   import { enhance } from '$app/forms';
   import { untrack } from 'svelte';
   import type { PageProps } from './$types';
@@ -17,59 +18,66 @@
 </svelte:head>
 
 {#snippet heading()}
-  <PageTitle>Create account</PageTitle>
+  <PageTitle>{data.received ? 'Signup request received' : 'Create account'}</PageTitle>
 {/snippet}
 
 <PageLayout {heading}>
 <div class="page page-auth">
   <header>
     {@render heading()}
-    <p class="sub">
-      Already have one? <a href={`/login?next=${encodeURIComponent(data.next)}`}>
-        Sign in
-      </a>.
-    </p>
+    {#if !data.received}
+      <p class="sub">
+        Already have one? <a href={`/login?next=${encodeURIComponent(data.next)}`}>
+          Sign in
+        </a>.
+      </p>
+    {/if}
   </header>
 
-  {#if form && !form.ok}
-    <p class="err" role="alert">{form.message}</p>
-  {/if}
+  {#if data.received}
+    <p>If you can’t sign in, try registering again tomorrow.</p>
+    <Button href={data.next}>Continue</Button>
+  {:else}
+    {#if form && !form.ok}
+      <p class="err" role="alert">{form.message}</p>
+    {/if}
 
-  <form method="post" use:enhance class="stack">
-    <label>
-      Email
-      <input
-        name="email"
-        type="email"
-        autocomplete="email"
-        required
-        bind:value={email}
-      />
-    </label>
-    <label>
-      Password
-      <input
-        name="password"
-        type="password"
-        autocomplete="new-password"
-        required
-        minlength="10"
-        bind:value={password}
-      />
-      <span class="hint">10 characters or more.</span>
-    </label>
-    <label>
-      Display name (optional)
-      <input
-        name="displayName"
-        type="text"
-        autocomplete="nickname"
-        maxlength="80"
-        bind:value={displayName}
-      />
-    </label>
-    <button type="submit">Create account</button>
-  </form>
+    <form method="post" use:enhance class="stack">
+      <label>
+        Email
+        <input
+          name="email"
+          type="email"
+          autocomplete="email"
+          required
+          bind:value={email}
+        />
+      </label>
+      <label>
+        Password
+        <input
+          name="password"
+          type="password"
+          autocomplete="new-password"
+          required
+          minlength="10"
+          bind:value={password}
+        />
+        <span class="hint">10 characters or more.</span>
+      </label>
+      <label>
+        Display name (optional)
+        <input
+          name="displayName"
+          type="text"
+          autocomplete="nickname"
+          maxlength="80"
+          bind:value={displayName}
+        />
+      </label>
+      <button type="submit">Create account</button>
+    </form>
+  {/if}
 </div>
 </PageLayout>
 

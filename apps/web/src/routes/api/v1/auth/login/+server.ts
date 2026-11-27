@@ -1,9 +1,7 @@
 import { error, json } from '@sveltejs/kit';
-import { eq } from 'drizzle-orm';
 import { z } from 'zod';
 import type { RequestHandler } from './$types';
-import { db, schema } from '$lib/server/db/index.js';
-import { verifyPassword } from '$lib/server/auth/password.js';
+import { checkPasswordLogin, passwordWaitMessage } from '$lib/server/auth/password-access.js';
 import { createSession, setSessionCookie } from '$lib/server/auth/sessions.js';
 import { signAccessToken, ACCESS_TOKEN_TTL } from '$lib/server/auth/access-token.js';
 import { createRefreshToken } from '$lib/server/auth/refresh.js';
@@ -17,17 +15,14 @@ const body = z.object({
 export const POST: RequestHandler = async ({ request, cookies, url, getClientAddress }) => {
   const input = await parseJson(request, body);
 
-  const [user] = await db
-    .select()
-    .from(schema.users)
-    .where(eq(schema.users.email, input.email))
-    .limit(1);
-
-  // Constant-ish reply to avoid leaking whether the email is registered.
-  const invalid = () => error(401, 'Invalid email or password');
-  if (!user || !user.passwordHash) throw invalid();
-  const ok = await verifyPassword(user.passwordHash, input.password);
-  if (!ok) throw invalid();
+  const result = await checkPasswordLogin(input.email, input.password, getClientAddress);
+  if (result.status === 'limited') {
+    return json({ message: passwordWaitMessage(result.retryAfter) }, {
+      status: 429, headers: { 'Retry-After': String(result.retryAfter) },
+    });
+  }
+  if (result.status === 'invalid') error(401, 'Invalid email or password');
+  const user = result.user;
 
   const session = await createSession(user.id, getClientAddress);
   setSessionCookie(cookies, session.token, session.expiresAt, isSecureRequest(url));

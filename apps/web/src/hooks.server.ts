@@ -1,6 +1,6 @@
 import { redirect, type Handle } from '@sveltejs/kit';
 import { building, dev } from '$app/environment';
-import { purgeExpiredNetworks } from '$lib/server/auth/user-networks.js';
+import { isNetworkBlocked, networkKey, purgeExpiredAuthActivity } from '$lib/server/auth/user-networks.js';
 import { resolveUser } from '$lib/server/auth/require-user.js';
 import { shouldRedirectToOnboarding } from '$lib/server/onboarding.js';
 import {
@@ -71,7 +71,7 @@ function compressChapterData(response: Response, acceptEncoding: string) {
 
 export function init() {
   if (building) return;
-  const purge = () => purgeExpiredNetworks().catch(() => console.error('Could not expire account networks'));
+  const purge = () => purgeExpiredAuthActivity().catch(() => console.error('Could not remove expired authentication records'));
   void purge();
   const timer = setInterval(purge, 60 * 60 * 1000);
   timer.unref();
@@ -79,6 +79,13 @@ export function init() {
 }
 
 export const handle: Handle = async ({ event, resolve }) => {
+  const network = building ? null : networkKey(event.getClientAddress);
+  if (network && await isNetworkBlocked(network)) {
+    return new Response('Access blocked for this IP address.', {
+      status: 403, headers: { 'cache-control': 'private, no-store' },
+    });
+  }
+
   // Dev-only CORS for the Primeran browser extension. Its background worker
   // makes authenticated requests (Bearer header → CORS preflight), and SvelteKit
   // otherwise answers the OPTIONS preflight with 405. Gated to `dev` + an

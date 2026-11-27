@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { randomUUID } from 'node:crypto';
-import { eq, inArray } from 'drizzle-orm';
+import { eq, inArray, sql } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
 import { expect, it, vi } from 'vitest';
@@ -22,13 +22,26 @@ it.skipIf(!local)('reviews shared IPs and removes private account data while pre
   try {
     await expect(drizzle(client, { schema }).transaction(async tx => {
       state.db = tx as unknown as DB;
-      const { deleteReviewedUsers, directoryFilters, reviewDeletion } = await import('./user-directory.js');
+      const { deleteReviewedUsers, directoryFilters, reviewDeletion, listIpGroups, selectedSignupRetries } = await import('./user-directory.js');
       const admin = randomUUID(), reader = randomUUID(), other = randomUUID();
       await tx.insert(schema.users).values([admin, reader, other].map(id => ({
         id, email: id + '@example.invalid', role: id === admin ? 'admin' as const : 'user' as const,
       })));
       const network = randomUUID().replaceAll('-', '').repeat(2);
       await tx.insert(schema.userNetworks).values([admin, reader, other].map(userId => ({ userId, network })));
+      const retryOnly = randomUUID().replaceAll('-', '').repeat(2);
+      const today = sql`(now() at time zone 'UTC')::date`;
+      await tx.insert(schema.signupRetries).values([
+        { network, attempts: 3 }, { network, day: sql`${today} - 6`, attempts: 4 },
+        { network, day: sql`${today} - 7`, attempts: 20 }, { network: retryOnly, attempts: 10 },
+      ]);
+      const filters = directoryFilters(new URL('http://localhost/?view=ips&groupOrder=most-retries'));
+      const { groups } = await listIpGroups(filters);
+      expect(groups.filter(g => [network, retryOnly].includes(g.network))).toMatchObject([
+        { network: retryOnly, members: 0, retries: 10 }, { network, members: 3, retries: 7 },
+      ]);
+      expect((await listIpGroups({ ...filters, verification: 'unverified' })).groups.some(g => g.network === retryOnly)).toBe(false);
+      expect(await selectedSignupRetries(network)).toMatchObject({ retries: 7, lastRetry: expect.any(Date) });
       const preview = await reviewDeletion(directoryFilters(new URL('http://localhost/moderation/users')), [reader], [network]);
       expect(preview.map(u => u.id).sort()).toEqual([reader, other].sort());
 

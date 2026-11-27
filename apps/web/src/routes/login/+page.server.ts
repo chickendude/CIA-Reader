@@ -4,7 +4,7 @@ import { fail, redirect } from '@sveltejs/kit';
 import { z } from 'zod';
 
 import { db, schema } from '$lib/server/db/index.js';
-import { verifyPassword } from '$lib/server/auth/password.js';
+import { checkPasswordLogin, passwordWaitMessage } from '$lib/server/auth/password-access.js';
 import { createSession, setSessionCookie } from '$lib/server/auth/sessions.js';
 import { sendAccountLink } from '$lib/server/email/account-link.js';
 import { emailSchema, isSecureRequest } from '../api/v1/auth/_helpers.js';
@@ -69,7 +69,7 @@ export const actions: Actions = {
   // a set of named actions, never both. The magic-link path is
   // distinct enough to deserve its own name, so we keep both as
   // named actions and the password form posts to `?/signin`.
-  signin: async ({ request, cookies, url, getClientAddress }) => {
+  signin: async ({ request, cookies, url, getClientAddress, setHeaders }) => {
     const fd = await request.formData();
     const raw = {
       email: fd.get('email')?.toString() ?? '',
@@ -87,23 +87,19 @@ export const actions: Actions = {
       });
     }
 
-    const [user] = await db
-      .select()
-      .from(schema.users)
-      .where(eq(schema.users.email, parsed.data.email))
-      .limit(1);
-    const invalid = () =>
-      fail(401, {
+    const result = await checkPasswordLogin(parsed.data.email, parsed.data.password, getClientAddress);
+    if (result.status !== 'authenticated') {
+      const limited = result.status === 'limited';
+      if (limited) setHeaders({ 'retry-after': String(result.retryAfter) });
+      return fail(limited ? 429 : 401, {
         ok: false,
         section: 'signin' as const,
-        message: 'Invalid email or password',
+        message: limited ? passwordWaitMessage(result.retryAfter) : 'Invalid email or password',
         values: { email: raw.email },
       });
-    if (!user || !user.passwordHash) return invalid();
-    const passwordOk = await verifyPassword(user.passwordHash, parsed.data.password);
-    if (!passwordOk) return invalid();
+    }
 
-    const session = await createSession(user.id, getClientAddress);
+    const session = await createSession(result.user.id, getClientAddress);
     setSessionCookie(cookies, session.token, session.expiresAt, isSecureRequest(url));
 
     throw redirect(303, readNext(url));

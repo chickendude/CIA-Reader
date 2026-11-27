@@ -45,6 +45,20 @@ class AuthRepositoryTest {
     }
 
     @Test
+    fun registrationWithCredentialsSignsIn() = runTest {
+        val result = repo(FakeAuthApi(response = authResponse())).register("new@test.local", "password123", null)
+        assertEquals(AuthResult.Success, result)
+        assertEquals(AuthTokens("access-1", "refresh-1"), tokenStore.current())
+    }
+
+    @Test
+    fun signupReceiptLeavesDeviceSignedOut() = runTest {
+        val result = repo(FakeAuthApi()).register("new@test.local", "password123", null)
+        assertEquals(AuthResult.SignupReceived, result)
+        assertNull(tokenStore.current())
+    }
+
+    @Test
     fun registerConflictMapsTo409Message() = runTest {
         val repo = repo(FakeAuthApi(error = http(409)))
 
@@ -102,7 +116,8 @@ private class FakeAuthApi(
     private val error: Throwable? = null,
 ) : AuthApi {
     override suspend fun login(body: LoginRequest): AuthResponseDto = error?.let { throw it } ?: response!!
-    override suspend fun register(body: RegisterRequest): AuthResponseDto = error?.let { throw it } ?: response!!
+    override suspend fun register(body: RegisterRequest): RegistrationDto =
+        error?.let { throw it } ?: RegistrationDto(response?.accessToken, response?.refreshToken, ok = true)
     override suspend fun me(): MeResponseDto = MeResponseDto(response!!.user)
     override suspend fun requestMagicLink(body: MagicLinkRequest): MagicLinkAckDto = error?.let { throw it } ?: ack!!
     override suspend fun consumeMagicLink(body: MagicLinkConsumeRequest): AuthResponseDto =

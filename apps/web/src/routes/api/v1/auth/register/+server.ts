@@ -1,9 +1,7 @@
 import { error, json } from '@sveltejs/kit';
-import { eq } from 'drizzle-orm';
 import { z } from 'zod';
 import type { RequestHandler } from './$types';
-import { db, schema } from '$lib/server/db/index.js';
-import { hashPassword } from '$lib/server/auth/password.js';
+import { registerAccount } from '$lib/server/auth/password-access.js';
 import { sendAccountLink } from '$lib/server/email/account-link.js';
 import { createSession, setSessionCookie } from '$lib/server/auth/sessions.js';
 import { signAccessToken, ACCESS_TOKEN_TTL } from '$lib/server/auth/access-token.js';
@@ -19,24 +17,10 @@ const body = z.object({
 export const POST: RequestHandler = async ({ request, cookies, url, getClientAddress }) => {
   const input = await parseJson(request, body);
 
-  const [existing] = await db
-    .select({ id: schema.users.id })
-    .from(schema.users)
-    .where(eq(schema.users.email, input.email))
-    .limit(1);
-  if (existing) throw error(409, 'An account with that email already exists');
-
-  const passwordHash = await hashPassword(input.password);
-
-  const [created] = await db
-    .insert(schema.users)
-    .values({
-      email: input.email,
-      passwordHash,
-      displayName: input.displayName ?? null,
-    })
-    .returning();
-  if (!created) throw error(500, 'Failed to create user');
+  const result = await registerAccount(input, getClientAddress);
+  if (result.status === 'suppressed') return json({ ok: true });
+  if (result.status === 'existing') error(409, 'An account with that email already exists');
+  const created = result.user;
 
   const session = await createSession(created.id, getClientAddress, true);
   setSessionCookie(cookies, session.token, session.expiresAt, isSecureRequest(url));
@@ -57,6 +41,7 @@ export const POST: RequestHandler = async ({ request, cookies, url, getClientAdd
   const refreshToken = await createRefreshToken(created.id);
 
   return json({
+    ok: true,
     user: publicUser(created),
     accessToken,
     refreshToken,

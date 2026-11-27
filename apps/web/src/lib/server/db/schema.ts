@@ -2,6 +2,7 @@ import {
   type AnyPgColumn,
   boolean,
   bigint,
+  date,
   index,
   integer,
   jsonb,
@@ -109,6 +110,34 @@ export const accountEmailAttempts = pgTable('account_email_attempts', {
   verifiedSignin: boolean('verified_signin').notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().default(sql`statement_timestamp()`),
 }, (t) => ({ createdIdx: index('account_email_attempts_created_idx').on(t.createdAt) }));
+
+export const signupWindows = pgTable('signup_windows', {
+  network: text('network').primaryKey(),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+});
+
+export const signupRetries = pgTable('signup_retries', {
+  network: text('network').notNull(),
+  day: date('day').notNull().default(sql`(statement_timestamp() at time zone 'UTC')::date`),
+  attempts: integer('attempts').notNull().default(1),
+  lastAttemptAt: timestamp('last_attempt_at', { withTimezone: true }).notNull().default(sql`statement_timestamp()`),
+}, t => ({ pk: primaryKey({ columns: [t.day, t.network] }) }));
+
+export const passwordFailures = pgTable('password_failures', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  network: text('network').notNull(),
+  emailKey: text('email_key').notNull(),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull().default(sql`statement_timestamp() + interval '15 minutes'`),
+}, t => ({
+  networkIdx: index('password_failures_network_idx').on(t.network, t.expiresAt),
+  emailIdx: index('password_failures_email_idx').on(t.emailKey, t.expiresAt),
+  expiryIdx: index('password_failures_expiry_idx').on(t.expiresAt),
+}));
+
+export const blockedNetworks = pgTable('blocked_networks', {
+  network: text('network').primaryKey(),
+  blockedAt: timestamp('blocked_at', { withTimezone: true }).notNull().defaultNow(),
+});
 
 export const userNetworks = pgTable(
   'user_networks',

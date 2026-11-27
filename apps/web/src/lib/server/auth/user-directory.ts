@@ -3,10 +3,10 @@ import { accountColumns, groupColumns, resolveSort } from '$lib/moderation/direc
 import { error } from '@sveltejs/kit';
 import { db, schema } from '../db/index.js';
 import { EMAIL_DAILY_LIMIT, EMAIL_UNVERIFIED_DAILY_LIMIT } from '../env.js';
-import { networkCutoff } from './user-networks.js';
+import { networkCutoff, signupRetryCutoff } from './user-networks.js';
 
 const PAGE_SIZE = 50;
-const { users, userNetworks } = schema;
+const { users, userNetworks, signupRetries } = schema;
 const active = gte(userNetworks.lastSeenAt, networkCutoff);
 export function directoryFilters(url: URL) {
   const status = url.searchParams.get('verification');
@@ -64,35 +64,63 @@ export async function listUsers(filters: Filters) {
   const accounts = await db.select({
     id: users.id, email: users.email, displayName: users.displayName, role: users.role,
     createdAt: users.createdAt, emailVerifiedAt: users.emailVerifiedAt, onboardedAt: users.onboardedAt,
-    ipCount,
     linksCreated, textsWithProgress,
   }).from(users).where(where)
     .orderBy(order(accountOrderFields[filters.sort.key]), desc(users.createdAt), asc(users.id))
     .limit(paging.limit).offset(paging.offset);
-  const memberships = accounts.length ? await db.select({
-    userId: userNetworks.userId, network: userNetworks.network,
-  }).from(userNetworks).where(and(active, inArray(userNetworks.userId, accounts.map(a => a.id))))
-    .orderBy(desc(userNetworks.lastSeenAt), asc(userNetworks.network)) : [];
-  const networks = new Map<string, string[]>();
+  // Count everyone sharing each IP before restricting the result to this page.
+  const recentMemberships = db.select({
+    userId: userNetworks.userId, network: userNetworks.network, lastSeenAt: userNetworks.lastSeenAt,
+    members: sql<number>`count(*) over (partition by ${userNetworks.network})`.mapWith(Number).as('members'),
+  }).from(userNetworks).where(active).as('recent_memberships');
+  const memberships = accounts.length ? await db.select().from(recentMemberships)
+    .where(inArray(recentMemberships.userId, accounts.map(a => a.id)))
+    .orderBy(desc(recentMemberships.members), desc(recentMemberships.lastSeenAt), asc(recentMemberships.network)) : [];
+  const networks = new Map<string, { network: string; members: number }[]>();
   for (const row of memberships) {
     const list = networks.get(row.userId) ?? [];
-    list.push(row.network);
+    list.push({ network: row.network, members: row.members });
     networks.set(row.userId, list);
   }
   return { ...paging, accounts: accounts.map(a => ({ ...a, networks: networks.get(a.id) ?? [] })) };
 }
 
+function retryTotals(network?: string) {
+  return db.select({
+    network: signupRetries.network,
+    retries: sql<number>`sum(${signupRetries.attempts})`.mapWith(Number).as('retries'),
+    lastRetry: sql<Date>`max(${signupRetries.lastAttemptAt})`.mapWith(signupRetries.lastAttemptAt).as('last_retry'),
+  }).from(signupRetries).where(and(gte(signupRetries.day, signupRetryCutoff),
+    network ? eq(signupRetries.network, network) : undefined)).groupBy(signupRetries.network);
+}
+
+export async function selectedSignupRetries(network: string) {
+  const [summary] = await retryTotals(network);
+  return summary ?? null;
+}
+
 export async function listIpGroups(filters: Filters) {
   const where = and(active, accountFilter(filters));
-  const groups = db.select({
+  const accounts = db.select({
     network: userNetworks.network, members: count().as('members'),
     signups: sql<number>`count(*) filter (where ${userNetworks.signupAt} >= ${networkCutoff})`.mapWith(Number).as('signups'),
     latest: sql<Date>`max(${userNetworks.lastSeenAt})`.mapWith(userNetworks.lastSeenAt).as('latest'),
   }).from(userNetworks).innerJoin(users, eq(users.id, userNetworks.userId))
-    .where(where).groupBy(userNetworks.network).as('ip_groups');
+    .where(where).groupBy(userNetworks.network).as('account_groups');
+  const retries = retryTotals().as('retry_groups');
+  // An address can keep retrying after its only account has been deleted.
+  const groups = db.select({
+    network: sql<string>`coalesce(${accounts.network}, ${retries.network})`.as('network'),
+    members: sql<number>`coalesce(${accounts.members}, 0)`.mapWith(Number).as('member_count'),
+    signups: sql<number>`coalesce(${accounts.signups}, 0)`.mapWith(Number).as('signup_count'),
+    retries: sql<number>`coalesce(${retries.retries}, 0)`.mapWith(Number).as('retry_count'),
+    lastRetry: sql<Date | null>`${retries.lastRetry}`.mapWith(signupRetries.lastAttemptAt).as('last_attempt'),
+    latest: sql<Date>`greatest(${accounts.latest}, ${retries.lastRetry})`.mapWith(userNetworks.lastSeenAt).as('last_activity'),
+  }).from(accounts).fullJoin(retries, eq(accounts.network, retries.network))
+    .where(filters.recent || filters.verification !== 'all' ? isNotNull(accounts.network) : undefined).as('ip_groups');
   const paging = pagination(filters.page, await db.$count(groups));
   const order = filters.groupOrder.direction === 'ascending' ? asc : desc;
-  const rows = await db.select().from(groups).orderBy(order(groups[filters.groupOrder.key]), asc(groups.network))
+  const rows = await db.select().from(groups).orderBy(sql`${order(groups[filters.groupOrder.key])} nulls last`, asc(groups.network))
     .offset(paging.offset).limit(paging.limit);
   return { ...paging, groups: rows };
 }

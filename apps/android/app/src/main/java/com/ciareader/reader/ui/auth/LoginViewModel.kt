@@ -23,6 +23,7 @@ data class LoginUiState(
     val isSubmitting: Boolean = false,
     val errorMessage: String? = null,
     val magicLinkSent: Boolean = false,
+    val signupReceived: Boolean = false,
 ) {
     val canSubmit: Boolean
         get() = !isSubmitting && email.isNotBlank() && password.isNotBlank()
@@ -49,13 +50,14 @@ class LoginViewModel @Inject constructor(
             mode = if (it.mode == AuthMode.LOGIN) AuthMode.REGISTER else AuthMode.LOGIN,
             errorMessage = null,
             magicLinkSent = false,
+            signupReceived = false,
         )
     }
 
     fun submit() {
         val state = _uiState.value
         if (!state.canSubmit) return
-        _uiState.update { it.copy(isSubmitting = true, errorMessage = null, magicLinkSent = false) }
+        _uiState.update { it.copy(isSubmitting = true, errorMessage = null, magicLinkSent = false, signupReceived = false) }
         viewModelScope.launch {
             val result = when (state.mode) {
                 AuthMode.LOGIN -> authRepository.login(state.email.trim(), state.password)
@@ -71,6 +73,7 @@ class LoginViewModel @Inject constructor(
                 it.copy(
                     isSubmitting = false,
                     errorMessage = (result as? AuthResult.Error)?.message,
+                    signupReceived = result is AuthResult.SignupReceived,
                 )
             }
         }
@@ -83,7 +86,7 @@ class LoginViewModel @Inject constructor(
             _uiState.update { it.copy(errorMessage = "Enter your email to get a sign-in link.") }
             return
         }
-        _uiState.update { it.copy(isSubmitting = true, errorMessage = null, magicLinkSent = false) }
+        _uiState.update { it.copy(isSubmitting = true, errorMessage = null, magicLinkSent = false, signupReceived = false) }
         viewModelScope.launch {
             val result = authRepository.requestMagicLink(state.email.trim())
             _uiState.update {

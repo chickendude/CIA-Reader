@@ -10,7 +10,7 @@ interface AuthApi {
     suspend fun login(@Body body: LoginRequest): AuthResponseDto
 
     @POST("api/v1/auth/register")
-    suspend fun register(@Body body: RegisterRequest): AuthResponseDto
+    suspend fun register(@Body body: RegisterRequest): RegistrationDto
 
     @GET("api/v1/auth/me")
     suspend fun me(): MeResponseDto

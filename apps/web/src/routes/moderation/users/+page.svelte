@@ -149,11 +149,35 @@
     {/key}
   {:else}
     {#if form?.message}<p role="alert">{form.message}</p>{/if}
+    {#if form?.notice}<ActionConfirmation result={form} message={form.notice} />{/if}
     {#if form?.deleted !== undefined}
       <ActionConfirmation result={form} message={`Deleted ${form.deleted} ${form.deleted === 1 ? 'user' : 'users'}.`} />
     {/if}
     {#if filters.network && !filters.grouped}
-      <p>{networkLabel(filters.network)} <Button href={href({ network: null })}>Clear IP filter</Button></p>
+      <form class="controls" method="post" action={actionUrl(data.selectedBlocked ? 'unblock' : 'block')} use:enhance>
+        <input type="hidden" name="network" value={filters.network} />
+        <strong>{networkLabel(filters.network)}</strong>
+        <span>Repeat signup attempts (7 UTC days): <strong>{data.retrySummary?.retries ?? 0}</strong></span>
+        {#if data.retrySummary}<span>Last repeat: {@render timestamp(data.retrySummary.lastRetry)}</span>{/if}
+        {#if data.usingSelectedNetwork}<span>Your current IP address</span>{/if}
+        <Button type="submit" disabled={data.usingSelectedNetwork && !data.selectedBlocked}>
+          {data.selectedBlocked ? 'Unblock IP address' : 'Block IP address'}
+        </Button>
+        <Button href={href({ network: null })}>Clear IP filter</Button>
+      </form>
+    {/if}
+    {#if filters.grouped && data.blockedNetworks.length}
+      <details>
+        <summary>Blocked IP addresses ({data.blockedNetworks.length})</summary>
+        {#each data.blockedNetworks as blocked (blocked.network)}
+          <form class="controls" method="post" action={actionUrl('unblock')} use:enhance>
+            <input type="hidden" name="network" value={blocked.network} />
+            <a href={groupHref(blocked.network)}>{networkLabel(blocked.network)}</a>
+            {@render timestamp(blocked.blockedAt)}
+            <Button type="submit" aria-label={'Unblock ' + networkLabel(blocked.network)}>Unblock</Button>
+          </form>
+        {/each}
+      </details>
     {/if}
     <p class="count">{data.total.toLocaleString('en-US')} {filters.grouped ? (data.total === 1 ? 'IP group' : 'IP groups') : (data.total === 1 ? 'user' : 'users')}</p>
     <form method="post" action={actionUrl('review')} use:enhance onchange={syncSelectPage}>
@@ -166,16 +190,18 @@
         {#if data.groups.length}
           <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
           <div class="entry-table-wrap scroll-table" role="region" aria-label="IP group columns" tabindex="0">
-            <table class="entry-table" aria-label="IP groups in the last 48 hours">
+            <table class="entry-table" aria-label="IP group activity">
               {@render tableHead()}
               {#key page.url.search}
                 <tbody>
                   {#each data.groups as group (group.network)}
                     <tr>
-                      <td><input type="checkbox" data-selectable name="network" value={group.network} aria-label={'Select ' + networkLabel(group.network)} /></td>
+                      <td>{#if group.members}<input type="checkbox" data-selectable name="network" value={group.network} aria-label={'Select ' + networkLabel(group.network)} />{/if}</td>
                       <td><a href={groupHref(group.network)}>{networkLabel(group.network)}</a></td>
                       <td>{group.members}</td>
                       <td>{group.signups}</td>
+                      <td>{group.retries}</td>
+                      <td>{#if group.lastRetry}{@render timestamp(group.lastRetry)}{:else}None{/if}</td>
                       <td>{@render timestamp(group.latest)}</td>
                     </tr>
                   {/each}
@@ -183,7 +209,7 @@
               {/key}
             </table>
           </div>
-        {:else}<p>No IP groups recorded for these filters in the last 48 hours.</p>{/if}
+        {:else}<p>No IP groups recorded for these filters.</p>{/if}
       {:else if 'accounts' in data && data.accounts?.length}
         <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
         <div class="entry-table-wrap scroll-table" role="region" aria-label="User columns" tabindex="0">
@@ -207,11 +233,13 @@
                     <td>{account.linksCreated}</td>
                     <td>{account.textsWithProgress}</td>
                     <td>
-                      {#if account.networks.length}
-                        <details><summary aria-label={`Show ${account.ipCount} recorded IPs for ${account.email}`}>{account.ipCount}</summary>
-                          {#each account.networks as network}<div><a href={groupHref(network)}>{networkLabel(network)}</a></div>{/each}
-                        </details>
-                      {:else}0{/if}
+                      {#each account.networks as group (group.network)}
+                        <div class="ip-membership">
+                          <a href={href({ network: group.network, joined: null, verification: null })}>
+                            {group.network.slice(0, 12)} ({group.members} {group.members === 1 ? 'user' : 'users'})
+                          </a>
+                        </div>
+                      {:else}None recorded{/each}
                     </td>
                   </tr>
                 {/each}
@@ -244,7 +272,7 @@
   time { white-space: nowrap; }
   .status { display: inline-block; font: 1.15rem/1 sans-serif; }
   summary { cursor: pointer; }
-  details[open] { min-width: 10rem; }
+  .ip-membership { white-space: nowrap; }
   td a { color: var(--ink); }
   @media (max-width: 38rem) { .entry-table :is(td, th) { padding: 0.45rem; } }
 </style>

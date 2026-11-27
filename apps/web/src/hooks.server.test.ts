@@ -2,6 +2,11 @@
 import { describe, expect, it, vi } from 'vitest';
 
 const resolveUserMock = vi.fn(async (): Promise<unknown> => null);
+vi.mock('$lib/server/auth/user-networks.js', async importOriginal => ({
+  ...await importOriginal<typeof import('$lib/server/auth/user-networks.js')>(),
+  isNetworkBlocked: vi.fn(),
+}));
+const { isNetworkBlocked, networkKey } = await import('$lib/server/auth/user-networks.js');
 vi.mock('$lib/server/auth/require-user.js', () => ({
   resolveUser: (...a: unknown[]) => resolveUserMock(...(a as [])),
 }));
@@ -9,6 +14,21 @@ vi.mock('$lib/server/auth/require-user.js', () => ({
 const { resolveServerTheme, handle } = await import('./hooks.server.js');
 
 type Event = Parameters<typeof resolveServerTheme>[0];
+
+it.each(['/register', '/api/v1/auth/register', '/login'])('rejects a blocked IP before handling %s', async path => {
+  const event = {
+    getClientAddress: () => '192.0.2.14',
+    url: new URL(path, 'http://localhost'),
+    request: new Request(new URL(path, 'http://localhost'), { method: 'POST' }),
+  } as Event;
+  vi.mocked(isNetworkBlocked).mockResolvedValueOnce(true);
+  const resolve = vi.fn();
+  const res = await handle({ event, resolve });
+  expect(isNetworkBlocked).toHaveBeenCalledWith(networkKey(event.getClientAddress));
+  expect(res.status).toBe(403);
+  expect(res.headers.get('cache-control')).toContain('no-store');
+  expect(resolve).not.toHaveBeenCalled();
+});
 
 function makeEvent({
   userPref,

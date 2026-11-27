@@ -1,17 +1,7 @@
-/**
- * Register page — counterpart to /login.
- *
- * Email + password (+ optional display name). Same auth machinery as
- * the JSON /api/v1/auth/register endpoint: hash, insert, drop a
- * session cookie, redirect to /onboarding (the per-language picker)
- * unless the user came in with an explicit `?next=` target.
- */
-import { eq } from 'drizzle-orm';
 import { fail, redirect } from '@sveltejs/kit';
 import { z } from 'zod';
 
-import { db, schema } from '$lib/server/db/index.js';
-import { hashPassword } from '$lib/server/auth/password.js';
+import { registerAccount } from '$lib/server/auth/password-access.js';
 import { sendAccountLink } from '$lib/server/email/account-link.js';
 import { createSession, setSessionCookie } from '$lib/server/auth/sessions.js';
 import {
@@ -30,15 +20,18 @@ const registerSchema = z.object({
 function readNext(url: URL): string {
   const raw = url.searchParams.get('next');
   if (!raw) return '/onboarding';
-  if (!raw.startsWith('/') || raw.startsWith('//')) return '/onboarding';
-  return raw;
+  if (!raw.startsWith('/') || !URL.canParse(raw, url)) return '/onboarding';
+  const destination = new URL(raw, url);
+  if (destination.origin !== url.origin || destination.pathname.startsWith('//')) return '/onboarding';
+  return destination.pathname + destination.search + destination.hash;
 }
 
 export const load: PageServerLoad = ({ locals, url }) => {
-  if (locals.user) {
+  const received = url.searchParams.has('received');
+  if (locals.user && !received) {
     throw redirect(303, readNext(url));
   }
-  return { next: readNext(url) };
+  return { next: readNext(url), received };
 };
 
 export const actions: Actions = {
@@ -64,51 +57,24 @@ export const actions: Actions = {
       });
     }
 
-    const [existing] = await db
-      .select({ id: schema.users.id })
-      .from(schema.users)
-      .where(eq(schema.users.email, parsed.data.email))
-      .limit(1);
-    if (existing) {
+    const result = await registerAccount(parsed.data, getClientAddress);
+    if (result.status === 'existing') {
       return fail(409, {
         ok: false,
         message: 'An account with that email already exists. Try signing in.',
         values: { email: raw.email, displayName: raw.displayName },
       });
     }
-
-    const passwordHash = await hashPassword(parsed.data.password);
-    const [created] = await db
-      .insert(schema.users)
-      .values({
-        email: parsed.data.email,
-        passwordHash,
-        displayName: parsed.data.displayName ?? null,
-      })
-      .returning();
-    if (!created) {
-      return fail(500, {
-        ok: false,
-        message: 'Could not create your account. Try again.',
-        values: { email: raw.email, displayName: raw.displayName },
-      });
+    if (result.status === 'created') {
+      const session = await createSession(result.user.id, getClientAddress, true);
+      setSessionCookie(cookies, session.token, session.expiresAt, isSecureRequest(url));
+      try {
+        await sendAccountLink(result.user, 'verification');
+      } catch (err) {
+        console.error('Failed to send registration email:', err);
+      }
     }
-
-    const session = await createSession(created.id, getClientAddress, true);
-    setSessionCookie(cookies, session.token, session.expiresAt, isSecureRequest(url));
-
-    // Send a verification magic-link. The same magic-link
-    // consumer in $lib/server/auth/magic-link.ts sets
-    // email_verified_at on click, so this email doubles as both
-    // "welcome" and "click to verify your email." Failures are
-    // logged but don't block signup — the user can resend later
-    // via /api/v1/auth/verify-email/resend.
-    try {
-      await sendAccountLink(created, 'verification');
-    } catch (err) {
-      console.error('Failed to send verification email on register:', err);
-    }
-
-    throw redirect(303, readNext(url));
+    const query = new URLSearchParams({ received: '1', next: readNext(url) });
+    throw redirect(303, `/register?${query}`);
   },
 };

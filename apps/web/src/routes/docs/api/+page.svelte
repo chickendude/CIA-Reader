@@ -113,8 +113,10 @@
       <h2 id="auth-flow">Auth Flow</h2>
       <p>
         Create an account with <code>POST /auth/register</code> or sign in with
-        <code>POST /auth/login</code>. Both endpoints return the same auth
-        envelope and also set the web session cookie for browser clients.
+        <code>POST /auth/login</code>. When a session is issued, both endpoints return the auth
+        envelope and set the web session cookie. Registration can also return
+        <code>{'{"ok":true}'}</code> as a receipt without credentials.
+        A throttled password login returns HTTP 429 with a <code>Retry-After</code> header in seconds.
       </p>
 
       <pre><code>{authEnvelope}</code></pre>

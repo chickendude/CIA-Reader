@@ -1,37 +1,17 @@
 // @vitest-environment node
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const dbSelect = vi.fn();
-const dbInsert = vi.fn();
-const dbSelectChain = {
-  from: () => dbSelectChain,
-  where: () => dbSelectChain,
-  limit: () => Promise.resolve(dbSelect()),
-};
-const dbInsertChain = {
-  values: () => dbInsertChain,
-  returning: () => Promise.resolve(dbInsert()),
-};
+const registerAccount = vi.fn();
+vi.mock('$lib/server/auth/password-access.js', () => ({
+  registerAccount: (...args: unknown[]) => registerAccount(...args),
+}));
 const sendAccountLink = vi.fn();
 vi.mock('$lib/server/email/account-link.js', () => ({
   sendAccountLink: (...args: unknown[]) => sendAccountLink(...args),
 }));
-const hashPassword = vi.fn();
 const createSession = vi.fn();
 const setSessionCookie = vi.fn();
 
-vi.mock('$lib/server/db/index.js', () => ({
-  db: {
-    select: () => dbSelectChain,
-    insert: () => dbInsertChain,
-  },
-  schema: {
-    users: { id: 'users.id', email: 'users.email' },
-  },
-}));
-vi.mock('$lib/server/auth/password.js', () => ({
-  hashPassword: (...a: unknown[]) => hashPassword(...a),
-}));
 vi.mock('$lib/server/auth/sessions.js', () => ({
   createSession: (...a: unknown[]) => createSession(...a),
   setSessionCookie: (...a: unknown[]) => setSessionCookie(...a),
@@ -70,9 +50,7 @@ async function callDefault(fields: Record<string, string>, urlStr = 'http://x/re
 
 beforeEach(() => {
   sendAccountLink.mockReset();
-  dbSelect.mockReset();
-  dbInsert.mockReset();
-  hashPassword.mockReset();
+  registerAccount.mockReset();
   createSession.mockReset();
   setSessionCookie.mockReset();
 });
@@ -96,13 +74,11 @@ describe('/register loader', () => {
 });
 
 describe('/register default action', () => {
-  it('creates the user and opens onboarding even when verification email is limited', async () => {
+  it('creates a session and preserves the onboarding destination when email is limited', async () => {
     sendAccountLink.mockResolvedValueOnce('limited');
-    dbSelect.mockReturnValueOnce([]); // no existing user
-    hashPassword.mockResolvedValueOnce('hash');
-    dbInsert.mockReturnValueOnce([
-      { id: 'user-1', email: 'new@example.com', displayName: 'New User' },
-    ]);
+    registerAccount.mockResolvedValueOnce({
+      status: 'created', user: { id: 'user-1', email: 'new@example.com', displayName: 'New User' },
+    });
     createSession.mockResolvedValueOnce({
       token: 'sess',
       expiresAt: new Date(Date.now() + 1000),
@@ -113,20 +89,29 @@ describe('/register default action', () => {
       displayName: 'New User',
     })) as { status: number; location: string };
     expect(res.status).toBe(303);
-    expect(res.location).toBe('/onboarding');
+    expect(res.location).toBe('/register?received=1&next=%2Fonboarding');
     expect(sendAccountLink).toHaveBeenCalledWith(expect.objectContaining({ id: 'user-1' }), 'verification');
     expect(setSessionCookie).toHaveBeenCalled();
   });
 
+  it('shows the same receipt without a session or email for a suppressed signup', async () => {
+    registerAccount.mockResolvedValueOnce({ status: 'suppressed' });
+    const res = await callDefault({ email: 'another@example.com', password: 'a-good-long-password' });
+    expect(res).toMatchObject({ status: 303, location: '/register?received=1&next=%2Fonboarding' });
+    expect(createSession).not.toHaveBeenCalled();
+    expect(setSessionCookie).not.toHaveBeenCalled();
+    expect(sendAccountLink).not.toHaveBeenCalled();
+  });
+
   it('returns 409 when the email is already registered', async () => {
-    dbSelect.mockReturnValueOnce([{ id: 'existing' }]);
+    registerAccount.mockResolvedValueOnce({ status: 'existing' });
     const res = (await callDefault({
       email: 'taken@example.com',
       password: 'a-good-long-password',
     })) as { status: number; data: { ok: boolean; message: string } };
     expect(res.status).toBe(409);
     expect(res.data.message).toMatch(/already exists/i);
-    expect(hashPassword).not.toHaveBeenCalled();
+    expect(sendAccountLink).not.toHaveBeenCalled();
   });
 
   it('rejects a too-short password with 400', async () => {
@@ -135,7 +120,7 @@ describe('/register default action', () => {
       password: 'short',
     })) as { status: number };
     expect(res.status).toBe(400);
-    expect(dbSelect).not.toHaveBeenCalled();
+    expect(registerAccount).not.toHaveBeenCalled();
   });
 
   it('rejects an empty email', async () => {

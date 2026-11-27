@@ -125,6 +125,9 @@ internal fun LoginScreenContent(
                     style = MaterialTheme.typography.bodyMedium,
                 )
             }
+            if (state.signupReceived) {
+                Text("Signup request received. If you can’t sign in, try registering again tomorrow.")
+            }
             if (state.magicLinkSent) {
                 Spacer(Modifier.height(12.dp))
                 Text(

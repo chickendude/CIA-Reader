@@ -24,6 +24,13 @@ data class AuthResponseDto(
 )
 
 @Serializable
+data class RegistrationDto(
+    val accessToken: String? = null,
+    val refreshToken: String? = null,
+    val ok: Boolean = false,
+)
+
+@Serializable
 data class MeResponseDto(val user: UserDto)
 
 @Serializable
