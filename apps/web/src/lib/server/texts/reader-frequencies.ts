@@ -1,15 +1,10 @@
 import { sql } from 'drizzle-orm';
 
-// Use the same Hindi reading as chapter_word_counts. A parser match can still
-// be ambiguous, so an unresolved frequency and an unparsed word are distinct.
-export function ignoredWords(userId: string) {
+// Use the same Hindi reading as chapter_word_counts to subtract from the correct frequency.
+function ignoredWords(userId: string) {
   return sql`
-    SELECT t.id, t.chapter_id, ch.text_id,
-      CASE WHEN a.chapter_id IS NULL THEN t.lemma_id ELSE reading.lemma_id END AS lemma_id,
-      CASE WHEN a.chapter_id IS NULL THEN t.lemma_id IS NULL ELSE NOT EXISTS (
-        SELECT 1 FROM hindi_occurrences o WHERE o.chapter_id=t.chapter_id
-          AND o.start_idx<=t.idx AND o.end_idx>t.idx
-      ) END AS unparsed
+    SELECT t.chapter_id, ch.text_id,
+      CASE WHEN a.chapter_id IS NULL THEN t.lemma_id ELSE reading.lemma_id END AS lemma_id
     FROM reader_ignored_tokens i JOIN text_tokens t ON t.id=i.token_id
     JOIN text_chapters ch ON ch.id=t.chapter_id
     LEFT JOIN hindi_chapter_analyses a ON a.chapter_id=t.chapter_id

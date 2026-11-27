@@ -51,6 +51,71 @@ describe.skipIf(!url)('HindiDB PostgreSQL integration (always rolls back)', () =
     }
   });
 
+  it('updates unparsed counts for book ignores, restores and saved dictionary entries', async () => {
+    if (!url || !['localhost', '127.0.0.1', '[::1]'].includes(new URL(url).hostname))
+      throw new Error('Use a local database with the HindiDB migrations applied');
+    const client = postgres(url, { max: 1 });
+    const rollback = new Error('rollback unparsed counts');
+    try {
+      await expect(drizzle(client, { schema }).transaction(async tx => {
+        state.db = tx as unknown as DB;
+        const { libraryBookStats } = await import('./texts/book-stats');
+        const { workshopQueue } = await import('./dictionary/workshop-queue');
+        const { bookAttention } = await import('./texts/hindi-attention');
+        const { saveDraft } = await import('./dictionary/workshop');
+        const { emptyDraft } = await import('$lib/dictionary/workshop');
+        const [user] = await tx.insert(schema.users).values({ email: randomUUID() + '@example.invalid' }).returning();
+        const books = await tx.insert(schema.texts).values(['First', 'Second'].map(title => ({
+          title, ownerId: user!.id, language: 'hi' as const, sourceType: 'paste' as const,
+        }))).returning();
+        const ids = books.map(book => book.id);
+        const book = ids[0]!;
+        // Use unique spellings so existing dictionary entries cannot resolve the fixture.
+        const suffix = Array.from(randomUUID().slice(0, 8), digit => 'कखगघचछजझटठडढतथदध'[parseInt(digit, 16)]).join('');
+        const fragment = suffix + 'वोल्';
+        const word = suffix + 'द';
+        const surfaces = [fragment, ' ', word, ' ', fragment];
+        const chapters = await tx.insert(schema.textChapters).values(ids.map(textId => ({
+          textId, idx: 0, body: surfaces.join(''),
+        }))).returning();
+        const tokens = await tx.insert(schema.textTokens).values(chapters.flatMap(ch => surfaces.map((surface, idx) => ({
+          chapterId: ch.id, idx, surface, isWord: surface !== ' ', isOov: surface !== ' ',
+        })))).returning();
+        await tx.insert(schema.hindiDictionaryState).values({ id: 1 }).onConflictDoNothing();
+        const [dictionary] = await tx.select().from(schema.hindiDictionaryState);
+        await tx.insert(schema.hindiChapterAnalyses).values({
+          chapterId: chapters[0]!.id, revision: dictionary!.revision, parserVersion: 'test',
+          sourceWords: 3, unresolvedWords: 3, stats: {},
+        });
+        await tx.execute(sql`SET CONSTRAINTS ALL IMMEDIATE`);
+        const counts = async (reader?: string) => {
+          const stats = await libraryBookStats(ids, [], reader);
+          return ids.map(id => stats[id]!.unparsedWords);
+        };
+        const unresolved = () => workshopQueue(user!.id, book, 'unresolved', word, 10);
+        expect(await counts()).toEqual([3, 3]);
+        await tx.insert(schema.hindiReviewIgnored).values({ textId: book, surface: fragment });
+        await tx.insert(schema.readerIgnoredTokens).values({ userId: user!.id, tokenId: tokens[0]!.id });
+        expect(await counts()).toEqual([1, 3]);
+        expect(await counts(user!.id)).toEqual([1, 3]);
+        expect(await unresolved()).toMatchObject({ total: 1 });
+        expect(await bookAttention(book, user!.id, word, 0, 'unparsed')).toMatchObject({ total: 1 });
+
+        await saveDraft({ ...emptyDraft(word), meaning: 'test entry' }, user!.id, 'hi');
+        expect(await counts()).toEqual([0, 2]);
+        expect(await unresolved()).toMatchObject({ total: 0 });
+        expect(await bookAttention(book, user!.id, word, 0, 'unparsed')).toMatchObject({ total: 0 });
+
+        await tx.delete(schema.hindiReviewIgnored).where(eq(schema.hindiReviewIgnored.textId, book));
+        expect(await counts()).toEqual([2, 2]);
+        expect(await counts(user!.id)).toEqual([1, 2]);
+        throw rollback;
+      })).rejects.toBe(rollback);
+    } finally {
+      await client.end();
+    }
+  });
+
   it('counts each occurrence once and follows valid context choices and study state', async () => {
     if (!url || !['localhost', '127.0.0.1', '[::1]'].includes(new URL(url).hostname)) {
       throw new Error('Use a local database with the HindiDB migrations applied');

@@ -122,7 +122,11 @@ occurrences requiring attention. This includes stale decisions, uncertain decisi
 occurrences with no fitting entry, unresolved choices between entry groups covering
 the same span, and unparsed words. Valid selections leave the attention queue.
 The status dropdown shows live counts for the current book and word filter,
-including AI suggestions and confirmations. The other review lists show unparsed spellings by frequency and ambiguous
+including AI suggestions and confirmations. **Ignore in this book** removes each
+unparsed occurrence of that spelling from the book’s unparsed count. Restoring the
+spelling returns any occurrences that still need review. When a saved entry matches
+a previously unparsed word, the review lists and unparsed count reflect it on the
+next load. The other review lists show unparsed spellings by frequency and ambiguous
 reader tokens, including overlapping phrases.
 
 In the reader or review page, **Confirm here** saves a human context choice;

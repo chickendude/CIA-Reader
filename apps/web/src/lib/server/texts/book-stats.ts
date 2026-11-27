@@ -1,5 +1,6 @@
 import { sql, type SQL } from 'drizzle-orm';
-import { ignoredWords, readerFrequencies } from './reader-frequencies';
+import { liveTokenMatches } from '../dictionary/live-matches';
+import { readerFrequencies } from './reader-frequencies';
 import { db } from '../db/index.js';
 
 export type BookWordStats = {
@@ -16,14 +17,30 @@ export type BookWordStats = {
   uniquePct: number | null;
 };
 
-// A Hindi word can match several entries before a context choice assigns it to one.
+// Start with the saved parser count. An occurrence can be ignored by both the book
+// and the reader, or gain several dictionary matches, so subtract each token once.
 export function unparsedWordCount(textIds: SQL, userId?: string) {
   return sql`(
-    SELECT greatest(0, coalesce(sum(coalesce(a.unresolved_words, f.occurrences)), 0)::int
-      ${userId ? sql`- (SELECT count(*)::int FROM (${ignoredWords(userId)}) i WHERE i.unparsed AND i.text_id IN (${textIds}))` : sql``})
-    FROM text_chapters ch LEFT JOIN hindi_chapter_analyses a ON a.chapter_id = ch.id
-    LEFT JOIN chapter_word_frequencies f ON f.chapter_id = ch.id AND f.lemma_id IS NULL
-    WHERE ch.text_id IN (${textIds})
+    WITH books_in_scope(text_id) AS MATERIALIZED (${textIds}),
+    chapters AS MATERIALIZED (
+      SELECT ch.id,ch.text_id,a.unresolved_words FROM text_chapters ch
+      LEFT JOIN hindi_chapter_analyses a ON a.chapter_id=ch.id
+      WHERE ch.text_id IN (SELECT text_id FROM books_in_scope)
+    ), omitted AS (
+      SELECT t.id FROM hindi_review_ignored i JOIN chapters ch ON ch.text_id=i.text_id
+      JOIN text_tokens t ON t.chapter_id=ch.id AND t.surface=i.surface WHERE t.is_word
+      UNION SELECT token_id FROM (${liveTokenMatches(sql`SELECT text_id FROM books_in_scope`)}) live
+      ${userId ? sql`UNION SELECT token_id FROM reader_ignored_tokens WHERE user_id=${userId}` : sql``}
+    )
+    SELECT greatest(0, coalesce(sum(coalesce(ch.unresolved_words, f.occurrences)), 0)::int - (
+      SELECT count(*)::int FROM omitted JOIN text_tokens t ON t.id=omitted.id
+      JOIN chapters ch ON ch.id=t.chapter_id WHERE t.is_word AND
+        CASE WHEN ch.unresolved_words IS NULL THEN t.lemma_id IS NULL ELSE NOT EXISTS (
+          SELECT FROM hindi_occurrences o WHERE o.chapter_id=t.chapter_id
+            AND o.start_idx<=t.idx AND o.end_idx>t.idx
+        ) END
+    ))
+    FROM chapters ch LEFT JOIN chapter_word_frequencies f ON f.chapter_id=ch.id AND f.lemma_id IS NULL
   )`;
 }
 

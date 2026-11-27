@@ -1,5 +1,6 @@
 import type { LanguageCode } from '@ciareader/shared-types';
 import { sql } from 'drizzle-orm';
+import { liveTokenMatches } from './live-matches';
 import { db } from '../db/index';
 import type { ReviewItem } from '$lib/dictionary/workshop';
 import { SENTENCE_END_RE } from '../texts/sentences';
@@ -18,6 +19,7 @@ export async function workshopQueue(
   const rows = await db.execute<ReviewItem & { total: number }>(sql`
     WITH books AS (SELECT id FROM texts WHERE language=${language} AND (owner_id=${actor} OR visibility='official')
       AND (${book}::uuid IS NULL OR id=${book}::uuid)),
+    live AS MATERIALIZED (${liveTokenMatches(sql`SELECT id FROM books`)}),
     items AS (
       SELECT t.surface word,NULL::uuid id,CASE WHEN i.surface IS NULL THEN 'unresolved' ELSE 'ignored' END kind,
         c.text_id book,c.idx chapter,t.idx token,t.idx + 1 end_token,t.chapter_id,
@@ -25,6 +27,12 @@ export async function workshopQueue(
       FROM books b JOIN text_chapters c ON c.text_id=b.id JOIN text_tokens t ON t.chapter_id=c.id
       LEFT JOIN hindi_review_ignored i ON i.text_id=b.id AND i.surface=t.surface
       WHERE t.is_word AND t.is_oov AND t.surface ILIKE ${pattern}
+        AND (i.surface IS NOT NULL OR NOT EXISTS (SELECT FROM live WHERE token_id=t.id))
+      UNION ALL
+      SELECT l.headword,l.id,'missing-definition',c.text_id,c.idx,t.idx,t.idx+1,c.id,'',NULL,NULL
+      FROM live JOIN lemmas l ON l.id=live.lemma_id JOIN text_tokens t ON t.id=live.token_id
+      JOIN text_chapters c ON c.id=t.chapter_id
+      WHERE nullif(l.gloss_default,'') IS NULL AND l.headword ILIKE ${pattern}
       UNION ALL
       SELECT l.headword,l.id,'missing-definition',c.text_id,c.idx,t.idx,o.end_idx,t.chapter_id,'',NULL,NULL
       FROM books b JOIN text_chapters c ON c.text_id=b.id JOIN hindi_occurrences o ON o.chapter_id=c.id

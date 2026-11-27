@@ -15,7 +15,7 @@ import { and, eq, getTableColumns, inArray, isNotNull, sql } from 'drizzle-orm';
 
 import type { LanguageCode } from '@ciareader/shared-types';
 
-import { dictionaryProfile } from '$lib/dictionary/profiles';
+import { liveDictionaryMatches } from '../dictionary/live-matches';
 import { db, schema } from '../db/index.js';
 import type { TextToken, TokenCorrection, UserKnownLemma } from '../db/schema.js';
 import { lemmaBookFrequencies } from './book-frequency.js';
@@ -210,35 +210,15 @@ export async function loadChapterTokens(
   const liveMatches = new Set<string>();
   if (analysis && (analysis.stale || analysis.language !== 'hi')) {
     const language = analysis.language;
-    const profile = dictionaryProfile(language);
-    const key = (word: string) => profile.caseSensitive ? profile.normalize(word) : profile.normalize(word).toLowerCase();
     const missing = tokens.filter((t) =>
       t.isWord && t.isOov && !t.lemmaId && !correctionsByTokenId.has(t.id),
     );
-    const surfaces = [...new Set(missing.map((t) => key(t.surface)))];
+    const surfaces = [...new Set(missing.map((t) => t.surface))];
     if (surfaces.length) {
-      const spelling = (column: ReturnType<typeof sql>) => profile.caseSensitive ? column : sql`lower(normalize(${column}))`;
       const rows = await db.execute<{ surface: string; id: string }>(sql`
-        WITH wanted AS (SELECT jsonb_array_elements_text(${JSON.stringify(surfaces)}::text::jsonb) AS surface),
-        matches AS (
-          SELECT w.surface, l.id FROM wanted w JOIN lemmas l ON ${spelling(sql`l.headword`)}=w.surface WHERE l.language=${language}
-          UNION
-          SELECT w.surface, f.lemma_id FROM wanted w JOIN lemma_forms f ON ${spelling(sql`f.surface`)}=w.surface
-          WHERE f.quarantined_at IS NULL
-          UNION
-          SELECT w.surface, f.lemma_id FROM wanted w JOIN dictionary_pattern_forms f
-            ON w.surface=${spelling(sql`f.surface`)}
-          UNION
-          SELECT w.surface, h.lemma_id FROM dictionary_entries h
-            JOIN lemmas l ON l.id=h.lemma_id AND l.language=${language}
-            CROSS JOIN LATERAL jsonb_array_elements_text(h.entry->'alternative_headwords') AS alt(surface)
-            JOIN wanted w ON w.surface=${spelling(sql`alt.surface`)}
-        )
-        SELECT m.surface, m.id FROM matches m JOIN dictionary_entries h ON h.lemma_id=m.id
-        JOIN lemmas l ON l.id=m.id AND l.language=${language}
-        WHERE NOT EXISTS (SELECT 1 FROM jsonb_array_elements_text(h.entry->'excluded_forms') AS x(form)
-          WHERE ${spelling(sql`x.form`)}=m.surface)
-        ORDER BY m.surface, m.id`);
+        SELECT surface,id FROM (${liveDictionaryMatches(sql`
+          SELECT ${language}::language AS language, jsonb_array_elements_text(${JSON.stringify(surfaces)}::jsonb) AS surface
+        `)}) matched ORDER BY surface,id`);
       const idsBySurface = new Map<string, string[]>();
       for (const { surface, id } of rows) {
         const ids = idsBySurface.get(surface) ?? [];
@@ -246,7 +226,7 @@ export async function loadChapterTokens(
         idsBySurface.set(surface, ids);
       }
       for (const t of missing) {
-        const ids = idsBySurface.get(key(t.surface));
+        const ids = idsBySurface.get(t.surface);
         if (!ids?.length) continue;
         t.lemmaId = ids[0]!;
         t.lemmaCandidates = ids.map((lemmaId) => ({ lemmaId, score: 1, features: {} }));

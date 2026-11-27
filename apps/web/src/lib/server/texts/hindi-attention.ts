@@ -1,4 +1,5 @@
 import { sql } from 'drizzle-orm';
+import { liveTokenMatches } from '../dictionary/live-matches';
 import { db, type DB } from '../db/index.js';
 import { currentHindiChoiceStatus } from './hindi-context.js';
 
@@ -56,12 +57,13 @@ async function loadReviewIndex(connection: Pick<DB, 'execute'>, textId: string) 
       UNION SELECT chapter_id,start,stop FROM spans WHERE choices>1
       UNION SELECT t.chapter_id,t.start,t.start+char_length(coalesce(m.surface,t.surface)) FROM tokens t
         LEFT JOIN merges m ON m.chapter_id=t.chapter_id AND m.first=t.idx WHERE t.is_word
-    ), classified AS (
+    ), live AS (${liveTokenMatches(sql`SELECT ${textId}::uuid`)}), classified AS (
       SELECT t.id,t.idx,t.chapter_id,ch.idx AS chapter_idx,p.start,p.stop,t.surface,s.ids,
         CASE WHEN d.status IS NOT NULL AND d.status<>'unconfirmed' THEN d.status
           WHEN s.choices>1 THEN 'unconfirmed'
           WHEN s.ids IS NULL AND covered.idx IS NULL AND t.is_word AND p.stop=p.start+char_length(t.surface)
-            AND i.surface IS NULL AND (t.is_oov OR EXISTS (
+            AND i.surface IS NULL AND NOT EXISTS (SELECT FROM live WHERE token_id=t.id)
+            AND (t.is_oov OR EXISTS (
               SELECT 1 FROM hindi_chapter_analyses a WHERE a.chapter_id=t.chapter_id))
             THEN 'unparsed' END AS status
       FROM locations p JOIN tokens t USING (chapter_id,start)
