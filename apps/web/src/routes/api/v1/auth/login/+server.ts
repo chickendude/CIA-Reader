@@ -14,7 +14,7 @@ const body = z.object({
   password: z.string().min(1).max(256),
 });
 
-export const POST: RequestHandler = async ({ request, cookies, url }) => {
+export const POST: RequestHandler = async ({ request, cookies, url, getClientAddress }) => {
   const input = await parseJson(request, body);
 
   const [user] = await db
@@ -29,7 +29,7 @@ export const POST: RequestHandler = async ({ request, cookies, url }) => {
   const ok = await verifyPassword(user.passwordHash, input.password);
   if (!ok) throw invalid();
 
-  const session = await createSession(user.id);
+  const session = await createSession(user.id, getClientAddress);
   setSessionCookie(cookies, session.token, session.expiresAt, isSecureRequest(url));
 
   const accessToken = await signAccessToken(user.id);

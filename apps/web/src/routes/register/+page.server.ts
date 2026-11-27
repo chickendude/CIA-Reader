@@ -44,7 +44,7 @@ export const load: PageServerLoad = ({ locals, url }) => {
 };
 
 export const actions: Actions = {
-  default: async ({ request, cookies, url }) => {
+  default: async ({ request, cookies, url, getClientAddress }) => {
     const fd = await request.formData();
     const raw = {
       email: fd.get('email')?.toString() ?? '',
@@ -96,7 +96,7 @@ export const actions: Actions = {
       });
     }
 
-    const session = await createSession(created.id);
+    const session = await createSession(created.id, getClientAddress, true);
     setSessionCookie(cookies, session.token, session.expiresAt, isSecureRequest(url));
 
     // Send a verification magic-link. The same magic-link

@@ -9,12 +9,12 @@ import { isSecureRequest, parseJson, publicUser } from '../../_helpers.js';
 
 const body = z.object({ token: z.string().min(1) });
 
-export const POST: RequestHandler = async ({ request, cookies, url }) => {
+export const POST: RequestHandler = async ({ request, cookies, url, getClientAddress }) => {
   const input = await parseJson(request, body);
   const user = await consumeMagicLink(input.token);
   if (!user) throw error(401, 'Invalid or expired magic link');
 
-  const session = await createSession(user.id);
+  const session = await createSession(user.id, getClientAddress);
   setSessionCookie(cookies, session.token, session.expiresAt, isSecureRequest(url));
 
   const accessToken = await signAccessToken(user.id);

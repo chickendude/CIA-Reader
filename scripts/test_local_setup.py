@@ -36,6 +36,8 @@ elif name == 'pg_dump':
 elif name == 'pg_restore':
     if pathlib.Path(sys.argv[-1]).read_bytes() != b'PGDMP-test-fixture':
         sys.exit(1)
+    if '--single-transaction' in sys.argv and os.environ.get('RESTORE_FAIL'):
+        sys.exit(1)
 elif name == 'createdb':
     if os.environ.get('DB_EXISTS'):
         sys.stderr.write('database already exists\n')
@@ -144,6 +146,26 @@ class LocalSetupTests(unittest.TestCase):
         self.assertIn('--no-privileges', restore)
         self.assertIn('--dbname=postgres://ciareader@127.0.0.1:55432/ciareader_local', restore)
         self.assertNotIn('--clean', restore)
+
+    def test_dated_snapshot_is_selected_only_after_success(self):
+        self.prepare_restore()
+        snapshot = self.output.with_name('parhiba-20261126T184225Z.dump')
+        self.output.rename(snapshot)
+        config = self.root / '.local' / 'env'
+        self.run_script('dev-local.sh', 'db-up').check_returncode()
+        previous_config = config.read_text()
+        failed = self.run_script('dev-local.sh', 'restore', snapshot, RESTORE_FAIL='1')
+        self.assertNotEqual(failed.returncode, 0)
+        self.assertEqual(config.read_text(), previous_config)
+
+        result = self.run_script('dev-local.sh', 'restore', snapshot)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        name = 'ciareader_site_20261126_184225'
+        self.assertEqual([c for c in self.calls() if c[0] == 'createdb'][-1][-1], name)
+        restore = [c for c in self.calls() if '--single-transaction' in c][-1]
+        self.assertIn('--dbname=postgres://ciareader@127.0.0.1:55432/' + name, restore)
+        self.assertEqual(set(config.read_text().splitlines()),
+                         set(previous_config.replace('ciareader_local', name).splitlines()))
 
     def prepare_venv(self):
         python = self.root / 'services' / 'nlp' / '.venv' / 'bin' / 'python'

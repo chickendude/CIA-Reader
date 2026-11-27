@@ -18,7 +18,7 @@ const body = z.object({
   displayName: z.string().trim().min(1).max(80).optional(),
 });
 
-export const POST: RequestHandler = async ({ request, cookies, url }) => {
+export const POST: RequestHandler = async ({ request, cookies, url, getClientAddress }) => {
   const input = await parseJson(request, body);
 
   const [existing] = await db
@@ -40,7 +40,7 @@ export const POST: RequestHandler = async ({ request, cookies, url }) => {
     .returning();
   if (!created) throw error(500, 'Failed to create user');
 
-  const session = await createSession(created.id);
+  const session = await createSession(created.id, getClientAddress, true);
   setSessionCookie(cookies, session.token, session.expiresAt, isSecureRequest(url));
 
   // Send a verification magic-link. Same handler as

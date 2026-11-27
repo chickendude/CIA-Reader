@@ -266,7 +266,7 @@
   // pages.
   const tokensById = $derived.by(() => {
     if (!correctedTokens) return new Map<string, ServerToken>();
-    return new Map(correctedTokens.map((t) => [t.id, t]));
+    return new Map(correctedTokens.map((t) => [t.id, t.phraseReading ?? t]));
   });
 
   let activeToken = $state<ServerToken | null>(null);
@@ -468,7 +468,7 @@
       {#if visibleServer}
         {#each visibleServer as paragraph, pIdx (pIdx)}
           <p class="body">
-            {#each paragraph as token (token.id)}<TokenSpan {token} {showRomanization} />{/each}
+            {#each paragraph as token (token.id)}<TokenSpan {token} {showRomanization} activeId={activeToken?.id} previewId={preview.token?.id} />{/each}
           </p>
         {/each}
       {:else if visibleFallback}

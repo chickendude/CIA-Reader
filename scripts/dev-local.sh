@@ -14,7 +14,7 @@ Usage: scripts/dev-local.sh COMMAND [ARGUMENT]
 
   install               Install JS/Python dependencies
   db-up                 Initialize/start the project's PostgreSQL on 127.0.0.1:55432
-  restore FILE.dump     Restore into a NEW local database; refuses an existing DB
+  restore FILE.dump     Restore a downloaded snapshot into its own dated local database
   start                 Start DB, Redis/Valkey, Mailpit, NLP, and web; Ctrl-C stops apps
   db-down               Stop only the project's PostgreSQL cluster
   import-hindidb PATH    Replace Hindi dictionary from a HindiDB checkout (backs up first)
@@ -129,12 +129,23 @@ case "${1:-}" in
     need pg_restore createdb
     pg_restore --list "$2" >/dev/null
     db_up
-    # No --clean, DROP, or writes to a pre-existing database. createdb fails
-    # if the name is taken; choose another LOCAL_DB_NAME in .local/env.
-    createdb -h 127.0.0.1 -p "$LOCAL_PG_PORT" -U ciareader --template=template0 "$LOCAL_DB_NAME"
+    restore_name="$LOCAL_DB_NAME"
+    if [[ ${2##*/} =~ ^parhiba-([0-9]{8})T([0-9]{6})Z\.dump$ ]]; then
+      restore_name="ciareader_site_${BASH_REMATCH[1]}_${BASH_REMATCH[2]}"
+    fi
+    createdb -h 127.0.0.1 -p "$LOCAL_PG_PORT" -U ciareader --template=template0 "$restore_name"
     pg_restore --exit-on-error --single-transaction --no-owner --no-privileges \
-      --dbname="$DATABASE_URL" "$2"
-    echo "Restored into $LOCAL_DB_NAME. Start with: ./scripts/dev-local.sh start"
+      --dbname="postgres://ciareader@127.0.0.1:$LOCAL_PG_PORT/$restore_name" "$2"
+    if [[ "$restore_name" != "$LOCAL_DB_NAME" ]]; then
+      # Select the new database only after its restore commits.
+      config_tmp="$(mktemp "$LOCAL/env.XXXXXX")"
+      trap 'rm -f -- "$config_tmp"' EXIT
+      awk -v db="$restore_name" '!/^LOCAL_DB_NAME=[a-z][a-z0-9_]*$/ { print } END { print "LOCAL_DB_NAME=" db }' \
+        "$LOCAL/env" >"$config_tmp"
+      mv -- "$config_tmp" "$LOCAL/env"
+      trap - EXIT
+    fi
+    echo "Restored into $restore_name. Start or restart the local apps with: ./scripts/dev-local.sh start"
     ;;
   start)
     need pnpm mailpit setsid flock

@@ -11,13 +11,13 @@ import { isSecureRequest } from '../../../api/v1/auth/_helpers.js';
  * API/mobile clients should POST to `/api/v1/auth/magic-link/consume` instead
  * so they receive bearer tokens in the response body.
  */
-export const GET: RequestHandler = async ({ params, cookies, url }) => {
+export const GET: RequestHandler = async ({ params, cookies, url, getClientAddress }) => {
   const user = await consumeMagicLink(params.token);
   if (!user) {
     // Return to sign-in so the reader sees the error and can request another link.
     throw redirect(303, '/login?auth_error=invalid_magic_link');
   }
-  const session = await createSession(user.id);
+  const session = await createSession(user.id, getClientAddress);
   setSessionCookie(cookies, session.token, session.expiresAt, isSecureRequest(url));
   throw redirect(303, '/');
 };

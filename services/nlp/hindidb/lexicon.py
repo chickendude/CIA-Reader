@@ -6,7 +6,8 @@ from pathlib import Path
 
 from parhiba_dictionary.matching import matching_prefixes
 
-from .morphology import forms, excluded_forms
+from .morphology import excluded_forms
+from .phrase_forms import phrase_verb_inflections, reading_forms, verb_frames
 from .text import normalize, tokenize
 from .spelling import nukta_key, omitted_nukta_match, OMITTED_NUKTA
 from .entry_groups import apply_groups
@@ -50,8 +51,9 @@ class Lexicon:
             for key in document.get('deleted_entries', []):
                 self.entries.pop(key, None)
         apply_groups(self)
+        self.verb_inflections = phrase_verb_inflections(self.entries.values())
         for entry in self.entries.values():
-            for form, rules in forms(entry).items():
+            for form, rules in reading_forms(entry, self.verb_inflections).items():
                 words = tokenize(form)
                 if not words or any(t.kind not in {"word", "foreign"} and t.surface not in {"-", "–"} for t in words):
                     raise ValueError(f"Unsupported lexical form: {form}")
@@ -86,6 +88,7 @@ class Lexicon:
         for key in deleted:
             result.entries.pop(key, None)
         apply_groups(result)
+        result.verb_inflections = phrase_verb_inflections(result.entries.values())
         result.trie = self.trie
         # Immutable sets shared by older lexicons must not be changed by edits.
         # Removed words may remain in this small lookup index; matching still
@@ -128,14 +131,20 @@ class Lexicon:
             return updated
 
         # Combine equivalent normalized token paths exactly as __init__ does.
-        def paths(entry):
+        def paths(entry, inflections):
             return {tuple(t.normalized for t in tokenize(form)): rules
-                    for form, rules in forms(entry).items()} if entry else {}
+                    for form, rules in reading_forms(entry, inflections).items()} if entry else {}
 
-        for key in override.entries.keys() | deleted:
-            entry = override.entries.get(key)
-            previous = paths(self.entries.get(key))
-            changed = paths(entry)
+        keys = override.entries.keys() | deleted
+        changed_verbs = {verb for verb in self.verb_inflections.keys() | result.verb_inflections.keys()
+                         if self.verb_inflections.get(verb) != result.verb_inflections.get(verb)}
+        if changed_verbs:
+            # Changing a standalone verb also changes phrases that use its inflections.
+            keys.update(key for key, entry in result.entries.items()
+                        if any(verb in changed_verbs for _, verb in verb_frames(entry)))
+        for key in keys:
+            previous = paths(self.entries.get(key), self.verb_inflections)
+            changed = paths(result.entries.get(key), result.verb_inflections)
             for words in previous.keys() | changed.keys():
                 if previous.get(words) != changed.get(words):
                     result.trie = replace(result.trie, words, key, changed.get(words))

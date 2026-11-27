@@ -94,9 +94,11 @@ data works, but those media files must be transferred separately into
 `.local/audio` and `.local/pdf`.
 
 Restore always creates a new database and refuses to overwrite an existing one.
-For another snapshot, stop the local apps, choose a new `LOCAL_DB_NAME` in
-`.local/env`, and run `restore` again. A failed restore leaves an empty database
-with the attempted name; choose another name before retrying. Local changes do
+For a downloaded `parhiba-TIMESTAMP.dump`, the restore command names the database
+after the snapshot and selects it in `.local/env` after the restore succeeds.
+Restart running local apps to use it. Other archive names use the configured
+`LOCAL_DB_NAME`. A failed restore can leave an empty database under the attempted
+name. To retry, use a different archive name and a fresh `LOCAL_DB_NAME`. Local changes do
 not sync back to Parhiba. Restore dumps only from a server you trust.
 
 ### Docker Compose

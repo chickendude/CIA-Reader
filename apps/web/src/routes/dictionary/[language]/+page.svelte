@@ -70,8 +70,8 @@
       {#if data.canEdit}
         <div class="actions">
           {#if reviewHref}<Button href={reviewHref}>Book review</Button>{/if}
-          {#if data.staff && data.language.code !== 'hi'}
-            <Button href={`/moderation/dictionary?language=${data.language.code}`}>Manage entries</Button>
+          {#if data.staff && data.language.code !== 'hi' && workshop?.previewSelection().id}
+            <Button href={`/moderation/dictionary/${workshop.previewSelection().id}`}>Manage entry</Button>
           {/if}
           <Button variant="toggle" aria-pressed={!!data.staff} onclick={toggleStaff}>Staff</Button>
         </div>

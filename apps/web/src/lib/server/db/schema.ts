@@ -103,6 +103,21 @@ export const users = pgTable(
   }),
 );
 
+export const userNetworks = pgTable(
+  'user_networks',
+  {
+    userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+    network: text('network').notNull(),
+    lastSeenAt: timestamp('last_seen_at', { withTimezone: true }).notNull().defaultNow(),
+    signupAt: timestamp('signup_at', { withTimezone: true }),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.userId, t.network] }),
+    networkIdx: index('user_networks_network_idx').on(t.network, t.lastSeenAt),
+    expiryIdx: index('user_networks_expiry_idx').on(t.lastSeenAt),
+  }),
+);
+
 /**
  * Web session cookie. `id` is the SHA-256 of the cookie value; the cookie
  * itself is never stored in the DB. A session is revoked by deleting its row.

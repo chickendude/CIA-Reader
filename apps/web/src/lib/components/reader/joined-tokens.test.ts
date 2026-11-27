@@ -146,6 +146,26 @@ describe('multiword Hindi dictionary entries in the reader', () => {
     expect(joinDictionaryEntries(reviewed)).toEqual(reviewed);
   });
 
+  it.each(['न', 'नहीं'])('keeps inserted %s independent when looking up a verb phrase', (particle) => {
+    const space = (idx: number) => token(idx, ' ', { isWord: false });
+    const words = [
+      token(0, 'साथ', { lemmaId: 'phrase', headword: 'साथ छोड़ना', pos: 'VERB',
+        dictionarySpanEnds: { phrase: 5 }, romanization: 'sāth' }),
+      space(1), token(2, particle, { lemmaId: 'negative', selectedBy: 'human' }),
+      space(3), token(4, 'छोड़', { lemmaId: 'leave', romanization: 'choṛ' }),
+      space(5), token(6, 'दें', { lemmaId: 'give' }),
+    ];
+    const result = joinDictionaryEntries(words);
+    expect(result.map(t => t.surface)).toEqual(words.map(t => t.surface));
+    expect(result[0]?.phraseReading).toMatchObject({
+      id: '0', lemmaId: 'phrase', surface: 'साथ छोड़', romanization: 'sāth choṛ',
+    });
+    expect(result[4]?.phraseReading).toBe(result[0]?.phraseReading);
+    expect(result[4]?.id).toBe('4');
+    expect(result[2]).toBe(words[2]);
+    expect(result[6]).toBe(words[6]);
+  });
+
   it('keeps the individual words when the selected reading changes or a covered word has a correction', () => {
     const standalone = [{ ...spell[0]!, lemmaId: 'name', features: {} }, ...spell.slice(1)];
     expect(joinDictionaryEntries(standalone)).toEqual(standalone);

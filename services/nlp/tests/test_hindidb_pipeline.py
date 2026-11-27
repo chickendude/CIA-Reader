@@ -1,3 +1,4 @@
+import json
 from unittest.mock import MagicMock
 from uuid import NAMESPACE_URL, uuid4, uuid5
 
@@ -92,6 +93,64 @@ def test_excluded_forms_nukta_variants_and_unresolved_gaps_survive_adapter():
     assert result.hindi_analysis["stats"]["unresolved_occurrences"] == 3
     assert result.hindi_analysis["stats"]["source_words"] == 3
     assert "".join(t.surface for t in result.tokens) == text
+
+
+def test_negated_phrase_uses_the_saved_headword_in_the_reader():
+    provider = Provider([
+        entry("साथ छोड़ना", "VERB"),
+        entry("साथ", "NOUN"), entry("न", "PART"),
+        entry("छोड़ना", "VERB", paradigm="verb_consonant"),
+        entry("देना", "VERB", forms=["दें"]),
+    ])
+    text = "वह आशा कर रहा था कि उसके घुटने उसका साथ न छोड़ दें।"
+    result = HindiDBPipeline(provider).process(text)
+    assert "".join(token.surface for token in result.tokens) == text
+    spans = {
+        (item["lemma_id"], text[item["source_start"]:item["source_end"]]): item["rules"]
+        for item in result.hindi_analysis["occurrences"]
+    }
+    for lemma, pos, surface in [
+        ("साथ", "NOUN", "साथ"), ("न", "PART", "न"),
+        ("छोड़ना", "VERB", "छोड़"), ("देना", "VERB", "दें"),
+    ]:
+        assert (provider.ids[lexical_id(lemma, pos)], surface) in spans
+    assert "phrase:negation" in spans[provider.ids[lexical_id("साथ छोड़ना", "VERB")], "साथ न छोड़"]
+
+
+def test_negation_requires_a_verb_slot_and_respects_exclusions_and_literal_entries():
+    lexicon = Provider([
+        entry("ध्यान देना", "VERB", forms=["ध्यान दिया", "ध्यान न दिया"],
+              excluded_forms=["ध्यान दीजिए", "ध्यान नहीं दें"]),
+        entry("देना", "VERB", forms=["दिया", "दें", "दीजिए"]),
+        entry("ध्यान देना", "NOUN"),
+        entry("ध्यान न देना", "VERB"),
+    ]).lexicon
+    text = ("ध्यान दिया। ध्यान न दिया। ध्यान नहीं दिया। ध्यान न दें। ध्यान नहीं दें। "
+            "ध्यान न दीजिए। ध्यान न न दिया। ध्यान, न दिया। ध्यान नहीं। दिया। "
+            "ध्यान न ही दिया। ध्यान न देना।")
+    matches = analyze(text, lexicon)["occurrences"]
+    positives = [m for m in matches if m["entry_id"] == lexical_id("ध्यान देना", "VERB")]
+    assert [m["surface"] for m in positives] == [
+        "ध्यान दिया", "ध्यान न दिया", "ध्यान नहीं दिया", "ध्यान न दें", "ध्यान न देना",
+    ]
+    assert positives[1]["rules"] == ["explicit-form"]
+    assert all(m["entry_id"] != lexical_id("ध्यान देना", "NOUN") for m in matches)
+    assert [m["surface"] for m in matches if m["entry_id"] == lexical_id("ध्यान न देना", "VERB")] == [
+        "ध्यान न देना"
+    ]
+
+
+def test_phrase_inherits_updates_to_the_final_verb_without_editing_the_phrase(tmp_path):
+    lexicon = Provider([
+        entry("ध्यान देना", "VERB"), entry("देना", "VERB", forms=["दिया"]),
+    ]).lexicon
+    path = tmp_path / "override.json"
+    path.write_text(json.dumps({"entries": [entry("देना", "VERB", forms=["दें"])]}))
+    updated = lexicon.extended(path)
+    passage = "ध्यान न दें। ध्यान नहीं दिया।"
+    for source, expected in [(lexicon, "ध्यान नहीं दिया"), (updated, "ध्यान न दें")]:
+        [phrase] = [m for m in analyze(passage, source)["occurrences"] if m["compound"]]
+        assert phrase["surface"] == expected
 
 
 def test_grammatical_constructions_do_not_become_vocabulary_occurrences():

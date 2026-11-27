@@ -44,6 +44,15 @@ class ImportTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 source_chapters("Harry Potter 2", damaged)
 
+    def test_lexical_span_cannot_cross_a_chapter_heading(self):
+        text = "".join(f"अध्याय - {n}\nशीर्षक\n" for n in NUMBERS)
+        second = text.index("अध्याय - दो")
+        with self.assertRaisesRegex(ValueError, "span crosses"):
+            source_chapters("Harry Potter 2", text, [(second - 1, second + 3)])
+        self.assertEqual(
+            len(source_chapters("Harry Potter 2", text, [(0, second)])), 18
+        )
+
     def test_choices_survive_meaning_edits_but_not_identity_or_context_changes(self):
         identities = {
             "noun": ("uuid-noun", "खाना", "NOUN"),

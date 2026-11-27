@@ -1,6 +1,7 @@
 import { and, eq, gt } from 'drizzle-orm';
 import type { Cookies } from '@sveltejs/kit';
 import { db, schema } from '../db/index.js';
+import { recordNetwork } from './user-networks.js';
 import { generateToken, hashToken } from './tokens.js';
 import type { User } from '../db/schema.js';
 
@@ -11,11 +12,17 @@ function ttlMs() {
   return SESSION_TTL_DAYS * 24 * 60 * 60 * 1000;
 }
 
-export async function createSession(userId: string): Promise<{ token: string; expiresAt: Date }> {
+export async function createSession(userId: string, getClientAddress: () => string, signup = false): Promise<{ token: string; expiresAt: Date }> {
   const token = generateToken();
   const id = hashToken(token);
   const expiresAt = new Date(Date.now() + ttlMs());
   await db.insert(schema.sessions).values({ id, userId, expiresAt });
+  try {
+    await recordNetwork(userId, getClientAddress, signup);
+  } catch {
+    // Readers can still sign in if recording the network is temporarily unavailable.
+    console.error('Could not record account network');
+  }
   return { token, expiresAt };
 }
 

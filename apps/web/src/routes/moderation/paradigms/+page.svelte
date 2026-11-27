@@ -33,7 +33,7 @@
 <PageLayout {heading}>
 <div class="page">
   <p class="crumb">
-    <a href="/moderation/dictionary">← Back to dictionary</a>
+    <a href="/moderation">← Back to moderation</a>
   </p>
 
   <header>

@@ -9,25 +9,25 @@
   let {
     token,
     showRomanization = false,
-    isAnchor = false,
+    activeId,
+    previewId,
   }: {
     token: ServerToken;
     showRomanization?: boolean;
-    /** True when this token is the one currently locked in the side
-     *  panel — gets an outline so the user remembers which word the
-     *  panel is bound to. */
-    isAnchor?: boolean;
+    activeId?: string;
+    previewId?: string;
   } = $props();
 
   const changes = readerOccurrenceIgnores();
-  const ignored = $derived(isIgnoredHere(token, changes));
+  const ignored = $derived(isIgnoredHere(token.phraseReading ?? token, changes));
 
   // A dashed underline marks a missing dictionary entry. Learning status uses a separate style.
   const cssClass = $derived.by(() => {
     if (!token.isWord && !token.numberForms && !looksLikeNumberToken(token.surface)) return '';
     const classes: string[] = ['word'];
     if (!ignored && token.isOov) classes.push('oov');
-    if (isAnchor) classes.push('anchor');
+    if (activeId === (token.phraseReading?.id ?? token.id)) classes.push('anchor');
+    if (token.phraseReading && previewId === token.phraseReading.id) classes.push('phrase-hover');
     if (!ignored && token.hasDefinition === false) classes.push('no-definition');
     return classes.join(' ');
   });
@@ -47,12 +47,14 @@
 {#if !token.isWord && !token.numberForms && !looksLikeNumberToken(token.surface)}{token.surface}{:else if showRuby}<ruby
     class={cssClass}
     data-token-id={token.id}
+    data-phrase-reading={token.phraseReading?.id}
     data-token-idx={token.idx}
     data-token-last={token.lastTokenIdx}
     data-lemma-id={token.lemmaId ?? ''}
     data-s={dataS}>{token.surface}<rt>{token.romanization}</rt></ruby>{:else}<span
     class={cssClass}
     data-token-id={token.id}
+    data-phrase-reading={token.phraseReading?.id}
     data-token-idx={token.idx}
     data-token-last={token.lastTokenIdx}
     data-lemma-id={token.lemmaId ?? ''}
@@ -65,7 +67,7 @@
     padding: 0 1.5px;
     transition: background 120ms ease;
   }
-  .word:hover {
+  .word:hover, .word.phrase-hover {
     background: color-mix(in oklch, var(--accent) 28%, transparent);
   }
   /* `<ruby>` defaults to `display: ruby` which behaves like an inline

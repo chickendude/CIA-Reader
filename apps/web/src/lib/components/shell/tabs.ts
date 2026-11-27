@@ -78,7 +78,7 @@ export const TABS: readonly Tab[] = [
   {
     id: 'moderation',
     label: 'Moderation',
-    href: '/moderation/dictionary',
+    href: '/moderation',
     auth: 'curator-or-admin',
     match: ['/moderation'],
     icon: 'moderation',

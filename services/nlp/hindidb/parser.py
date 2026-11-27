@@ -8,7 +8,7 @@ from .examples import add_example_spans
 from .constructions import is_construction
 from .text import NORMALIZATION_VERSION, context, tokenize
 
-PARSER_VERSION = "0.4.2"
+PARSER_VERSION = "0.4.3"
 
 
 def analyze(text: str, lexicon: Lexicon | None = None) -> dict:

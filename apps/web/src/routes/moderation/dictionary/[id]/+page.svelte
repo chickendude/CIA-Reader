@@ -324,7 +324,7 @@
     <nav class="mod-crumb" aria-label="Breadcrumb">
       <a href="/moderation">Moderation</a>
       <span class="mod-crumb-sep">/</span>
-      <a href="/moderation/dictionary?language={lemma.language}">Dictionary</a>
+      <a href="/dictionary/{lemma.language}">Dictionary</a>
       <span class="mod-crumb-sep">/</span>
       <span class="mod-crumb-cur">Edit lemma</span>
     </nav>

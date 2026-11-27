@@ -71,7 +71,7 @@ export const actions: Actions = {
   // a set of named actions, never both. The magic-link path is
   // distinct enough to deserve its own name, so we keep both as
   // named actions and the password form posts to `?/signin`.
-  signin: async ({ request, cookies, url }) => {
+  signin: async ({ request, cookies, url, getClientAddress }) => {
     const fd = await request.formData();
     const raw = {
       email: fd.get('email')?.toString() ?? '',
@@ -105,7 +105,7 @@ export const actions: Actions = {
     const passwordOk = await verifyPassword(user.passwordHash, parsed.data.password);
     if (!passwordOk) return invalid();
 
-    const session = await createSession(user.id);
+    const session = await createSession(user.id, getClientAddress);
     setSessionCookie(cookies, session.token, session.expiresAt, isSecureRequest(url));
 
     throw redirect(303, readNext(url));

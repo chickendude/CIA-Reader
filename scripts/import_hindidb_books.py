@@ -6,7 +6,7 @@ completed imports are skipped so subsequent Parhiba edits are never overwritten.
 """
 
 import argparse
-from bisect import bisect_left
+from bisect import bisect_left, bisect_right
 from collections import Counter, defaultdict
 from datetime import datetime, timezone
 import hashlib
@@ -78,6 +78,11 @@ def source_chapters(title, text, protected_spans=()):
     numbers = [m[1].replace("पंद्र्रह", "पंद्रह") for m in headings]
     if numbers != NUMBERS[:expected]:
         raise ValueError(f"{title} must have all {expected} numbered headings in order")
+    boundaries = [m.start() for m in headings[1:]]
+    for start, end in protected_spans:
+        next_boundary = bisect_right(boundaries, start)
+        if next_boundary < len(boundaries) and boundaries[next_boundary] < end:
+            raise ValueError(f"A source span crosses a chapter heading in {title}")
     chapters = []
     for index, heading in enumerate(headings):
         end = headings[index + 1].start() if index + 1 < expected else len(text)

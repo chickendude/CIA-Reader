@@ -43,6 +43,7 @@
 		# Forward the real client info so SvelteKit's logging /
 		# rate-limit / cookie-secure logic sees the right values
 		# instead of the docker network's internal IP.
+		header_up X-Parhiba-Client-IP {remote_host}
 		header_up X-Forwarded-Proto {scheme}
 		header_up X-Forwarded-Host  {host}
 	}

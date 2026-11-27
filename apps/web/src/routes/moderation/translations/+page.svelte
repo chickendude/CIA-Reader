@@ -82,7 +82,7 @@
       audit row to <code>lemma_edit_history</code>; Keep closes the report
       without touching the translation.
     </p>
-    <p class="tr-back"><a href="/moderation/dictionary">← Back to dictionary moderation</a></p>
+    <p class="tr-back"><a href="/moderation">← Back to moderation</a></p>
   </header>
 
   <div class="tr-filters">

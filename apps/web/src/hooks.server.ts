@@ -1,5 +1,6 @@
 import { redirect, type Handle } from '@sveltejs/kit';
-import { dev } from '$app/environment';
+import { building, dev } from '$app/environment';
+import { purgeExpiredNetworks } from '$lib/server/auth/user-networks.js';
 import { resolveUser } from '$lib/server/auth/require-user.js';
 import { shouldRedirectToOnboarding } from '$lib/server/onboarding.js';
 import {
@@ -66,6 +67,15 @@ function compressChapterData(response: Response, acceptEncoding: string) {
   headers.set('content-encoding', 'gzip');
   headers.delete('content-length');
   return new Response(response.body.pipeThrough(new CompressionStream('gzip')), { headers });
+}
+
+export function init() {
+  if (building) return;
+  const purge = () => purgeExpiredNetworks().catch(() => console.error('Could not expire account networks'));
+  void purge();
+  const timer = setInterval(purge, 60 * 60 * 1000);
+  timer.unref();
+  import.meta.hot?.dispose(() => clearInterval(timer));
 }
 
 export const handle: Handle = async ({ event, resolve }) => {

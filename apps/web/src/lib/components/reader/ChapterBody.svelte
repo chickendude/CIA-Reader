@@ -187,7 +187,7 @@
   // Lookup helper — server tokens are keyed by id.
   const tokensById = $derived.by(() => {
     if (!tokensWithOverrides) return new Map<string, ServerToken>();
-    return new Map(tokensWithOverrides.map((t) => [t.id, t]));
+    return new Map(tokensWithOverrides.map((t) => [t.id, t.phraseReading ?? t]));
   });
 
   // PDF image reader: word tokens that carry a bounding box, rendered as
@@ -543,7 +543,7 @@
 {#snippet renderSegment(segment: ParagraphSegment)}{#if segment.kind === 'token'}<TokenSpan
       token={segment.token}
       {showRomanization}
-      isAnchor={!pendingSelection && activeToken?.id === segment.token.id}
+      activeId={pendingSelection ? undefined : activeToken?.id} previewId={preview.token?.id}
     />{:else}<phrase
       class="phrase"
       data-phrase-id={segment.span.phraseId}
@@ -554,7 +554,7 @@
       >{#each segment.tokens as token (token.id)}<TokenSpan
           {token}
           {showRomanization}
-          isAnchor={!pendingSelection && activeToken?.id === token.id}
+          activeId={pendingSelection ? undefined : activeToken?.id} previewId={preview.token?.id}
         />{/each}</phrase>{/if}{/snippet}
 
 <!-- The hover tooltip is decorative chrome — keyboard / focus users get
@@ -591,7 +591,9 @@
       {#each overlayTokens as t (t.id)}
         <span
           class="ovl-hotspot"
-          class:anchor={activeToken?.id === t.id}
+          class:anchor={activeToken?.id === (t.phraseReading?.id ?? t.id)}
+          class:phrase-hover={t.phraseReading && preview.token?.id === t.phraseReading.id}
+          data-phrase-reading={t.phraseReading?.id}
           class:no-definition={!isIgnoredHere(t, occurrenceIgnores) && t.hasDefinition === false}
           data-token-id={t.id}
           data-token-idx={t.idx}
@@ -695,7 +697,7 @@
     background: color-mix(in oklch, var(--accent, var(--color-accent)) 8%, transparent);
     transition: background 80ms ease, box-shadow 80ms ease;
   }
-  .ovl-hotspot:hover {
+  .ovl-hotspot:is(:hover, .phrase-hover) {
     background: color-mix(in oklch, var(--accent, var(--color-accent)) 24%, transparent);
   }
   /* Learning words get the saffron study tint, mirroring tokens.css. */
@@ -709,10 +711,10 @@
   .ovl-hotspot[data-s='5'] {
     background: transparent;
   }
-  :global([data-hl='none']) .ovl-hotspot:hover,
-  :global([data-highlight-learning='off']) .ovl-hotspot[data-s='2']:hover,
-  .ovl-hotspot[data-s='4']:hover,
-  .ovl-hotspot[data-s='5']:hover {
+  :global([data-hl='none']) .ovl-hotspot:is(:hover, .phrase-hover),
+  :global([data-highlight-learning='off']) .ovl-hotspot[data-s='2']:is(:hover, .phrase-hover),
+  .ovl-hotspot[data-s='4']:is(:hover, .phrase-hover),
+  .ovl-hotspot[data-s='5']:is(:hover, .phrase-hover) {
     background: color-mix(in oklch, var(--accent, var(--color-accent)) 14%, transparent);
   }
   /* Selected word: a clear accent ring (meets the 3:1 non-text UI

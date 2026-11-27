@@ -11,7 +11,7 @@ export function reviewDestination(url: URL) {
     if (target.origin === url.origin && !target.pathname.startsWith('//')) {
       const parent = target.pathname.startsWith('/reader/') ? 'reader'
         : target.pathname.endsWith('/workshop') || target.pathname === '/dictionary/hi/review' ? 'dictionary workshop'
-        : target.pathname === '/moderation/dictionary' ? 'dictionary moderation'
+        : ['/moderation', '/moderation/dictionary'].includes(target.pathname) ? 'moderation'
         : target.pathname.startsWith('/library/') ? 'book details'
         : 'Hindi dictionary';
       return { href: target.pathname + target.search + target.hash, label: `Return to ${parent}` };

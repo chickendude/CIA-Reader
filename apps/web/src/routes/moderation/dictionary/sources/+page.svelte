@@ -109,7 +109,7 @@
       Admin-only — actions kick off in-process jobs.
     </p>
     <nav class="mod-nav" aria-label="Moderation sections">
-      <a href="/moderation/dictionary">← Dictionary moderation</a>
+      <a href="/moderation">← Back to moderation</a>
       <a href="/moderation/dictionary/bulk">Bulk tools</a>
       <a href="/moderation/paradigms">Paradigms</a>
     </nav>

@@ -83,6 +83,8 @@ export type ServerToken = {
   confirmedMerge?: HindiMerge;
   /** Exclusive source-token end for each multiword dictionary reading starting here. */
   dictionarySpanEnds?: Record<string, number>;
+  /** Lookup shared by the printed parts of a phrase separated by a negative particle. */
+  phraseReading?: ServerToken;
   lastTokenIdx?: number;
   bookFrequency?: number;
   correctedByViewer?: boolean;
