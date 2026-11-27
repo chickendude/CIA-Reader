@@ -33,7 +33,10 @@
         // banner-driving page data, banner disappears.
         location.reload();
       } else if (res.status === 429) {
-        error = 'Please try again in a minute.';
+        const body = await res.json().catch(() => null);
+        error = body?.error === 'daily_email_limit'
+          ? 'Verification emails are paused. Try again later.'
+          : 'Please try again in a minute.';
       } else {
         error = 'Could not resend. Try again later.';
       }
@@ -54,7 +57,7 @@
       {/if}
     </p>
     <button class="btn" type="button" onclick={resend} disabled={sending}>
-      {sending ? 'Sending…' : 'Resend it'}
+      {sending ? 'Sending…' : 'Send verification email'}
     </button>
   </div>
 {/if}

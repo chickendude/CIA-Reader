@@ -6,9 +6,7 @@ import { z } from 'zod';
 import { db, schema } from '$lib/server/db/index.js';
 import { verifyPassword } from '$lib/server/auth/password.js';
 import { createSession, setSessionCookie } from '$lib/server/auth/sessions.js';
-import { createMagicLink } from '$lib/server/auth/magic-link.js';
-import { buildMagicLinkEmail, sendMail } from '$lib/server/email/index.js';
-import { APP_BASE_URL } from '$lib/server/env.js';
+import { sendAccountLink } from '$lib/server/email/account-link.js';
 import { emailSchema, isSecureRequest } from '../api/v1/auth/_helpers.js';
 import type { Actions, PageServerLoad } from './$types';
 
@@ -125,7 +123,7 @@ export const actions: Actions = {
     }
 
     const [user] = await db
-      .select({ id: schema.users.id, email: schema.users.email })
+      .select({ id: schema.users.id, email: schema.users.email, emailVerifiedAt: schema.users.emailVerifiedAt })
       .from(schema.users)
       .where(eq(schema.users.email, parsed.data.email))
       .limit(1);
@@ -135,9 +133,7 @@ export const actions: Actions = {
     // a match.
     if (user) {
       try {
-        const token = await createMagicLink(user.id);
-        const link = `${APP_BASE_URL}/auth/magic/${encodeURIComponent(token)}`;
-        await sendMail(buildMagicLinkEmail(user.email, link));
+        await sendAccountLink(user, 'signin');
       } catch (err) {
         console.error('Failed to send magic link:', err);
       }
@@ -151,7 +147,7 @@ export const actions: Actions = {
     return {
       ok: true,
       section: 'magic',
-      message: `If an account exists for ${parsed.data.email}, a sign-in link is on its way.`,
+      message: `Check ${parsed.data.email} for a sign-in link. If it doesn’t arrive, try your password or request a link later.`,
     };
   },
 };

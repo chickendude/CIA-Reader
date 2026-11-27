@@ -1,26 +1,19 @@
 /**
  * POST /api/v1/auth/verify-email/resend.
  *
- * Sends a fresh magic-link email to the authenticated user so they
- * can verify their address. Used by the verification banner's
- * "Resend it" CTA. Idempotent on already-verified users (204) so
- * the UI doesn't have to special-case its own success state.
- *
- * Rate-limited per user — 1 send / 60s — to keep an obviously
- * legitimate user (who lost the original email) flowing without
- * letting a runaway client spam our SMTP relay.
+ * The verification banner uses this endpoint. Each account can request
+ * a verification email once a minute while its daily allowance and the
+ * shared unverified allowance have room.
  */
 import { error, json } from '@sveltejs/kit';
 
 import { requireUser } from '$lib/server/auth/require-user.js';
-import { createMagicLink } from '$lib/server/auth/magic-link.js';
+import { sendAccountLink } from '$lib/server/email/account-link.js';
 import {
   RequestRateLimitError,
   consumeRateLimit,
   rateLimitHeaders,
 } from '$lib/server/auth/rate-limits.js';
-import { buildMagicLinkEmail, sendMail } from '$lib/server/email/index.js';
-import { APP_BASE_URL } from '$lib/server/env.js';
 import type { RequestHandler } from './$types';
 
 const WINDOW_MS = 60_000;
@@ -55,10 +48,10 @@ export const POST: RequestHandler = async (event) => {
     throw err;
   }
 
-  const token = await createMagicLink(user.id);
-  const verifyUrl = `${APP_BASE_URL}/auth/magic/${encodeURIComponent(token)}`;
   try {
-    await sendMail(buildMagicLinkEmail(user.email, verifyUrl));
+    if (await sendAccountLink(user, 'verification') === 'limited') {
+      return json({ error: 'daily_email_limit', message: 'Verification emails are paused. Try again later.' }, { status: 429 });
+    }
   } catch (err) {
     console.error('Failed to resend verification email:', err);
     throw error(502, 'Could not send verification email. Try again later.');

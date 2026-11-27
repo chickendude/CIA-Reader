@@ -16,6 +16,18 @@ export const WEB_PORT = Number(env.WEB_PORT ?? 5173);
  *  from WEB_PORT so an overridden port keeps working links. */
 export const APP_BASE_URL = env.APP_BASE_URL ?? `http://localhost:${WEB_PORT}`;
 
+function emailLimit(name: string, fallback: number): number {
+  const raw = env[name]?.trim();
+  if (!raw) return fallback;
+  const value = Number(raw);
+  if (!/^\d+$/.test(raw) || !Number.isSafeInteger(value)) throw new Error(`Invalid ${name}`);
+  return value;
+}
+
+export const EMAIL_DAILY_LIMIT = emailLimit('EMAIL_DAILY_LIMIT', 100);
+export const EMAIL_UNVERIFIED_DAILY_LIMIT = Math.min(EMAIL_DAILY_LIMIT, emailLimit('EMAIL_UNVERIFIED_DAILY_LIMIT', 15));
+export const EMAIL_PER_ACCOUNT_LIMIT = emailLimit('EMAIL_PER_ACCOUNT_LIMIT', 5);
+
 export const SMTP_HOST = env.SMTP_HOST ?? 'localhost';
 export const SMTP_PORT = Number(env.SMTP_PORT ?? 1025);
 export const SMTP_USER = env.SMTP_USER ?? '';

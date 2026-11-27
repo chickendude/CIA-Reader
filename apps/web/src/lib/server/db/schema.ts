@@ -103,6 +103,13 @@ export const users = pgTable(
   }),
 );
 
+export const accountEmailAttempts = pgTable('account_email_attempts', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: uuid('user_id').references(() => users.id, { onDelete: 'set null' }),
+  verifiedSignin: boolean('verified_signin').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().default(sql`statement_timestamp()`),
+}, (t) => ({ createdIdx: index('account_email_attempts_created_idx').on(t.createdAt) }));
+
 export const userNetworks = pgTable(
   'user_networks',
   {

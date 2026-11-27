@@ -38,7 +38,8 @@
       <dl>
         <div><dt>New signups</dt><dd>{data.activity.signups}</dd></div>
         <div><dt>New signups still unverified</dt><dd>{data.activity.unverifiedSignups}</dd></div>
-        <div><dt>Email links created</dt><dd>{data.activity.emailLinks}</dd></div>
+        <div><dt>Email attempts / limit</dt><dd>{data.activity.emailAttempts} / {data.activity.emailLimit}</dd></div>
+        <div><dt>Unverified email attempts / limit</dt><dd>{data.activity.unverifiedAttempts} / {data.activity.unverifiedLimit}</dd></div>
       </dl>
     {:else}
       <h2>Dictionaries</h2>

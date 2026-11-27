@@ -11,7 +11,7 @@ export const load: PageServerLoad = async ({ parent, url, setHeaders }) => {
   setHeaders({ 'cache-control': 'private, no-store' });
   const filters = directoryFilters(url);
   const result = filters.grouped ? await listIpGroups(filters) : await listUsers(filters);
-  return { filters, ...result };
+  return { filters, ...result, asOf: Date.now() };
 };
 
 function adminId(locals: App.Locals) {

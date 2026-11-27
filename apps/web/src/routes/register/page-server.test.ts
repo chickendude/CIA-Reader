@@ -12,6 +12,10 @@ const dbInsertChain = {
   values: () => dbInsertChain,
   returning: () => Promise.resolve(dbInsert()),
 };
+const sendAccountLink = vi.fn();
+vi.mock('$lib/server/email/account-link.js', () => ({
+  sendAccountLink: (...args: unknown[]) => sendAccountLink(...args),
+}));
 const hashPassword = vi.fn();
 const createSession = vi.fn();
 const setSessionCookie = vi.fn();
@@ -65,6 +69,7 @@ async function callDefault(fields: Record<string, string>, urlStr = 'http://x/re
 }
 
 beforeEach(() => {
+  sendAccountLink.mockReset();
   dbSelect.mockReset();
   dbInsert.mockReset();
   hashPassword.mockReset();
@@ -91,7 +96,8 @@ describe('/register loader', () => {
 });
 
 describe('/register default action', () => {
-  it('creates the user and redirects to /onboarding by default', async () => {
+  it('creates the user and opens onboarding even when verification email is limited', async () => {
+    sendAccountLink.mockResolvedValueOnce('limited');
     dbSelect.mockReturnValueOnce([]); // no existing user
     hashPassword.mockResolvedValueOnce('hash');
     dbInsert.mockReturnValueOnce([
@@ -108,6 +114,7 @@ describe('/register default action', () => {
     })) as { status: number; location: string };
     expect(res.status).toBe(303);
     expect(res.location).toBe('/onboarding');
+    expect(sendAccountLink).toHaveBeenCalledWith(expect.objectContaining({ id: 'user-1' }), 'verification');
     expect(setSessionCookie).toHaveBeenCalled();
   });
 

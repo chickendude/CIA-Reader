@@ -4,12 +4,10 @@ import { z } from 'zod';
 import type { RequestHandler } from './$types';
 import { db, schema } from '$lib/server/db/index.js';
 import { hashPassword } from '$lib/server/auth/password.js';
-import { createMagicLink } from '$lib/server/auth/magic-link.js';
+import { sendAccountLink } from '$lib/server/email/account-link.js';
 import { createSession, setSessionCookie } from '$lib/server/auth/sessions.js';
 import { signAccessToken, ACCESS_TOKEN_TTL } from '$lib/server/auth/access-token.js';
 import { createRefreshToken } from '$lib/server/auth/refresh.js';
-import { buildMagicLinkEmail, sendMail } from '$lib/server/email/index.js';
-import { APP_BASE_URL } from '$lib/server/env.js';
 import { emailSchema, isSecureRequest, parseJson, passwordSchema, publicUser } from '../_helpers.js';
 
 const body = z.object({
@@ -50,9 +48,7 @@ export const POST: RequestHandler = async ({ request, cookies, url, getClientAdd
   // are logged but don't block signup — clients can resend via
   // POST /api/v1/auth/verify-email/resend.
   try {
-    const token = await createMagicLink(created.id);
-    const verifyUrl = `${APP_BASE_URL}/auth/magic/${encodeURIComponent(token)}`;
-    await sendMail(buildMagicLinkEmail(created.email, verifyUrl));
+    await sendAccountLink(created, 'verification');
   } catch (err) {
     console.error('Failed to send verification email on register:', err);
   }

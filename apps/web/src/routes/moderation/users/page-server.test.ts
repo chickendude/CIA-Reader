@@ -24,7 +24,7 @@ it('blocks curators before querying account details', async () => {
 it('passes the selected filters and page to the admin directory', async () => {
   const request = event('admin', '?joined=24h&verification=unverified&page=2');
   await load(request);
-  expect(listUsers).toHaveBeenCalledWith(expect.objectContaining({ recent: true, verification: 'unverified', page: 2, sort: 'most-ips' }));
+  expect(listUsers).toHaveBeenCalledWith(expect.objectContaining({ recent: true, verification: 'unverified', page: 2, sort: expect.objectContaining({ value: 'most-ips' }) }));
   expect(request.setHeaders).toHaveBeenCalledWith({ 'cache-control': 'private, no-store' });
 });
 

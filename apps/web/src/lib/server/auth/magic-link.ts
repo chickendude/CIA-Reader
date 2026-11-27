@@ -1,16 +1,32 @@
-import { and, eq, isNull, gt } from 'drizzle-orm';
+import { and, eq, isNull, gt, count, lte, sql } from 'drizzle-orm';
+import { EMAIL_DAILY_LIMIT, EMAIL_UNVERIFIED_DAILY_LIMIT, EMAIL_PER_ACCOUNT_LIMIT } from '../env.js';
 import { db, schema } from '../db/index.js';
 import { generateToken, hashToken } from './tokens.js';
 import type { User } from '../db/schema.js';
 
 const MAGIC_LINK_TTL_MINUTES = 15;
 
-export async function createMagicLink(userId: string): Promise<string> {
-  const token = generateToken();
-  const id = hashToken(token);
-  const expiresAt = new Date(Date.now() + MAGIC_LINK_TTL_MINUTES * 60 * 1000);
-  await db.insert(schema.magicLinks).values({ id, userId, expiresAt });
-  return token;
+export async function createMagicLink(userId: string, verifiedSignin: boolean): Promise<string | null> {
+  return db.transaction(async tx => {
+    // All web and API instances reserve a slot before SMTP, including retries.
+    await tx.execute(sql`select pg_advisory_xact_lock(7462, 76)`);
+    const attempts = schema.accountEmailAttempts;
+    const cutoff = sql`statement_timestamp() - interval '24 hours'`;
+    await tx.delete(attempts).where(lte(attempts.createdAt, cutoff));
+    const [usage] = await tx.select({
+      total: count(),
+      unverified: sql<number>`count(*) filter (where not ${attempts.verifiedSignin})`.mapWith(Number),
+      account: sql<number>`count(*) filter (where ${attempts.userId} = ${userId})`.mapWith(Number),
+    }).from(attempts);
+    if (!usage || usage.total >= EMAIL_DAILY_LIMIT || usage.account >= EMAIL_PER_ACCOUNT_LIMIT
+      || (!verifiedSignin && usage.unverified >= EMAIL_UNVERIFIED_DAILY_LIMIT)) return null;
+
+    const token = generateToken();
+    const expiresAt = new Date(Date.now() + MAGIC_LINK_TTL_MINUTES * 60 * 1000);
+    await tx.insert(attempts).values({ userId, verifiedSignin });
+    await tx.insert(schema.magicLinks).values({ id: hashToken(token), userId, expiresAt });
+    return token;
+  });
 }
 
 /**

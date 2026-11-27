@@ -1,26 +1,24 @@
 import { and, asc, count, desc, eq, gte, inArray, isNotNull, isNull, ne, or, sql } from 'drizzle-orm';
+import { accountColumns, groupColumns, resolveSort } from '$lib/moderation/directory-sort';
 import { error } from '@sveltejs/kit';
 import { db, schema } from '../db/index.js';
+import { EMAIL_DAILY_LIMIT, EMAIL_UNVERIFIED_DAILY_LIMIT } from '../env.js';
 import { networkCutoff } from './user-networks.js';
 
 const PAGE_SIZE = 50;
 const { users, userNetworks } = schema;
 const active = gte(userNetworks.lastSeenAt, networkCutoff);
-const accountSorts = ['most-ips', 'fewest-ips', 'newest', 'oldest', 'email-asc', 'email-desc', 'name', 'name-desc'] as const;
-type AccountSort = typeof accountSorts[number];
-
 export function directoryFilters(url: URL) {
   const status = url.searchParams.get('verification');
-  const sort = url.searchParams.get('sort');
-  const groupOrder = url.searchParams.get('groupOrder');
+  const sort = resolveSort(accountColumns, url.searchParams.get('sort'), 'ips');
+  const groupOrder = resolveSort(groupColumns, url.searchParams.get('groupOrder'), 'members');
   const network = url.searchParams.get('network');
   if (network && !/^[0-9a-f]{64}$/.test(network)) error(400, 'Invalid IP group');
   const requestedPage = Number(url.searchParams.get('page'));
   return {
     recent: url.searchParams.get('joined') === '24h',
     verification: status === 'verified' || status === 'unverified' ? status : 'all',
-    sort: accountSorts.find(option => option === sort) ?? 'most-ips',
-    groupOrder: groupOrder === 'fewest' || groupOrder === 'recent' ? groupOrder : 'most',
+    sort, groupOrder,
     grouped: url.searchParams.get('view') === 'ips',
     network: network || null,
     page: Number.isSafeInteger(requestedPage) && requestedPage > 0 ? requestedPage : 1,
@@ -43,32 +41,33 @@ function pagination(page: number, total: number) {
 }
 
 const ipCount = db.$count(userNetworks, and(eq(userNetworks.userId, users.id), active));
-function orderAccounts(sort: AccountSort) {
-  switch (sort) {
-    case 'most-ips': return desc(ipCount);
-    case 'fewest-ips': return asc(ipCount);
-    case 'newest': return desc(users.createdAt);
-    case 'oldest': return asc(users.createdAt);
-    case 'email-asc': return asc(users.email);
-    case 'email-desc': return desc(users.email);
-    case 'name': return asc(sql`lower(coalesce(${users.displayName}, ${users.email}))`);
-    case 'name-desc': return desc(sql`lower(coalesce(${users.displayName}, ${users.email}))`);
-  }
-}
+const linksCreated = db.$count(schema.magicLinks, eq(schema.magicLinks.userId, users.id));
+const textsWithProgress = db.$count(schema.userTextProgress, eq(schema.userTextProgress.userId, users.id));
+const accountOrderFields = {
+  email: users.email,
+  name: sql`lower(coalesce(${users.displayName}, ''))`,
+  role: sql`${users.role}::text`,
+  joined: users.createdAt,
+  verified: isNotNull(users.emailVerifiedAt),
+  onboarded: isNotNull(users.onboardedAt),
+  links: linksCreated,
+  texts: textsWithProgress,
+  ips: ipCount,
+};
 
 export async function listUsers(filters: Filters) {
   const where = and(accountFilter(filters), filters.network ? inArray(users.id,
     db.select({ id: userNetworks.userId }).from(userNetworks)
       .where(and(active, eq(userNetworks.network, filters.network)))) : undefined);
   const paging = pagination(filters.page, await db.$count(users, where));
+  const order = filters.sort.direction === 'ascending' ? asc : desc;
   const accounts = await db.select({
     id: users.id, email: users.email, displayName: users.displayName, role: users.role,
     createdAt: users.createdAt, emailVerifiedAt: users.emailVerifiedAt, onboardedAt: users.onboardedAt,
     ipCount,
-    linksCreated: db.$count(schema.magicLinks, eq(schema.magicLinks.userId, users.id)),
-    textsWithProgress: db.$count(schema.userTextProgress, eq(schema.userTextProgress.userId, users.id)),
+    linksCreated, textsWithProgress,
   }).from(users).where(where)
-    .orderBy(orderAccounts(filters.sort), desc(users.createdAt), asc(users.id))
+    .orderBy(order(accountOrderFields[filters.sort.key]), desc(users.createdAt), asc(users.id))
     .limit(paging.limit).offset(paging.offset);
   const memberships = accounts.length ? await db.select({
     userId: userNetworks.userId, network: userNetworks.network,
@@ -92,9 +91,8 @@ export async function listIpGroups(filters: Filters) {
   }).from(userNetworks).innerJoin(users, eq(users.id, userNetworks.userId))
     .where(where).groupBy(userNetworks.network).as('ip_groups');
   const paging = pagination(filters.page, await db.$count(groups));
-  const order = filters.groupOrder === 'fewest' ? asc(groups.members)
-    : filters.groupOrder === 'recent' ? desc(groups.latest) : desc(groups.members);
-  const rows = await db.select().from(groups).orderBy(order, asc(groups.network))
+  const order = filters.groupOrder.direction === 'ascending' ? asc : desc;
+  const rows = await db.select().from(groups).orderBy(order(groups[filters.groupOrder.key]), asc(groups.network))
     .offset(paging.offset).limit(paging.limit);
   return { ...paging, groups: rows };
 }
@@ -135,12 +133,19 @@ export async function deleteReviewedUsers(adminId: string, ids: string[]) {
 
 export async function recentSiteActivity() {
   const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
-  const { users, magicLinks } = schema;
+  const { users, accountEmailAttempts } = schema;
   const joined = gte(users.createdAt, since);
-  const [signups, unverifiedSignups, emailLinks] = await Promise.all([
+  const [signups, unverifiedSignups, [usage]] = await Promise.all([
     db.$count(users, joined),
     db.$count(users, and(joined, isNull(users.emailVerifiedAt))),
-    db.$count(magicLinks, gte(magicLinks.createdAt, since)),
+    db.select({
+      total: count(),
+      unverified: sql<number>`count(*) filter (where not ${accountEmailAttempts.verifiedSignin})`.mapWith(Number),
+    }).from(accountEmailAttempts).where(gte(accountEmailAttempts.createdAt, since)),
   ]);
-  return { signups, unverifiedSignups, emailLinks };
+  return {
+    signups, unverifiedSignups,
+    emailAttempts: usage?.total ?? 0, emailLimit: EMAIL_DAILY_LIMIT,
+    unverifiedAttempts: usage?.unverified ?? 0, unverifiedLimit: EMAIL_UNVERIFIED_DAILY_LIMIT,
+  };
 }

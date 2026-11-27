@@ -92,7 +92,7 @@ describe('POST /api/v1/auth/verify-email/resend', () => {
     const res = await POST(makeEvent());
 
     expect(res.status).toBe(202);
-    expect(createMagicLink).toHaveBeenCalledWith('u2');
+    expect(createMagicLink).toHaveBeenCalledWith('u2', false);
     expect(sendMail).toHaveBeenCalledWith(
       expect.objectContaining({
         to: 'unverified@example.com',
@@ -114,6 +114,15 @@ describe('POST /api/v1/auth/verify-email/resend', () => {
     expect(res.status).toBe(429);
     const body = await res.json();
     expect(body).toMatchObject({ error: 'rate_limited', retryAfterSeconds: 60 });
+    expect(sendMail).not.toHaveBeenCalled();
+  });
+
+  it('pauses verification email when the shared daily quota is full', async () => {
+    requireUser.mockResolvedValue({ id: 'u2', email: 'a@b.c', emailVerifiedAt: null });
+    createMagicLink.mockResolvedValue(null);
+    const res = await POST(makeEvent());
+    expect(res.status).toBe(429);
+    expect(await res.json()).toMatchObject({ error: 'daily_email_limit' });
     expect(sendMail).not.toHaveBeenCalled();
   });
 

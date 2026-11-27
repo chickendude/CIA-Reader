@@ -26,7 +26,7 @@ it('blocks site statistics for curators', async () => {
 });
 
 it('returns site statistics for admins', async () => {
-  const activity = { signups: 3, unverifiedSignups: 2, emailLinks: 4 };
+  const activity = { signups: 3, unverifiedSignups: 2, emailAttempts: 4, emailLimit: 100, unverifiedAttempts: 3, unverifiedLimit: 15 };
   vi.mocked(recentSiteActivity).mockResolvedValue(activity);
   await expect(visit('admin', '?tab=site')).resolves.toEqual({ activity });
 });

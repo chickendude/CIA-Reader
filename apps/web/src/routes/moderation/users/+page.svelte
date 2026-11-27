@@ -1,6 +1,8 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
   import { page } from '$app/state';
   import { enhance } from '$app/forms';
+  import { accountColumns, groupColumns, activeDirection } from '$lib/moderation/directory-sort';
   import ReviewDeletion from './ReviewDeletion.svelte';
   import Button from '$lib/components/input/Button.svelte';
   import Pagination from '$lib/components/input/Pagination.svelte';
@@ -12,9 +14,28 @@
 
   let { data, form }: PageProps = $props();
   const filters = $derived(data.filters);
+  const columns = $derived(filters.grouped ? groupColumns : accountColumns);
+  const sortKey = $derived(filters.grouped ? 'groupOrder' : 'sort');
+  const currentSort = $derived(filters.grouped ? filters.groupOrder.value : filters.sort.value);
   const joinedFormat = new Intl.DateTimeFormat('en-GB', {
-    dateStyle: 'medium', timeStyle: 'short', timeZone: 'UTC',
+    dateStyle: 'medium', timeStyle: 'long', timeZone: 'UTC',
   });
+
+  let clientNow = $state<number | null>(null);
+  const relativeFormat = new Intl.RelativeTimeFormat('en', { numeric: 'always' });
+  onMount(() => {
+    clientNow = Date.now();
+    const timer = setInterval(() => { clientNow = Date.now(); }, 30_000);
+    return () => clearInterval(timer);
+  });
+
+  function timeAgo(date: Date, now: number) {
+    const seconds = Math.max(0, (now - date.getTime()) / 1000);
+    if (seconds < 60) return 'Just now';
+    if (seconds < 3600) return relativeFormat.format(-Math.floor(seconds / 60), 'minute');
+    if (seconds < 86400) return relativeFormat.format(-Math.floor(seconds / 3600), 'hour');
+    return relativeFormat.format(-Math.floor(seconds / 86400), 'day');
+  }
 
   function href(changes: Record<string, string | null> = {}) {
     const url = new URL(page.url);
@@ -59,13 +80,41 @@
   <SubpageHeading title="Users" href="/moderation?tab=site" closeLabel="Back to site moderation" />
 {/snippet}
 
+{#snippet tableHead()}
+  <thead><tr>
+    <th scope="col" class="select-column">
+      {#key page.url.search}
+        <input type="checkbox" name="selectPage" aria-label="Select page" title="Select page" onchange={selectPage} />
+      {/key}
+    </th>
+    {#each columns as column (column.key)}
+      {@const active = activeDirection(column, currentSort)}
+      {@const next = active === 'ascending' ? 'descending' : active === 'descending' ? 'ascending' : column.first}
+      <th scope="col" aria-sort={active}>
+        <a href={href({ [sortKey]: column[next][0] })} title={column[next][1]} data-sveltekit-keepfocus data-sveltekit-noscroll>
+          {column.label}<span aria-hidden="true">{active === 'ascending' ? ' ↑' : active === 'descending' ? ' ↓' : ''}</span>
+        </a>
+      </th>
+    {/each}
+  </tr></thead>
+{/snippet}
+
+{#snippet timestamp(date: Date)}
+  {@const exact = joinedFormat.format(date)}
+  <time datetime={date.toISOString()} title={exact} aria-label={exact}>{timeAgo(date, clientNow ?? data.asOf)}</time>
+{/snippet}
+
+{#snippet status(checked: boolean, label: string)}
+  <span class="status" role="img" aria-label={label} title={label}>{checked ? '☑' : '☐'}</span>
+{/snippet}
+
 <PageLayout {heading}>
   {@render heading()}
   <nav aria-label="Directory view" class="controls">
     <Button href={href({ view: null, network: null })} aria-current={!filters.grouped ? 'page' : undefined}>Users</Button>
     <Button href={href({ view: 'ips', network: null })} aria-current={filters.grouped ? 'page' : undefined}>Group by IP</Button>
   </nav>
-  <form method="get" class="controls">
+  <form method="get" class="controls" onchange={event => event.currentTarget.requestSubmit()} data-sveltekit-keepfocus data-sveltekit-noscroll>
     {#if filters.grouped}<input type="hidden" name="view" value="ips" />{/if}
     {#if filters.network}<input type="hidden" name="network" value={filters.network} />{/if}
     <div class="field">
@@ -82,20 +131,16 @@
     </div>
     <div class="field">
       <label for="order">Sort by</label>
-      {#if filters.grouped}
-        <select id="order" name="groupOrder" value={filters.groupOrder}>
-          <option value="most">Most users</option><option value="fewest">Fewest users</option><option value="recent">Last seen</option>
-        </select>
-      {:else}
-        <select id="order" name="sort" value={filters.sort}>
-          <option value="most-ips">Most IP addresses</option><option value="fewest-ips">Fewest IP addresses</option>
-          <option value="newest">Newest accounts</option><option value="oldest">Oldest accounts</option>
-          <option value="email-asc">Email A to Z</option><option value="email-desc">Email Z to A</option>
-          <option value="name">Name A to Z</option><option value="name-desc">Name Z to A</option>
-        </select>
-      {/if}
+      <select id="order" name={sortKey} value={currentSort}>
+        {#each columns as column (column.key)}
+          <optgroup label={column.label}>
+            <option value={column.ascending[0]}>{column.ascending[1]}</option>
+            <option value={column.descending[0]}>{column.descending[1]}</option>
+          </optgroup>
+        {/each}
+      </select>
     </div>
-    <Button type="submit">Apply filters</Button>
+    <noscript><Button type="submit">Update table</Button></noscript>
   </form>
 
   {#if form?.preview}
@@ -111,61 +156,71 @@
       <p>{networkLabel(filters.network)} <Button href={href({ network: null })}>Clear IP filter</Button></p>
     {/if}
     <p class="count">{data.total.toLocaleString('en-US')} {filters.grouped ? (data.total === 1 ? 'IP group' : 'IP groups') : (data.total === 1 ? 'user' : 'users')}</p>
-    {#key page.url.search}
     <form method="post" action={actionUrl('review')} use:enhance onchange={syncSelectPage}>
       {#if data.total}
         <div class="controls select-controls">
-          <label><input type="checkbox" name="selectPage" onchange={selectPage} /> Select page</label>
           <Button type="submit">Review deletion</Button>
         </div>
       {/if}
       {#if 'groups' in data && data.groups}
         {#if data.groups.length}
-          <div class="entry-table-wrap"><table class="entry-table" aria-label="IP groups in the last 48 hours">
-            <thead><tr><th>IP group (48h)</th><th>Users</th><th>Signups</th><th>Last seen</th></tr></thead>
-            <tbody>
-              {#each data.groups as group (group.network)}
-                <tr><td>
-                  <input type="checkbox" data-selectable name="network" value={group.network} aria-label={'Select ' + networkLabel(group.network)} />
-                  <a href={groupHref(group.network)}>{networkLabel(group.network)}</a>
-                </td><td>{group.members}</td><td>{group.signups}</td><td>{joinedFormat.format(group.latest)} UTC</td></tr>
-              {/each}
-            </tbody>
-          </table></div>
+          <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+          <div class="entry-table-wrap scroll-table" role="region" aria-label="IP group columns" tabindex="0">
+            <table class="entry-table" aria-label="IP groups in the last 48 hours">
+              {@render tableHead()}
+              {#key page.url.search}
+                <tbody>
+                  {#each data.groups as group (group.network)}
+                    <tr>
+                      <td><input type="checkbox" data-selectable name="network" value={group.network} aria-label={'Select ' + networkLabel(group.network)} /></td>
+                      <td><a href={groupHref(group.network)}>{networkLabel(group.network)}</a></td>
+                      <td>{group.members}</td>
+                      <td>{group.signups}</td>
+                      <td>{@render timestamp(group.latest)}</td>
+                    </tr>
+                  {/each}
+                </tbody>
+              {/key}
+            </table>
+          </div>
         {:else}<p>No IP groups recorded for these filters in the last 48 hours.</p>{/if}
       {:else if 'accounts' in data && data.accounts?.length}
-        <div class="entry-table-wrap"><table class="entry-table" aria-label="Users">
-          <thead><tr><th>Account</th><th>Activity</th><th>IPs (48h)</th></tr></thead>
-          <tbody>
-            {#each data.accounts as account (account.id)}
-              <tr>
-                <td>
-                  {#if account.role !== 'admin'}
-                    <input type="checkbox" data-selectable name="user" value={account.id} aria-label={'Select ' + account.email} />
-                  {/if}
-                  <strong>{account.email}</strong>
-                  <div>{account.displayName ? `${account.displayName} (${account.role})` : account.role}</div>
-                  <div>Joined <time datetime={account.createdAt.toISOString()}>{joinedFormat.format(account.createdAt)} UTC</time></div>
-                </td>
-                <td>
-                  <div>{account.emailVerifiedAt ? 'Email verified' : 'Email unverified'}</div>
-                  <div>{account.onboardedAt ? 'Onboarding complete' : 'Onboarding incomplete'}</div>
-                  <div>{account.linksCreated} email {account.linksCreated === 1 ? 'link' : 'links'} created</div>
-                  <div>{account.textsWithProgress} {account.textsWithProgress === 1 ? 'text' : 'texts'} with reading activity</div>
-                </td>
-                <td>
-                  {#if account.ipCount}
-                    <div>{account.ipCount} {account.ipCount === 1 ? 'IP' : 'IPs'}</div>
-                    {#each account.networks as network}<div><a href={groupHref(network)}>{networkLabel(network)}</a></div>{/each}
-                  {:else}None recorded{/if}
-                </td>
-              </tr>
-            {/each}
-          </tbody>
-        </table></div>
+        <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+        <div class="entry-table-wrap scroll-table" role="region" aria-label="User columns" tabindex="0">
+          <table class="entry-table" aria-label="Users">
+            {@render tableHead()}
+            {#key page.url.search}
+              <tbody>
+                {#each data.accounts as account (account.id)}
+                  <tr>
+                    <td>
+                      {#if account.role !== 'admin'}
+                        <input type="checkbox" data-selectable name="user" value={account.id} aria-label={'Select ' + account.email} />
+                      {/if}
+                    </td>
+                    <td class="identity">{account.email}</td>
+                    <td class="identity">{account.displayName ?? ''}</td>
+                    <td>{account.role}</td>
+                    <td>{@render timestamp(account.createdAt)}</td>
+                    <td>{@render status(!!account.emailVerifiedAt, account.emailVerifiedAt ? 'Email verified' : 'Email unverified')}</td>
+                    <td>{@render status(!!account.onboardedAt, account.onboardedAt ? 'Onboarding complete' : 'Onboarding incomplete')}</td>
+                    <td>{account.linksCreated}</td>
+                    <td>{account.textsWithProgress}</td>
+                    <td>
+                      {#if account.networks.length}
+                        <details><summary aria-label={`Show ${account.ipCount} recorded IPs for ${account.email}`}>{account.ipCount}</summary>
+                          {#each account.networks as network}<div><a href={groupHref(network)}>{networkLabel(network)}</a></div>{/each}
+                        </details>
+                      {:else}0{/if}
+                    </td>
+                  </tr>
+                {/each}
+              </tbody>
+            {/key}
+          </table>
+        </div>
       {:else}<p>No users match these filters.</p>{/if}
     </form>
-    {/key}
     <Pagination offset={data.offset} limit={data.limit} total={data.total} hrefFor={offset => href({ page: String(Math.floor(offset / data.limit) + 1) })} />
   {/if}
 </PageLayout>
@@ -177,7 +232,19 @@
   select { min-height: 2.25rem; padding: 0.35rem; border: 1px solid var(--rule); border-radius: 7px; background: var(--card); color: var(--ink); font: inherit; }
   .count { color: var(--ink-3); font-variant-numeric: tabular-nums; }
   .select-controls { align-items: center; }
-  table { table-layout: fixed; line-height: 1.5; }
+  .scroll-table { max-width: 100%; overflow-x: auto; }
+  table { line-height: 1.4; font-variant-numeric: tabular-nums; }
+  .entry-table :is(th, td) { padding: 0.5rem 0.6rem; vertical-align: middle; }
+  .entry-table th { white-space: nowrap; }
+  th a { display: block; padding-block: 0.25rem; color: var(--ink-2); text-decoration: none; }
+  th[aria-sort] a, th a:hover { color: var(--ink); text-decoration: underline; }
+  th a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .select-column { width: 2rem; }
+  .identity { min-width: 6rem; max-width: 18rem; }
+  time { white-space: nowrap; }
+  .status { display: inline-block; font: 1.15rem/1 sans-serif; }
+  summary { cursor: pointer; }
+  details[open] { min-width: 10rem; }
   td a { color: var(--ink); }
   @media (max-width: 38rem) { .entry-table :is(td, th) { padding: 0.45rem; } }
 </style>

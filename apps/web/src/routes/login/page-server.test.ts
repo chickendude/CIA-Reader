@@ -53,6 +53,7 @@ const USER_ROW = {
   id: 'user-1',
   email: 'user@example.com',
   passwordHash: 'hash',
+  emailVerifiedAt: new Date(),
   displayName: null,
   role: 'user' as const,
 };
@@ -236,6 +237,16 @@ describe('/login magic action', () => {
     expect(sendMail).not.toHaveBeenCalled();
   });
 
+  it('keeps unverified sign-in requests in the shared quota and gives a neutral response when it is full', async () => {
+    dbSelect.mockReturnValueOnce([{ ...USER_ROW, emailVerifiedAt: null }]);
+    createMagicLink.mockResolvedValueOnce(null);
+    const result = await callMagic({ email: USER_ROW.email });
+    dbSelect.mockReturnValueOnce([]);
+    expect(await callMagic({ email: USER_ROW.email })).toEqual(result);
+    expect(createMagicLink).toHaveBeenCalledWith(USER_ROW.id, false);
+    expect(sendMail).not.toHaveBeenCalled();
+  });
+
   it('sends the link when the email matches', async () => {
     dbSelect.mockReturnValueOnce([USER_ROW]);
     createMagicLink.mockResolvedValueOnce('signed-token');
@@ -244,7 +255,7 @@ describe('/login magic action', () => {
       ok: boolean;
     };
     expect(res.ok).toBe(true);
-    expect(createMagicLink).toHaveBeenCalledWith('user-1');
+    expect(createMagicLink).toHaveBeenCalledWith('user-1', true);
     expect(sendMail).toHaveBeenCalled();
   });
 
