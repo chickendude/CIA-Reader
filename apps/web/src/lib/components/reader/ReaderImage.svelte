@@ -24,6 +24,7 @@
 
   let {
     chapters,
+    savePosition = true,
     chapterIdx,
     textId,
     language,
@@ -33,6 +34,7 @@
     onProgress,
   }: {
     chapters: ChapterView[];
+    savePosition?: boolean;
     chapterIdx: number;
     textId: string;
     language: LanguageCode;
@@ -63,7 +65,7 @@
   function goToPage(idx: number) {
     const clamped = Math.max(0, Math.min(idx, pageCount - 1));
     if (clamped === chapterIdx) return;
-    void goto(readerChapterHref(textId, clamped), { keepFocus: true });
+    void goto(readerChapterHref(textId, clamped, {}, savePosition), { keepFocus: true });
   }
 
   // Report progress as the active page so the resume-anchor + whole-book

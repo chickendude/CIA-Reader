@@ -1,6 +1,7 @@
 /** Link to a reader position. A collection sibling can be addressed by text ID alone. */
-export function readerChapterHref(textId: string, chapterIdx: number | null, params: Record<string, string> = {}): string {
+export function readerChapterHref(textId: string, chapterIdx: number | null, params: Record<string, string> = {}, savePosition = true): string {
   const query = new URLSearchParams(params);
+  if (!savePosition) query.set('sp', '0');
   if (chapterIdx !== null) query.set('chapterNumber', String(chapterIdx + 1));
   return `/reader/${encodeURIComponent(textId)}?${query}`;
 }

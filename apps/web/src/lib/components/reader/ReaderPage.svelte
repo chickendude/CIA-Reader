@@ -25,6 +25,7 @@
 
   let {
     chapters,
+    savePosition = true,
     chapterPicker,
     chapterIdx,
     initialTokenIdx = 0,
@@ -49,6 +50,7 @@
   }: {
     chapterPicker?: import('svelte').Snippet;
     chapters: ChapterView[];
+    savePosition?: boolean;
     chapterIdx: number;
     initialTokenIdx?: number;
     textId: string;
@@ -172,8 +174,8 @@
   );
   const nextChapterHref = $derived(
     hasNextChapter
-      ? readerChapterHref(textId, chapterIdx + 1, { mode: 'page', token: '0' })
-      : nextTextId && readerChapterHref(nextTextId, null, { mode: 'page', token: '0' }),
+      ? readerChapterHref(textId, chapterIdx + 1, { mode: 'page', token: '0' }, savePosition)
+      : nextTextId && readerChapterHref(nextTextId, null, { mode: 'page', token: '0' }, savePosition),
   );
   let lookupOpen = $state(false);
   let preloadedHref: string | null = null;
@@ -217,7 +219,7 @@
     if (hasPrevPage) {
       turnTo(pageInChapter - 1);
     } else if (hasPrevChapter) {
-      void goto(readerChapterHref(textId, chapterIdx - 1, { mode: 'page', endOfChapter: '1' }), {
+      void goto(readerChapterHref(textId, chapterIdx - 1, { mode: 'page', endOfChapter: '1' }, savePosition), {
         keepFocus: true,
       });
     } else if (prevTextId) {
@@ -226,7 +228,7 @@
       // place to resume. The destination reader treats
       // `endOfChapter=1` as a URL anchor and jumps to the last page
       // of its last internal chapter after measurement.
-      void goto(`/reader/${prevTextId}?mode=page&endOfChapter=1`, {
+      void goto(readerChapterHref(prevTextId, null, { mode: 'page', endOfChapter: '1' }, savePosition), {
         keepFocus: true,
       });
     }

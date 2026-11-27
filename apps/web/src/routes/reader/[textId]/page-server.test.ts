@@ -173,6 +173,13 @@ describe('/reader/[textId] loader', () => {
     expect(data.isOwner).toBe(true);
   });
 
+  it.each([['', true], ['?sp=false', true], ['?sp=0', false]])(
+    'sets the save-position flag for %s', async (query, savePosition) => {
+      getReadableText.mockResolvedValueOnce(ownedTextWithChapters(1));
+      expect(await callLoad(`http://x/reader/${VALID_ID}${query}`)).toMatchObject({ savePosition });
+    },
+  );
+
   it('opens the displayed chapter number at the requested token', async () => {
     getReadableText.mockResolvedValueOnce(ownedTextWithChapters(5));
     const data = (await callLoad(

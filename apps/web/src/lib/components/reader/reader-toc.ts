@@ -53,6 +53,7 @@ export type ReaderToc = {
 };
 
 export type ReaderTocInput = {
+  savePosition?: boolean;
   textId: string;
   mode: ReaderLayoutMode;
   /** The loaded text's own chapters (every entry carries idx + title +
@@ -87,7 +88,7 @@ export function buildReaderToc(input: ReaderTocInput): ReaderToc {
       number: i + 1,
       title: c.title?.trim() || 'Untitled',
       words: clampInt(c.tokenCount),
-      href: readerChapterHref(c.textId, null, { mode, token: '0' }),
+      href: readerChapterHref(c.textId, null, { mode, token: '0' }, input.savePosition),
       isCurrent: c.position === input.collection!.position,
     }));
     let currentIndex = entries.findIndex((e) => e.isCurrent);
@@ -116,7 +117,7 @@ export function buildReaderToc(input: ReaderTocInput): ReaderToc {
     number: c.idx + 1,
     title: c.title?.trim() || `Chapter ${c.idx + 1}`,
     words: clampInt(c.tokenCount),
-    href: readerChapterHref(input.textId, c.idx, { mode }),
+    href: readerChapterHref(input.textId, c.idx, { mode }, input.savePosition),
     isCurrent: c.idx === input.currentChapterIdx,
   }));
   let currentIndex = entries.findIndex((e) => e.isCurrent);

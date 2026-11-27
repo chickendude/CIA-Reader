@@ -132,7 +132,7 @@ export const actions: Actions = {
                 body: parsed.data.body,
               },
             );
-      throw redirect(303, `/reader/${created.text.id}`);
+      throw redirect(303, `/reader/${created.text.id}?sp=0`);
     } catch (err) {
       if (err instanceof TextValidationError) {
         return fail(err.status, {
@@ -212,7 +212,7 @@ export const actions: Actions = {
         { language, title, epubBytes },
       );
       if (created.kind === 'text') {
-        throw redirect(303, `/reader/${created.text.id}`);
+        throw redirect(303, `/reader/${created.text.id}?sp=0`);
       }
       throw redirect(303, `/collections/${created.collection.id}`);
     } catch (err) {
@@ -301,7 +301,7 @@ export const actions: Actions = {
         { language, title, zipBytes },
       );
       if (created.kind === 'text') {
-        throw redirect(303, `/reader/${created.text.id}`);
+        throw redirect(303, `/reader/${created.text.id}?sp=0`);
       }
       throw redirect(303, `/collections/${created.collection.id}`);
     } catch (err) {

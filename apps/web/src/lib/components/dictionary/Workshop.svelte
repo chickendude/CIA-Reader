@@ -458,7 +458,7 @@
                 target="_blank" rel="noreferrer">Ask ChatGPT ↗</Button>
             {/if}
             <Button title={reviewBook?.title}
-              href={readerChapterHref(sample.book, sample.chapter, { token: String(sample.token) })}>View in text</Button>
+              href={readerChapterHref(sample.book, sample.chapter, { token: String(sample.token), sp: '0' })}>View in text</Button>
           </div>
           </div>
           <p lang={language} dir="auto">{sample.context.before}<mark>{sample.context.match}</mark>{sample.context.after}</p>

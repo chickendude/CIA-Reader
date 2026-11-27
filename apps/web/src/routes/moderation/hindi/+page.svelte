@@ -140,7 +140,7 @@
         <header>
           <h2 lang="hi">{surface}</h2>
           <span class="status">{reviewStatusLabels[status]}</span>
-          <a href={readerChapterHref(data.result.book.id, chapterIdx, { token: String(token.idx) })}>Read context</a>
+          <a href={readerChapterHref(data.result.book.id, chapterIdx, { token: String(token.idx), sp: '0' })}>Read context</a>
         </header>
         <p class="sentence" lang="hi">{context.before}<mark>{context.match}</mark>{context.after}</p>
         {#if status === 'unparsed' || candidates.length === 0}

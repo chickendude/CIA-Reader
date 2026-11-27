@@ -70,7 +70,7 @@
         <tbody>
           {#each m.rows as row, i (i)}
             <tr>
-              <td><a href={`/reader/${row.textId}`}>{row.textTitle}</a></td>
+              <td><a href={`/reader/${row.textId}?sp=0`}>{row.textTitle}</a></td>
               <td class="num">{row.lastChapterIdx + 1}</td>
               <td class="num">{Math.round(row.pctRead)}%</td>
               <td class="num cd-when">

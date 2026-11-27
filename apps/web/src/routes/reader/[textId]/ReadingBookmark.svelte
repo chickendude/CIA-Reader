@@ -5,9 +5,10 @@
   import { getToastStore } from '$lib/components/toast/toast-store.js';
 
   type Bookmark = { textId: string; chapterIdx: number; tokenIdx: number };
-  let { storageKey, position, mode, showRomanization }: {
+  let { storageKey, position, savePosition, mode, showRomanization }: {
     storageKey: string;
     position: Bookmark;
+    savePosition: boolean;
     mode: string;
     showRomanization: boolean;
   } = $props();
@@ -24,7 +25,7 @@
     return readerChapterHref(saved.textId, saved.chapterIdx, {
       mode, token: String(saved.tokenIdx),
       roman: showRomanization ? '1' : '0',
-    });
+    }, savePosition);
   });
 
   function read() {

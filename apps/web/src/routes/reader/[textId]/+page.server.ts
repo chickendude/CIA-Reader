@@ -246,6 +246,7 @@ export const load: PageServerLoad = async ({ params, locals, url }) => {
     // a session-only live preview.
     canReviewHindi: result.text.language === 'hi' && isCuratorOrAdmin(locals.user)
       && (result.text.visibility === 'official' || result.text.ownerId === locals.user?.id),
+    savePosition: url.searchParams.get('sp') !== '0',
     canPersistSettings: locals.user != null,
     dictionaryEditor: await canEditDictionary(locals.user, result.text.language),
     isOwner: Boolean(locals.user && locals.user.id === result.text.ownerId),

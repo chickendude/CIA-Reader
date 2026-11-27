@@ -179,6 +179,7 @@
   // and chapter-books (each chapter is its own text, jump via textId).
   const toc = $derived(
     buildReaderToc({
+      savePosition: data.savePosition,
       textId: data.text.id,
       mode: data.mode,
       chapters: data.chapters.map((c) => ({
@@ -238,7 +239,7 @@
     }
     void goto(readerChapterHref(data.text.id, chapterIndexForUrl(anchor.chapterIdx), {
       mode, token: String(anchor.tokenIdx), ...(showRomanization ? { roman: '1' } : {}),
-    }), {
+    }, data.savePosition), {
       keepFocus: true,
     });
   }
@@ -257,7 +258,7 @@
   }
 
   // Only signed-in readers have an account in which to save progress.
-  const progressTextId = $derived(data.canPersistSettings ? data.text.id : null);
+  const progressTextId = $derived(data.canPersistSettings && data.savePosition ? data.text.id : null);
   const progressWriter = $derived(progressTextId ? new ProgressWriter(progressTextId) : null);
 
   // The reader's top bar is a full-width fixed element. We measure
@@ -270,7 +271,8 @@
   let recordedOpen = '';
   $effect(() => {
     const id = data.text.id;
-    if (data.canPersistSettings && id !== recordedOpen) {
+    if (!data.savePosition) recordedOpen = '';
+    if (data.canPersistSettings && data.savePosition && id !== recordedOpen) {
       recordedOpen = id;
       void fetch(`/api/v1/me/text-progress/${id}`, { method: 'POST', keepalive: true })
         .catch(() => {});
@@ -445,7 +447,7 @@
 
       {#if data.chapters.length > 0}
         {#key bookmarkKey}
-          <ReadingBookmark storageKey={bookmarkKey} mode={data.mode} {showRomanization}
+          <ReadingBookmark savePosition={data.savePosition} storageKey={bookmarkKey} mode={data.mode} {showRomanization}
             position={{ textId: data.text.id, chapterIdx: currentProgressAnchor.chapterIdx, tokenIdx: currentProgressAnchor.tokenIdx }} />
         {/key}
       {/if}
@@ -485,6 +487,7 @@
 
   {#if usesPageImages}
     <ReaderImage
+      savePosition={data.savePosition}
       chapters={data.chapters}
       chapterIdx={data.anchor.chapterIdx}
       textId={data.text.id}
@@ -496,6 +499,7 @@
     />
   {:else if data.mode === 'page'}
     <ReaderPage
+      savePosition={data.savePosition}
       {settingsOpen}
       chapterPicker={toc.entries.length > 1 ? mobileChapterPicker : undefined}
       chapters={data.chapters}

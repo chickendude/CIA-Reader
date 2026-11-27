@@ -121,7 +121,7 @@
           {#each data.texts as t (t.textId)}
             <tr>
               <td>
-                <a href={`/reader/${t.textId}`} class="ls-link">{t.title}</a>
+                <a href={`/reader/${t.textId}?sp=0`} class="ls-link">{t.title}</a>
                 {#if data.isStaff && t.analysisStale}<ReanalysisNotice />{/if}
               </td>
               <td class="num">{t.uniqueLemmas.toLocaleString()}</td>

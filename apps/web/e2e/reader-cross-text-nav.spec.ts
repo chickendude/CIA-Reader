@@ -100,6 +100,31 @@ async function readPageState(page: Page): Promise<{ current: number; total: numb
 }
 
 test.describe('Reader cross-text prev navigation', () => {
+  test('a reference visit preserves progress across chapters and refresh', async ({ page }) => {
+    const { prevChapter, currentChapter } = await findChapterPair();
+    const progressWrites: string[] = [];
+    page.on('request', (request) => {
+      if (request.url().includes('/api/v1/me/text-progress/')) progressWrites.push(request.method());
+    });
+
+    await page.goto(`/reader/${currentChapter.id}?mode=page&token=0&sp=0`);
+    await expect(page.getByRole('button', { name: 'Bookmark this position' })).toBeEnabled();
+    await page.getByRole('button', { name: 'Previous chapter', exact: true }).click();
+    await expect(page).toHaveURL((url) =>
+      url.pathname === `/reader/${prevChapter.id}` && url.searchParams.get('sp') === '0');
+    await page.reload();
+    await expect(page.getByRole('button', { name: 'Bookmark this position' })).toBeEnabled();
+    await page.getByRole('button', { name: 'Previous page', exact: true }).click();
+    await page.goto('/library');
+    expect(progressWrites).toEqual([]);
+
+    await page.goto(`/reader/${prevChapter.id}?mode=page&token=0`);
+    await expect(page.getByRole('button', { name: 'Bookmark this position' })).toBeEnabled();
+    await page.keyboard.press('ArrowRight');
+    await expect.poll(() => progressWrites).toContain('PATCH');
+    expect(progressWrites).toContain('POST');
+  });
+
   test('clicking prev from page 1 of chapter N lands on the LAST page of chapter N-1', async ({
     page,
   }) => {

@@ -169,7 +169,7 @@ describe('/upload paste action', () => {
       body: 'पाठ का मूल पाठ।',
     })) as { status: number; location: string };
     expect(res.status).toBe(303);
-    expect(res.location).toBe('/reader/text-1');
+    expect(res.location).toBe('/reader/text-1?sp=0');
     expect(createPastedText).toHaveBeenCalledWith(
       { id: USER.id },
       { language: 'hi', title: 'My text', body: 'पाठ का मूल पाठ।' },
@@ -190,7 +190,7 @@ describe('/upload paste action', () => {
       body: 'first.\n---\nsecond.',
     })) as { status: number; location: string };
     expect(res.status).toBe(303);
-    expect(res.location).toBe('/reader/text-2');
+    expect(res.location).toBe('/reader/text-2?sp=0');
     expect(createTxtText).toHaveBeenCalledTimes(1);
     expect(createPastedText).not.toHaveBeenCalled();
   });
@@ -288,7 +288,7 @@ describe('/upload epub action', () => {
       file: fakeFile(),
     })) as { status: number; location: string };
     expect(res.status).toBe(303);
-    expect(res.location).toBe('/reader/text-3');
+    expect(res.location).toBe('/reader/text-3?sp=0');
   });
 
   it('falls back to filename when no title is given', async () => {
@@ -323,7 +323,7 @@ describe('/upload epub action', () => {
       file: fakeFile(),
     })) as { status: number; location: string };
     expect(res.status).toBe(303);
-    expect(res.location).toBe('/reader/text-eu');
+    expect(res.location).toBe('/reader/text-eu?sp=0');
     expect(createChapterBookFromEpub).toHaveBeenCalledWith(
       { id: USER.id },
       expect.objectContaining({ language: 'eu', title: 'Euskal liburua' }),
@@ -465,7 +465,7 @@ describe('/upload zip action', () => {
       file: fakeFile(),
     })) as { status: number; location: string };
     expect(res.status).toBe(303);
-    expect(res.location).toBe('/reader/text-zip');
+    expect(res.location).toBe('/reader/text-zip?sp=0');
   });
 
   it('falls back to filename when no title is given', async () => {

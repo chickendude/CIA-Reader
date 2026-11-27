@@ -257,7 +257,7 @@
       // Navigate to the reader; the page processes/streams as it goes, so
       // it may still be finishing the last page when we land — the reader's
       // status badge polls to "ready".
-      await goto(`/reader/${id}`);
+      await goto(`/reader/${id}?sp=0`);
     } catch (e) {
       pdfError = `Import failed: ${(e as Error).message}`;
       pdfBusy = false;
